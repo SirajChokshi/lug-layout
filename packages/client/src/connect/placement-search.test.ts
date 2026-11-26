@@ -13,12 +13,16 @@ import {
   GENDER_MALE,
   MateReport,
   ModelConnectors,
+  NO_PARTNER,
+  NO_SHAPE,
   SECTION_AXLE,
   SECTION_FEMALE_FINGER,
   SECTION_MALE_FINGER,
   SECTION_ROUND,
   type SnapShapes,
+  SOURCE_INFERRED,
   SOURCE_SHADOW,
+  STATUS_UNVERIFIED,
   STATUS_VERIFIED,
   type LatticePose,
   type TrackEnd,
@@ -43,7 +47,8 @@ import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { fixtureBundleFetcher } from "../edit/fixture-model.test-support.ts";
 import { distinctJoints } from "../edit/placement-hover.ts";
-import { mateCounts } from "../edit/placement-hover-view.ts";
+import { connectorKind, mateCounts } from "../edit/placement-hover-view.ts";
+import type { HoverMateCount, PlacedModelView } from "../edit/placement-hover.ts";
 import type { PlaceablePartCells } from "../edit/placeable.ts";
 import {
   CONNECTION_SOLVER,
@@ -117,10 +122,11 @@ interface Piece {
   readonly parts: Parts;
 }
 
-function fixture(): Fixture {
+function fixture(prelude: (shapes: SnapShapes) => void = () => {}): Fixture {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   const shapes = container.get(SNAP_SHAPES);
+  prelude(shapes);
   const mating = container.get(SNAP_MATING);
   return {
     search: container.get(PLACEMENT_SEARCH),
@@ -1496,8 +1502,12 @@ interface Built {
   readonly carriers: ReadonlyArray<number>;
 }
 
+interface Placing {
+  place(placement: number, piece: Piece, pose: LatticePose): void;
+}
+
 interface Builder {
-  readonly live: LiveWorld;
+  readonly live: Placing;
   readonly f: Fixture;
   readonly joints: Joints;
   readonly next: () => number;
@@ -1728,8 +1738,14 @@ function generatedWorld(seed: number): GeneratedWorld {
   const pick = seeded(seed);
   let id = FIRST_GENERATED_ID;
   const builder: Builder = { live, f, joints: joints(f), next: () => id++, pick };
+  const carriers = generatedSites(builder, SITES_PER_ROW * SITE_ROWS);
+  return { live, solver: f.solver, carriers, placements: [...live.listed.keys()] };
+}
+
+function generatedSites(builder: Builder, sites: number): number[] {
+  const { pick } = builder;
   const carriers: number[] = [];
-  for (let s = 0; s < SITES_PER_ROW * SITE_ROWS; s++) {
+  for (let s = 0; s < sites; s++) {
     const turn = pick(4);
     if (!isRot90(turn)) throw new RangeError(`turn ${turn} is not a quarter turn`);
     const site: Site = {
@@ -1740,7 +1756,7 @@ function generatedWorld(seed: number): GeneratedWorld {
     const scenario = s === 0 ? big : (SCENARIOS[pick(SCENARIOS.length)] ?? towers);
     carriers.push(...scenario(builder, site).carriers);
   }
-  return { live, solver: f.solver, carriers, placements: [...live.listed.keys()] };
+  return carriers;
 }
 
 function drawn(
@@ -1931,6 +1947,7 @@ async function officialParts() {
   return {
     live: new LiveWorld(search),
     solver: container.get(CONNECTION_SOLVER),
+    shapes: container.get(SNAP_SHAPES),
     officialBaseplate: await piece(OFFICIAL_BASEPLATE),
     officialBrick,
     officialJumper: await piece(OFFICIAL_JUMPER),
@@ -2263,4 +2280,732 @@ describe("PlacementSearch withdrawals during carries, on official parts", () => 
     },
     CARRY_TIMEOUT_MS,
   );
+});
+
+interface RecordedPlacement {
+  readonly id: number;
+  readonly piece: Piece;
+  readonly pose: LatticePose;
+}
+
+interface Probe {
+  readonly name: string;
+  readonly piece: Piece;
+  readonly pose: LatticePose;
+}
+
+interface CanonicalRecipe {
+  readonly f: Fixture;
+  readonly placed: ReadonlyArray<RecordedPlacement>;
+  readonly probes: ReadonlyArray<Probe>;
+  readonly walks: ReadonlyArray<ReadonlyArray<Probe>>;
+  readonly items: ReadonlyMap<Piece, string>;
+}
+
+const CANONICAL_SITES = 16;
+const GENERATED_OWNERS = 10;
+const GENERATED_ROWS = 300;
+const GENERATED_CONNECTORS = 40;
+const WITNESS_X = 30_000;
+const FIELD_X = 40_000;
+const FIELDS = 6;
+const LARGE_SLAB = 24;
+const LARGE_PLATE = 20;
+const FIELD_SPACING = 2000;
+const FIELD_ROWS = 8;
+const FIELD_PIN_ROWS = 4;
+const FIELD_SPREAD = 12;
+const FIELD_WALK = 24;
+const LONG_PIN = 2 * STUD_LDU;
+const SHORT_PIN = 8;
+const FIELD_PIN = 16;
+const BORE_ROW = 6;
+const PIN_ROW = 4;
+const REMOVE_CYCLES = 25;
+const CANONICAL_CARRIES = 5;
+const CANONICAL_CARRY_SIZE = 8;
+const WARM_UPS = 40;
+const CLASS_WITNESS_SHALLOW = 6;
+const CLASS_WITNESS_DEEP = 12;
+
+function internInAnotherOrder(shapes: SnapShapes): void {
+  const pin = (length: number): number =>
+    shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [6], [length]);
+  shapes.intern(0, false, [SECTION_ROUND], [6], [2 * STUD_LDU]);
+  shapes.intern(0, true, [SECTION_ROUND, SECTION_ROUND, SECTION_ROUND], [8, 6, 8], [2, 16, 2]);
+  shapes.intern(0, false, [SECTION_ROUND, SECTION_ROUND, SECTION_ROUND], [8, 6, 8], [2, 16, 2]);
+  for (const length of [LONG_PIN, FIELD_PIN, SHORT_PIN]) pin(length);
+  for (const depth of [BRICK_LDU - 4, CLASS_WITNESS_DEEP, CLASS_WITNESS_SHALLOW, 4]) {
+    shapes.intern(CAP_FAR, false, [SECTION_ROUND], [6], [depth]);
+  }
+  pin(4);
+}
+
+function boreRow(f: Fixture): Piece {
+  const bores = Array.from({ length: BORE_ROW }, (_, k): Spec[] => [
+    [f.boreEnd, GENDER_FEMALE, HALF + k * STUD_LDU, LINE_Y, 0, AXIS_NEG_Z],
+    [f.boreEnd, GENDER_FEMALE, HALF + k * STUD_LDU, LINE_Y, STUD_LDU, AXIS_POS_Z],
+  ]).flat();
+  return {
+    connectors: f.connectors([table(bores)]),
+    volumes: columns(BORE_ROW, 1, 0, BRICK_LDU),
+    parts: partsOf([[0, 0, 0, BORE_ROW * STUD_LDU, BRICK_LDU, STUD_LDU]]),
+  };
+}
+
+function pinRow(f: Fixture): Piece {
+  return {
+    connectors: f.connectors([
+      table(
+        Array.from({ length: PIN_ROW }, (_, k): Spec => [
+          f.pinEnd(k === PIN_ROW - 1 ? SHORT_PIN : FIELD_PIN),
+          GENDER_MALE,
+          HALF + k * STUD_LDU,
+          LINE_Y,
+          0,
+          AXIS_NEG_Z,
+        ]),
+      ),
+    ]),
+    volumes: columns(PIN_ROW, 1, 0, BRICK_LDU),
+    parts: partsOf([[0, 0, 0, PIN_ROW * STUD_LDU, BRICK_LDU, STUD_LDU]]),
+  };
+}
+
+function studdedBore(f: Fixture): Piece {
+  return {
+    connectors: f.connectors([
+      boreEnds(f, 0),
+      table([[f.stud, GENDER_MALE, HALF, BRICK_LDU, HALF, AXIS_POS_Y]]),
+    ]),
+    volumes: columns(2, 1, 0, BRICK_LDU),
+    parts: partsOf([BLOCK, BLOCK], [bore(0), null]),
+  };
+}
+
+function bareTrack(f: Fixture, end: TrackEnd): Piece {
+  const body = [0, 0, 0, 2 * STUD_LDU, PLATE_LDU, 2 * STUD_LDU];
+  return {
+    connectors: f.connectors([null], [end]),
+    volumes: boxVolumes(0, 0, 2, 2, [body]),
+    parts: partsOf([body]),
+  };
+}
+
+function longAndShortPins(f: Fixture): Piece {
+  return {
+    connectors: f.connectors([
+      table([
+        [f.pinEnd(LONG_PIN), GENDER_MALE, LINE_X, LINE_Y, 0, AXIS_NEG_Z],
+        [f.pinEnd(SHORT_PIN), GENDER_MALE, LINE_X, LINE_Y, 0, AXIS_NEG_Z],
+      ]),
+    ]),
+    volumes: columns(2, 1, 0, BRICK_LDU),
+    parts: partsOf([BLOCK]),
+  };
+}
+
+function twoBorePartner(f: Fixture): Piece {
+  const near = [0, 0, -STUD_LDU, 2 * STUD_LDU, BRICK_LDU, 0];
+  const far = [0, 0, -2 * STUD_LDU, 2 * STUD_LDU, BRICK_LDU, -STUD_LDU];
+  return {
+    connectors: f.connectors([boreEnds(f, -STUD_LDU), boreEnds(f, -2 * STUD_LDU)]),
+    volumes: boxVolumes(0, -2, 2, 2, [near, far]),
+    parts: partsOf([near, far], [bore(-STUD_LDU), bore(-2 * STUD_LDU)]),
+  };
+}
+
+function contentKey(f: Fixture, piece: Piece): string {
+  const model = piece.connectors;
+  const connectors = Array.from({ length: model.count }, (_, k) => [
+    model.gender[k],
+    model.axis[k],
+    ...model.origin.subarray(k * 3, k * 3 + 3),
+    shapeContent(f.shapes, model.shape[k] ?? NO_SHAPE),
+  ]);
+  return JSON.stringify([
+    connectors,
+    [...model.trackHeading],
+    [...model.trackPosition],
+    [...model.trackYPlates],
+  ]);
+}
+
+function flat(x: number, z: number, yPlates = 0): LatticePose {
+  return { x, z, yPlates, rot: 0 };
+}
+
+function reinsertedAs(
+  parts: OfficialParts,
+  owners: ReadonlyArray<number>,
+  first: number,
+): number[] {
+  return owners.map((owner, k) => {
+    const listed = parts.live.listed.get(owner);
+    if (!listed) throw new Error(`placement ${owner} isn't listed`);
+    parts.live.search.remove(owner);
+    parts.live.listed.delete(owner);
+    parts.live.place(first + k, listed.piece, listed.pose);
+    return first + k;
+  });
+}
+
+function officialName(parts: OfficialParts, piece: Piece): string {
+  return (
+    new Map<Piece, string>([
+      [parts.officialBaseplate, "3811"],
+      [parts.officialBrick, "3001"],
+      [parts.officialJumper, "3794b"],
+      [parts.sideStudPair, "3001 on its side over a 3001"],
+      [parts.jumperOnBrick, "3794b on a 3001"],
+    ]).get(piece) ?? "unknown"
+  );
+}
+
+function canonicalRecipe(f: Fixture, seed: number): CanonicalRecipe {
+  const placed: RecordedPlacement[] = [];
+  const recorded: Placing = {
+    place: (placement, piece, pose) => {
+      placed.push({ id: placement, piece, pose });
+    },
+  };
+  let id = FIRST_GENERATED_ID;
+  const next = (): number => id++;
+  const pick = seeded(seed);
+  generatedSites({ live: recorded, f, joints: joints(f), next, pick }, CANONICAL_SITES);
+  const probes: Probe[] = [];
+  const duplicates = flat(WITNESS_X, 0);
+  recorded.place(next(), boredBlock(f), duplicates);
+  recorded.place(next(), studdedBore(f), duplicates);
+  probes.push({
+    name: "pin into two bored items at one pose",
+    piece: pinnedBlock(f, STUD_LDU),
+    pose: duplicates,
+  });
+  const classes = flat(WITNESS_X + 10 * STUD_LDU, 0);
+  recorded.place(
+    next(),
+    singleConnector(
+      f,
+      [f.receptor(CLASS_WITNESS_SHALLOW), GENDER_FEMALE, HALF, 0, HALF, AXIS_NEG_Y],
+      CELL,
+    ),
+    {
+      ...classes,
+      yPlates: 1,
+    },
+  );
+  recorded.place(
+    next(),
+    singleConnector(
+      f,
+      [f.receptor(CLASS_WITNESS_DEEP), GENDER_FEMALE, HALF, 0, HALF, AXIS_NEG_Y],
+      CELL,
+    ),
+    { ...classes, yPlates: 1 },
+  );
+  probes.push({
+    name: "stud under two receptor classes",
+    piece: singleConnector(f, [f.stud, GENDER_MALE, HALF, PLATE_LDU, HALF, AXIS_POS_Y], CELL),
+    pose: classes,
+  });
+  const holders = flat(WITNESS_X + 20 * STUD_LDU, 0);
+  recorded.place(next(), studdedTrack(f, straightEnd(2, 0)), holders);
+  recorded.place(next(), bareTrack(f, straightEnd(2, 0)), holders);
+  probes.push({
+    name: "track end on two holders",
+    piece: studdedTrack(f, straightEnd(0, 8)),
+    pose: { ...holders, x: holders.x + 2 * STUD_LDU },
+  });
+  const instances = flat(WITNESS_X + 30 * STUD_LDU, 0);
+  recorded.place(next(), twoBorePartner(f), instances);
+  probes.push({
+    name: "long and short pin through a two-part partner",
+    piece: longAndShortPins(f),
+    pose: instances,
+  });
+  const slab = flat(WITNESS_X + 40 * STUD_LDU, 0);
+  recorded.place(next(), studdedSlab(f, LARGE_SLAB, LARGE_SLAB), slab);
+  probes.push({
+    name: "a large plate on a slab",
+    piece: block(f, LARGE_PLATE, LARGE_PLATE, PLATE_LDU),
+    pose: slab,
+  });
+  const walks: Probe[][] = [];
+  for (let field = 0; field < FIELDS; field++) {
+    const rows: LatticePose[] = [];
+    for (let row = 0; row < FIELD_ROWS; row++) {
+      const pose = flat(
+        FIELD_X + field * FIELD_SPACING + pick(FIELD_SPREAD) * HALF,
+        pick(FIELD_SPREAD) * STUD_LDU,
+      );
+      recorded.place(next(), boreRow(f), pose);
+      rows.push(pose);
+    }
+    for (let walk = 0; walk < FIELD_PIN_ROWS; walk++) {
+      const steps: Probe[] = [];
+      const start = rows[pick(rows.length)] ?? flat(FIELD_X, 0);
+      let pose = { ...start, x: start.x + pick(3) * STUD_LDU, z: start.z + STUD_LDU };
+      const piece = pinRow(f);
+      for (let s = 0; s < FIELD_WALK; s++) {
+        pose =
+          s % 2 === 0
+            ? { ...pose, x: pose.x + (pick(3) - 1) * STUD_LDU }
+            : { ...pose, z: pose.z + (pick(3) - 1) * STUD_LDU };
+        steps.push({ name: `field ${field} pin row ${walk} step ${s}`, piece, pose });
+      }
+      walks.push(steps);
+    }
+  }
+  for (const { piece, pose } of placed)
+    probes.push({ name: "a placed piece at its pose", piece, pose });
+  const items = new Map<Piece, string>();
+  const keys = new Map<string, string>();
+  for (const { piece } of [...placed, ...probes, ...walks.flat()]) {
+    const key = contentKey(f, piece);
+    const item = keys.get(key) ?? `item ${keys.size}`;
+    keys.set(key, item);
+    items.set(piece, item);
+  }
+  return { f, placed, probes, walks, items };
+}
+
+class CanonicalHistory {
+  readonly live: LiveWorld;
+  private readonly report = new MateReport();
+  private readonly studShapes: ReadonlySet<number>;
+
+  constructor(readonly recipe: CanonicalRecipe) {
+    this.live = new LiveWorld(recipe.f.search);
+    this.studShapes = new Set([recipe.f.stud]);
+  }
+
+  insert(order: ReadonlyArray<number>, idOf: (position: number) => number): void {
+    order.forEach((k, position) => {
+      const entry = this.recipe.placed[k];
+      if (entry) this.live.place(idOf(position), entry.piece, entry.pose);
+    });
+  }
+
+  readonly view = (owner: number): PlacedModelView | null => {
+    const listed = this.live.listed.get(owner);
+    if (!listed) return null;
+    const item = this.recipe.items.get(listed.piece) ?? "unknown";
+    return { item, label: item, pose: listed.pose };
+  };
+
+  evaluate(probe: Probe): MateReport {
+    this.live.search.evaluate(probe.piece.connectors, probe.pose, this.report);
+    return this.report;
+  }
+
+  hover(report: MateReport): string {
+    return talliesJson(mateCounts(report, this.recipe.f.shapes, this.studShapes, this.view));
+  }
+
+  raw(report: MateReport): string {
+    const rows: unknown[] = [];
+    for (let k = 0; k < report.count; k++) {
+      const partner = report.partner[k] ?? NO_PARTNER;
+      const view = partner === NO_PARTNER ? null : this.view(partner);
+      rows.push([
+        report.family[k],
+        report.connector[k],
+        view ? [view.item, view.pose] : null,
+        report.partnerInstance[k],
+        shapeContent(this.recipe.f.shapes, report.partnerShape[k] ?? NO_SHAPE),
+      ]);
+    }
+    return JSON.stringify(rows);
+  }
+
+  expected(report: MateReport): string {
+    return talliesJson(
+      specifiedMateCounts(report, this.recipe.f.shapes, this.studShapes, this.view),
+    );
+  }
+}
+
+function shapeContent(shapes: SnapShapes, shape: number): unknown {
+  if (shape === NO_SHAPE) return null;
+  const first = shapes.firstSection(shape);
+  return [
+    shapes.caps(shape),
+    shapes.slides(shape),
+    shapes.groupName(shape),
+    Array.from({ length: shapes.sectionCount(shape) }, (_, s) => [
+      shapes.internedCode(first + s),
+      shapes.internedSize(first + s),
+      shapes.span(first + s),
+    ]),
+  ];
+}
+
+function talliesJson(mates: ReadonlyArray<HoverMateCount>): string {
+  return JSON.stringify(mates.map((mate) => ({ ...mate, jointIds: [...mate.jointIds] })));
+}
+
+function specifiedMateCounts(
+  report: MateReport,
+  shapes: SnapShapes,
+  studShapes: ReadonlySet<number>,
+  placedView: (owner: number) => PlacedModelView | null,
+): ReadonlyArray<HoverMateCount> {
+  const views = Array.from({ length: report.count }, (_, k) => {
+    const partner = report.partner[k] ?? NO_PARTNER;
+    return (report.shape[k] ?? NO_SHAPE) === NO_SHAPE || partner === NO_PARTNER
+      ? null
+      : placedView(partner);
+  });
+  const partnerOrder = (a: number, b: number): number => {
+    const noneA = (report.partner[a] ?? NO_PARTNER) === NO_PARTNER;
+    const noneB = (report.partner[b] ?? NO_PARTNER) === NO_PARTNER;
+    if (noneA !== noneB) return noneA ? -1 : 1;
+    const viewA = views[a] ?? null;
+    const viewB = views[b] ?? null;
+    if (!viewA || !viewB) return (viewA ? 1 : 0) - (viewB ? 1 : 0);
+    const keyA = [viewA.pose.yPlates, viewA.pose.x, viewA.pose.z, viewA.pose.rot];
+    const keyB = [viewB.pose.yPlates, viewB.pose.x, viewB.pose.z, viewB.pose.rot];
+    for (let i = 0; i < keyA.length; i++) {
+      if (keyA[i] !== keyB[i]) return (keyA[i] ?? 0) - (keyB[i] ?? 0);
+    }
+    return viewA.item === viewB.item ? 0 : viewA.item < viewB.item ? -1 : 1;
+  };
+  const shapeOrder = (a: number, b: number): number => {
+    if (a === NO_SHAPE || b === NO_SHAPE) return a === b ? 0 : a === NO_SHAPE ? -1 : 1;
+    return shapes.compare(a, b);
+  };
+  const rows = Array.from({ length: report.count }, (_, k) => k).toSorted(
+    (a, b) =>
+      (report.family[a] ?? 0) - (report.family[b] ?? 0) ||
+      (report.connector[a] ?? 0) - (report.connector[b] ?? 0) ||
+      partnerOrder(a, b) ||
+      (report.partnerInstance[a] ?? 0) - (report.partnerInstance[b] ?? 0) ||
+      shapeOrder(report.partnerShape[a] ?? NO_SHAPE, report.partnerShape[b] ?? NO_SHAPE) ||
+      (report.partnerGender[a] ?? 0) - (report.partnerGender[b] ?? 0),
+  );
+  const labels = new Map<number, number>();
+  for (const k of rows) {
+    const joint = report.joint[k] ?? 0;
+    if (!labels.has(joint)) labels.set(joint, labels.size);
+  }
+  const tallies = new Map<
+    number,
+    {
+      kind: HoverMateCount["kind"];
+      partnerKinds: Map<number, HoverMateCount["kind"]>;
+      connectors: number;
+      joints: Set<number>;
+      partners: Map<number, PlacedModelView>;
+      inferred: number;
+      unverified: number;
+    }
+  >();
+  for (const k of rows) {
+    const shape = report.shape[k] ?? NO_SHAPE;
+    if (shape === NO_SHAPE) continue;
+    const gender = report.gender[k] ?? 0;
+    const tally = tallies.get(shape * 2 + gender) ?? {
+      kind: connectorKind(shapes, shape, gender, studShapes),
+      partnerKinds: new Map(),
+      connectors: 0,
+      joints: new Set<number>(),
+      partners: new Map(),
+      inferred: 0,
+      unverified: 0,
+    };
+    tallies.set(shape * 2 + gender, tally);
+    tally.connectors++;
+    tally.joints.add(labels.get(report.joint[k] ?? 0) ?? 0);
+    const partnerShape = report.partnerShape[k] ?? NO_SHAPE;
+    const partnerGender = report.partnerGender[k] ?? 0;
+    if (partnerShape !== NO_SHAPE && !tally.partnerKinds.has(partnerShape * 2 + partnerGender)) {
+      tally.partnerKinds.set(
+        partnerShape * 2 + partnerGender,
+        connectorKind(shapes, partnerShape, partnerGender, studShapes),
+      );
+    }
+    const view = views[k] ?? null;
+    if (view) tally.partners.set(report.partner[k] ?? NO_PARTNER, view);
+    if (((report.sourceMask[k] ?? 0) & SOURCE_INFERRED) !== 0) tally.inferred++;
+    if (report.status[k] === STATUS_UNVERIFIED) tally.unverified++;
+  }
+  return [...tallies.values()].map((tally) => ({
+    kind: tally.kind,
+    partnerKinds: [...tally.partnerKinds.values()],
+    connectors: tally.connectors,
+    joints: tally.joints.size,
+    jointIds: tally.joints,
+    partners: [...tally.partners.values()],
+    inferred: tally.inferred,
+    unverified: tally.unverified,
+  }));
+}
+
+function permutation(count: number, pick: (below: number) => number): number[] {
+  const order = Array.from({ length: count }, (_, k) => k);
+  for (let k = count - 1; k > 0; k--) {
+    const j = pick(k + 1);
+    const swapped = order[j] ?? 0;
+    order[j] = order[k] ?? 0;
+    order[k] = swapped;
+  }
+  return order;
+}
+
+const CANONICAL_SEED = 20261125;
+
+function insertedInOrder(f: Fixture): CanonicalHistory {
+  const history = new CanonicalHistory(canonicalRecipe(f, CANONICAL_SEED));
+  const identity = Array.from({ length: history.recipe.placed.length }, (_, k) => k);
+  history.insert(identity, (position) => history.recipe.placed[position]?.id ?? 0);
+  return history;
+}
+
+function canonicalHistories(): ReadonlyArray<CanonicalHistory> {
+  const pick = seeded(CANONICAL_SEED * 31);
+  const inOrder = insertedInOrder(fixture());
+  const count = inOrder.recipe.placed.length;
+  const identity = Array.from({ length: count }, (_, k) => k);
+  const permuted = new CanonicalHistory(canonicalRecipe(fixture(), CANONICAL_SEED));
+  permuted.insert(permutation(count, pick), (position) => 100_000 + position);
+  const edited = insertedInOrder(fixture());
+  let fresh = 200_000;
+  for (let cycle = 0; cycle < REMOVE_CYCLES; cycle++) {
+    const owners = [...edited.live.listed.keys()];
+    const owner = owners[pick(owners.length)];
+    const listed = owner === undefined ? undefined : edited.live.listed.get(owner);
+    if (owner === undefined || !listed) continue;
+    edited.live.search.remove(owner);
+    edited.live.listed.delete(owner);
+    edited.live.place(fresh++, listed.piece, listed.pose);
+  }
+  for (let carry = 0; carry < CANONICAL_CARRIES; carry++) {
+    const owners = [...edited.live.listed.keys()];
+    const held = new Set(
+      Array.from({ length: CANONICAL_CARRY_SIZE }, () => owners[pick(owners.length)] ?? 0),
+    );
+    edited.live.search.withdrawn(held, () => {
+      for (let k = 0; k < CANONICAL_CARRY_SIZE; k++) {
+        const probe = edited.recipe.probes[pick(edited.recipe.probes.length)];
+        if (probe) edited.evaluate(probe);
+      }
+    });
+  }
+  for (let k = 0; k < WARM_UPS; k++) {
+    const probe = edited.recipe.probes[pick(edited.recipe.probes.length)];
+    if (probe) edited.evaluate(probe);
+  }
+  const reinterned = new CanonicalHistory(
+    canonicalRecipe(fixture(internInAnotherOrder), CANONICAL_SEED),
+  );
+  reinterned.insert(identity.toReversed(), (position) => 300_000 + position);
+  return [inOrder, permuted, edited, reinterned];
+}
+
+describe("mateCounts' canonical join order", () => {
+  it("lists the same joins in the same order for the same world however it was reached: inserted in another order under new ids, edited by removals, re-adds under new ids, carries and earlier hovers, or rebuilt with shapes interned and models first turned in another order", () => {
+    const histories = canonicalHistories();
+    const [inOrder, permuted, edited, reinterned] = histories;
+    if (!inOrder || !permuted || !edited || !reinterned) throw new Error("four histories expected");
+    const differences: string[] = [];
+    inOrder.recipe.probes.forEach((probe, p) => {
+      const expected = inOrder.hover(inOrder.evaluate(probe));
+      histories.forEach((history, h) => {
+        const other = history.recipe.probes[p];
+        if (other && history.hover(history.evaluate(other)) !== expected)
+          differences.push(`${probe.name} #${p} in history ${h}`);
+      });
+    });
+    const witnessed = (name: string, a: CanonicalHistory, b: CanonicalHistory): boolean => {
+      const p = inOrder.recipe.probes.findIndex((probe) => probe.name === name);
+      const left = a.recipe.probes[p];
+      const right = b.recipe.probes[p];
+      return (
+        left !== undefined &&
+        right !== undefined &&
+        a.raw(a.evaluate(left)) !== b.raw(b.evaluate(right))
+      );
+    };
+    let gatherWitness = false;
+    const unrelated = inOrder.recipe.probes[0];
+    inOrder.recipe.walks.forEach((walk) => {
+      walk.forEach((step, s) => {
+        const before = walk[s - 1];
+        if (!before || !unrelated) return;
+        inOrder.evaluate(before);
+        const warm = inOrder.evaluate(step);
+        const warmRaw = inOrder.raw(warm);
+        const warmHover = inOrder.hover(warm);
+        inOrder.evaluate(unrelated);
+        const cold = inOrder.evaluate(step);
+        if (inOrder.raw(cold) !== warmRaw) gatherWitness = true;
+        if (inOrder.hover(cold) !== warmHover) differences.push(`${step.name} warm against cold`);
+      });
+    });
+    const instancesProbe = inOrder.recipe.probes.findIndex((probe) =>
+      probe.name.startsWith("long and short pin"),
+    );
+    const secondInstanceFirst = histories.some((history) => {
+      const probe = history.recipe.probes[instancesProbe];
+      if (!probe) return false;
+      const report = history.evaluate(probe);
+      for (let k = 0; k < report.count; k++) {
+        if (report.connector[k] === 0) return report.partnerInstance[k] === 1;
+      }
+      return false;
+    });
+    expect({
+      differences,
+      gatherCache: gatherWitness,
+      chainRecency:
+        witnessed("pin into two bored items at one pose", inOrder, edited) ||
+        witnessed("pin into two bored items at one pose", inOrder, permuted),
+      classIds: witnessed("stud under two receptor classes", inOrder, reinterned),
+      trackHolders: witnessed("track end on two holders", inOrder, reinterned),
+      secondInstanceFirst,
+      shapeIdsDiffer: inOrder.recipe.f.stud !== reinterned.recipe.f.stud,
+    }).toEqual({
+      differences: [],
+      gatherCache: true,
+      chainRecency: true,
+      classIds: true,
+      trackHolders: true,
+      secondInstanceFirst: true,
+      shapeIdsDiffer: true,
+    });
+  }, 120_000);
+
+  it("orders every hover's tallies, partners, partner kinds and joint labels as the specification does from all of its rows, changing only their order", () => {
+    const inOrder = insertedInOrder(fixture());
+    const mismatches: string[] = [];
+    const sizes = inOrder.recipe.probes.map((probe) => {
+      const report = inOrder.evaluate(probe);
+      if (inOrder.hover(report) !== inOrder.expected(report)) mismatches.push(probe.name);
+      return report.count;
+    });
+    expect({
+      mismatches,
+      spansPowersOfTwo: [3, 17, 65, 257].every((size) => sizes.some((count) => count >= size)),
+    }).toEqual({ mismatches: [], spansPowersOfTwo: true });
+  }, 120_000);
+
+  it("lists the same joins in the same order on official 3811s, 3001s and 3794b jumpers and custom models built from their tables, for the same world inserted in another order under new ids or edited by removals and re-adds under new ids", async () => {
+    const pick = seeded(CANONICAL_SEED * 37);
+    const histories = await Promise.all([officialParts(), officialParts(), officialParts()]);
+    const [inOrder, permuted, edited] = histories;
+    if (!inOrder || !permuted || !edited) throw new Error("three histories expected");
+    const placed = histories.map((parts) => officialWorld(parts));
+    const permutedOwners = placed[1] ?? [];
+    const order = permutation(permutedOwners.length, pick);
+    const reinserted = reinsertedAs(
+      permuted,
+      order.map((k) => permutedOwners[k] ?? 0),
+      100_000,
+    );
+    const permutedAt = Array.from({ length: order.length }, () => 0);
+    order.forEach((slot, position) => {
+      permutedAt[slot] = reinserted[position] ?? 0;
+    });
+    const editedOwners = [...(placed[2] ?? [])];
+    for (let cycle = 0; cycle < REMOVE_CYCLES; cycle++) {
+      const k = pick(editedOwners.length);
+      editedOwners[k] = reinsertedAs(edited, [editedOwners[k] ?? 0], 200_000 + cycle)[0] ?? 0;
+    }
+    const owners = [placed[0] ?? [], permutedAt, editedOwners];
+    const report = new MateReport();
+    const hovers = histories.map((parts, h) =>
+      (owners[h] ?? []).map((owner) => {
+        const listed = parts.live.listed.get(owner);
+        if (!listed) return "unlisted";
+        parts.live.search.evaluate(listed.piece.connectors, listed.pose, report);
+        return talliesJson(
+          mateCounts(report, parts.shapes, new Set(), (partner) => {
+            const other = parts.live.listed.get(partner);
+            if (!other) return null;
+            const item = officialName(parts, other.piece);
+            return { item, label: item, pose: other.pose };
+          }),
+        );
+      }),
+    );
+    const customIndices = histories.map((parts) =>
+      [parts.sideStudPair, parts.jumperOnBrick].map((piece) => [
+        [...piece.connectors.origin],
+        [...piece.connectors.axis],
+        [...piece.connectors.gender],
+      ]),
+    );
+    expect({
+      mated: (hovers[0] ?? []).filter((line) => line !== "[]").length > 0,
+      permuted: hovers[1],
+      edited: hovers[2],
+      customIndices: customIndices.slice(1),
+    }).toEqual({
+      mated: true,
+      permuted: hovers[0],
+      edited: hovers[0],
+      customIndices: [customIndices[0], customIndices[0]],
+    });
+  }, 120_000);
+
+  it("orders generated reports of every size from 1 to 300, rows in any order and up to every row on one connector, as the specification does", () => {
+    const f = fixture();
+    const pick = seeded(CANONICAL_SEED * 41);
+    const shapes = [
+      f.stud,
+      f.receptor(4),
+      f.receptor(BRICK_LDU - 4),
+      f.boreEnd,
+      f.pinEnd(FIELD_PIN),
+    ];
+    const poses = Array.from({ length: GENERATED_OWNERS }, () => ({
+      x: pick(4) * STUD_LDU,
+      z: pick(4) * STUD_LDU,
+      yPlates: pick(3),
+      rot: pick(4),
+    }));
+    const view = (owner: number): PlacedModelView => ({
+      item: `item ${owner % 3}`,
+      label: `item ${owner % 3}`,
+      pose: poses[owner] ?? ORIGIN,
+    });
+    const studShapes = new Set([f.stud]);
+    const engagement = new Float64Array(6);
+    const report = new MateReport();
+    const mismatches: number[] = [];
+    for (let size = 1; size <= GENERATED_ROWS; size++) {
+      report.clear();
+      for (let k = 0; k < size; k++) {
+        const family = pick(3);
+        const partner = pick(4) === 0 ? NO_PARTNER : pick(GENERATED_OWNERS);
+        const shaped = family !== 2;
+        engagement[0] = pick(3);
+        engagement[1] = pick(3) * SIXTEENTHS_PER_LDU;
+        engagement[2] = pick(3) * SIXTEENTHS_PER_LDU;
+        engagement[3] = pick(4);
+        engagement[4] = pick(4) + 4;
+        engagement[5] = 6;
+        report.push(
+          pick(1 + (size % GENERATED_CONNECTORS)),
+          shaped ? (shapes[pick(shapes.length)] ?? f.stud) : NO_SHAPE,
+          pick(2) === 0 ? GENDER_MALE : GENDER_FEMALE,
+          shaped ? (shapes[pick(shapes.length)] ?? f.stud) : NO_SHAPE,
+          pick(2) === 0 ? GENDER_MALE : GENDER_FEMALE,
+          pick(4),
+          pick(3),
+          partner,
+          pick(3),
+          partner === NO_PARTNER ? -1 : pick(3),
+          pick(2) === 0 ? null : engagement,
+        );
+        report.assignFamily(k, family);
+      }
+      const shown = talliesJson(mateCounts(report, f.shapes, studShapes, view));
+      if (shown !== talliesJson(specifiedMateCounts(report, f.shapes, studShapes, view))) {
+        mismatches.push(size);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
 });

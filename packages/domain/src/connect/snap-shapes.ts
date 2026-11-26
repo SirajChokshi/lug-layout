@@ -128,6 +128,26 @@ export class SnapShapes {
     return true;
   }
 
+  compare(a: number, b: number): number {
+    if (a === b) return 0;
+    const count = this.sectionCount(a);
+    const byHead =
+      this.caps(a) - this.caps(b) ||
+      (this.slideOf[a] ?? 0) - (this.slideOf[b] ?? 0) ||
+      count - this.sectionCount(b);
+    if (byHead !== 0) return byHead;
+    const firstA = this.firstSection(a);
+    const firstB = this.firstSection(b);
+    for (let s = 0; s < count; s++) {
+      const bySection =
+        (this.codeOf[firstA + s] ?? 0) - (this.codeOf[firstB + s] ?? 0) ||
+        order(this.sizeOf[firstA + s] ?? 0, this.sizeOf[firstB + s] ?? 0) ||
+        order(this.spanOf[firstA + s] ?? 0, this.spanOf[firstB + s] ?? 0);
+      if (bySection !== 0) return bySection;
+    }
+    return order(this.groupName(a), this.groupName(b));
+  }
+
   groupName(shape: number): string {
     return this.groupNames[this.group(shape)] ?? NO_GROUP;
   }
@@ -279,6 +299,10 @@ function shapeKey(
     parts.push(`${codes[s]}:${sizes[s] ?? 0}:${lengths[s] ?? 0}`);
   }
   return parts.join("|");
+}
+
+function order<T extends number | string>(a: T, b: T): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function copied<T extends Uint8Array | Int32Array | Float64Array>(from: T, to: T): T {
