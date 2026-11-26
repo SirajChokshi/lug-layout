@@ -13,8 +13,4 @@ export {
   SIM_PROTOCOL,
   type BakeHelperHandoff,
 } from "./protocols.ts";
-export {
-  LinkProgressBroadcast,
-  openLinkProgressBroadcast,
-  type LinkProgressShared,
-} from "./link-progress-broadcast.ts";
+export { openLinkProgressBroadcast } from "./link-progress-broadcast.ts";

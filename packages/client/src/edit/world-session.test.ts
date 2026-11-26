@@ -1,3 +1,4 @@
+import { LINK_PROGRESS_SHARE, type ILinkProgressShare } from "@brr/catalog";
 import { EditHistory, World, addShards, type AppliedEdit, type PlacementTarget } from "@brr/domain";
 import {
   SCENE_BACKEND,
@@ -28,6 +29,8 @@ import { Container } from "inversify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR_CAMERA, WORLD_SESSION } from "../tokens.ts";
+
+const silentPeers: ILinkProgressShare = { share: () => undefined, listen: () => undefined };
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
@@ -264,6 +267,7 @@ class ViewRecordingRepository extends FailingSaveRepository {
 async function sessionWithFailingSaves() {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
   container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
   const repository = new FailingSaveRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
@@ -328,6 +332,7 @@ describe("camera saving", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     const container = new Container();
     container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+    container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
     container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
     const repository = new ViewRecordingRepository();
     container.rebind(WORLD_REPOSITORY).toConstantValue(repository);

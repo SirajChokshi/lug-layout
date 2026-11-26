@@ -145,7 +145,7 @@ function connectorIndexPaths(
   };
 }
 
-export const DEFAULT_LINK_SILENCE_LIMIT_MS = 45_000;
+export const DEFAULT_LINK_SILENCE_LIMIT_MS = 50_000;
 
 const utf8 = new TextDecoder();
 

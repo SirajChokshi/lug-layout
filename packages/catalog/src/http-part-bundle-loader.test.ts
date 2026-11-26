@@ -229,18 +229,18 @@ const encoder = new TextEncoder();
 
 class Peers implements ILinkProgressShare {
   shared = 0;
-  private listener: () => void = () => undefined;
+  private readonly listeners: Array<() => void> = [];
 
   share(): void {
     this.shared += 1;
   }
 
   listen(listener: () => void): void {
-    this.listener = listener;
+    this.listeners.push(listener);
   }
 
   deliverShare(): void {
-    this.listener();
+    for (const listener of this.listeners) listener();
   }
 }
 
@@ -293,7 +293,7 @@ function pacedBody(chunks: ReadonlyArray<string>, everyMs: number): ReadableStre
   });
 }
 
-it("fails a request that gets no answer for 45 s with an error naming the file, and not before", async () => {
+it("fails a request that gets no answer for 50 s with an error naming the file, and not before", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   vi.stubGlobal("fetch", (_url: string, init: RequestInit) => hangs(init));
@@ -309,12 +309,12 @@ it("fails a request that gets no answer for 45 s with an error naming the file, 
   await expect(loading).rejects.toMatchObject({
     url: `${BUCKET}${POINTER}`,
     silenceLimitMs: SILENCE_LIMIT_MS,
-    message: `GET ${BUCKET}${POINTER} sent nothing for 45 s`,
+    message: `GET ${BUCKET}${POINTER} sent nothing for 50 s`,
   });
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("fails a response that goes silent partway through its body 45 s after the last chunk", async () => {
+it("fails a response that goes silent partway through its body 50 s after the last chunk", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
@@ -339,12 +339,12 @@ it("fails a response that goes silent partway through its body 45 s after the la
   await expect(loading).rejects.toMatchObject({
     url: `${BUCKET}${POINTER}`,
     silenceLimitMs: SILENCE_LIMIT_MS,
-    message: `GET ${BUCKET}${POINTER} sent nothing for 45 s`,
+    message: `GET ${BUCKET}${POINTER} sent nothing for 50 s`,
   });
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("keeps a response that sends something every 44.999 s, headers included, however long it takes in all", async () => {
+it("keeps a response that sends something every 49.999 s, headers included, however long it takes in all", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   const chunks = ["slow ", "but ", "steady ", "bytes"];
@@ -396,7 +396,7 @@ it("keeps a request queued behind another response for as long as that response 
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("fails a response the server hangs while other responses keep arriving, once nothing has arrived for 45 s", async () => {
+it("fails a response the server hangs while other responses keep arriving, once nothing has arrived for 50 s", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   const flowing = ["a", "b", "c", "d", "e"];
@@ -421,7 +421,7 @@ it("fails a response the server hangs while other responses keep arriving, once 
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("fails every request still waiting once nothing has arrived from the server for 45 s", async () => {
+it("fails every request still waiting once nothing has arrived from the server for 50 s", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   const lastByteMs = 5_000;
@@ -452,7 +452,7 @@ it("fails every request still waiting once nothing has arrived from the server f
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("keeps a request waiting while a peer shares progress, and fails it 45 s after the last share", async () => {
+it("keeps a request waiting while a peer shares progress, and fails it 50 s after the last share", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network, peers } = await networkFetcher();
   vi.stubGlobal("fetch", (_url: string, init: RequestInit) => hangs(init));

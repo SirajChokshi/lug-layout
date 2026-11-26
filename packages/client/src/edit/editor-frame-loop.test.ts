@@ -1,3 +1,4 @@
+import { LINK_PROGRESS_SHARE, type ILinkProgressShare } from "@brr/catalog";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -12,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR_FRAME_LOOP } from "../tokens.ts";
 import type { FrameLoopView, FrameTimes, IEditorFrameLoop } from "./editor-frame-loop.ts";
+
+const silentPeers: ILinkProgressShare = { share: () => undefined, listen: () => undefined };
 
 const DRAW_CALLS = 7;
 const RENDER_MS = 2;
@@ -109,6 +112,7 @@ function preparedLoop() {
   });
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
   const backend = new RecordingBackend();
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const loop = container.get(EDITOR_FRAME_LOOP);

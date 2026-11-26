@@ -82,18 +82,18 @@ const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () =
 
 class Peers implements ILinkProgressShare {
   shared = 0;
-  private listener: () => void = () => undefined;
+  private readonly listeners: Array<() => void> = [];
 
   share(): void {
     this.shared += 1;
   }
 
   listen(listener: () => void): void {
-    this.listener = listener;
+    this.listeners.push(listener);
   }
 
   deliverShare(): void {
-    this.listener();
+    for (const listener of this.listeners) listener();
   }
 }
 
