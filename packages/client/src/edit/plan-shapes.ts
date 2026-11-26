@@ -8,6 +8,7 @@ const NO_CELL = -1;
 const NO_INSTANCES: ReadonlySet<number> = new Set();
 
 export interface ShapeSource extends PlaceableColumns {
+  readonly id: string;
   readonly cells: PlaceableColumns["cells"] & Pick<PlaceableCells, "footing">;
 }
 
@@ -23,8 +24,6 @@ interface CachedShapes {
   readonly without: ReadonlySet<number>;
   readonly byTurn: Array<PlanShape | null | undefined>;
 }
-
-const cache = new WeakMap<ShapeSource, CachedShapes>();
 
 function gridOf(volumes: CellVolumes): CellGrid {
   let x0 = Number.POSITIVE_INFINITY;
@@ -140,24 +139,28 @@ function buildShape(
   };
 }
 
-export function planShapeOf(
-  source: ShapeSource,
-  rot: number,
-  without: ReadonlySet<number> = NO_INSTANCES,
-): PlanShape | null {
-  if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
-  let cached = cache.get(source);
-  if (!cached || cached.without !== without) {
-    cached = {
-      volumes: FrozenVolumes.ofPlaceable(source),
-      without,
-      byTurn: Array.from<PlanShape | null | undefined>({ length: QUARTER_TURNS }),
-    };
-    cache.set(source, cached);
+export class PlanShapes {
+  private readonly byPlaceable = new Map<string, CachedShapes>();
+
+  of(
+    source: ShapeSource,
+    rot: number,
+    without: ReadonlySet<number> = NO_INSTANCES,
+  ): PlanShape | null {
+    if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+    let cached = this.byPlaceable.get(source.id);
+    if (!cached || cached.without !== without) {
+      cached = {
+        volumes: FrozenVolumes.ofPlaceable(source),
+        without,
+        byTurn: Array.from<PlanShape | null | undefined>({ length: QUARTER_TURNS }),
+      };
+      this.byPlaceable.set(source.id, cached);
+    }
+    const known = cached.byTurn[rot];
+    if (known !== undefined) return known;
+    const shape = buildShape(source, cached.volumes, without, rot);
+    cached.byTurn[rot] = shape;
+    return shape;
   }
-  const known = cached.byTurn[rot];
-  if (known !== undefined) return known;
-  const shape = buildShape(source, cached.volumes, without, rot);
-  cached.byTurn[rot] = shape;
-  return shape;
 }

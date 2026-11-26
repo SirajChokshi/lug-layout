@@ -131,3 +131,77 @@ it("rejects, and keeps nothing, when a part's record can't be read, so the next 
   expect(afterFailure).toBeNull();
   expect(retried.tables[0]?.count).toBe(2);
 });
+
+const NARROW = "ldraw:narrow";
+const WIDE = "ldraw:wide";
+const SIZED = [NARROW, WIDE];
+
+function sizedRecord(part: string, size: number): PartConnectorRecord {
+  const file = record(part, 1);
+  return {
+    kind: "record",
+    connectors: partConnectors([{ ...file, faces: { ...file.faces, sectionSize: [size, size] } }]),
+  };
+}
+
+const SIZED_RECORDS = [sizedRecord(NARROW, 6), sizedRecord(WIDE, 8)];
+
+function heldRecords() {
+  const held = new Map<number, () => void>();
+  return {
+    held,
+    source: {
+      parts: () => SIZED.map((id) => ({ id })),
+      partConnectorRecord: (_placeableId: string, partIndex: number) =>
+        new Promise<PartConnectorRecord>((resolve) => {
+          held.set(partIndex, () =>
+            resolve(SIZED_RECORDS[partIndex] ?? { kind: "missing", reason: "no record" }),
+          );
+        }),
+    },
+  };
+}
+
+async function shapesWhenReleased(
+  order: ReadonlyArray<number>,
+  load: (tables: ConnectorTables) => Promise<ReadonlyArray<Uint16Array | undefined>>,
+): Promise<ReadonlyArray<ReadonlyArray<number>>> {
+  const { held, source } = heldRecords();
+  const tables = new ConnectorTables(source, new SnapShapes());
+  const loading = load(tables);
+  await expect.poll(() => held.size).toBe(SIZED.length);
+  for (const partIndex of order) held.get(partIndex)?.();
+  return (await loading).map((shape) => [...(shape ?? [])]);
+}
+
+async function onePlaceable(tables: ConnectorTables) {
+  const loaded = await tables.load(placeable("test:both", [0, 1]));
+  return loaded.tables.map((table) => table?.shape);
+}
+
+async function twoPlaceables(tables: ConnectorTables) {
+  const [narrow, wide] = await Promise.all([
+    tables.load(placeable("test:narrow", [0])),
+    tables.load(placeable("test:wide", [1])),
+  ]);
+  return [narrow.tables[0]?.shape, wide.tables[1]?.shape];
+}
+
+const IN_REQUEST_ORDER = [
+  [0, 1],
+  [2, 3],
+];
+
+it("gives a placeable's parts shape ids in part-index order whatever order their records arrive in", async () => {
+  const inOrder = await shapesWhenReleased([0, 1], onePlaceable);
+  const reversed = await shapesWhenReleased([1, 0], onePlaceable);
+
+  expect({ inOrder, reversed }).toEqual({ inOrder: IN_REQUEST_ORDER, reversed: IN_REQUEST_ORDER });
+});
+
+it("gives two placeables' parts shape ids in the order the placeables were asked for, whatever order their records arrive in", async () => {
+  const inOrder = await shapesWhenReleased([0, 1], twoPlaceables);
+  const reversed = await shapesWhenReleased([1, 0], twoPlaceables);
+
+  expect({ inOrder, reversed }).toEqual({ inOrder: IN_REQUEST_ORDER, reversed: IN_REQUEST_ORDER });
+});

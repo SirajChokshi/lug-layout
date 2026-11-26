@@ -1375,12 +1375,15 @@ export class Editor implements IEditor, IEditedWorld {
   private labelsHeights: ReadonlyArray<LabelView> = NO_LABELS;
   private labelsPreview: ReadonlyArray<LabelView> = NO_LABELS;
   private lastLabels: ReadonlyArray<LabelView> = NO_LABELS;
-  private readonly searchIds = new Map<PlacedModel, number>();
-  private readonly awaitingIds = new Map<PlacedModel, number>();
+  private readonly searchIds = new Map<number, number>();
+  private readonly awaitingIds = new Map<number, number>();
   private readonly searchModels = new Map<number, PlacedModel>();
-  private readonly connected = new Map<Placeable, Connected>();
-  private readonly studShapes = new Set<number>();
-  private readonly frozenVolumes = new Map<Placeable, FrozenVolumes>();
+  private readonly connected = new Map<string, Connected>();
+  private studShapeFlags = new Uint8Array(0);
+  private readonly studShapes: Pick<ReadonlySet<number>, "has"> = {
+    has: (shape) => this.studShapeFlags[shape] === 1,
+  };
+  private readonly frozenVolumes = new Map<string, FrozenVolumes>();
   private replayReachLdu: number | null = null;
   private waitingFill: {
     readonly placeable: Placeable;
@@ -1492,7 +1495,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.placed,
       search,
       {
-        idOf: (model) => this.searchIds.get(model),
+        idOf: (model) => this.searchIds.get(model.id),
         modelAt: (id) => this.searchModels.get(id),
       },
       catalog,
@@ -1827,8 +1830,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private studsLanded(pending: Placeable, checked: Placeable): void {
-    const connected = this.connected.get(pending);
-    if (connected) this.connected.set(checked, connected);
+    this.flushQueuedFacts();
     const view = this.placed.replacePlaceable(pending, checked);
     const gesture = this.gesture;
     if (
@@ -1840,20 +1842,23 @@ export class Editor implements IEditor, IEditedWorld {
     }
     let swapped = false;
     view.removed.forEach((model, index) => {
-      this.unsearchable(model);
       const replaced = view.added[index];
       if (!replaced) return;
-      this.searchable(replaced);
+      const id = this.searchIds.get(replaced.id) ?? this.awaitingIds.get(replaced.id);
+      if (id !== undefined) this.searchModels.set(id, replaced);
       if (this.selection.swap(model, replaced)) swapped = true;
     });
+    const connected = this.connected.get(checked.id);
+    if (connected) this.noteStudShapes(checked, connected.model);
     if (swapped && !this.gesture) this.showSelection();
+    this.facts.noteReplaced(view.removed, view.added);
     this.refreshRoads();
     const carriedTrackChanged = this.syncModelTrack();
     this.refreshTrains();
     this.placeGhost();
     const delta = this.planDelta;
     delta.reset();
-    this.appendModelView(delta, view);
+    writeModelUpdates(delta, view.added, view.added.length);
     if (carriedTrackChanged) this.trackWorld.writeIssues(delta);
     this.plans.apply(delta);
     this.trackWorld.invalidateObstacles();
@@ -3623,16 +3628,19 @@ export class Editor implements IEditor, IEditedWorld {
   private queueFactFlush(): void {
     if (this.factsQueued) return;
     this.factsQueued = true;
-    queueMicrotask(() => {
-      this.factsQueued = false;
-      const updated = this.facts.flush(this.factUpdates);
-      if (updated > 0) {
-        this.planDelta.reset();
-        writeModelUpdates(this.planDelta, this.factUpdates, updated);
-        this.plans.apply(this.planDelta);
-      }
-      this.pushUnsupported();
-    });
+    queueMicrotask(() => this.flushQueuedFacts());
+  }
+
+  private flushQueuedFacts(): void {
+    if (!this.factsQueued) return;
+    this.factsQueued = false;
+    const updated = this.facts.flush(this.factUpdates);
+    if (updated > 0) {
+      this.planDelta.reset();
+      writeModelUpdates(this.planDelta, this.factUpdates, updated);
+      this.plans.apply(this.planDelta);
+    }
+    this.pushUnsupported();
   }
 
   private planEdited(change: PlanChange): void {
@@ -4883,9 +4891,11 @@ export class Editor implements IEditor, IEditedWorld {
       while (parent[at] !== at) at = parent[at] ?? at;
       return at;
     };
-    const mates = chosen.map((model) => (this.searchIds.has(model) ? this.mateCountOf(model) : 0));
+    const mates = chosen.map((model) =>
+      this.searchIds.has(model.id) ? this.mateCountOf(model) : 0,
+    );
     chosen.forEach((carrier, j) => {
-      const id = this.searchIds.get(carrier);
+      const id = this.searchIds.get(carrier.id);
       if (id === undefined) return;
       const touching = chosen.flatMap((model, i) =>
         i !== j && (mates[i] ?? 0) > 0 && boxesTouch(model.box, carrier.box) ? [i] : [],
@@ -4998,7 +5008,7 @@ export class Editor implements IEditor, IEditedWorld {
   private searchIdsOf(models: ReadonlySet<PlacedModel>): ReadonlySet<number> {
     const ids = new Set<number>();
     for (const model of models) {
-      const id = this.searchIds.get(model) ?? this.awaitingIds.get(model);
+      const id = this.searchIds.get(model.id) ?? this.awaitingIds.get(model.id);
       if (id !== undefined) ids.add(id);
     }
     return ids;
@@ -5238,7 +5248,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private carriersOf(model: PlacedModel): ReadonlyArray<number> {
-    const id = this.searchIds.get(model);
+    const id = this.searchIds.get(model.id);
     if (id === undefined || !this.connectorTables.loaded(model.placeable)) return [];
     return this.search.restingOn(this.connectedOf(model.placeable).volumes, poseOf(model), id);
   }
@@ -5247,7 +5257,7 @@ export class Editor implements IEditor, IEditedWorld {
     const carriers = this.carriersOf(rider);
     return (
       chosen.find((model) => {
-        const id = this.searchIds.get(model);
+        const id = this.searchIds.get(model.id);
         return id !== undefined && carriers.includes(id);
       }) ?? null
     );
@@ -5538,12 +5548,22 @@ export class Editor implements IEditor, IEditedWorld {
       const cellZ = ((model.origin[at + 2] ?? 0) / SIXTEENTHS_PER_LDU - HALF_STUD_LDU) / STUD_LDU;
       const baseLdu = (model.origin[at + 1] ?? 0) / SIXTEENTHS_PER_LDU;
       if (!Number.isInteger(cellX) || !Number.isInteger(cellZ)) continue;
-      if (seats.has(cellX, cellZ, baseLdu)) this.studShapes.add(model.shape[c] ?? NO_SHAPE);
+      if (seats.has(cellX, cellZ, baseLdu)) this.markStudShape(model.shape[c] ?? NO_SHAPE);
     }
   }
 
+  private markStudShape(shape: number): void {
+    if (shape < 0) return;
+    if (shape >= this.studShapeFlags.length) {
+      const grown = new Uint8Array(Math.max(shape + 1, this.studShapeFlags.length * 2));
+      grown.set(this.studShapeFlags);
+      this.studShapeFlags = grown;
+    }
+    this.studShapeFlags[shape] = 1;
+  }
+
   private connectedOf(placeable: Placeable): Connected {
-    let connected = this.connected.get(placeable);
+    let connected = this.connected.get(placeable.id);
     if (!connected) {
       const tables = this.connectorTables.loaded(placeable);
       if (!tables) throw new Error(`${placeable.id} has no connector tables loaded yet`);
@@ -5563,35 +5583,34 @@ export class Editor implements IEditor, IEditedWorld {
           boxes.boxes,
         ),
       };
-      this.connected.set(placeable, connected);
+      this.connected.set(placeable.id, connected);
       this.noteStudShapes(placeable, connected.model);
     }
     return connected;
   }
 
   private volumesOf(placeable: Placeable): FrozenVolumes {
-    let volumes = this.frozenVolumes.get(placeable);
+    let volumes = this.frozenVolumes.get(placeable.id);
     if (!volumes) {
       volumes = FrozenVolumes.ofPlaceable(placeable);
-      this.frozenVolumes.set(placeable, volumes);
+      this.frozenVolumes.set(placeable.id, volumes);
     }
     return volumes;
   }
 
   private searchable(model: PlacedModel): void {
-    if (this.searchIds.has(model)) return;
+    if (this.searchIds.has(model.id)) return;
     const { x, z, yPlates, rot } = model.handle;
     if (!this.connectorTables.loaded(model.placeable)) {
-      if (this.awaitingIds.has(model)) return;
+      if (this.awaitingIds.has(model.id)) return;
       const awaiting = this.nextSearchId++;
       this.search.awaitTables(awaiting, this.volumesOf(model.placeable), { x, z, yPlates, rot });
-      this.awaitingIds.set(model, awaiting);
+      this.awaitingIds.set(model.id, awaiting);
       this.searchModels.set(awaiting, model);
       this.connectorTables.load(model.placeable).then(
         () => {
-          if (!this.awaitingIds.has(model)) return;
-          for (const waiting of this.awaitingIds.keys()) {
-            if (waiting.placeable !== model.placeable) continue;
+          if (!this.awaitingIds.has(model.id)) return;
+          for (const waiting of this.waitingFor(model.placeable)) {
             this.searchable(waiting);
             this.facts.noteSearchable(waiting);
           }
@@ -5599,9 +5618,11 @@ export class Editor implements IEditor, IEditedWorld {
           this.tablesArrived();
         },
         (error: unknown) => {
-          if (!this.awaitingIds.has(model)) return;
-          for (const [waiting, id] of this.awaitingIds) {
-            if (waiting.placeable === model.placeable) this.search.tablesFailed(id);
+          if (!this.awaitingIds.has(model.id)) return;
+          for (const [, id] of this.awaitingIds) {
+            if (this.searchModels.get(id)?.placeable.id === model.placeable.id) {
+              this.search.tablesFailed(id);
+            }
           }
           this.update({
             catalogError: `${model.placeable.label}'s connector records can't be read: ${errorText(error)}`,
@@ -5611,20 +5632,29 @@ export class Editor implements IEditor, IEditedWorld {
       );
       return;
     }
-    const id = this.awaitingIds.get(model) ?? this.nextSearchId++;
-    this.awaitingIds.delete(model);
+    const id = this.awaitingIds.get(model.id) ?? this.nextSearchId++;
+    this.awaitingIds.delete(model.id);
     const { model: connectors, volumes, boxes, technic } = this.connectedOf(model.placeable);
     this.search.add(id, connectors, volumes, boxes, technic, { x, z, yPlates, rot });
-    this.searchIds.set(model, id);
+    this.searchIds.set(model.id, id);
     this.searchModels.set(id, model);
   }
 
+  private waitingFor(placeable: Placeable): ReadonlyArray<PlacedModel> {
+    const waiting: PlacedModel[] = [];
+    for (const id of this.awaitingIds.values()) {
+      const model = this.searchModels.get(id);
+      if (model?.placeable.id === placeable.id) waiting.push(model);
+    }
+    return waiting;
+  }
+
   private unsearchable(model: PlacedModel): void {
-    const id = this.searchIds.get(model) ?? this.awaitingIds.get(model);
+    const id = this.searchIds.get(model.id) ?? this.awaitingIds.get(model.id);
     if (id === undefined) return;
     this.search.remove(id);
-    this.searchIds.delete(model);
-    this.awaitingIds.delete(model);
+    this.searchIds.delete(model.id);
+    this.awaitingIds.delete(model.id);
     this.searchModels.delete(id);
   }
 

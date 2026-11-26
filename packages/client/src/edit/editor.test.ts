@@ -3828,6 +3828,27 @@ async function importChecking(editor: IEditor): Promise<string> {
   return editor.snapshot().modelImport?.item ?? "";
 }
 
+it("keeps an imported train's bake and train model through its stud check", async () => {
+  const { editor, importer, importedPlaceable, catalog } = await checkingImport(
+    new BundleDirectoryFetcher(),
+    "10205-1",
+  );
+  await importChecking(editor);
+  const pending = importedPlaceable();
+  if (!pending) throw new Error("the import was not announced");
+  const whileChecking = { bake: catalog.baked(pending), train: catalog.playModel(pending) };
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const checked = importedPlaceable();
+  if (!checked) throw new Error("the import left the catalog");
+
+  expect(checked).not.toBe(pending);
+  expect(whileChecking.train).not.toBeNull();
+  expect({ bake: catalog.baked(checked), train: catalog.playModel(checked) }).toEqual(
+    whileChecking,
+  );
+}, 120_000);
+
 it("has an import's connector tables before it is announced placeable, and keeps the same tables, never unloaded, through the studs-landed swap", async () => {
   const { editor, importer, importedPlaceable, tables } = await checkingImport();
   const seen: Array<boolean> = [];
@@ -3909,16 +3930,16 @@ async function placedOnceChecked(layout: ReadonlyArray<readonly [string, number]
   return planQueries(plans, planId);
 }
 
-it("keeps the plan equal to today's recompute when the checked studs land, with the swapped copies moved to the end as syncPlan listed them", async () => {
+it("keeps the plan equal to today's recompute when the checked studs land, with the copies listed where they were placed", async () => {
   const west = [BASEPLATE, -2_000] as const;
   const near = [IMPORTED_COPY, 0] as const;
   const middle = [BASEPLATE, 2_000] as const;
   const far = [IMPORTED_COPY, 4_000] as const;
   const east = [BASEPLATE, 6_000] as const;
   const recomputed = {
-    landed: await placedOnceChecked([west, middle, east, near, far]),
-    undone: await placedOnceChecked([west, middle, near, far]),
-    undoneTwice: await placedOnceChecked([west, middle, near]),
+    landed: await placedOnceChecked([west, near, middle, far, east]),
+    undone: await placedOnceChecked([west, near, middle, far]),
+    undoneTwice: await placedOnceChecked([west, near, middle]),
   };
   const { editor, backend, container, importer } = await checkingImport();
   const item = await importChecking(editor);
@@ -3957,29 +3978,29 @@ it("keeps the plan equal to today's recompute when the checked studs land, with 
   importer.release();
   await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
   expect(observed()).toEqual({
-    listed: [plateWest, plateMiddle, plateEast, copyNear, copyFar],
+    listed: [plateWest, copyNear, plateMiddle, copyFar, plateEast],
     queries: recomputed.landed,
   });
   editor.undo(0);
   expect(observed()).toEqual({
-    listed: [plateWest, plateMiddle, copyNear, copyFar],
+    listed: [plateWest, copyNear, plateMiddle, copyFar],
     queries: recomputed.undone,
   });
   editor.undo(0);
   expect(observed()).toEqual({
-    listed: [plateWest, plateMiddle, copyNear],
+    listed: [plateWest, copyNear, plateMiddle],
     queries: recomputed.undoneTwice,
   });
   editor.redo(0);
   expect(observed()).toEqual({
-    listed: [plateWest, plateMiddle, copyNear, copyFar],
+    listed: [plateWest, copyNear, plateMiddle, copyFar],
     queries: recomputed.undone,
   });
 }, 120_000);
 
 it("resolves clicks queued while the held item's tables load, over an import whose studs are being checked, exactly as clicks made once they have loaded, refusal included", async () => {
   const outcome = async (queued: boolean) => {
-    const gate = heldConnectivity();
+    const gate = heldPartConnectivity("44336p01");
     const { editor, backend } = await checkingImport(gate);
     const item = await importChecking(editor);
     await placer(editor, backend)(item, 0, 0);
@@ -4099,7 +4120,7 @@ it("decides assist over an import whose studs are being checked from its connect
 }, 120_000);
 
 it("keeps a click queued while the held item's tables load through another import's studs landing, then places it", async () => {
-  const gate = heldConnectivity();
+  const gate = heldPartConnectivity("3811");
   const { editor, backend, importer } = await checkingImport(gate);
   const item = await importChecking(editor);
   await placer(editor, backend)(item, 0, 0);
@@ -7595,6 +7616,29 @@ function heldConnectivity(): HeldText {
   return new HeldText(new BundleDirectoryFetcher(), (path) => path.includes("/connectivity-pack."));
 }
 
+const BUNDLE_MANIFEST = /\/manifest\.json$/u;
+
+class PerPartConnectorBundle implements IAssetFetcher {
+  private readonly files = new BundleDirectoryFetcher();
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.files.bytes(path);
+  }
+
+  async text(path: string): Promise<string> {
+    const text = await this.files.text(path);
+    if (!BUNDLE_MANIFEST.test(path)) return text;
+    const { connectorPacks: _packs, ...manifest } = JSON.parse(text);
+    return JSON.stringify(manifest);
+  }
+}
+
+function heldPartConnectivity(partId: string): HeldText {
+  return new HeldText(new PerPartConnectorBundle(), (path) =>
+    path.includes(`/connectivity-${partId}.`),
+  );
+}
+
 it("places nothing while an item's connector tables load, and places a click made meanwhile once they load", async () => {
   const gate = heldConnectivity();
   const { editor, backend } = await startEditor([], gate);
@@ -7700,7 +7744,7 @@ async function roadPlatesReadingBesideUserBaseplate() {
   const importer = new GatedModelImporter();
   importer.serve(await userBaseplateImport());
   importer.release();
-  const gate = heldConnectivity();
+  const gate = heldPartConnectivity("44336p04");
   const started = await startEditor([], gate, [], (bound) =>
     bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
   );
@@ -9647,6 +9691,94 @@ it("reports a reopened world's raised run as held by its piers as soon as it ope
   await vi.waitFor(() => expect(editor.snapshot().track?.unsupported).toBe(laid));
   expect(editor.snapshot().mode).not.toBe("track");
 }, 180_000);
+
+const MY_STREET = userRoadFile("my-street.ldr", ["1 72 0 0 0 1 0 0 0 1 0 0 0 1 69958.dat"]);
+const ROW_X = -1280;
+
+function editorOnRepository(
+  repository: MemoryRepository,
+  importer: (inThread: IModelImporter) => IModelImporter,
+) {
+  return startEditor([PLAIN_MODULE_MODEL], new BundleDirectoryFetcher(), [], (bound) => {
+    const loader = bound.get(PART_BUNDLE_LOADER);
+    const records = { read: (partId: string) => loader.readPartConnectors("standard", partId) };
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(importer(new InThreadModelImporter(loader, records)));
+    bound.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  });
+}
+
+async function openedWithStudsChecked(repository: MemoryRepository, landing: "early" | "late") {
+  let held: StudsLandLaterImporter | null = null;
+  const started = await editorOnRepository(repository, (inThread) => {
+    held = new StudsLandLaterImporter(inThread);
+    if (landing === "early") held.release();
+    return held;
+  });
+  const { editor, backend, container } = started;
+  const checking = editor.snapshot().studChecks;
+  (held as StudsLandLaterImporter | null)?.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0), { timeout: 60_000 });
+  const plans = container.get(PLAN_SERVICE);
+  const planId = plans.createPlan({
+    name: "Room",
+    roomWidthMm: 4000,
+    roomDepthMm: 4000,
+    originChunkX: -2,
+    originChunkZ: -2,
+  });
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+  await vi.waitFor(
+    () => {
+      const { farTier, meshes } = editor.snapshot();
+      expect({ farTier, settled: meshesSettled(meshes) }).toEqual({
+        farTier: "ready",
+        settled: true,
+      });
+    },
+    { timeout: 60_000 },
+  );
+  const issues = plans.issues(planId).map((issue) => issue.message);
+  const chunks = [...backend.chunks].toSorted(([a], [b]) => a - b);
+  expect(selectAt(editor, backend, 320, 500)?.item).toBe(PLAIN_MODULE);
+  editor.deleteSelection(0);
+  return {
+    checking,
+    opened: {
+      dump: editor.dump(),
+      chunks,
+      issues,
+      refusal: editor.snapshot().selectionRefusal,
+    },
+  };
+}
+
+it("opens a world that places a user's own file the same whether its studs are checked before or after it opens", async () => {
+  const repository = new MemoryRepository();
+  const saving = await editorOnRepository(repository, (inThread) => inThread);
+  const street = await importUserFile(saving.editor, "my-street.ldr", MY_STREET);
+  await loadCatalogItem(saving.catalog, PLAIN_MODULE);
+  const place = placer(saving.editor, saving.backend);
+  await place(street, ROW_X, 200);
+  await place(RECESSED_ROAD_PLATE, ROW_X, 600);
+  await place(street, ROW_X, 1000);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(street, 160, 160);
+  await place(RECESSED_ROAD_PLATE, 480, 160);
+  saving.editor.chooseItem(null);
+  const placed = posesOf(saving.editor);
+  await vi.waitFor(() => expect(saving.editor.snapshot().world?.save).toBe("saved"));
+
+  const early = await openedWithStudsChecked(repository, "early");
+  const late = await openedWithStudsChecked(repository, "late");
+
+  expect(placed.filter((pose) => !pose.endsWith(" y0"))).toHaveLength(2);
+  expect({ early: early.checking, late: late.checking }).toEqual({ early: 0, late: 1 });
+  expect(late.opened.issues.length).toBeGreaterThan(2);
+  expect(early.opened.refusal).toContain("my-street.ldr rests on it");
+  expect(late.opened).toEqual(early.opened);
+}, 240_000);
 
 function previewHeightAt(editor: IEditor): readonly [number, number] | null {
   const label = editor.snapshot().labels.find((shown) => shown.id === "height:preview");
