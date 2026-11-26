@@ -3556,12 +3556,20 @@ function officialNamingWorld(parts: NamingParts) {
     { name: "lower partner brick", piece: brick, pose: poseAt(1200, 0) },
     { name: "upper partner brick", piece: brick, pose: poseAt(1200, 0, 3) },
     { name: "partner probe brick", piece: brick, pose: poseAt(1200, 0, 1) },
+    {
+      name: "second of three items",
+      piece: { ...custom, item: "custom:b" },
+      pose: poseAt(1400, 0),
+    },
+    { name: "first of three items", piece: { ...custom, item: "custom:a" }, pose: poseAt(1400, 0) },
+    { name: "last of three items", piece: { ...custom, item: "custom:x" }, pose: poseAt(1400, 0) },
   ];
   const held = {
     turns: { name: "brick over two turns", piece: brick, pose: poseAt(200, 0, 1) },
     items: { name: "brick over two items", piece: brick, pose: poseAt(400, 0, 3) },
     stacked: { name: "brick into a stack", piece: brick, pose: poseAt(600, 0, 1) },
     multiCell: { name: "brick over two cells", piece: brick, pose: poseAt(800, 0) },
+    threeItems: { name: "brick into three items", piece: brick, pose: poseAt(1400, 0, 1) },
   };
   const firstOfGroups = [
     "jumper at turn 0",
@@ -3569,6 +3577,7 @@ function officialNamingWorld(parts: NamingParts) {
     "lower stacked brick",
     "rider west north",
     "lower partner brick",
+    "second of three items",
   ];
   return { entries, held, firstOfGroups };
 }
@@ -3619,7 +3628,14 @@ function overlapAnswer(
 const OFFICIAL_3001 = "ldraw:3001 Brick 2 x 4";
 const OFFICIAL_3794B = "ldraw:3794b Plate 1 x 2 with Groove with 1 Centre Stud";
 const OFFICIAL_3024 = "ldraw:3024 Plate 1 x 1";
-const WITNESSED_OFFICIAL = ["turns", "items", "stacked", "partner", "stranded"] as const;
+const WITNESSED_OFFICIAL = [
+  "turns",
+  "items",
+  "stacked",
+  "threeItems",
+  "partner",
+  "stranded",
+] as const;
 
 describe("PlacementSearch names models in one fixed order for a given world", () => {
   it("names the same lands-on, overlap, partner and stranded model on official 3001s and 3794b jumpers for the same world however it was reached, as the specification names it: inserted in another order under new ids, re-added under new ids after carries and earlier queries, or rebuilt with shapes interned and models first turned in another order", async () => {
@@ -3643,6 +3659,7 @@ describe("PlacementSearch names models in one fixed order for a given world", ()
         turns: history.landsOn(scene.held.turns),
         items: history.landsOn(scene.held.items),
         stacked: history.overlap(scene.held.stacked),
+        threeItems: history.overlap(scene.held.threeItems),
         multiCell: history.overlap(scene.held.multiCell),
         partner: history.partner("partner probe brick"),
         stranded: history.stranded("base brick"),
@@ -3663,6 +3680,7 @@ describe("PlacementSearch names models in one fixed order for a given world", ()
         turns: oracle.landsOn(held.turns),
         items: oracle.landsOn(held.items),
         stacked: oracle.overlap(held.stacked),
+        threeItems: oracle.overlap(held.threeItems),
         multiCell: oracle.overlap(held.multiCell),
         partner: oracle.partner("partner probe brick"),
         stranded: oracle.stranded("base brick"),
@@ -3676,6 +3694,7 @@ describe("PlacementSearch names models in one fixed order for a given world", ()
         turns: JSON.stringify(mirror.landsOn(held.turns)),
         items: JSON.stringify(mirror.landsOn(held.items)),
         stacked: mirror.overlap(held.stacked),
+        threeItems: mirror.overlap(held.threeItems),
         partner: mirror.overlap(history.entry("partner probe brick"), "partner probe brick"),
         stranded: mirror.stranded("base brick"),
       };
@@ -3688,6 +3707,7 @@ describe("PlacementSearch names models in one fixed order for a given world", ()
       turns: ["jumper at turn 0", "jumper at turn 1"],
       items: ["custom brick", "official brick"],
       stacked: overlapAnswer("lower stacked brick", [28, -1], OFFICIAL_3001, [0, 24, 8, 32]),
+      threeItems: overlapAnswer("first of three items", [68, -1], OFFICIAL_3001, [0, 24, 8, 32]),
       multiCell: overlapAnswer(
         "jumper at the first cell",
         [38, -1],
