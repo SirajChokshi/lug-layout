@@ -241,6 +241,10 @@ export class EditorPath {
     this.editor.setPlacementMode(mode);
   }
 
+  snapRoads(snap: boolean): void {
+    this.editor.setSnapRoads(snap);
+  }
+
   viewHalfWidth(ldu: number): void {
     this.backend.viewHalfWidth(ldu);
   }
@@ -1077,6 +1081,62 @@ export async function holesAgainstHolesCheck(
       samePose(step.committed, poses.flush) &&
       settledOnFirstFrame(step),
     detail: `expected ${describePose(poses.flush)} with no pin/hole joint; ${outcome(step)}; ${firstFrameNote(step)}`,
+  };
+}
+
+interface RoadSnapCompared {
+  readonly at: SweepOffset;
+  readonly roadsOff: Step;
+  readonly roadsOn: Step;
+}
+
+function roadSnapMoved({ roadsOff, roadsOn }: RoadSnapCompared): boolean {
+  return !samePose(roadsOff.hover?.pose, roadsOn.hover?.pose);
+}
+
+function keepsJoins({ roadsOff, roadsOn }: RoadSnapCompared): boolean {
+  if (stepVerdict(roadsOn) === stepVerdict(roadsOff)) return true;
+  return (
+    roadsOff.hover?.accepted === true &&
+    roadsOn.hover?.accepted === true &&
+    jointsOf(roadsOn) >= jointsOf(roadsOff)
+  );
+}
+
+export async function roadSnapCheck(
+  path: EditorPath,
+  seam: Seam,
+  heldItem: string,
+  placedLabel: string,
+  full: boolean,
+): Promise<EditorCheck> {
+  const log = new StepLog(path, heldItem, seam);
+  const probe = await log.at("assist", AT_FLUSH, false);
+  const neighbourhood = probe.hover?.assistNeighbourhood ?? NO_NEIGHBOURHOOD;
+  const withRoadsOff: Array<Omit<RoadSnapCompared, "roadsOn">> = [];
+  for (const at of sweepOffsets(neighbourhood.cells, full)) {
+    withRoadsOff.push({ at, roadsOff: await log.at("assist", at, false) });
+  }
+  path.snapRoads(true);
+  const compared: RoadSnapCompared[] = [];
+  for (const { at, roadsOff } of withRoadsOff) {
+    compared.push({ at, roadsOff, roadsOn: await log.at("assist", at, false) });
+  }
+  path.snapRoads(false);
+  const moved = compared.filter(roadSnapMoved).length;
+  const sweep = sweepCheck(
+    "",
+    compared,
+    keepsJoins,
+    ({ at, roadsOff, roadsOn }) =>
+      `${describeOffset(at)}: road snap off ${outcome(roadsOff)}; on ${outcome(roadsOn)}`,
+    `${compared.length} offsets: road snap moved ${moved} accepted poses, each to an accepted pose with at least as many joints, and left the rest as they were`,
+  );
+  const settled = settledCheck(log.steps);
+  return {
+    label: `Road snap beside the ${placedLabel} module never moves a refused assist pose, and never moves an accepted one onto a pose the solver refuses; every hover settles on the first frame`,
+    passed: sweep.passed && settled.passed,
+    detail: `${sweep.detail}; ${settled.detail}`,
   };
 }
 
