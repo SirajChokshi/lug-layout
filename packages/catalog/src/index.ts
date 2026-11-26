@@ -1,18 +1,12 @@
 export { AssetResponseError } from "./asset-response-error.ts";
 export { AssetStalledError } from "./asset-stalled-error.ts";
 export type { ICatalogApi } from "./catalog-api-client.ts";
-export { catalogModule } from "./catalog.module.ts";
+export { bindLinkProgress, catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
 export { DEFAULT_FETCH_POOL_POLICY, type FetchPoolPolicy } from "./fetch-pool.ts";
-export { DEFAULT_ASSET_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
+export { DEFAULT_LINK_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
 export type { ILibraryPartCatalog, LibraryPartList } from "./library-part-catalog.ts";
-export {
-  LINK_PROGRESS_CHANNEL,
-  LinkProgress,
-  reportingProgress,
-  type ILinkProgress,
-  type LinkChannel,
-} from "./link-progress.ts";
+export { reportingFetch, type ILinkProgress, type ILinkShare } from "./link-progress.ts";
 export {
   ConnectorRecords,
   partConnectors,
@@ -66,7 +60,6 @@ export type {
 } from "./part-bundle.ts";
 export {
   ASSET_FETCHER,
-  ASSET_SILENCE_LIMIT_MS,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   CATALOG_API,
@@ -74,6 +67,8 @@ export {
   FETCH_POOL_POLICY,
   LIBRARY_PART_CATALOG,
   LINK_PROGRESS,
+  LINK_SHARE,
+  LINK_SILENCE_LIMIT_MS,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";

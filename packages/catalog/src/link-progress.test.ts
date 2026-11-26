@@ -1,37 +1,38 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  LINK_PROGRESS_SHARE_EVERY_MS,
+  LINK_PROGRESS_MIN_SHARE_GAP_MS,
   LinkProgress,
-  reportingProgress,
-  type LinkChannel,
+  reportingFetch,
+  type ILinkShare,
 } from "./link-progress.ts";
 
-const opened: BroadcastChannel[] = [];
-let channels = 0;
+class OtherContexts implements ILinkShare {
+  shared = 0;
+  private readonly listeners: Array<() => void> = [];
 
-function channelPair(): [BroadcastChannel, BroadcastChannel] {
-  channels += 1;
-  const name = `link-progress-test-${channels}`;
-  const pair: [BroadcastChannel, BroadcastChannel] = [
-    new BroadcastChannel(name),
-    new BroadcastChannel(name),
-  ];
-  opened.push(...pair);
-  return pair;
+  share(): void {
+    this.shared += 1;
+  }
+
+  onShared(listener: () => void): void {
+    this.listeners.push(listener);
+  }
+
+  report(): void {
+    for (const listener of this.listeners) listener();
+  }
 }
 
 afterEach(() => {
-  for (const channel of opened.splice(0)) channel.close();
   vi.useRealTimers();
 });
 
 const encoder = new TextEncoder();
 const STATUS_TEXT = "Not Found";
 
-it("counts the headers and every chunk as progress and passes the response through unchanged", async () => {
+it("counts the headers and every chunk as they arrive, and passes the response through unchanged", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const [own] = channelPair();
-  const link = new LinkProgress(own);
+  const link = new LinkProgress(new OtherContexts());
   const chunks = ["0 FILE ", "parts/", "3001.dat"];
   const headersAfterMs = 4_000;
   const chunkEveryMs = 1_000;
@@ -48,7 +49,7 @@ it("counts the headers and every chunk as progress and passes the response throu
       );
     },
   });
-  const response = reportingProgress(
+  const response = reportingFetch(
     () =>
       new Promise((answer) =>
         setTimeout(
@@ -68,13 +69,13 @@ it("counts the headers and every chunk as progress and passes the response throu
 
   await vi.advanceTimersByTimeAsync(headersAfterMs);
   const answered = await response;
-  expect(link.quietMs()).toBe(0);
+  expect(link.silenceMs()).toBe(0);
   const text = answered.text();
   for (let i = 0; i < chunks.length; i++) {
     await vi.advanceTimersByTimeAsync(chunkEveryMs / 2);
-    expect(link.quietMs()).toBe(chunkEveryMs / 2);
+    expect(link.silenceMs()).toBe(chunkEveryMs / 2);
     await vi.advanceTimersByTimeAsync(chunkEveryMs / 2);
-    expect(link.quietMs()).toBe(0);
+    expect(link.silenceMs()).toBe(0);
   }
   expect([answered.status, answered.statusText, answered.headers.get("x-mirror")]).toEqual([
     404,
@@ -84,35 +85,25 @@ it("counts the headers and every chunk as progress and passes the response throu
   await expect(text).resolves.toBe(chunks.join(""));
 });
 
-it("counts progress another context shares, and shares its own at most once a second", async () => {
+it("shares a burst of progress once per gap, and counts what another context shares", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const [own, other] = channelPair();
-  const link = new LinkProgress(own);
-  const shared: unknown[] = [];
-  const allShared = new Promise<void>((done) =>
-    other.addEventListener("message", (event: MessageEvent<unknown>) => {
-      if (event.data === "end") done();
-      else shared.push(event.data);
-    }),
-  );
+  const others = new OtherContexts();
+  const link = new LinkProgress(others);
+  const burst = 9;
+  const step = Math.floor(LINK_PROGRESS_MIN_SHARE_GAP_MS / (burst + 1));
 
-  const burst = 10;
   for (let i = 0; i < burst; i++) {
-    link.mark();
-    await vi.advanceTimersByTimeAsync((LINK_PROGRESS_SHARE_EVERY_MS - 1) / burst);
+    link.markProgress();
+    await vi.advanceTimersByTimeAsync(step);
   }
-  await vi.advanceTimersByTimeAsync(1);
-  link.mark();
-  const ownSide: LinkChannel = own;
-  ownSide.postMessage("end", []);
-  await allShared;
-  expect(shared).toHaveLength(2);
+  expect(others.shared).toBe(1);
+  await vi.advanceTimersByTimeAsync(LINK_PROGRESS_MIN_SHARE_GAP_MS - burst * step);
+  link.markProgress();
+  expect(others.shared).toBe(2);
 
   await vi.advanceTimersByTimeAsync(20_000);
-  expect(link.quietMs()).toBe(20_000);
-  const heard = new Promise((done) => own.addEventListener("message", done, { once: true }));
-  const otherSide: LinkChannel = other;
-  otherSide.postMessage(null, []);
-  await heard;
-  expect(link.quietMs()).toBe(0);
+  expect(link.silenceMs()).toBe(20_000);
+  others.report();
+  expect(link.silenceMs()).toBe(0);
+  expect(others.shared).toBe(2);
 });

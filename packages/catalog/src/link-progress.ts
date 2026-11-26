@@ -1,71 +1,57 @@
-export const LINK_PROGRESS_CHANNEL = "brr.link-progress";
-export const LINK_PROGRESS_SHARE_EVERY_MS = 1000;
+export const LINK_PROGRESS_MIN_SHARE_GAP_MS = 1000;
 
-export interface LinkChannel {
-  postMessage(message: unknown, transfer: Transferable[]): void;
-  addEventListener(type: "message", listener: () => void): void;
+export interface ILinkShare {
+  share(): void;
+  onShared(listener: () => void): void;
 }
 
 export interface ILinkProgress {
-  mark(): void;
-  quietMs(): number;
+  markProgress(): void;
+  silenceMs(): number;
 }
 
 export class LinkProgress implements ILinkProgress {
-  private lastAt = Number.NEGATIVE_INFINITY;
+  private lastProgressAt = Number.NEGATIVE_INFINITY;
   private lastSharedAt = Number.NEGATIVE_INFINITY;
-  private readonly channel: LinkChannel;
+  private readonly link: ILinkShare;
 
-  constructor(channel: LinkChannel) {
-    this.channel = channel;
-    channel.addEventListener("message", () => {
-      this.lastAt = performance.now();
+  constructor(link: ILinkShare) {
+    this.link = link;
+    link.onShared(() => {
+      this.lastProgressAt = performance.now();
     });
   }
 
-  mark(): void {
+  markProgress(): void {
     const now = performance.now();
-    this.lastAt = now;
-    if (now - this.lastSharedAt < LINK_PROGRESS_SHARE_EVERY_MS) return;
+    this.lastProgressAt = now;
+    if (now - this.lastSharedAt < LINK_PROGRESS_MIN_SHARE_GAP_MS) return;
     this.lastSharedAt = now;
-    this.channel.postMessage(null, []);
+    this.link.share();
   }
 
-  quietMs(): number {
-    return performance.now() - this.lastAt;
+  silenceMs(): number {
+    return performance.now() - this.lastProgressAt;
   }
 }
 
-function reportingBody(
-  body: ReadableStream<Uint8Array>,
-  link: ILinkProgress,
-): ReadableStream<Uint8Array> {
-  const reader = body.getReader();
-  return new ReadableStream({
-    async pull(controller) {
-      const read = await reader.read();
-      if (read.done) {
-        controller.close();
-        return;
-      }
-      link.mark();
-      controller.enqueue(read.value);
-    },
-    cancel(reason) {
-      return reader.cancel(reason);
-    },
-  });
-}
-
-export function reportingProgress(
+export function reportingFetch(
   fetchUrl: (url: string) => Promise<Response>,
   link: ILinkProgress,
 ): (url: string) => Promise<Response> {
   return async (url) => {
     const response = await fetchUrl(url);
-    link.mark();
+    link.markProgress();
     if (response.body === null) return response;
-    return new Response(reportingBody(response.body, link), {
+    const body = response.body.pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          link.markProgress();
+          controller.enqueue(chunk);
+        },
+      }),
+    );
+    return new Response(body, {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,

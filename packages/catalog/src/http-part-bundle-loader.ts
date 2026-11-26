@@ -68,7 +68,7 @@ import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts
 import type { ILinkProgress } from "./link-progress.ts";
 import {
   ASSET_FETCHER,
-  ASSET_SILENCE_LIMIT_MS,
+  LINK_SILENCE_LIMIT_MS,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   FETCH_POOL_POLICY,
@@ -145,7 +145,7 @@ function connectorIndexPaths(
   };
 }
 
-export const DEFAULT_ASSET_SILENCE_LIMIT_MS = 30_000;
+export const DEFAULT_LINK_SILENCE_LIMIT_MS = 45_000;
 
 const utf8 = new TextDecoder();
 
@@ -160,7 +160,7 @@ class SilenceWatch {
     this.signal = controller.signal;
     this.stalled = promise;
     const check = (): void => {
-      const remainingMs = limitMs - link.quietMs();
+      const remainingMs = limitMs - link.silenceMs();
       if (remainingMs > 0) {
         this.timer = setTimeout(check, Math.ceil(remainingMs));
         return;
@@ -200,14 +200,14 @@ async function download(
   link: ILinkProgress,
 ): Promise<ArrayBuffer> {
   const response = await fetch(url, { signal });
-  link.mark();
+  link.markProgress();
   if (!response.ok) throw new AssetResponseError(url, response.status);
   if (response.body === null) return new ArrayBuffer(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
   for (let read = await reader.read(); !read.done; read = await reader.read()) {
-    link.mark();
+    link.markProgress();
     chunks.push(read.value);
     length += read.value.byteLength;
   }
@@ -218,12 +218,12 @@ async function download(
 export class HttpAssetFetcher implements IAssetFetcher {
   constructor(
     @inject(BUNDLE_BASE_URL) private readonly baseUrl: string,
-    @inject(ASSET_SILENCE_LIMIT_MS) private readonly silenceLimitMs: number,
+    @inject(LINK_SILENCE_LIMIT_MS) private readonly linkSilenceLimitMs: number,
     @inject(LINK_PROGRESS) private readonly link: ILinkProgress,
   ) {
-    if (!Number.isInteger(silenceLimitMs) || silenceLimitMs <= 0) {
+    if (!Number.isInteger(linkSilenceLimitMs) || linkSilenceLimitMs <= 0) {
       throw new Error(
-        `an asset silence limit of ${silenceLimitMs} ms is not a positive whole number of milliseconds`,
+        `a link silence limit of ${linkSilenceLimitMs} ms is not a positive whole number of milliseconds`,
       );
     }
   }
@@ -238,7 +238,7 @@ export class HttpAssetFetcher implements IAssetFetcher {
 
   private get(path: string): Promise<ArrayBuffer> {
     const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
-    const watch = new SilenceWatch(url, this.silenceLimitMs, this.link);
+    const watch = new SilenceWatch(url, this.linkSilenceLimitMs, this.link);
     return Promise.race([watch.stalled, download(url, watch.signal, this.link)]).finally(() =>
       watch.stop(),
     );
