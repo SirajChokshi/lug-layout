@@ -10,6 +10,7 @@ import {
   holesAgainstHolesCheck,
   pairPoses,
   pinnedPairChecks,
+  roadSnapCheck,
   sameOutcomes,
   settledCheck,
   solidEdgeChecks,
@@ -131,6 +132,7 @@ async function checkCornerModule(
     fetchUrl,
   );
   const path = new EditorPath(editor, backend, frame, clock);
+  path.snapRoads(false);
   const templateItem = editor
     .snapshot()
     .catalog.find((item) => item.id.endsWith(`:${template.name}`))?.id;
@@ -187,6 +189,7 @@ async function checkPair(
     fetchUrl,
   );
   const path = new EditorPath(editor, backend, frame, clock);
+  path.snapRoads(false);
   const subject = await path.importModel({
     name: pair.subject.names.file,
     text: pair.subject.text,
@@ -208,14 +211,13 @@ async function checkPair(
   const poses = pairPoses(path, pair.partnerOffset, pair.alongEdge, subject, subjectPose, partner);
   const pinned = await pinnedPairChecks(path, poses, pair, subject, partner, FULL_SWEEP);
   const turned = await turnedAwayCheck(path, poses, partner, pair.pins);
+  const pinnedRoadSnap = await roadSnapCheck(path, poses, partner, "pinned", FULL_SWEEP);
   path.undoLast();
 
   const holedPose = await placeAtOrigin(path, holed);
-  const holes = await holesAgainstHolesCheck(
-    path,
-    pairPoses(path, pair.partnerOffset, pair.alongEdge, holed, holedPose, partner),
-    partner,
-  );
+  const holedPoses = pairPoses(path, pair.partnerOffset, pair.alongEdge, holed, holedPose, partner);
+  const holes = await holesAgainstHolesCheck(path, holedPoses, partner);
+  const holedRoadSnap = await roadSnapCheck(path, holedPoses, partner, "holed", FULL_SWEEP);
   path.undoLast();
 
   const renamedPose = await placeAtOrigin(path, renamed);
@@ -273,6 +275,8 @@ async function checkPair(
       ...pinned.checks,
       holes,
       turned,
+      pinnedRoadSnap,
+      holedRoadSnap,
       ...solidRun.checks,
       {
         label:
@@ -304,7 +308,7 @@ function markdown(seed: number, outcomes: ReadonlyArray<PairOutcome>, seconds: n
   const lines = [
     `#### Generated module pairs through the editor's own interface (base seed ${seed}, HELD_OUT_SEED=${seed} reproduces it)`,
     "",
-    `${outcomes.length} pairs in ${seconds.toFixed(1)} s, ${FULL_SWEEP ? "full" : "coarse"} sweep (HELD_OUT_SWEEP=full runs every stud offset). Each pair is imported through the import engine in process, then placed and held through \`IEditor\` only: the pinned module is placed and its holed partner is held, in assist (magnetic) and precise modes.`,
+    `${outcomes.length} pairs in ${seconds.toFixed(1)} s, ${FULL_SWEEP ? "full" : "coarse"} sweep (HELD_OUT_SWEEP=full runs every stud offset). Each pair is imported through the import engine in process, then placed and held through \`IEditor\` only: the pinned module is placed and its holed partner is held, in assist (magnetic) and precise modes. Road snap is off, so the checks judge the solver and the magnet, except in the road snap checks, which compare assist with it off and on at each cursor.`,
     "",
   ];
   for (const outcome of outcomes) {
