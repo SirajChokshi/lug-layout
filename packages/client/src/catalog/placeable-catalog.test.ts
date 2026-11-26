@@ -2,7 +2,6 @@ import {
   ASSET_FETCHER,
   AssetResponseError,
   AssetStalledError,
-  LINK_SILENCE_LIMIT_MS,
   PART_BUNDLE_LOADER,
   type IAssetFetcher,
 } from "@brr/catalog";
@@ -18,6 +17,7 @@ import { loadCatalogItem } from "./catalog-item.test-support.ts";
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const LOD = "standard";
 const SETS = ["omr:7936-1", "omr:2150-1"];
+const ANY_SILENCE_LIMIT_MS = 1_000;
 
 interface HeldRequest {
   readonly release: () => void;
@@ -133,7 +133,7 @@ async function paletteAfterTheFirstRecordFails(failure: Error) {
 it("lets the models asked for after a stalled record adopt once the stall is reported, as after an HTTP error", async () => {
   const stall = new AssetStalledError(
     "https://bucket.test/standard/model.json",
-    LINK_SILENCE_LIMIT_MS,
+    ANY_SILENCE_LIMIT_MS,
   );
   const stalled = await paletteAfterTheFirstRecordFails(stall);
   const refused = await paletteAfterTheFirstRecordFails(

@@ -1,16 +1,12 @@
-import {
-  LINK_PROGRESS_SHARE,
-  LINK_SILENCE_LIMIT_MS,
-  type ILinkProgressShare,
-} from "@brr/catalog/link-progress";
+import { LINK_PROGRESS_SHARE } from "@brr/catalog/link-progress";
 import type { RpcPort } from "@brr/rpc";
 import { Container } from "inversify";
 import { afterEach, expect, it, vi } from "vitest";
 import { importWorkerModules } from "./import-worker.module.ts";
+import { SharedProgress } from "./shared-progress.test-support.ts";
 import { IMPORT_FETCH } from "./tokens.ts";
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
-const silentPeers: ILinkProgressShare = { share: () => undefined, listen: () => undefined };
 const FILE = "https://bucket.test/library-connectors/connectivity-3755a.0123456789abcdef.json";
 const MIRROR_FILE =
   "https://ldraw-library.test/kulits/ldraw-parts/c70360d1c588be894997b2168c61909bc8058c4d/ldraw/parts/3023b.dat";
@@ -19,7 +15,7 @@ const ALL_WAITS_MS = 31_000;
 function importFetch(): (url: string) => Promise<Response> {
   const container = new Container();
   container.load(...importWorkerModules(idlePort));
-  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
+  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(new SharedProgress());
   return container.get(IMPORT_FETCH);
 }
 
@@ -82,7 +78,7 @@ it("fails an import worker read that hears nothing on the link for 55 s, naming 
     () => (settled = true),
   );
 
-  await vi.advanceTimersByTimeAsync(LINK_SILENCE_LIMIT_MS - 1);
+  await vi.advanceTimersByTimeAsync(54_999);
   expect(settled).toBe(false);
   await vi.advanceTimersByTimeAsync(1);
 

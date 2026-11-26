@@ -224,7 +224,6 @@ it("tells an HTTP error status apart from a request that got no response", async
 });
 
 const BUCKET = "https://bucket.test/";
-const SILENCE_LIMIT_MS = LINK_SILENCE_LIMIT_MS;
 const encoder = new TextEncoder();
 
 async function networkFetcher(): Promise<{ network: IAssetFetcher; peers: Peers }> {
@@ -283,7 +282,7 @@ it("fails a request that gets no answer for 55 s with an error naming the file, 
   const loading = network.bytes(POINTER);
   const watch = watched(loading);
 
-  await vi.advanceTimersByTimeAsync(SILENCE_LIMIT_MS - 1);
+  await vi.advanceTimersByTimeAsync(LINK_SILENCE_LIMIT_MS - 1);
   expect(watch.settled()).toBe(false);
   await vi.advanceTimersByTimeAsync(1);
 
@@ -291,7 +290,7 @@ it("fails a request that gets no answer for 55 s with an error naming the file, 
   await expect(loading).rejects.not.toBeInstanceOf(AssetResponseError);
   await expect(loading).rejects.toMatchObject({
     url: `${BUCKET}${POINTER}`,
-    silenceLimitMs: SILENCE_LIMIT_MS,
+    silenceLimitMs: LINK_SILENCE_LIMIT_MS,
     message: `GET ${BUCKET}${POINTER} sent nothing for 55 s`,
   });
   expect(vi.getTimerCount()).toBe(0);
@@ -301,7 +300,7 @@ it("keeps a response that sends something every 54.999 s, headers included, howe
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   const chunks = ["slow ", "but ", "steady ", "bytes"];
-  const pace = SILENCE_LIMIT_MS - 1;
+  const pace = LINK_SILENCE_LIMIT_MS - 1;
   vi.stubGlobal(
     "fetch",
     () =>
@@ -311,7 +310,7 @@ it("keeps a response that sends something every 54.999 s, headers included, howe
   );
   const loading = network.text(POINTER);
 
-  await vi.advanceTimersByTimeAsync((chunks.length + 1) * SILENCE_LIMIT_MS);
+  await vi.advanceTimersByTimeAsync((chunks.length + 1) * LINK_SILENCE_LIMIT_MS);
 
   await expect(loading).resolves.toBe(chunks.join(""));
   expect(vi.getTimerCount()).toBe(0);
@@ -364,7 +363,7 @@ it("fails a response the server hangs while other responses keep arriving, once 
   const watch = watched(hung);
   const other = network.text(FLOWING);
 
-  await vi.advanceTimersByTimeAsync(lastChunkMs + SILENCE_LIMIT_MS - 1);
+  await vi.advanceTimersByTimeAsync(lastChunkMs + LINK_SILENCE_LIMIT_MS - 1);
   await expect(other).resolves.toBe(flowing.join(""));
   expect(watch.settled()).toBe(false);
   await vi.advanceTimersByTimeAsync(1);
@@ -394,7 +393,7 @@ it("fails every request still waiting once nothing has arrived from the server f
   const cutOff = network.text(FLOWING);
   const watches = [watched(neverAnswered), watched(cutOff)];
 
-  await vi.advanceTimersByTimeAsync(lastByteMs + SILENCE_LIMIT_MS - 1);
+  await vi.advanceTimersByTimeAsync(lastByteMs + LINK_SILENCE_LIMIT_MS - 1);
   expect(watches.map((watch) => watch.settled())).toEqual([false, false]);
   await vi.advanceTimersByTimeAsync(1);
 
@@ -415,7 +414,7 @@ it("keeps a request waiting while a peer shares progress, and fails it 55 s afte
   await vi.advanceTimersByTimeAsync(sharedAtMs);
   peers.deliverShare();
 
-  await vi.advanceTimersByTimeAsync(SILENCE_LIMIT_MS - 1);
+  await vi.advanceTimersByTimeAsync(LINK_SILENCE_LIMIT_MS - 1);
   expect(watch.settled()).toBe(false);
   await vi.advanceTimersByTimeAsync(1);
 

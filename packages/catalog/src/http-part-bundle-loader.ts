@@ -66,7 +66,7 @@ import type {
 } from "./part-bundle.ts";
 import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts";
 import type { ILinkProgress } from "./link-progress/link-progress.ts";
-import { markedChunks, silenceBounded } from "./link-progress/silence-watch.ts";
+import { markedBody, silenceBounded } from "./link-progress/silence-watch.ts";
 import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,
@@ -176,7 +176,7 @@ async function download(
     throw new AssetResponseError(url, response.status, retryAfterMs(response.headers));
   }
   if (response.body === null) return new ArrayBuffer(0);
-  const { chunks, length } = await markedChunks(response.body, link);
+  const { chunks, length } = await markedBody(response.body, link);
   return joined(chunks, length);
 }
 

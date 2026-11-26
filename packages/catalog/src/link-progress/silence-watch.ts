@@ -3,7 +3,7 @@ import type { ILinkProgress } from "./link-progress.ts";
 
 export const LINK_SILENCE_LIMIT_MS = 55_000;
 
-export interface MarkedBody {
+interface MarkedBody {
   readonly chunks: Uint8Array[];
   readonly length: number;
 }
@@ -35,16 +35,20 @@ class SilenceWatch {
   }
 }
 
-export function silenceBounded<T>(
+export async function silenceBounded<T>(
   url: string,
   link: ILinkProgress,
   read: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const watch = new SilenceWatch(url, link);
-  return Promise.race([watch.stalled, read(watch.signal)]).finally(() => watch.stop());
+  try {
+    return await Promise.race([watch.stalled, read(watch.signal)]);
+  } finally {
+    watch.stop();
+  }
 }
 
-export async function markedChunks(
+export async function markedBody(
   body: ReadableStream<Uint8Array>,
   link: ILinkProgress,
 ): Promise<MarkedBody> {

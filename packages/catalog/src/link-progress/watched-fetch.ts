@@ -1,9 +1,9 @@
 import type { ILinkProgress } from "./link-progress.ts";
-import { markedChunks, silenceBounded } from "./silence-watch.ts";
+import { markedBody, silenceBounded } from "./silence-watch.ts";
 
-export type AbortableFetch = (url: string, signal: AbortSignal) => Promise<Response>;
+type AbortableFetch = (url: string, signal: AbortSignal) => Promise<Response>;
 
-function replayed(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+function streamTaking(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   return new ReadableStream({
     start(controller) {
       for (const chunk of chunks.splice(0)) controller.enqueue(chunk);
@@ -21,8 +21,8 @@ export function watchedFetch(
       const response = await fetchUrl(url, signal);
       link.markProgress();
       if (response.body === null) return response;
-      const { chunks } = await markedChunks(response.body, link);
-      return new Response(replayed(chunks), {
+      const { chunks } = await markedBody(response.body, link);
+      return new Response(streamTaking(chunks), {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
