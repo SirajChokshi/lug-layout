@@ -3,23 +3,23 @@ import {
   LINK_PROGRESS_MIN_SHARE_GAP_MS,
   LinkProgress,
   reportingFetch,
-  type ILinkShare,
+  type ILinkProgressShare,
 } from "./link-progress.ts";
 
-class OtherContexts implements ILinkShare {
+class Peers implements ILinkProgressShare {
   shared = 0;
-  private readonly listeners: Array<() => void> = [];
+  private listener: () => void = () => undefined;
 
   share(): void {
     this.shared += 1;
   }
 
-  onShared(listener: () => void): void {
-    this.listeners.push(listener);
+  listen(listener: () => void): void {
+    this.listener = listener;
   }
 
-  report(): void {
-    for (const listener of this.listeners) listener();
+  deliverShare(): void {
+    this.listener();
   }
 }
 
@@ -32,7 +32,7 @@ const STATUS_TEXT = "Not Found";
 
 it("counts the headers and every chunk as they arrive, and passes the response through unchanged", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const link = new LinkProgress(new OtherContexts());
+  const link = new LinkProgress(new Peers());
   const chunks = ["0 FILE ", "parts/", "3001.dat"];
   const headersAfterMs = 4_000;
   const chunkEveryMs = 1_000;
@@ -85,10 +85,10 @@ it("counts the headers and every chunk as they arrive, and passes the response t
   await expect(text).resolves.toBe(chunks.join(""));
 });
 
-it("shares a burst of progress once per gap, and counts what another context shares", async () => {
+it("shares a burst of progress with its peers once per gap, and counts what a peer shares", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const others = new OtherContexts();
-  const link = new LinkProgress(others);
+  const peers = new Peers();
+  const link = new LinkProgress(peers);
   const burst = 9;
   const step = Math.floor(LINK_PROGRESS_MIN_SHARE_GAP_MS / (burst + 1));
 
@@ -96,14 +96,14 @@ it("shares a burst of progress once per gap, and counts what another context sha
     link.markProgress();
     await vi.advanceTimersByTimeAsync(step);
   }
-  expect(others.shared).toBe(1);
+  expect(peers.shared).toBe(1);
   await vi.advanceTimersByTimeAsync(LINK_PROGRESS_MIN_SHARE_GAP_MS - burst * step);
   link.markProgress();
-  expect(others.shared).toBe(2);
+  expect(peers.shared).toBe(2);
 
   await vi.advanceTimersByTimeAsync(20_000);
   expect(link.silenceMs()).toBe(20_000);
-  others.report();
+  peers.deliverShare();
   expect(link.silenceMs()).toBe(0);
-  expect(others.shared).toBe(2);
+  expect(peers.shared).toBe(2);
 });

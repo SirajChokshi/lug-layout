@@ -18,7 +18,7 @@ export class LinkProgressBroadcast {
     this.endpoint.post(SHARED);
   }
 
-  onShared(listener: () => void): void {
+  listen(listener: () => void): void {
     this.endpoint.listen(() => listener());
   }
 }

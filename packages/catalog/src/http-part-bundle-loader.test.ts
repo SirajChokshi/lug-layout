@@ -4,14 +4,14 @@ import { AssetResponseError } from "./asset-response-error.ts";
 import { AssetStalledError } from "./asset-stalled-error.ts";
 import { catalogModule } from "./catalog.module.ts";
 import { DEFAULT_LINK_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
-import type { ILinkShare } from "./link-progress.ts";
+import type { ILinkProgressShare } from "./link-progress.ts";
 import type { IAssetFetcher } from "./part-bundle.ts";
 import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   FETCH_POOL_POLICY,
-  LINK_SHARE,
+  LINK_PROGRESS_SHARE,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";
@@ -206,7 +206,7 @@ it("tells an HTTP error status apart from a request that got no response", async
   const container = new Container();
   await container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue("https://bucket.test/");
-  container.bind(LINK_SHARE).toConstantValue(new OtherContexts());
+  container.bind(LINK_PROGRESS_SHARE).toConstantValue(new Peers());
   const network = container.get(NETWORK_ASSET_FETCHER);
   vi.stubGlobal("fetch", async () => new Response(null, { status: 503 }));
   const answered = network.text(POINTER);
@@ -227,27 +227,30 @@ const BUCKET = "https://bucket.test/";
 const SILENCE_LIMIT_MS = DEFAULT_LINK_SILENCE_LIMIT_MS;
 const encoder = new TextEncoder();
 
-class OtherContexts implements ILinkShare {
-  private readonly listeners: Array<() => void> = [];
+class Peers implements ILinkProgressShare {
+  shared = 0;
+  private listener: () => void = () => undefined;
 
-  share(): void {}
-
-  onShared(listener: () => void): void {
-    this.listeners.push(listener);
+  share(): void {
+    this.shared += 1;
   }
 
-  report(): void {
-    for (const listener of this.listeners) listener();
+  listen(listener: () => void): void {
+    this.listener = listener;
+  }
+
+  deliverShare(): void {
+    this.listener();
   }
 }
 
-async function networkFetcher(): Promise<{ network: IAssetFetcher; others: OtherContexts }> {
-  const others = new OtherContexts();
+async function networkFetcher(): Promise<{ network: IAssetFetcher; peers: Peers }> {
+  const peers = new Peers();
   const container = new Container();
   await container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue(BUCKET);
-  container.bind(LINK_SHARE).toConstantValue(others);
-  return { network: container.get(NETWORK_ASSET_FETCHER), others };
+  container.bind(LINK_PROGRESS_SHARE).toConstantValue(peers);
+  return { network: container.get(NETWORK_ASSET_FETCHER), peers };
 }
 
 function watched<T>(loading: Promise<T>): { settled: () => boolean } {
@@ -393,7 +396,7 @@ it("keeps a request queued behind another response for as long as that response 
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("fails a response the server hangs while others keep arriving, once nothing has arrived for 45 s", async () => {
+it("fails a response the server hangs while other responses keep arriving, once nothing has arrived for 45 s", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   const flowing = ["a", "b", "c", "d", "e"];
@@ -449,15 +452,15 @@ it("fails every request still waiting once nothing has arrived from the server f
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("keeps a request waiting while another context shares progress, and fails it 45 s after the last share", async () => {
+it("keeps a request waiting while a peer shares progress, and fails it 45 s after the last share", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const { network, others } = await networkFetcher();
+  const { network, peers } = await networkFetcher();
   vi.stubGlobal("fetch", (_url: string, init: RequestInit) => hangs(init));
   const waiting = network.bytes(WAITING);
   const watch = watched(waiting);
   const sharedAtMs = 20_000;
   await vi.advanceTimersByTimeAsync(sharedAtMs);
-  others.report();
+  peers.deliverShare();
 
   await vi.advanceTimersByTimeAsync(SILENCE_LIMIT_MS - 1);
   expect(watch.settled()).toBe(false);

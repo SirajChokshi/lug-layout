@@ -2,11 +2,11 @@ import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
-  LINK_SHARE,
+  LINK_PROGRESS_SHARE,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
   catalogModule,
-  type ILinkShare,
+  type ILinkProgressShare,
   type PartConnectors,
 } from "@brr/catalog";
 import { BrickCompiler, type CompileRequest, type PartOutcome } from "@brr/import";
@@ -80,24 +80,31 @@ const runFile = promisify(execFile);
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
 
-class SharedProgress implements ILinkShare {
+class Peers implements ILinkProgressShare {
   shared = 0;
+  private listener: () => void = () => undefined;
 
   share(): void {
     this.shared += 1;
   }
 
-  onShared(): void {}
+  listen(listener: () => void): void {
+    this.listener = listener;
+  }
+
+  deliverShare(): void {
+    this.listener();
+  }
 }
 
 function importWorker(
   indexedDb?: IDBFactory,
   fetchUrl?: FetchFunction,
-  share: ILinkShare = new SharedProgress(),
+  share: ILinkProgressShare = new Peers(),
 ): IImportWorkerService {
   const container = new Container();
   container.load(...importWorkerModules(idlePort));
-  container.rebind(LINK_SHARE).toConstantValue(share);
+  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(share);
   if (indexedDb !== undefined) container.rebind(INDEXED_DB).toConstantValue(indexedDb);
   if (fetchUrl !== undefined) container.rebind(IMPORT_FETCH).toConstantValue(fetchUrl);
   return container.get(IMPORT_WORKER_SERVICE);
@@ -217,7 +224,7 @@ async function bundleLoader() {
   container.bind(ASSET_FETCHER).toService(NETWORK_ASSET_FETCHER);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
-  container.bind(LINK_SHARE).toConstantValue(new SharedProgress());
+  container.bind(LINK_PROGRESS_SHARE).toConstantValue(new Peers());
   return container.get(PART_BUNDLE_LOADER);
 }
 
@@ -242,7 +249,7 @@ it("gives a bundle part the same connector table from the catalog loader as when
   mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
 
   const fromCatalog = await loader.loadPartConnectors(LOD, TECHNIC_PART);
-  const progress = new SharedProgress();
+  const progress = new Peers();
   const imported = await importWorker(undefined, undefined, progress).run({
     kind: "import",
     ticket: 1,

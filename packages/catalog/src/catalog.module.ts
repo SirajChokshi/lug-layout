@@ -10,7 +10,7 @@ import { HttpLibraryPartCatalog } from "./library-part-catalog.ts";
 import { LinkProgress } from "./link-progress.ts";
 import {
   LINK_PROGRESS,
-  LINK_SHARE,
+  LINK_PROGRESS_SHARE,
   LINK_SILENCE_LIMIT_MS,
   CATALOG_API,
   FETCH_POOL_POLICY,
@@ -21,7 +21,7 @@ import {
 
 export function bindLinkProgress(bind: Bind): void {
   bind(LINK_PROGRESS)
-    .toDynamicValue((context) => new LinkProgress(context.get(LINK_SHARE)))
+    .toDynamicValue((context) => new LinkProgress(context.get(LINK_PROGRESS_SHARE)))
     .inSingletonScope();
 }
 

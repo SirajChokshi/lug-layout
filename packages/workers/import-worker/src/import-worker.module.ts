@@ -1,4 +1,4 @@
-import { bindLinkProgress, LINK_PROGRESS, LINK_SHARE, reportingFetch } from "@brr/catalog";
+import { bindLinkProgress, LINK_PROGRESS, LINK_PROGRESS_SHARE, reportingFetch } from "@brr/catalog";
 import { LdrawMirror, ModelImportEngine } from "@brr/import";
 import { openLinkProgressBroadcast, type RpcPort } from "@brr/rpc";
 import { assetCacheModule } from "@brr/storage";
@@ -22,7 +22,7 @@ import {
 function importWorkerModule(port: RpcPort): ContainerModule {
   return new ContainerModule(({ bind }) => {
     bind(IMPORT_PORT).toConstantValue(port);
-    bind(LINK_SHARE).toDynamicValue(openLinkProgressBroadcast).inSingletonScope();
+    bind(LINK_PROGRESS_SHARE).toDynamicValue(openLinkProgressBroadcast).inSingletonScope();
     bindLinkProgress(bind);
     bind(IMPORT_FETCH)
       .toDynamicValue((context) => reportingFetch((url) => fetch(url), context.get(LINK_PROGRESS)))
