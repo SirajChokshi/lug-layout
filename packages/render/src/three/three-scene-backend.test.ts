@@ -10,10 +10,10 @@ import {
   Matrix3,
   Matrix4,
   Mesh,
+  Object3D,
   Vector3,
   type BufferGeometry,
   type MeshStandardNodeMaterial,
-  type Object3D,
 } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -834,5 +834,250 @@ it("outlines the ghost's bounds in precise mode only, whatever its tone, and kee
     refused: outlined,
     rebuilt: outlined,
     back: null,
+  });
+});
+
+interface PlacedRecord {
+  readonly group: Object3D;
+  readonly meshCount: number;
+}
+
+interface Rebuild {
+  readonly how: string;
+  readonly prepare: (backend: ThreeSceneBackend) => void;
+  readonly rebuild: (backend: ThreeSceneBackend) => void;
+}
+
+interface ChunkChange {
+  readonly voxelized: boolean;
+  readonly moved: boolean;
+  readonly turned: boolean;
+  readonly joined: boolean;
+}
+
+const AS_PLACED: ChunkChange = { voxelized: false, moved: false, turned: false, joined: false };
+const QUARTER_TURN = [0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0];
+const TRANSLATION_X = 3;
+const MOVED_PART_X = 100;
+const MOVED_STUD_X = 60;
+const JOINED_PART_X = 40;
+
+function translatedX(transform: ReadonlyArray<number>, x: number): ReadonlyArray<number> {
+  return transform.map((value, i) => (i === TRANSLATION_X ? x : value));
+}
+
+function studsAndPartsAt({ voxelized, moved, turned, joined }: ChunkChange): ChunkInstances {
+  const parts = [IDENTITY, translatedX(TILTED, moved ? MOVED_PART_X : 0)];
+  const flags = [0, voxelized ? 1 : 0];
+  if (joined) {
+    parts.push(translatedX(IDENTITY, JOINED_PART_X));
+    flags.push(1);
+  }
+  return {
+    originX: 0,
+    originZ: 0,
+    count: parts.length,
+    partIndex: new Uint16Array(parts.length),
+    colorIndex: Uint16Array.from(parts, (_, i) => i % 2),
+    matrices: Float32Array.from(parts.flat()),
+    voxelized: Uint8Array.from(flags),
+    studs: {
+      count: 3,
+      primitiveIndex: Uint8Array.of(0, 0, 0),
+      colorIndex: Uint16Array.of(0, 1, 0),
+      matrices: Float32Array.from([
+        ...translatedX(IDENTITY, moved ? MOVED_STUD_X : 0),
+        ...TILTED,
+        ...translatedX(turned ? QUARTER_TURN : IDENTITY, 20),
+      ]),
+    },
+  };
+}
+
+const REBUILDS: ReadonlyArray<Rebuild> = [
+  {
+    how: "its part meshes arrived",
+    prepare: () => undefined,
+    rebuild: (backend) =>
+      backend.setPartMeshes([{ index: 0, level: "detailed", part: part("a", 40) }]),
+  },
+  {
+    how: "a far model changed one placeable's flags",
+    prepare: () => undefined,
+    rebuild: (backend) => backend.setChunk(1, studsAndPartsAt({ ...AS_PLACED, voxelized: true })),
+  },
+  {
+    how: "a later part and the first stud moved",
+    prepare: () => undefined,
+    rebuild: (backend) => backend.setChunk(1, studsAndPartsAt({ ...AS_PLACED, moved: true })),
+  },
+  {
+    how: "a far-drawn part joined the group's last run",
+    prepare: () => undefined,
+    rebuild: (backend) => backend.setChunk(1, studsAndPartsAt({ ...AS_PLACED, joined: true })),
+  },
+  {
+    how: "a stud turned in place",
+    prepare: () => undefined,
+    rebuild: (backend) => backend.setChunk(1, studsAndPartsAt({ ...AS_PLACED, turned: true })),
+  },
+  {
+    how: "the tier changed after a deferred rebuild",
+    prepare: (backend) => {
+      backend.forceTier("near");
+      backend.setPartMeshes([{ index: 0, level: "far", part: part("a", 40) }]);
+    },
+    rebuild: (backend) => backend.forceTier("mid"),
+  },
+];
+
+function placedRecord(backend: ThreeSceneBackend): PlacedRecord {
+  const chunks: Map<number, PlacedRecord> = backend["chunks"];
+  const record = chunks.get(1);
+  if (!record) throw new Error("chunk 1 is not placed");
+  return record;
+}
+
+function untieredBackend(): ThreeSceneBackend {
+  const backend = new ThreeSceneBackend();
+  backend.setPalette({
+    detailed: { parts: [part("a", 20)], studPrimitives: [stud()] },
+    colorsSrgb: TWO_COLOURS_SRGB,
+    colorsAlpha: Uint8Array.of(OPAQUE, OPAQUE),
+    ldrawColors: new Map([[RED, { srgb: 0xc80000, alpha: OPAQUE }]]),
+  });
+  return backend;
+}
+
+function instancedDescendants(backend: ThreeSceneBackend): ReadonlyArray<InstancedMesh | StudMesh> {
+  const found: Array<InstancedMesh | StudMesh> = [];
+  placedRecord(backend).group.traverse((object) => {
+    if (object instanceof InstancedMesh || object instanceof StudMesh) found.push(object);
+  });
+  return found;
+}
+
+function castShadows(backend: ThreeSceneBackend, shadows: boolean): void {
+  backend["look"] = { ...backend["look"], shadows };
+}
+
+function sphereBits(mesh: InstancedMesh | StudMesh): ReadonlyArray<number> {
+  const sphere = mesh.boundingSphere;
+  if (!sphere) throw new Error("the mesh has no bounding sphere");
+  return [sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius];
+}
+
+function sameBits(a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean {
+  return a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
+}
+
+function spheresMatchRecomputation(backend: ThreeSceneBackend): boolean {
+  return instancedDescendants(backend).every((mesh) => {
+    if (!mesh.visible) return true;
+    const kept = sphereBits(mesh);
+    mesh.computeBoundingSphere();
+    return sameBits(kept, sphereBits(mesh));
+  });
+}
+
+describe.each(REBUILDS)("a chunk rebuilt because $how", ({ prepare, rebuild }) => {
+  it.each([false, true])(
+    "creates every object of the rebuilt chunk during the rebuild, its meshes in creation order, with shadows %s",
+    (shadows) => {
+      const backend = edgeBackend();
+      castShadows(backend, shadows);
+      backend.forceTier("mid");
+      backend.setChunk(1, studsAndPartsAt(AS_PLACED));
+      prepare(backend);
+      const sentinel = new Object3D();
+
+      rebuild(backend);
+
+      const record = placedRecord(backend);
+      const created: number[] = [];
+      record.group.traverse((object) => created.push(object.id));
+      const meshIds = record.group.children.slice(0, record.meshCount).map((mesh) => mesh.id);
+      expect({
+        allNewer: created.every((id) => id > sentinel.id),
+        meshesInCreationOrder: meshIds.every((id, i) => i === 0 || id > (meshIds[i - 1] ?? 0)),
+      }).toEqual({ allNewer: true, meshesInCreationOrder: true });
+    },
+  );
+
+  it.each([false, true])(
+    "gives every instanced mesh and drawn state of the rebuilt chunk the bounding sphere a fresh computation gives, bit for bit, tiered or not, with shadows %s",
+    (shadows) => {
+      const tiered = edgeBackend();
+      castShadows(tiered, shadows);
+      tiered.forceTier("mid");
+      tiered.setChunk(1, studsAndPartsAt(AS_PLACED));
+      prepare(tiered);
+      rebuild(tiered);
+      const untiered = untieredBackend();
+      castShadows(untiered, shadows);
+      untiered.setChunk(1, studsAndPartsAt(AS_PLACED));
+      prepare(untiered);
+      rebuild(untiered);
+
+      const asRebuilt = spheresMatchRecomputation(tiered);
+      const matches = (["near", "mid", "far"] as const).map((tier) => {
+        tiered.forceTier(tier);
+        return spheresMatchRecomputation(tiered);
+      });
+
+      expect({
+        asRebuilt,
+        tiered: matches,
+        untiered: spheresMatchRecomputation(untiered),
+      }).toEqual({
+        asRebuilt: true,
+        tiered: [true, true, true],
+        untiered: true,
+      });
+    },
+  );
+});
+
+function centred(id: string): PartAsset {
+  return {
+    ...part(id, 20),
+    boundsMin: [-10, -10, 0],
+    boundsMax: [10, 10, 0],
+    mesh: {
+      positions: Float32Array.of(-10, -10, 0, 10, -10, 0, 0, 10, 0),
+      normals: Float32Array.of(0, 0, 1, 0, 0, 1, 0, 0, 1),
+      groups: [{ ldrawColor: INHERIT_COLOR, indices: Uint32Array.of(0, 1, 2) }],
+    },
+  };
+}
+
+function signedZeroChunk(translationX: number): ChunkInstances {
+  return {
+    originX: 0,
+    originZ: 0,
+    count: 1,
+    partIndex: Uint16Array.of(0),
+    colorIndex: Uint16Array.of(0),
+    matrices: Float32Array.of(-1, -0, -0, translationX, 0, 1, 0, 0, 0, 0, 1, 0),
+    studs: NO_STUDS,
+  };
+}
+
+function signedZeroCentreX(backend: ThreeSceneBackend): ReadonlyArray<unknown> {
+  const [mesh] = instancedDescendants(backend);
+  return [Object.is(mesh?.boundingSphere?.center.x, -0), spheresMatchRecomputation(backend)];
+}
+
+it("keeps the sign of a zero in a rebuilt chunk's bounding sphere, whether the sphere is computed or reused", () => {
+  const backend = new ThreeSceneBackend();
+  backend.setPalette(palette([centred("a")]));
+  backend.setChunk(1, signedZeroChunk(0));
+  backend.setChunk(1, signedZeroChunk(-0));
+  const computed = signedZeroCentreX(backend);
+  backend.setChunk(1, signedZeroChunk(-0));
+
+  expect({ computed, reused: signedZeroCentreX(backend) }).toEqual({
+    computed: [true, true],
+    reused: [true, true],
   });
 });

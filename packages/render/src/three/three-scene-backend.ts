@@ -34,7 +34,7 @@ import {
   type BufferGeometry,
   type Material,
   MeshStandardNodeMaterial,
-  type Sphere,
+  Sphere,
   type TextureNode,
 } from "three/webgpu";
 import { texture } from "three/tsl";
@@ -131,6 +131,7 @@ import {
   type MaterialTint,
   type StudLookups,
 } from "./plastic-materials.ts";
+import { NO_MATCH, RowSpheres, type SphereReuse } from "./row-spheres.ts";
 import { StudBasisTable } from "./stud-basis-table.ts";
 import { isInstanced, StudMesh, studGeometry } from "./stud-mesh.ts";
 import { skyEnvironment } from "./sky-environment.ts";
@@ -576,6 +577,7 @@ class ChunkRecord {
     readonly maxX: number,
     readonly minZ: number,
     readonly maxZ: number,
+    readonly rowSpheres: RowSpheres,
   ) {}
 
   applyTier(tier: number): void {
@@ -664,6 +666,11 @@ function addContainerGroup(parent: Object3D): Group {
   group.matrixAutoUpdate = false;
   parent.add(group);
   return group;
+}
+
+function sphereOf(mesh: InstancedMesh | StudMesh): Sphere {
+  if (mesh instanceof StudMesh) return mesh.boundingSphere;
+  return (mesh.boundingSphere ??= new Sphere());
 }
 
 function writeNearEdgeIds(holder: Group, meshes: MeshPage, edgeSlot: number): void {
@@ -1222,6 +1229,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.tiered ? this.levelCounts().far : undefined,
       needs,
       chunkEdgeSlot(page.originX, page.originZ),
+      replaced?.rowSpheres,
     );
     record.key = key;
     record.studPitchPx = this.studPitchPx(record, this.orthoStudPitchPx());
@@ -1250,7 +1258,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       replaced !== undefined && replaced.page === page && replaced.tiered === this.tiered;
     this.removeVehicle(vehicle);
     const needs = samePage ? replaced.needs : pageNeeds(page, false);
-    const body = this.buildChunk(page, undefined, needs, vehicleEdgeSlot(vehicle));
+    const body = this.buildChunk(
+      page,
+      undefined,
+      needs,
+      vehicleEdgeSlot(vehicle),
+      replaced?.rowSpheres,
+    );
     body.applyTier(TIER_NEAR);
     this.inheritHolds(body, replaced);
     this.syncNeeds(body);
@@ -1776,6 +1790,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     far: LevelGeometryCounts | undefined,
     needs: ChunkNeeds,
     edgeSlot: number,
+    replacedSpheres: RowSpheres | undefined,
   ): ChunkRecord {
     const group = new Group();
     group.matrixAutoUpdate = false;
@@ -1783,6 +1798,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const meshes = meshPageOf(page, this.levelCounts().detailed, far);
     const swaps = far ? new SwapColumns(meshes, this.look.shadows) : undefined;
     const shadowCasters = this.look.shadows ? new Group() : undefined;
+    const reuse: SphereReuse = {
+      replaced: replacedSpheres,
+      built: new RowSpheres(page, meshes.kind.length),
+    };
     this.addInstances(
       group,
       page,
@@ -1791,6 +1810,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.shellMaterials,
       swaps,
       shadowCasters,
+      reuse,
     );
     const meshCount = group.children.length;
     if (!swaps) writeNearEdgeIds(group, meshes, edgeSlot);
@@ -1821,6 +1841,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       maxX,
       minZ,
       maxZ,
+      reuse.built,
     );
     return record;
   }
@@ -1838,7 +1859,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     materials: PlasticMaterials,
   ): MeshPage {
     const meshes = meshPageOf(page, this.levelCounts().detailed, undefined);
-    this.addInstances(holder, page, meshes, materials, materials, undefined, undefined);
+    this.addInstances(holder, page, meshes, materials, materials, undefined, undefined, undefined);
     return meshes;
   }
 
@@ -1850,6 +1871,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     shellMaterials: PlasticMaterials,
     swaps: SwapColumns | undefined,
     shadowCasters: Group | undefined,
+    reuse: SphereReuse | undefined,
   ): void {
     let views: InstanceAttributes | undefined;
     let viewsStart = -1;
@@ -1867,6 +1889,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
           materials,
           shellMaterials,
           swaps,
+          reuse,
         );
         shareIdentityOnParent(studMesh, holder);
         holder.add(studMesh);
@@ -1877,7 +1900,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
         viewsStart = start;
         viewsEnd = end;
       }
-      const partMesh = this.partRow(meshes, row, views, materials, shellMaterials, swaps);
+      const partMesh = this.partRow(meshes, row, views, materials, shellMaterials, swaps, reuse);
       shareIdentityOnParent(partMesh, holder);
       holder.add(partMesh);
       if (shadowCasters && !this.tiered) this.addShadowCaster(shadowCasters, meshes, row, views);
@@ -1923,18 +1946,30 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     materials: PlasticMaterials,
     shellMaterials: PlasticMaterials,
     swaps: SwapColumns | undefined,
+    reuse: SphereReuse | undefined,
   ): InstancedMesh {
     const nearCount = meshes.nearCount[row] ?? 0;
     const shellCount = meshes.shellCount[row] ?? 0;
     const firstLevel = nearCount > 0 ? this.detailedLevel : this.shellLevel(meshes, row);
+    const geometry = this.partGeometry(firstLevel, meshes, row);
     const mesh = this.instancedMesh(
-      this.partGeometry(firstLevel, meshes, row),
+      geometry,
       this.partMaterial(firstLevel, meshes, row, materials),
       Math.max(nearCount, shellCount),
       views.matrices,
       meshes.kind[row] === MESH_KIND_BODY ? views.colors : undefined,
     );
-    if (!swaps) return mesh;
+    if (!swaps) {
+      this.fillSphere(
+        mesh,
+        geometry,
+        meshes.kind[row] ?? 0,
+        meshes.start[row] ?? 0,
+        mesh.count,
+        reuse,
+      );
+      return mesh;
+    }
     if (nearCount > 0) {
       this.capturePartState(
         mesh,
@@ -1945,11 +1980,22 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
         this.detailedLevel,
         nearCount,
         materials,
+        reuse,
       );
     }
     if (shellCount > 0) {
       const level = this.shellLevel(meshes, row);
-      this.capturePartState(mesh, swaps, meshes, row, "shell", level, shellCount, shellMaterials);
+      this.capturePartState(
+        mesh,
+        swaps,
+        meshes,
+        row,
+        "shell",
+        level,
+        shellCount,
+        shellMaterials,
+        reuse,
+      );
     }
     return mesh;
   }
@@ -1963,11 +2009,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     level: LevelGeometries,
     count: number,
     materials: PlasticMaterials,
+    reuse: SphereReuse | undefined,
   ): void {
     const geometry = this.partGeometry(level, meshes, row);
     mesh.geometry = geometry;
     mesh.count = count;
-    mesh.computeBoundingSphere();
+    this.fillSphere(mesh, geometry, meshes.kind[row] ?? 0, meshes.start[row] ?? 0, count, reuse);
     swaps.capture(
       row,
       state,
@@ -1997,6 +2044,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       views.matrices,
       undefined,
     );
+    mesh.computeBoundingSphere();
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
@@ -2013,6 +2061,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     materials: PlasticMaterials,
     shellMaterials: PlasticMaterials,
     swaps: SwapColumns | undefined,
+    reuse: SphereReuse | undefined,
   ): StudMesh {
     const primitive = meshes.shape[row] ?? 0;
     const detailedPrimitive = this.detailedLevel.studs[primitive];
@@ -2028,26 +2077,21 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       studBasisAndColorIndexOf(page, start, end),
       1,
     );
-    const near = studGeometry(
-      this.handed(detailedPrimitive, meshes, row),
-      translations,
-      basisAndColorIndex,
-    );
+    const nearSource = this.handed(detailedPrimitive, meshes, row);
+    const near = studGeometry(nearSource, translations, basisAndColorIndex);
     const mesh = new StudMesh(near, material, translations, basisAndColorIndex, this.studBases);
     mesh.matrixAutoUpdate = false;
     mesh.receiveShadow = this.look.shadows && !material.transparent;
-    mesh.computeBoundingSphere();
+    const count = end - start;
+    this.fillSphere(mesh, nearSource, MESH_KIND_STUD, start, count, reuse);
     if (!swaps) return mesh;
     swaps.capture(row, "near", near, material, mesh.boundingSphere);
     const coarsePrimitive = this.farLevel.studs[primitive];
     if ((meshes.shellCount[row] ?? 0) === 0 || !coarsePrimitive) return mesh;
-    const shell = studGeometry(
-      this.handed(coarsePrimitive, meshes, row),
-      translations,
-      basisAndColorIndex,
-    );
+    const shellSource = this.handed(coarsePrimitive, meshes, row);
+    const shell = studGeometry(shellSource, translations, basisAndColorIndex);
     mesh.geometry = shell;
-    mesh.computeBoundingSphere();
+    this.fillSphere(mesh, shellSource, MESH_KIND_STUD, start, count, reuse);
     swaps.capture(row, "shell", shell, shellMaterials.basisInstanced(alpha), mesh.boundingSphere);
     return mesh;
   }
@@ -2091,6 +2135,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       new InstancedBufferAttribute(matrices, MATRIX4_FLOATS),
       undefined,
     );
+    mesh.computeBoundingSphere();
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
@@ -2110,8 +2155,27 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     if (colors) mesh.instanceColor = colors;
     mesh.matrixAutoUpdate = false;
     mesh.receiveShadow = this.look.shadows && !material.transparent;
-    mesh.computeBoundingSphere();
     return mesh;
+  }
+
+  private fillSphere(
+    mesh: InstancedMesh | StudMesh,
+    source: BufferGeometry,
+    kind: number,
+    start: number,
+    count: number,
+    reuse: SphereReuse | undefined,
+  ): void {
+    if (!reuse) {
+      mesh.computeBoundingSphere();
+      return;
+    }
+    const { replaced, built } = reuse;
+    const sphere = sphereOf(mesh);
+    const index = replaced ? replaced.match(built, source, kind, start, count) : NO_MATCH;
+    if (replaced && index !== NO_MATCH) replaced.copyTo(index, sphere);
+    else mesh.computeBoundingSphere();
+    built.append(source, kind, start, count, sphere);
   }
 
   setView(
