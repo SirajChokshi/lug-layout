@@ -456,13 +456,6 @@ function overlapsHit(part: AssemblyPart, origin: Vec3, box: HitBox): boolean {
   );
 }
 
-function columnOverlapsHit(posedParts: PosedAssembly, box: HitBox): boolean {
-  const inCell = posedParts.parts.filter((part) => coversCell(part, posedParts.origin, box));
-  const bottom = Math.min(...inCell.map((part) => posedParts.origin[1] - part.max[1]));
-  const top = Math.max(...inCell.map((part) => posedParts.origin[1] - part.min[1]));
-  return inCell.length > 0 && bottom < box.topLdu && top > box.bottomLdu;
-}
-
 export interface PosedPair {
   readonly placed: PosedAssembly;
   readonly held: PosedAssembly;
@@ -497,7 +490,7 @@ export function hitIsReal(
   return (
     named.parts.some(
       (part) => namesPart(hit.part, [part]) && overlapsHit(part, named.origin, box),
-    ) && columnOverlapsHit(held, box)
+    ) && held.parts.some((part) => overlapsHit(part, held.origin, box))
   );
 }
 
@@ -722,7 +715,7 @@ function connectorsOf(step: Step): number {
   return (step.hover?.mates ?? []).reduce((sum, mate) => sum + mate.connectors, 0);
 }
 
-function seamSpan(neighbourhood: AssistNeighbourhood): number {
+function neighbourhoodSpan(neighbourhood: AssistNeighbourhood): number {
   return 2 * (neighbourhood.cells + 1);
 }
 
@@ -738,7 +731,7 @@ async function matedPoses(
   log: StepLog,
   neighbourhood: AssistNeighbourhood,
 ): Promise<ReadonlyArray<MatedPose>> {
-  return (await seamPoses(log, seamSpan(neighbourhood))).filter(
+  return (await seamPoses(log, neighbourhoodSpan(neighbourhood))).filter(
     ({ step }) => step.hover?.accepted === true && step.hover.mates.length > 0,
   );
 }
@@ -914,10 +907,12 @@ export async function pinnedPairChecks(
   const reach = await reachAcrossScales(path, log);
   const probe = await log.at("assist", AT_FLUSH, false);
   const neighbourhood = probe.hover?.assistNeighbourhood ?? NO_NEIGHBOURHOOD;
-  const span = seamSpan(neighbourhood);
-  const precisely = await seamPoses(log, span);
-  const predictions = seamPredictions(pair, span);
-  const predictedMates: ReadonlyArray<PredictedMate> = predictions
+  const assistSpan = neighbourhoodSpan(neighbourhood);
+  const seamSpan = pair.seamCells - 1;
+  const precisely = await seamPoses(log, seamSpan);
+  const predictions = seamPredictions(pair, seamSpan);
+  const assistPredictions = predictions.filter(({ along }) => Math.abs(along) <= assistSpan);
+  const predictedMates: ReadonlyArray<PredictedMate> = assistPredictions
     .filter(({ fit }) => fit === "mated")
     .map(({ along, joints }) => ({ along, joints, pose: offset(poses.flush, poses.along, along) }));
   const snapped: PredictedSnap[] = [];
@@ -1005,7 +1000,7 @@ export async function pinnedPairChecks(
       ({ step, target }) => snapsToPredicted(step, target),
       ({ at, step, target }) =>
         `${describeOffset(at)}: expected the mate at ${describeOffset({ along: target.along, across: 0 })} with ${target.joints} joints; ${outcome(step)}`,
-      `${snapped.length} offsets: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate along the seam; predicted mates: ${describePredictions(predictions)}`,
+      `${snapped.length} offsets: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate along the seam; predicted mates: ${describePredictions(assistPredictions)}`,
     ),
     sweepCheck(
       "Assist sweep: beyond the neighbourhood of every predicted mate, assist gives exactly the precise result at the same cursor pose (pose, verdict, hit and mates; the turn hint is assist's own), and every refusal names a part and cell where the two models overlap",

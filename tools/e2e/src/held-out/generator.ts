@@ -81,6 +81,7 @@ export interface ModulePair {
   readonly partner: ModuleModel;
   readonly partnerOffset: Vec3;
   readonly alongEdge: Vec3;
+  readonly seamCells: number;
   readonly pins: number;
 }
 
@@ -943,6 +944,7 @@ export function modulePair(pools: BlockPools, seed: number): ModulePair {
     },
     partnerOffset,
     alongEdge,
+    seamCells: frame.along === 0 ? subject.cellsX : subject.cellsZ,
     pins: subject.pins.length,
   };
 }
