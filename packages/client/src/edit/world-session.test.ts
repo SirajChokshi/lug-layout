@@ -29,7 +29,6 @@ import { Container } from "inversify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR_CAMERA, WORLD_SESSION } from "../tokens.ts";
-
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
