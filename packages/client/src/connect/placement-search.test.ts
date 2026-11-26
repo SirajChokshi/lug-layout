@@ -1374,14 +1374,23 @@ class LiveWorld {
 }
 
 function listedBefore(a: Listed, b: Listed): boolean {
+  return lowerFirst(a.pose, a.item, b.pose, b.item);
+}
+
+function lowerFirst(
+  pose: LatticePose,
+  item: string,
+  other: LatticePose,
+  otherItem: string,
+): boolean {
   const keys = [
-    a.pose.yPlates - b.pose.yPlates,
-    a.pose.x - b.pose.x,
-    a.pose.z - b.pose.z,
-    a.pose.rot - b.pose.rot,
+    pose.yPlates - other.yPlates,
+    pose.x - other.x,
+    pose.z - other.z,
+    pose.rot - other.rot,
   ];
   const differing = keys.find((key) => key !== 0);
-  return differing === undefined ? a.item < b.item : differing < 0;
+  return differing === undefined ? item < otherItem : differing < 0;
 }
 
 const LCG_MULTIPLIER = 1664525;
@@ -3053,17 +3062,16 @@ interface NamedEntry {
   readonly pose: LatticePose;
 }
 
-interface HeldProbe {
-  readonly name: string;
-  readonly piece: NamedPiece;
-  readonly pose: LatticePose;
-}
-
 interface NamingParts {
   readonly search: IPlacementSearch;
   readonly solver: ConnectionSolver;
   readonly shapes: SnapShapes;
   readonly pieces: Readonly<Record<string, NamedPiece>>;
+}
+
+interface Blockers {
+  readonly names: string[];
+  readonly hits: Map<string, OverlapHit>;
 }
 
 interface Overlap {
@@ -3086,22 +3094,6 @@ function realBundleFetcher(): IAssetFetcher {
     },
     text: (path) => readFile(new URL(path, realBundleRoot), "utf8"),
   };
-}
-
-function lowerFirst(
-  pose: LatticePose,
-  item: string,
-  other: LatticePose,
-  otherItem: string,
-): boolean {
-  const keys = [
-    pose.yPlates - other.yPlates,
-    pose.x - other.x,
-    pose.z - other.z,
-    pose.rot - other.rot,
-  ];
-  const differing = keys.find((key) => key !== 0);
-  return differing === undefined ? item < otherItem : differing < 0;
 }
 
 function posedCells(local: CellVolumes, pose: LatticePose): CellVolumes {
@@ -3201,7 +3193,7 @@ class NamingHistory {
     return this.names.get(id) ?? `unknown ${id}`;
   }
 
-  carry(held: HeldProbe, moving: string): void {
+  carry(held: NamedEntry, moving: string): void {
     const { piece, pose } = held;
     this.parts.search.search(
       piece.connectors,
@@ -3215,13 +3207,13 @@ class NamingHistory {
     );
   }
 
-  landsOn(held: HeldProbe): ReadonlyArray<string> {
+  landsOn(held: NamedEntry): ReadonlyArray<string> {
     return this.parts.search
       .restingOn(held.piece.volumes, held.pose, null)
       .map((id) => this.nameOf(id));
   }
 
-  overlap(held: HeldProbe): string {
+  overlap(held: NamedEntry): string {
     const { piece, pose } = held;
     const choice = placementChoice();
     this.parts.search.check(
@@ -3291,7 +3283,7 @@ class NamingOracle {
     return names.reduce((best, name) => (this.lower(name, best) ? name : best));
   }
 
-  contactsByCell(held: HeldProbe): ReadonlyArray<ReadonlyArray<string>> {
+  contactsByCell(held: NamedEntry): ReadonlyArray<ReadonlyArray<string>> {
     const cells = posedCells(held.piece.volumes, held.pose);
     const contact = emptyHit();
     return Array.from({ length: cells.count }, (_, c) => {
@@ -3304,15 +3296,12 @@ class NamingOracle {
     });
   }
 
-  landsOn(held: HeldProbe): ReadonlyArray<string> {
+  landsOn(held: NamedEntry): ReadonlyArray<string> {
     const touching = [...new Set(this.contactsByCell(held).flat())];
     return touching.toSorted((a, b) => (this.lower(a, b) ? -1 : this.lower(b, a) ? 1 : 0));
   }
 
-  blockers(
-    held: HeldProbe,
-    moving: string | null,
-  ): { cell: number; names: string[]; hits: Map<string, OverlapHit> } | null {
+  blockers(held: NamedEntry, moving: string | null): Blockers | null {
     const { piece, pose } = held;
     const { solver } = this.history.parts;
     const cells = posedCells(piece.volumes, pose);
@@ -3329,17 +3318,14 @@ class NamingOracle {
       );
       zones.collect(report, piece.parts.boxes, piece.parts.technic, pose, placed);
     }
-    const tiers: Array<Array<{ cell: number; names: string[]; hits: Map<string, OverlapHit> }>> = [
-      [],
-      [],
-    ];
+    const tiers: Array<Array<Blockers>> = [[], []];
     for (let c = 0; c < cells.count; c++) {
       if ((cells.topLdu[c] ?? 0) <= (cells.bottomLdu[c] ?? 0)) continue;
       const x = cells.cellX[c] ?? 0;
       const z = cells.cellZ[c] ?? 0;
-      const found = [
-        { cell: c, names: [] as string[], hits: new Map<string, OverlapHit>() },
-        { cell: c, names: [] as string[], hits: new Map<string, OverlapHit>() },
+      const found: Blockers[] = [
+        { names: [], hits: new Map() },
+        { names: [], hits: new Map() },
       ];
       for (const name of this.history.linked) {
         if (name === moving) continue;
@@ -3364,7 +3350,7 @@ class NamingOracle {
     return tiers[0]?.[0] ?? tiers[1]?.[0] ?? null;
   }
 
-  overlap(held: HeldProbe, moving: string | null = null): string {
+  overlap(held: NamedEntry, moving: string | null = null): string {
     const blocking = this.blockers(held, moving);
     if (!blocking) return NOT_BLOCKED;
     const hit = blocking.hits.get(this.least(blocking.names));
@@ -3413,7 +3399,7 @@ class MainMirror {
     );
   }
 
-  landsOn(held: HeldProbe): ReadonlyArray<string> {
+  landsOn(held: NamedEntry): ReadonlyArray<string> {
     const listed: string[] = [];
     for (const atCell of this.oracle.contactsByCell(held)) {
       const newestFirst = atCell.toSorted(
@@ -3424,7 +3410,7 @@ class MainMirror {
     return listed;
   }
 
-  overlap(held: HeldProbe, moving: string | null = null): string {
+  overlap(held: NamedEntry, moving: string | null = null): string {
     const blocking = this.oracle.blockers(held, moving);
     return blocking ? this.newest(blocking.names) : NOT_BLOCKED;
   }

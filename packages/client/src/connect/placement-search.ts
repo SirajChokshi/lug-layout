@@ -1272,10 +1272,11 @@ export class PlacementSearch implements IPlacementSearch {
     this.zones.clear();
     if (hinted && !exemptable && this.hintBlocks(volumes, pose)) return true;
     const overlapping = this.firstOverlappingCell(volumes, pose);
-    return (
-      overlapping !== NO_OVERLAP &&
-      this.blockedDespiteZones(model, boxes, technic, pose, overlapping, exemptable, !hinted)
-    );
+    if (overlapping === NO_OVERLAP) return false;
+    const blocking = this.blockingCell(model, boxes, technic, pose, overlapping, exemptable);
+    if (blocking === NO_OVERLAP) return false;
+    if (!hinted) this.nameBlocker(blocking);
+    return true;
   }
 
   private firstOverlappingCell(volumes: CellVolumes, pose: LatticePose): number {
@@ -1283,21 +1284,6 @@ export class PlacementSearch implements IPlacementSearch {
     const at = firstOverlapFrom(placed, this.volumes, this.exempt, this.hit, NO_OVERLAP);
     if (at !== NO_OVERLAP) this.remember(at);
     return at;
-  }
-
-  private blockedDespiteZones(
-    model: ModelConnectors,
-    boxes: PartBoxes,
-    technic: TechnicSet,
-    pose: LatticePose,
-    overlapping: number,
-    exemptable: boolean,
-    naming: boolean,
-  ): boolean {
-    const blocking = this.blockingCell(model, boxes, technic, pose, overlapping, exemptable);
-    if (blocking === NO_OVERLAP) return false;
-    if (naming) this.nameBlocker(blocking);
-    return true;
   }
 
   private blockingCell(
@@ -1491,9 +1477,10 @@ export class PlacementSearch implements IPlacementSearch {
       const overlapping = this.firstOverlappingCell(volumes, pose);
       if (overlapping === NO_OVERLAP) return NO_PLACEMENT;
       const mated = this.solver.votes(model, pose) > 0;
-      return this.blockedDespiteZones(model, boxes, technic, pose, overlapping, mated, true)
-        ? this.hit.owner
-        : NO_PLACEMENT;
+      const blocking = this.blockingCell(model, boxes, technic, pose, overlapping, mated);
+      if (blocking === NO_OVERLAP) return NO_PLACEMENT;
+      this.nameBlocker(blocking);
+      return this.hit.owner;
     } finally {
       this.moving = moving;
       this.zones.clear();

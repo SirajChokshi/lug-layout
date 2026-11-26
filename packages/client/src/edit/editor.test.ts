@@ -11070,6 +11070,7 @@ describe("the model a refusal names, for a given world however it was reached", 
       } else {
         const pile = await importUserFile(editor, "custom-pile.ldr", pileBytes);
         const brickFirst = history === "brick first";
+        const storedBefore = repository.storedPlacements();
         const id = await builtWorld(
           editor,
           repository,
@@ -11079,7 +11080,7 @@ describe("the model a refusal names, for a given world however it was reached", 
             await place(brickFirst ? NAMING_BRICK : pile, brickFirst ? 200 : 520, 320);
             await place(brickFirst ? pile : NAMING_BRICK, brickFirst ? 520 : 200, 320);
           },
-          brickFirst ? 3 : repository.storedPlacements() + 3,
+          storedBefore + 3,
         );
         if (brickFirst) built = id;
         else {

@@ -1032,15 +1032,13 @@ function poseOf(model: PlacedModel): PlacementPose {
   };
 }
 
-const ANY_MODEL = (): boolean => true;
-
 function firstByPlacement(
   models: ReadonlyArray<PlacedModel>,
-  counts: (model: PlacedModel) => boolean,
+  wanted: (model: PlacedModel) => boolean = () => true,
 ): PlacedModel | null {
   let first: PlacedModel | null = null;
   for (const model of models) {
-    if (!counts(model)) continue;
+    if (!wanted(model)) continue;
     if (
       first === null ||
       placementBefore(model.handle, model.placeable.id, first.handle, first.placeable.id)
@@ -5229,7 +5227,7 @@ export class Editor implements IEditor, IEditedWorld {
     const reason = second
       ? `${left} connects only through the selected models, so ${verb} them would leave ${left} unconnected. ${remedy(action, left)}`
       : `${only.placeable.label}: ${left} connects only through it, so ${verb} it would leave ${left} unconnected. ${remedy(action, left)}`;
-    const marker = firstByPlacement(chosen, ANY_MODEL) ?? only;
+    const marker = firstByPlacement(chosen) ?? only;
     return refusedAt(marker.placeable.id, marker.handle, reason);
   }
 
