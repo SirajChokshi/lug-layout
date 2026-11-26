@@ -1,5 +1,5 @@
 import { LINK_PROGRESS_PROTOCOL } from "./protocols.ts";
-import { RpcEndpoint, type RpcPort } from "./rpc-endpoint.ts";
+import { isEnvelope, RpcEndpoint, type RpcPort } from "./rpc-endpoint.ts";
 
 interface LinkProgressShared {
   readonly kind: "progress";
@@ -9,10 +9,9 @@ const SHARED: LinkProgressShared = { kind: "progress" };
 
 function isLinkProgressEnvelope(data: unknown): boolean {
   return (
-    typeof data === "object" &&
-    data !== null &&
-    Reflect.get(data, "protocol") === LINK_PROGRESS_PROTOCOL.name &&
-    Reflect.get(data, "version") === LINK_PROGRESS_PROTOCOL.version
+    isEnvelope(data) &&
+    data.protocol === LINK_PROGRESS_PROTOCOL.name &&
+    data.version === LINK_PROGRESS_PROTOCOL.version
   );
 }
 

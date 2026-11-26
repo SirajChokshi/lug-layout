@@ -80,27 +80,20 @@ const runFile = promisify(execFile);
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
 
-class Peers implements ILinkProgressShare {
+class SharedProgress implements ILinkProgressShare {
   shared = 0;
-  private readonly listeners: Array<() => void> = [];
 
   share(): void {
     this.shared += 1;
   }
 
-  listen(listener: () => void): void {
-    this.listeners.push(listener);
-  }
-
-  deliverShare(): void {
-    for (const listener of this.listeners) listener();
-  }
+  listen(): void {}
 }
 
 function importWorker(
   indexedDb?: IDBFactory,
   fetchUrl?: FetchFunction,
-  share: ILinkProgressShare = new Peers(),
+  share: ILinkProgressShare = new SharedProgress(),
 ): IImportWorkerService {
   const container = new Container();
   container.load(...importWorkerModules(idlePort));
@@ -224,7 +217,7 @@ async function bundleLoader() {
   container.bind(ASSET_FETCHER).toService(NETWORK_ASSET_FETCHER);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
-  container.bind(LINK_PROGRESS_SHARE).toConstantValue(new Peers());
+  container.bind(LINK_PROGRESS_SHARE).toConstantValue(new SharedProgress());
   return container.get(PART_BUNDLE_LOADER);
 }
 
@@ -249,7 +242,7 @@ it("gives a bundle part the same connector table from the catalog loader as when
   mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
 
   const fromCatalog = await loader.loadPartConnectors(LOD, TECHNIC_PART);
-  const progress = new Peers();
+  const progress = new SharedProgress();
   const imported = await importWorker(undefined, undefined, progress).run({
     kind: "import",
     ticket: 1,

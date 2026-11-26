@@ -4,7 +4,7 @@ import { AssetResponseError } from "./asset-response-error.ts";
 import { AssetStalledError } from "./asset-stalled-error.ts";
 import { catalogModule } from "./catalog.module.ts";
 import { DEFAULT_LINK_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
-import type { ILinkProgressShare } from "./link-progress.ts";
+import { Peers } from "./link-progress.test-support.ts";
 import type { IAssetFetcher } from "./part-bundle.ts";
 import {
   ASSET_FETCHER,
@@ -226,23 +226,6 @@ it("tells an HTTP error status apart from a request that got no response", async
 const BUCKET = "https://bucket.test/";
 const SILENCE_LIMIT_MS = DEFAULT_LINK_SILENCE_LIMIT_MS;
 const encoder = new TextEncoder();
-
-class Peers implements ILinkProgressShare {
-  shared = 0;
-  private readonly listeners: Array<() => void> = [];
-
-  share(): void {
-    this.shared += 1;
-  }
-
-  listen(listener: () => void): void {
-    this.listeners.push(listener);
-  }
-
-  deliverShare(): void {
-    for (const listener of this.listeners) listener();
-  }
-}
 
 async function networkFetcher(): Promise<{ network: IAssetFetcher; peers: Peers }> {
   const peers = new Peers();

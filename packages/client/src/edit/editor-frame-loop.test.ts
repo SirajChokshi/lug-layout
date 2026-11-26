@@ -1,4 +1,4 @@
-import { LINK_PROGRESS_SHARE, type ILinkProgressShare } from "@brr/catalog";
+import { LINK_PROGRESS_SHARE } from "@brr/catalog";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -13,8 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR_FRAME_LOOP } from "../tokens.ts";
 import type { FrameLoopView, FrameTimes, IEditorFrameLoop } from "./editor-frame-loop.ts";
-
-const silentPeers: ILinkProgressShare = { share: () => undefined, listen: () => undefined };
+import { silentPeers } from "../catalog/silent-peers.test-support.ts";
 
 const DRAW_CALLS = 7;
 const RENDER_MS = 2;

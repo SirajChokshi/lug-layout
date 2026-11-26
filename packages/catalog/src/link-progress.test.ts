@@ -1,27 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  LINK_PROGRESS_MIN_SHARE_GAP_MS,
-  LinkProgress,
-  reportingFetch,
-  type ILinkProgressShare,
-} from "./link-progress.ts";
-
-class Peers implements ILinkProgressShare {
-  shared = 0;
-  private readonly listeners: Array<() => void> = [];
-
-  share(): void {
-    this.shared += 1;
-  }
-
-  listen(listener: () => void): void {
-    this.listeners.push(listener);
-  }
-
-  deliverShare(): void {
-    for (const listener of this.listeners) listener();
-  }
-}
+import { LINK_PROGRESS_MIN_SHARE_GAP_MS, LinkProgress, reportingFetch } from "./link-progress.ts";
+import { Peers } from "./link-progress.test-support.ts";
 
 afterEach(() => {
   vi.useRealTimers();
