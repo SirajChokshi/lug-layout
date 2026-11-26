@@ -48,6 +48,7 @@ const RESTS = 1;
 const RESTS_PRESSING_UP = 2;
 const NO_PLACEMENT = -1;
 const NO_PLACEMENTS: ReadonlySet<number> = new Set();
+const INITIAL_STRAND_CANDIDATES = 64;
 
 export const SETTLED_AT_ONCE = 0;
 
@@ -716,6 +717,9 @@ export class PlacementSearch implements IPlacementSearch {
     this.zones.exempts(owner, cellX, cellZ, heldCell);
 
   private readonly rival = placementChoice().overlap;
+  private leader: Placed | null = null;
+  private readonly restingPlaced: Array<Placed | undefined> = [];
+  private strandCandidates = new Int32Array(INITIAL_STRAND_CANDIDATES);
 
   private readonly ahead: OwnerOrder = (owner, than) => {
     const placed = this.placedAt(owner);
@@ -724,13 +728,17 @@ export class PlacementSearch implements IPlacementSearch {
   };
 
   private readonly collectBlocker = (owner: number, cellX: number, cellZ: number): boolean => {
+    const leader = this.leader;
+    if (leader === null || owner === this.hit.owner || owner === this.moving) return true;
+    const placed = this.placed.get(owner);
     if (
-      owner !== this.moving &&
+      placed !== undefined &&
+      placementBefore(placed.pose, placed.item, leader.pose, leader.item) &&
       !(this.withheld.size > 0 && this.withheld.has(owner)) &&
-      !this.zones.covers(owner, cellX, cellZ) &&
-      this.ahead(owner, this.hit.owner)
+      !this.zones.covers(owner, cellX, cellZ)
     ) {
       copyBlocker(owner, this.rival, this.hit);
+      this.leader = placed;
     }
     return true;
   };
@@ -1307,6 +1315,7 @@ export class PlacementSearch implements IPlacementSearch {
       this.zones.leastOverlapAt(this.volumes, this.scratch, cell, this.ahead, hit);
       return;
     }
+    this.leader = this.placedAt(hit.owner);
     this.volumes.firstOverlap(
       hit.cellX,
       hit.cellZ,
@@ -1315,6 +1324,7 @@ export class PlacementSearch implements IPlacementSearch {
       this.collectBlocker,
       this.rival,
     );
+    this.leader = null;
   }
 
   private hintBlocks(volumes: CellVolumes, pose: LatticePose): boolean {
@@ -1361,15 +1371,30 @@ export class PlacementSearch implements IPlacementSearch {
         owners.push(this.contact.owner);
       }
     }
+    if (owners.length > 1) this.sortByPlacement(owners);
+    return owners;
+  }
+
+  private sortByPlacement(owners: number[]): void {
+    const order = this.restingPlaced;
+    for (let i = 0; i < owners.length; i++) order[i] = this.placed.get(owners[i] ?? NO_PLACEMENT);
     for (let i = 1; i < owners.length; i++) {
       const owner = owners[i] ?? NO_PLACEMENT;
+      const resting = order[i];
+      if (resting === undefined) continue;
       let j = i - 1;
-      for (; j >= 0 && this.ahead(owner, owners[j] ?? NO_PLACEMENT); j--) {
+      for (; j >= 0 && this.restsBefore(resting, order[j]); j--) {
         owners[j + 1] = owners[j] ?? NO_PLACEMENT;
+        order[j + 1] = order[j];
       }
       owners[j + 1] = owner;
+      order[j + 1] = resting;
     }
-    return owners;
+    for (let i = 0; i < owners.length; i++) order[i] = undefined;
+  }
+
+  private restsBefore(placed: Placed, other: Placed | undefined): boolean {
+    return other !== undefined && placementBefore(placed.pose, placed.item, other.pose, other.item);
   }
 
   strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): Stranding {
@@ -1393,23 +1418,34 @@ export class PlacementSearch implements IPlacementSearch {
     }
     if (this.withheld.size > 0) throw new Error("placements are already withdrawn");
     const partners = this.partnersOf(removed);
-    const before = new Map<number, number>();
+    let candidates = 0;
     for (const [other, placed] of this.placed) {
       if (placements.has(other)) continue;
       if (!partners.has(other) && !meetsAnyVerticalBox(placed, removed)) continue;
       this.solver.evaluate(placed.model, placed.pose, this.report);
-      if (this.report.count > 0) before.set(other, this.report.count);
+      if (this.report.count === 0) continue;
+      if (candidates === this.strandCandidates.length) {
+        const grownCandidates = new Int32Array(candidates * 2);
+        grownCandidates.set(this.strandCandidates);
+        this.strandCandidates = grownCandidates;
+      }
+      this.strandCandidates[candidates++] = other;
     }
     for (const [placement, placed] of removed) {
       this.solver.remove(placed.model, placed.pose, placement);
     }
     let stranded: number | null = null;
-    for (const [other, mates] of before) {
+    let strandedPlaced: Placed | undefined;
+    for (let c = 0; c < candidates; c++) {
+      const other = this.strandCandidates[c] ?? NO_PLACEMENT;
       const placed = this.placed.get(other);
-      if (!placed || mates === 0) continue;
-      if (stranded !== null && !this.ahead(other, stranded)) continue;
+      if (!placed) continue;
+      if (strandedPlaced !== undefined && !this.restsBefore(placed, strandedPlaced)) continue;
       this.solver.evaluate(placed.model, placed.pose, this.report);
-      if (this.report.count === 0 && !restsOnTable(other)) stranded = other;
+      if (this.report.count === 0 && !restsOnTable(other)) {
+        stranded = other;
+        strandedPlaced = placed;
+      }
     }
     for (const [placement, placed] of removed) {
       this.solver.insert(placed.model, placed.pose, placement);
