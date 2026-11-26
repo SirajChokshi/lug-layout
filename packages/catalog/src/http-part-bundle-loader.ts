@@ -147,29 +147,38 @@ export const DEFAULT_ASSET_SILENCE_LIMIT_MS = 30_000;
 
 const utf8 = new TextDecoder();
 
+class LinkProgress {
+  private lastAt = Number.NEGATIVE_INFINITY;
+
+  mark(): void {
+    this.lastAt = performance.now();
+  }
+
+  quietMs(): number {
+    return performance.now() - this.lastAt;
+  }
+}
+
 class SilenceWatch {
   readonly signal: AbortSignal;
   readonly stalled: Promise<never>;
-  private readonly limitMs: number;
-  private readonly stall: () => void;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private timer: ReturnType<typeof setTimeout>;
 
-  constructor(url: string, limitMs: number) {
+  constructor(url: string, limitMs: number, link: LinkProgress) {
     const controller = new AbortController();
     const { promise, reject } = Promise.withResolvers<never>();
     this.signal = controller.signal;
     this.stalled = promise;
-    this.limitMs = limitMs;
-    this.stall = () => {
+    const check = (): void => {
+      const remainingMs = limitMs - link.quietMs();
+      if (remainingMs > 0) {
+        this.timer = setTimeout(check, Math.ceil(remainingMs));
+        return;
+      }
       reject(new AssetStalledError(url, limitMs));
       controller.abort();
     };
-    this.markProgress();
-  }
-
-  markProgress(): void {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(this.stall, this.limitMs);
+    this.timer = setTimeout(check, limitMs);
   }
 
   stop(): void {
@@ -195,16 +204,20 @@ function joined(chunks: ReadonlyArray<Uint8Array>, length: number): ArrayBuffer 
   return body.buffer;
 }
 
-async function download(url: string, watch: SilenceWatch): Promise<ArrayBuffer> {
-  const response = await fetch(url, { signal: watch.signal });
-  watch.markProgress();
+async function download(
+  url: string,
+  signal: AbortSignal,
+  link: LinkProgress,
+): Promise<ArrayBuffer> {
+  const response = await fetch(url, { signal });
+  link.mark();
   if (!response.ok) throw new AssetResponseError(url, response.status);
   if (response.body === null) return new ArrayBuffer(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
   for (let read = await reader.read(); !read.done; read = await reader.read()) {
-    watch.markProgress();
+    link.mark();
     chunks.push(read.value);
     length += read.value.byteLength;
   }
@@ -213,6 +226,8 @@ async function download(url: string, watch: SilenceWatch): Promise<ArrayBuffer> 
 
 @injectable()
 export class HttpAssetFetcher implements IAssetFetcher {
+  private readonly link = new LinkProgress();
+
   constructor(
     @inject(BUNDLE_BASE_URL) private readonly baseUrl: string,
     @inject(ASSET_SILENCE_LIMIT_MS) private readonly silenceLimitMs: number,
@@ -234,8 +249,10 @@ export class HttpAssetFetcher implements IAssetFetcher {
 
   private get(path: string): Promise<ArrayBuffer> {
     const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
-    const watch = new SilenceWatch(url, this.silenceLimitMs);
-    return Promise.race([watch.stalled, download(url, watch)]).finally(() => watch.stop());
+    const watch = new SilenceWatch(url, this.silenceLimitMs, this.link);
+    return Promise.race([watch.stalled, download(url, watch.signal, this.link)]).finally(() =>
+      watch.stop(),
+    );
   }
 }
 

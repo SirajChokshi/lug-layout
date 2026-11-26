@@ -272,17 +272,9 @@ function pacedBody(chunks: ReadonlyArray<string>, everyMs: number): ReadableStre
 }
 
 it("fails a request that gets no answer for 30 s with an error naming the file, and not before", async () => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const network = await networkFetcher();
-  vi.stubGlobal(
-    "fetch",
-    (_url: string, init: RequestInit) =>
-      new Promise<Response>((_answer, refuse) => {
-        init.signal?.addEventListener("abort", () =>
-          refuse(new DOMException("aborted", "AbortError")),
-        );
-      }),
-  );
+  vi.stubGlobal("fetch", (_url: string, init: RequestInit) => hangs(init));
   const loading = network.bytes(POINTER);
   const watch = watched(loading);
 
@@ -301,7 +293,7 @@ it("fails a request that gets no answer for 30 s with an error naming the file, 
 });
 
 it("fails a response that goes silent partway through its body 30 s after the last chunk", async () => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const network = await networkFetcher();
   vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
     const body = new ReadableStream<Uint8Array>({
@@ -331,7 +323,7 @@ it("fails a response that goes silent partway through its body 30 s after the la
 });
 
 it("keeps a response that sends something every 29.999 s, headers included, however long it takes in all", async () => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const network = await networkFetcher();
   const chunks = ["slow ", "but ", "steady ", "bytes"];
   const pace = SILENCE_LIMIT_MS - 1;
@@ -350,8 +342,96 @@ it("keeps a response that sends something every 29.999 s, headers included, howe
   expect(vi.getTimerCount()).toBe(0);
 });
 
+function hangs(init: RequestInit): Promise<Response> {
+  return new Promise((_answer, refuse) => {
+    init.signal?.addEventListener("abort", () => refuse(new DOMException("aborted", "AbortError")));
+  });
+}
+
+const QUEUED = "standard/queued.glb";
+const FLOWING = "standard/flowing.glb";
+
+it("keeps a request queued behind another response for as long as that response keeps arriving", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  const network = await networkFetcher();
+  const flowing = ["one ", "two ", "three ", "four ", "five ", "six ", "seven ", "eight ", "nine"];
+  const chunkEveryMs = 10_000;
+  const queuedAnswerMs = (flowing.length + 1) * chunkEveryMs;
+  vi.stubGlobal("fetch", (url: string) =>
+    url.endsWith(FLOWING)
+      ? Promise.resolve(new Response(pacedBody(flowing, chunkEveryMs)))
+      : new Promise<Response>((answer) =>
+          setTimeout(() => answer(new Response("queued")), queuedAnswerMs),
+        ),
+  );
+  const first = network.text(FLOWING);
+  const queued = network.text(QUEUED);
+
+  await vi.advanceTimersByTimeAsync(queuedAnswerMs);
+
+  await expect(first).resolves.toBe(flowing.join(""));
+  await expect(queued).resolves.toBe("queued");
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("fails a response the server hangs while others keep arriving, once nothing has arrived for 30 s", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  const network = await networkFetcher();
+  const flowing = ["a", "b", "c", "d", "e"];
+  const chunkEveryMs = 20_000;
+  const lastChunkMs = flowing.length * chunkEveryMs;
+  vi.stubGlobal("fetch", (url: string, init: RequestInit) =>
+    url.endsWith(FLOWING)
+      ? Promise.resolve(new Response(pacedBody(flowing, chunkEveryMs)))
+      : hangs(init),
+  );
+  const hung = network.bytes(QUEUED);
+  const watch = watched(hung);
+  const other = network.text(FLOWING);
+
+  await vi.advanceTimersByTimeAsync(lastChunkMs + SILENCE_LIMIT_MS - 1);
+  await expect(other).resolves.toBe(flowing.join(""));
+  expect(watch.settled()).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+
+  await expect(hung).rejects.toBeInstanceOf(AssetStalledError);
+  await expect(hung).rejects.toMatchObject({ url: `${BUCKET}${QUEUED}` });
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("fails every request still waiting once nothing has arrived from the server for 30 s", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  const network = await networkFetcher();
+  const lastByteMs = 5_000;
+  vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+    if (!url.endsWith(FLOWING)) return hangs(init);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => controller.enqueue(encoder.encode("partial")), lastByteMs);
+        init.signal?.addEventListener("abort", () =>
+          controller.error(new DOMException("aborted", "AbortError")),
+        );
+      },
+    });
+    return Promise.resolve(new Response(body));
+  });
+  const neverAnswered = network.bytes(QUEUED);
+  const cutOff = network.bytes(FLOWING);
+  const watches = [watched(neverAnswered), watched(cutOff)];
+
+  await vi.advanceTimersByTimeAsync(lastByteMs + SILENCE_LIMIT_MS - 1);
+  expect(watches.map((watch) => watch.settled())).toEqual([false, false]);
+  await vi.advanceTimersByTimeAsync(1);
+
+  await expect(neverAnswered).rejects.toMatchObject({ url: `${BUCKET}${QUEUED}` });
+  await expect(cutOff).rejects.toMatchObject({ url: `${BUCKET}${FLOWING}` });
+  await expect(neverAnswered).rejects.toBeInstanceOf(AssetStalledError);
+  await expect(cutOff).rejects.toBeInstanceOf(AssetStalledError);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it("reads exactly what was sent and leaves no timer behind, however the request ends", async () => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const network = await networkFetcher();
   const sent = encoder.encode("añb€c");
   const split = [sent.slice(0, 2), sent.slice(2, 5), sent.slice(5)];
