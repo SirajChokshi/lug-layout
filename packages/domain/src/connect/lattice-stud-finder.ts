@@ -58,10 +58,9 @@ class PhaseGroups {
   static of(model: ModelConnectors, classes: MateClasses): PhaseGroups {
     const prepared = new PhaseGroups();
     const n = model.count;
-    const ownClass = new Int32Array(n);
+    const ownClass = classes.classesOf(model);
     let vertical = 0;
     for (let i = 0; i < n; i++) {
-      ownClass[i] = classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
       if (verticalSign(model.axis[i] ?? 0) !== 0) vertical++;
     }
     const total = vertical * QUARTER_TURNS;
