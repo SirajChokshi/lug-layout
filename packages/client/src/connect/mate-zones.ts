@@ -7,6 +7,7 @@ import {
   ENGAGED_V,
   ENGAGEMENT_FLOATS,
   NO_INSTANCE,
+  NO_OVERLAP,
   NO_PARTNER,
   NO_TECHNIC_ITEM,
   NOT_ENGAGED,
@@ -100,6 +101,22 @@ function within(inner: Float64Array, outer: Float64Array, at: number): boolean {
   return true;
 }
 
+export type OwnerOrder = (owner: number, than: number) => boolean;
+
+function precedes(owner: number, than: number, ahead: OwnerOrder): boolean {
+  return ahead(owner, than) || (!ahead(than, owner) && owner < than);
+}
+
+export function copyBlocker(owner: number, from: OverlapHit, to: OverlapHit): void {
+  to.owner = owner;
+  to.instance = from.instance;
+  to.candidateInstance = from.candidateInstance;
+  to.bottomLdu = from.bottomLdu;
+  to.topLdu = from.topLdu;
+  to.candidateBottomLdu = from.candidateBottomLdu;
+  to.candidateTopLdu = from.candidateTopLdu;
+}
+
 export class MateZones implements PairExcuse {
   private zones = 0;
   private zoneInts = new Int32Array(INITIAL_ZONES * ZONE_INTS);
@@ -119,6 +136,17 @@ export class MateZones implements PairExcuse {
   private posedTechnic: PosedTechnic | null = null;
   private posedTechnicOf: TechnicSet | null = null;
   private readonly theirTechnic = new PosedTechnicBuffer();
+  private readonly rival: OverlapHit = {
+    owner: NO_PARTNER,
+    instance: NO_INSTANCE,
+    candidateInstance: NO_INSTANCE,
+    bottomLdu: 0,
+    topLdu: 0,
+    cellX: 0,
+    cellZ: 0,
+    candidateBottomLdu: 0,
+    candidateTopLdu: 0,
+  };
 
   clear(): void {
     this.zones = 0;
@@ -170,7 +198,7 @@ export class MateZones implements PairExcuse {
     return this.zones;
   }
 
-  exempts(owner: number, cellX: number, cellZ: number, heldCell: number): boolean {
+  covers(owner: number, cellX: number, cellZ: number): boolean {
     for (let z = 0; z < this.zones; z++) {
       const at = z * ZONE_INTS;
       if (
@@ -180,16 +208,21 @@ export class MateZones implements PairExcuse {
         cellZ >= (this.zoneInts[at + CELL_Z0] ?? 0) &&
         cellZ < (this.zoneInts[at + CELL_Z1] ?? 0)
       ) {
-        this.defer(owner, cellX, cellZ, heldCell);
         return true;
       }
     }
     return false;
   }
 
-  firstOverlap(index: VolumeIndex, held: CellVolumes, out: OverlapHit): boolean {
+  exempts(owner: number, cellX: number, cellZ: number, heldCell: number): boolean {
+    if (!this.covers(owner, cellX, cellZ)) return false;
+    this.defer(owner, cellX, cellZ, heldCell);
+    return true;
+  }
+
+  firstOverlap(index: VolumeIndex, held: CellVolumes, out: OverlapHit): number {
     const placed = this.placed;
-    if (!placed) return false;
+    if (!placed) return NO_OVERLAP;
     for (let d = 0; d < this.deferred; d++) {
       const at = d * DEFERRED_INTS;
       const owner = this.deferredInts[at] ?? 0;
@@ -200,9 +233,30 @@ export class MateZones implements PairExcuse {
       if (!index.firstUnexcusedOverlap(cellX, cellZ, held, heldCell, owner, this, out)) continue;
       out.cellX = cellX;
       out.cellZ = cellZ;
-      return true;
+      return heldCell;
     }
-    return false;
+    return NO_OVERLAP;
+  }
+
+  leastOverlapAt(
+    index: VolumeIndex,
+    held: CellVolumes,
+    heldCell: number,
+    ahead: OwnerOrder,
+    out: OverlapHit,
+  ): void {
+    let tested = NO_PARTNER;
+    for (;;) {
+      const owner = this.nextDeferredAhead(heldCell, out.owner, tested, ahead);
+      if (owner === NO_PARTNER) return;
+      if (
+        index.firstUnexcusedOverlap(out.cellX, out.cellZ, held, heldCell, owner, this, this.rival)
+      ) {
+        copyBlocker(owner, this.rival, out);
+        return;
+      }
+      tested = owner;
+    }
   }
 
   excuses(owner: number, own: number, theirs: number, region: Float64Array): boolean {
@@ -333,6 +387,24 @@ export class MateZones implements PairExcuse {
     if (ownItem === NO_TECHNIC_ITEM || theirItem === NO_TECHNIC_ITEM || !posed) return contained;
     const theirPosed = this.theirTechnic.placeItem(other.technic, theirItem, other.pose);
     return !technicItemsOverlap(posed, ownItem, theirPosed, theirItem, this.waivers, waivers);
+  }
+
+  private nextDeferredAhead(
+    heldCell: number,
+    leader: number,
+    tested: number,
+    ahead: OwnerOrder,
+  ): number {
+    let next = NO_PARTNER;
+    for (let d = 0; d < this.deferred; d++) {
+      const at = d * DEFERRED_INTS;
+      if (this.deferredInts[at + 3] !== heldCell) continue;
+      const owner = this.deferredInts[at] ?? NO_PARTNER;
+      if (!ahead(owner, leader)) continue;
+      if (tested !== NO_PARTNER && !precedes(tested, owner, ahead)) continue;
+      if (next === NO_PARTNER || precedes(owner, next, ahead)) next = owner;
+    }
+    return next;
   }
 
   private defer(owner: number, cellX: number, cellZ: number, heldCell: number): void {

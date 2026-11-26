@@ -7,8 +7,10 @@ import {
   AXIS_POS_Z,
   CAP_FAR,
   CAP_ROOT,
+  type CellVolumes,
   type ConnectionSolver,
   ConnectorTable,
+  FootprintGrid,
   GENDER_FEMALE,
   GENDER_MALE,
   MateReport,
@@ -25,10 +27,12 @@ import {
   STATUS_UNVERIFIED,
   STATUS_VERIFIED,
   type LatticePose,
+  type OverlapHit,
   type TrackEnd,
+  VolumeIndex,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
-import { ASSET_FETCHER, EMPTY_COLUMN, PART_BUNDLE_LOADER } from "@brr/catalog";
+import { ASSET_FETCHER, EMPTY_COLUMN, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import {
   PLATE_LDU,
   isRot90,
@@ -43,6 +47,8 @@ import {
 } from "@brr/math";
 import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { fixtureBundleFetcher } from "../edit/fixture-model.test-support.ts";
@@ -50,9 +56,11 @@ import { distinctJoints } from "../edit/placement-hover.ts";
 import { connectorKind, mateCounts } from "../edit/placement-hover-view.ts";
 import type { HoverMateCount, PlacedModelView } from "../edit/placement-hover.ts";
 import type { PlaceablePartCells } from "../edit/placeable.ts";
+import { InThreadModelImporter } from "../import/in-thread-importer.test-support.ts";
 import {
   CONNECTION_SOLVER,
   CONNECTOR_TABLES,
+  MODEL_IMPORTER,
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   SNAP_MATING,
@@ -62,6 +70,7 @@ import { partBoxes, type PartBoxes } from "./part-boxes.ts";
 import { FrozenTechnic } from "./frozen-technic.ts";
 import { typedArraysConstructedDuring } from "./typed-arrays.test-support.ts";
 import { FrozenVolumes } from "./placeable-volumes.ts";
+import { MateZones, type PlacedParts } from "./mate-zones.ts";
 import {
   SETTLED_AT_ONCE,
   placementChoice,
@@ -90,6 +99,7 @@ const LINE_Y = 14;
 const BLOCK = [0, 0, 0, 2 * STUD_LDU, BRICK_LDU, STUD_LDU];
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const ORIGIN: LatticePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
+const TEST_ITEM = "test:piece";
 const TABLE_Y_PLATES = 0;
 
 type Box = ReadonlyArray<number>;
@@ -333,7 +343,13 @@ function partsOf(
   };
 }
 
-function place(f: Fixture, owner: number, piece: Piece, pose: LatticePose = ORIGIN): void {
+function place(
+  f: Fixture,
+  owner: number,
+  piece: Piece,
+  pose: LatticePose = ORIGIN,
+  item: string = TEST_ITEM,
+): void {
   f.search.add(
     owner,
     piece.connectors,
@@ -341,6 +357,7 @@ function place(f: Fixture, owner: number, piece: Piece, pose: LatticePose = ORIG
     piece.parts.boxes,
     piece.parts.technic,
     pose,
+    item,
   );
 }
 
@@ -1292,6 +1309,7 @@ describe("PlacementSearch assist support", () => {
 interface Listed {
   readonly piece: Piece;
   readonly pose: LatticePose;
+  readonly item: string;
 }
 
 class LiveWorld {
@@ -1302,7 +1320,7 @@ class LiveWorld {
   readonly restsOnTable = (placement: number): boolean =>
     this.listed.get(placement)?.pose.yPlates === TABLE_Y_PLATES;
 
-  place(placement: number, piece: Piece, pose: LatticePose): void {
+  place(placement: number, piece: Piece, pose: LatticePose, item: string = TEST_ITEM): void {
     this.search.add(
       placement,
       piece.connectors,
@@ -1310,8 +1328,9 @@ class LiveWorld {
       piece.parts.boxes,
       piece.parts.technic,
       pose,
+      item,
     );
-    this.listed.set(placement, { piece, pose });
+    this.listed.set(placement, { piece, pose, item });
   }
 
   replace(placement: number): void {
@@ -1319,7 +1338,7 @@ class LiveWorld {
     if (!entry) throw new Error(`placement ${placement} isn't listed`);
     this.search.remove(placement);
     this.listed.delete(placement);
-    this.place(placement, entry.piece, entry.pose);
+    this.place(placement, entry.piece, entry.pose, entry.item);
   }
 
   stranded(removed: ReadonlySet<number>): unknown {
@@ -1343,13 +1362,26 @@ class LiveWorld {
       if (report.count > 0) mated.push([placement, entry]);
     }
     return this.search.withdrawn(removed, () => {
+      let first: readonly [number, Listed] | null = null;
       for (const [placement, entry] of mated) {
         this.search.evaluate(entry.piece.connectors, entry.pose, report);
-        if (report.count === 0 && !this.restsOnTable(placement)) return stranded(placement);
+        if (report.count > 0 || this.restsOnTable(placement)) continue;
+        if (first === null || listedBefore(entry, first[1])) first = [placement, entry];
       }
-      return { kind: "none" };
+      return first === null ? { kind: "none" } : stranded(first[0]);
     });
   }
+}
+
+function listedBefore(a: Listed, b: Listed): boolean {
+  const keys = [
+    a.pose.yPlates - b.pose.yPlates,
+    a.pose.x - b.pose.x,
+    a.pose.z - b.pose.z,
+    a.pose.rot - b.pose.rot,
+  ];
+  const differing = keys.find((key) => key !== 0);
+  return differing === undefined ? a.item < b.item : differing < 0;
 }
 
 const LCG_MULTIPLIER = 1664525;
@@ -1797,7 +1829,7 @@ function removalSets(
 
 describe("PlacementSearch stranding by removal", () => {
   it.each([1, 2, 3])(
-    "names the same stranded placement as checking every placed model, in generated worlds of stacks, jumpers, side studs, pins, axles, clips, hollow studs, hinges, turntables, joined track, connectorless and 2,304-stud models, turned and half a stud off the grid (seed %i)",
+    "names the same stranded placement as checking every placed model and taking the lowest, then by x, z, turn and item, in generated worlds of stacks, jumpers, side studs, pins, axles, clips, hollow studs, hinges, turntables, joined track, connectorless and 2,304-stud models, turned and half a stud off the grid (seed %i)",
     (seed) => {
       const generated = generatedWorld(seed);
       const pick = seeded(seed * 7919);
@@ -1855,7 +1887,7 @@ describe("PlacementSearch stranding by removal", () => {
     ]);
   });
 
-  it("names the first stranded placement in the order the search holds them, not in id order", () => {
+  it("names the stranded placement first by height, then x, z and turn, then placeable id, whatever order the search holds them", () => {
     const f = fixture();
     const live = new LiveWorld(f.search);
     live.place(50, block(f, 2, 1, BRICK_LDU), ORIGIN);
@@ -1863,7 +1895,7 @@ describe("PlacementSearch stranding by removal", () => {
     live.place(53, block(f, 1, 1, BRICK_LDU), { ...ORIGIN, x: STUD_LDU, yPlates: 3 });
     const first = live.stranded(new Set([50]));
     live.replace(55);
-    expect([first, live.stranded(new Set([50]))]).toEqual([stranded(55), stranded(53)]);
+    expect([first, live.stranded(new Set([50]))]).toEqual([stranded(55), stranded(55)]);
   });
 
   it("still answers waiting first, for a removed placement that waits and for one that waits beside a removed one, before checking any neighbour", () => {
@@ -3008,4 +3040,753 @@ describe("mateCounts' canonical join order", () => {
     }
     expect(mismatches).toEqual([]);
   });
+});
+
+interface NamedPiece extends Piece {
+  readonly item: string;
+  readonly partOf: (instance: number) => string;
+}
+
+interface NamedEntry {
+  readonly name: string;
+  readonly piece: NamedPiece;
+  readonly pose: LatticePose;
+}
+
+interface HeldProbe {
+  readonly name: string;
+  readonly piece: NamedPiece;
+  readonly pose: LatticePose;
+}
+
+interface NamingParts {
+  readonly search: IPlacementSearch;
+  readonly solver: ConnectionSolver;
+  readonly shapes: SnapShapes;
+  readonly pieces: Readonly<Record<string, NamedPiece>>;
+}
+
+interface Overlap {
+  readonly owner: string;
+  readonly cell: readonly [number, number];
+  readonly part: string;
+  readonly heights: readonly [number, number, number, number];
+}
+
+const NAMING_TURNS = 4;
+const NOT_BLOCKED = "not blocked";
+const IMPORT_HASH = "sha256";
+const realBundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+
+function realBundleFetcher(): IAssetFetcher {
+  return {
+    async bytes(path) {
+      const buffer = await readFile(new URL(path, realBundleRoot));
+      return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    },
+    text: (path) => readFile(new URL(path, realBundleRoot), "utf8"),
+  };
+}
+
+function lowerFirst(
+  pose: LatticePose,
+  item: string,
+  other: LatticePose,
+  otherItem: string,
+): boolean {
+  const keys = [
+    pose.yPlates - other.yPlates,
+    pose.x - other.x,
+    pose.z - other.z,
+    pose.rot - other.rot,
+  ];
+  const differing = keys.find((key) => key !== 0);
+  return differing === undefined ? item < otherItem : differing < 0;
+}
+
+function posedCells(local: CellVolumes, pose: LatticePose): CellVolumes {
+  const rot = isRot90(pose.rot) ? pose.rot : 0;
+  const cos = rot90Cos(rot);
+  const sin = rot90Sin(rot);
+  const yLdu = pose.yPlates * PLATE_LDU;
+  const cellX = new Int32Array(local.count);
+  const cellZ = new Int32Array(local.count);
+  const bottomLdu = new Int32Array(local.count);
+  const topLdu = new Int32Array(local.count);
+  const partsAt = new Int32Array(local.count);
+  for (let c = 0; c < local.count; c++) {
+    const cx = (local.cellX[c] ?? 0) * STUD_LDU + HALF;
+    const cz = (local.cellZ[c] ?? 0) * STUD_LDU + HALF;
+    cellX[c] = Math.floor((cos * cx + sin * cz + pose.x) / STUD_LDU);
+    cellZ[c] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
+    bottomLdu[c] = (local.bottomLdu[c] ?? 0) + yLdu;
+    topLdu[c] = (local.topLdu[c] ?? 0) + yLdu;
+    partsAt[c] = local.partsAt[c] ?? 0;
+  }
+  return {
+    count: local.count,
+    cellX,
+    cellZ,
+    bottomLdu,
+    topLdu,
+    partsAt,
+    parts: local.parts,
+    turn: (local.turn + rot) % NAMING_TURNS,
+    sixteenthsUp: local.sixteenthsUp + yLdu * SIXTEENTHS_PER_LDU,
+  };
+}
+
+function singleOwnerIndex(owner: number, piece: Piece, pose: LatticePose): VolumeIndex {
+  const posed = posedCells(piece.volumes, pose);
+  const xs = Array.from(posed.cellX);
+  const zs = Array.from(posed.cellZ);
+  const x0 = Math.min(...xs);
+  const z0 = Math.min(...zs);
+  const yLdu = pose.yPlates * PLATE_LDU;
+  const width = Math.max(...xs) - x0 + 1;
+  const depth = Math.max(...zs) - z0 + 1;
+  const index = new VolumeIndex();
+  index.add(owner, FootprintGrid.of(posed, x0, z0, width, depth, yLdu), x0, z0, yLdu);
+  return index;
+}
+
+function emptyHit(): OverlapHit {
+  return placementChoice().overlap;
+}
+
+const NEVER_IGNORED = (): boolean => false;
+
+class NamingHistory {
+  private readonly ids = new Map<string, number>();
+  private readonly names = new Map<number, string>();
+  readonly linked: string[] = [];
+
+  constructor(
+    readonly parts: NamingParts,
+    readonly entries: ReadonlyArray<NamedEntry>,
+    private next: number,
+  ) {}
+
+  entry(name: string): NamedEntry {
+    const entry = this.entries.find((candidate) => candidate.name === name);
+    if (!entry) throw new Error(`no entry ${name}`);
+    return entry;
+  }
+
+  insert(name: string): void {
+    const { piece, pose } = this.entry(name);
+    const id = this.next++;
+    const { boxes, technic } = piece.parts;
+    this.parts.search.add(id, piece.connectors, piece.volumes, boxes, technic, pose, piece.item);
+    this.ids.set(name, id);
+    this.names.set(id, name);
+    this.linked.push(name);
+  }
+
+  reinsert(name: string): void {
+    const id = this.idOf(name);
+    this.parts.search.remove(id);
+    this.names.delete(id);
+    this.linked.splice(this.linked.indexOf(name), 1);
+    this.insert(name);
+  }
+
+  idOf(name: string): number {
+    const id = this.ids.get(name);
+    if (id === undefined) throw new Error(`${name} isn't placed`);
+    return id;
+  }
+
+  nameOf(id: number): string {
+    return this.names.get(id) ?? `unknown ${id}`;
+  }
+
+  carry(held: HeldProbe, moving: string): void {
+    const { piece, pose } = held;
+    this.parts.search.search(
+      piece.connectors,
+      piece.volumes,
+      piece.parts.boxes,
+      piece.parts.technic,
+      window(pose.x, pose.z, 2, pose.yPlates),
+      TABLE_Y_PLATES,
+      this.idOf(moving),
+      placementChoice(),
+    );
+  }
+
+  landsOn(held: HeldProbe): ReadonlyArray<string> {
+    return this.parts.search
+      .restingOn(held.piece.volumes, held.pose, null)
+      .map((id) => this.nameOf(id));
+  }
+
+  overlap(held: HeldProbe): string {
+    const { piece, pose } = held;
+    const choice = placementChoice();
+    this.parts.search.check(
+      piece.connectors,
+      piece.volumes,
+      piece.parts.boxes,
+      piece.parts.technic,
+      pose,
+      TABLE_Y_PLATES,
+      choice,
+    );
+    if (choice.accepted || choice.overlap.owner < 0) return NOT_BLOCKED;
+    return this.describe(choice.overlap);
+  }
+
+  partner(name: string): string {
+    const partner = this.parts.search.overlapOf(this.idOf(name));
+    return partner < 0 ? NOT_BLOCKED : this.nameOf(partner);
+  }
+
+  stranded(name: string): string {
+    const stranding = this.parts.search.strandedByRemoval(
+      new Set([this.idOf(name)]),
+      (id) => this.entry(this.nameOf(id)).pose.yPlates <= TABLE_Y_PLATES,
+    );
+    return stranding.kind === "stranded" ? this.nameOf(stranding.placement) : stranding.kind;
+  }
+
+  describe(hit: OverlapHit): string {
+    const owner = this.nameOf(hit.owner);
+    const overlap: Overlap = {
+      owner,
+      cell: [hit.cellX, hit.cellZ],
+      part: this.entry(owner).piece.partOf(hit.instance),
+      heights: [hit.bottomLdu, hit.topLdu, hit.candidateBottomLdu, hit.candidateTopLdu],
+    };
+    return JSON.stringify(overlap);
+  }
+
+  recency(name: string): number {
+    return this.linked.indexOf(name);
+  }
+}
+
+class NamingOracle {
+  private readonly indexes = new Map<string, VolumeIndex>();
+
+  constructor(private readonly history: NamingHistory) {}
+
+  private index(name: string): VolumeIndex {
+    let index = this.indexes.get(name);
+    if (!index) {
+      const { piece, pose } = this.history.entry(name);
+      index = singleOwnerIndex(this.history.idOf(name), piece, pose);
+      this.indexes.set(name, index);
+    }
+    return index;
+  }
+
+  private lower(a: string, b: string): boolean {
+    const left = this.history.entry(a);
+    const right = this.history.entry(b);
+    return lowerFirst(left.pose, left.piece.item, right.pose, right.piece.item);
+  }
+
+  private least(names: ReadonlyArray<string>): string {
+    return names.reduce((best, name) => (this.lower(name, best) ? name : best));
+  }
+
+  contactsByCell(held: HeldProbe): ReadonlyArray<ReadonlyArray<string>> {
+    const cells = posedCells(held.piece.volumes, held.pose);
+    const contact = emptyHit();
+    return Array.from({ length: cells.count }, (_, c) => {
+      if ((cells.topLdu[c] ?? 0) <= (cells.bottomLdu[c] ?? 0)) return [];
+      const x = cells.cellX[c] ?? 0;
+      const z = cells.cellZ[c] ?? 0;
+      return this.history.linked.filter((name) =>
+        this.index(name).firstContactBelow(x, z, cells, c, NEVER_IGNORED, contact),
+      );
+    });
+  }
+
+  landsOn(held: HeldProbe): ReadonlyArray<string> {
+    const touching = [...new Set(this.contactsByCell(held).flat())];
+    return touching.toSorted((a, b) => (this.lower(a, b) ? -1 : this.lower(b, a) ? 1 : 0));
+  }
+
+  blockers(
+    held: HeldProbe,
+    moving: string | null,
+  ): { cell: number; names: string[]; hits: Map<string, OverlapHit> } | null {
+    const { piece, pose } = held;
+    const { solver } = this.history.parts;
+    const cells = posedCells(piece.volumes, pose);
+    const zones = new MateZones();
+    if (solver.votes(piece.connectors, pose) > 0) {
+      const report = new MateReport();
+      solver.partneredMates(piece.connectors, pose, report);
+      const placed = new Map<number, PlacedParts>(
+        this.history.linked.map((name) => {
+          const entry = this.history.entry(name);
+          const { boxes, technic } = entry.piece.parts;
+          return [this.history.idOf(name), { boxes, technic, pose: entry.pose }] as const;
+        }),
+      );
+      zones.collect(report, piece.parts.boxes, piece.parts.technic, pose, placed);
+    }
+    const tiers: Array<Array<{ cell: number; names: string[]; hits: Map<string, OverlapHit> }>> = [
+      [],
+      [],
+    ];
+    for (let c = 0; c < cells.count; c++) {
+      if ((cells.topLdu[c] ?? 0) <= (cells.bottomLdu[c] ?? 0)) continue;
+      const x = cells.cellX[c] ?? 0;
+      const z = cells.cellZ[c] ?? 0;
+      const found = [
+        { cell: c, names: [] as string[], hits: new Map<string, OverlapHit>() },
+        { cell: c, names: [] as string[], hits: new Map<string, OverlapHit>() },
+      ];
+      for (const name of this.history.linked) {
+        if (name === moving) continue;
+        const owner = this.history.idOf(name);
+        const raw = emptyHit();
+        if (!this.index(name).firstOverlap(x, z, cells, c, NEVER_IGNORED, raw)) continue;
+        if (!zones.covers(owner, x, z)) {
+          found[0]?.names.push(name);
+          found[0]?.hits.set(name, { ...raw, owner, cellX: x, cellZ: z });
+          continue;
+        }
+        const unexcused = emptyHit();
+        if (!this.index(name).firstUnexcusedOverlap(x, z, cells, c, owner, zones, unexcused))
+          continue;
+        found[1]?.names.push(name);
+        found[1]?.hits.set(name, { ...unexcused, owner, cellX: x, cellZ: z });
+      }
+      found.forEach((tier, t) => {
+        if (tier.names.length > 0) tiers[t]?.push(tier);
+      });
+    }
+    return tiers[0]?.[0] ?? tiers[1]?.[0] ?? null;
+  }
+
+  overlap(held: HeldProbe, moving: string | null = null): string {
+    const blocking = this.blockers(held, moving);
+    if (!blocking) return NOT_BLOCKED;
+    const hit = blocking.hits.get(this.least(blocking.names));
+    return hit ? this.history.describe(hit) : NOT_BLOCKED;
+  }
+
+  partner(name: string): string {
+    const entry = this.history.entry(name);
+    const blocking = this.blockers(entry, name);
+    return blocking ? this.least(blocking.names) : NOT_BLOCKED;
+  }
+
+  strandedSet(base: string): ReadonlyArray<string> {
+    const { search } = this.history.parts;
+    const report = new MateReport();
+    const others = this.history.linked.filter((name) => name !== base);
+    const mated = others.filter((name) => {
+      const entry = this.history.entry(name);
+      search.evaluate(entry.piece.connectors, entry.pose, report);
+      return report.count > 0;
+    });
+    return search.withdrawn(new Set([this.history.idOf(base)]), () =>
+      mated.filter((name) => {
+        const entry = this.history.entry(name);
+        search.evaluate(entry.piece.connectors, entry.pose, report);
+        return report.count === 0 && entry.pose.yPlates > TABLE_Y_PLATES;
+      }),
+    );
+  }
+
+  stranded(base: string): string {
+    const strandedNames = this.strandedSet(base);
+    return strandedNames.length === 0 ? "none" : this.least(strandedNames);
+  }
+}
+
+class MainMirror {
+  constructor(
+    private readonly history: NamingHistory,
+    private readonly oracle: NamingOracle,
+  ) {}
+
+  private newest(names: ReadonlyArray<string>): string {
+    return names.reduce((best, name) =>
+      this.history.recency(name) > this.history.recency(best) ? name : best,
+    );
+  }
+
+  landsOn(held: HeldProbe): ReadonlyArray<string> {
+    const listed: string[] = [];
+    for (const atCell of this.oracle.contactsByCell(held)) {
+      const newestFirst = atCell.toSorted(
+        (a, b) => this.history.recency(b) - this.history.recency(a),
+      );
+      for (const name of newestFirst) if (!listed.includes(name)) listed.push(name);
+    }
+    return listed;
+  }
+
+  overlap(held: HeldProbe, moving: string | null = null): string {
+    const blocking = this.oracle.blockers(held, moving);
+    return blocking ? this.newest(blocking.names) : NOT_BLOCKED;
+  }
+
+  stranded(base: string): string {
+    const strandedNames = this.oracle.strandedSet(base);
+    return strandedNames.length === 0
+      ? "none"
+      : strandedNames.reduce((oldest, name) =>
+          this.history.recency(name) < this.history.recency(oldest) ? name : oldest,
+        );
+  }
+}
+
+async function namedPieceLoader(container: Container) {
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const tables = container.get(CONNECTOR_TABLES);
+  const search = container.get(PLACEMENT_SEARCH);
+  return async (item: string, as: string = item): Promise<NamedPiece> => {
+    const placeable = await catalog.load(catalog.itemRefId(item) ?? -1);
+    const { tables: parts } = await tables.load(placeable);
+    const boxes = partBoxes(placeable.partBoxes);
+    const { partTransforms } = placeable;
+    return {
+      item: as,
+      connectors: search.model(parts, partTransforms, []),
+      volumes: FrozenVolumes.ofPlaceable(placeable),
+      parts: {
+        boxes,
+        technic: FrozenTechnic.ofParts(
+          catalog.parts().map((part) => part.technic),
+          partTransforms,
+          boxes.boxes,
+        ),
+      },
+      partOf: (instance) => {
+        const part = catalog.parts()[partTransforms.partIndex[instance] ?? -1];
+        return part ? `${part.id} ${part.title}` : `no part ${instance}`;
+      },
+    };
+  };
+}
+
+async function officialNamingParts(reinterned: boolean): Promise<NamingParts> {
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(fixtureBundleFetcher());
+  const catalog = container.get(PLACEABLE_CATALOG);
+  await catalog.start(await container.get(PART_BUNDLE_LOADER).loadIndex("standard"));
+  const shapes = container.get(SNAP_SHAPES);
+  if (reinterned) shapes.intern(CAP_FAR, true, [SECTION_AXLE], [9], [9]);
+  const load = await namedPieceLoader(container);
+  const order: ReadonlyArray<readonly [string, string, string]> = [
+    ["brick", OFFICIAL_BRICK, OFFICIAL_BRICK],
+    ["jumper", OFFICIAL_JUMPER, OFFICIAL_JUMPER],
+    ["custom brick", OFFICIAL_BRICK, "custom:brick-2x4"],
+  ];
+  const loaded = reinterned ? order.toReversed() : order;
+  const pieces: Record<string, NamedPiece> = {};
+  for (const [key, item, as] of loaded) pieces[key] = await load(item, as);
+  return {
+    search: container.get(PLACEMENT_SEARCH),
+    solver: container.get(CONNECTION_SOLVER),
+    shapes,
+    pieces,
+  };
+}
+
+function importedFile(name: string, lines: ReadonlyArray<string>) {
+  const text = [`0 ${name}`, `0 Name: ${name}`, "0 Author: Brick Railroad tests", ...lines, ""];
+  const bytes = new TextEncoder().encode(text.join("\n"));
+  return { name, bytes, sha256: createHash(IMPORT_HASH).update(bytes).digest("hex") };
+}
+
+const TECHNIC_BRICK = ["1 0 0 -24 0 0 0 1 0 1 0 -1 0 0 3700.dat"];
+const PIN_OVER_PLATE = [
+  "1 0 0 -24 0 0 0 1 0 1 0 -1 0 0 3700.dat",
+  "1 0 10 -14 0 1 0 0 0 1 0 0 0 1 2780.dat",
+  "1 1 20 -8 10 1 0 0 0 1 0 0 0 1 3024.dat",
+];
+const LONE_PLATE = ["1 1 0 -8 0 1 0 0 0 1 0 0 0 1 3024.dat"];
+
+async function technicNamingParts(): Promise<NamingParts> {
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(realBundleFetcher());
+  const loader = container.get(PART_BUNDLE_LOADER);
+  const records = { read: (partId: string) => loader.readPartConnectors("standard", partId) };
+  container.rebind(MODEL_IMPORTER).toConstantValue(new InThreadModelImporter(loader, records));
+  const catalog = container.get(PLACEABLE_CATALOG);
+  await catalog.start(await loader.loadIndex("standard"));
+  const load = await namedPieceLoader(container);
+  const imported = async (name: string, lines: ReadonlyArray<string>): Promise<NamedPiece> => {
+    const file = importedFile(name, lines);
+    const outcome = await catalog.addImported(file);
+    if (outcome.kind === "checking") await outcome.checked;
+    if (outcome.kind !== "checking" && outcome.kind !== "placeable") {
+      throw new Error(`${name} was not imported: ${outcome.kind}`);
+    }
+    return load(outcome.item.id);
+  };
+  return {
+    search: container.get(PLACEMENT_SEARCH),
+    solver: container.get(CONNECTION_SOLVER),
+    shapes: container.get(SNAP_SHAPES),
+    pieces: {
+      "technic brick": await imported("my-technic-brick.ldr", TECHNIC_BRICK),
+      "pin over plate": await imported("my-pin-over-plate.ldr", PIN_OVER_PLATE),
+      "pin over plate twin": await imported("my-pin-over-plate-twin.ldr", PIN_OVER_PLATE),
+      "lone plate": await imported("my-lone-plate.ldr", LONE_PLATE),
+    },
+  };
+}
+
+function namedPiece(parts: NamingParts, key: string): NamedPiece {
+  const found = parts.pieces[key];
+  if (!found) throw new Error(`no piece ${key}`);
+  return found;
+}
+
+function poseAt(x: number, z: number, yPlates = 0, rot = 0): LatticePose {
+  return { x, z, yPlates, rot };
+}
+
+function officialNamingWorld(parts: NamingParts) {
+  const brick = namedPiece(parts, "brick");
+  const jumper = namedPiece(parts, "jumper");
+  const custom = namedPiece(parts, "custom brick");
+  const entries: NamedEntry[] = [
+    { name: "jumper at turn 0", piece: jumper, pose: poseAt(200, 0) },
+    { name: "jumper at turn 1", piece: jumper, pose: poseAt(200, 0, 0, 1) },
+    { name: "official brick", piece: brick, pose: poseAt(400, 0) },
+    { name: "custom brick", piece: custom, pose: poseAt(400, 0) },
+    { name: "lower stacked brick", piece: brick, pose: poseAt(600, 0) },
+    { name: "upper stacked brick", piece: brick, pose: poseAt(600, 0, 3) },
+    { name: "jumper at the first cell", piece: jumper, pose: poseAt(780, 0, 1) },
+    { name: "jumper at a later cell", piece: jumper, pose: poseAt(820, 20) },
+    { name: "base brick", piece: brick, pose: poseAt(1000, 0) },
+    { name: "rider west north", piece: jumper, pose: poseAt(980, 0, 3) },
+    { name: "rider east north", piece: jumper, pose: poseAt(1020, 0, 3) },
+    { name: "rider west south", piece: jumper, pose: poseAt(980, 20, 3) },
+    { name: "rider east south", piece: jumper, pose: poseAt(1020, 20, 3) },
+    { name: "lower partner brick", piece: brick, pose: poseAt(1200, 0) },
+    { name: "upper partner brick", piece: brick, pose: poseAt(1200, 0, 3) },
+    { name: "partner probe brick", piece: brick, pose: poseAt(1200, 0, 1) },
+  ];
+  const held = {
+    turns: { name: "brick over two turns", piece: brick, pose: poseAt(200, 0, 1) },
+    items: { name: "brick over two items", piece: brick, pose: poseAt(400, 0, 3) },
+    stacked: { name: "brick into a stack", piece: brick, pose: poseAt(600, 0, 1) },
+    multiCell: { name: "brick over two cells", piece: brick, pose: poseAt(800, 0) },
+  };
+  const firstOfGroups = [
+    "jumper at turn 0",
+    "official brick",
+    "lower stacked brick",
+    "rider west north",
+    "lower partner brick",
+  ];
+  return { entries, held, firstOfGroups };
+}
+
+function technicNamingWorld(parts: NamingParts) {
+  const technic = namedPiece(parts, "technic brick");
+  const pinPlate = namedPiece(parts, "pin over plate");
+  const twin = namedPiece(parts, "pin over plate twin");
+  const plate = namedPiece(parts, "lone plate");
+  const entries: NamedEntry[] = [
+    { name: "pin over a plate", piece: pinPlate, pose: poseAt(0, 0) },
+    { name: "pin over a plate beside a lone plate", piece: pinPlate, pose: poseAt(200, 0) },
+    { name: "lone plate", piece: plate, pose: poseAt(220, 20) },
+    { name: "first of two pins over plates", piece: pinPlate, pose: poseAt(400, 0) },
+    { name: "second of two pins over plates", piece: twin, pose: poseAt(400, 0) },
+  ];
+  const held = {
+    tierTwo: { name: "technic brick onto the pin", piece: technic, pose: poseAt(20, 0) },
+    laterTierOne: {
+      name: "technic brick onto the pin and the plate",
+      piece: technic,
+      pose: poseAt(220, 0),
+    },
+    covered: { name: "technic brick onto two pins", piece: technic, pose: poseAt(420, 0) },
+  };
+  return { entries, held, firstOfGroups: ["first of two pins over plates"] };
+}
+
+function brickShape(parts: NamingParts | undefined): number {
+  return parts === undefined ? -1 : (namedPiece(parts, "brick").connectors.shape[0] ?? -1);
+}
+
+function insertAll(history: NamingHistory, names: ReadonlyArray<string>): NamingHistory {
+  for (const name of names) history.insert(name);
+  return history;
+}
+
+function overlapAnswer(
+  owner: string,
+  cell: readonly [number, number],
+  part: string,
+  heights: readonly [number, number, number, number],
+): string {
+  const overlap: Overlap = { owner, cell, part, heights };
+  return JSON.stringify(overlap);
+}
+
+const OFFICIAL_3001 = "ldraw:3001 Brick 2 x 4";
+const OFFICIAL_3794B = "ldraw:3794b Plate 1 x 2 with Groove with 1 Centre Stud";
+const OFFICIAL_3024 = "ldraw:3024 Plate 1 x 1";
+const WITNESSED_OFFICIAL = ["turns", "items", "stacked", "partner", "stranded"] as const;
+
+describe("PlacementSearch names models in one fixed order for a given world", () => {
+  it("names the same lands-on, overlap, partner and stranded model on official 3001s and 3794b jumpers for the same world however it was reached, as the specification names it: inserted in another order under new ids, re-added under new ids after carries and earlier queries, or rebuilt with shapes interned and models first turned in another order", async () => {
+    const built = await Promise.all([
+      officialNamingParts(false),
+      officialNamingParts(false),
+      officialNamingParts(false),
+      officialNamingParts(true),
+    ]);
+    const worlds = built.map((parts) => officialNamingWorld(parts));
+    const names = (worlds[0]?.entries ?? []).map((entry) => entry.name);
+    const orders = [names, names.toReversed(), names, names.toReversed()];
+    const histories = built.map((parts, k) =>
+      insertAll(new NamingHistory(parts, worlds[k]?.entries ?? [], 1 + 100 * k), orders[k] ?? []),
+    );
+    const answersOf = (k: number) => {
+      const history = histories[k];
+      const scene = worlds[k];
+      if (!history || !scene) throw new Error(`no history ${k}`);
+      return {
+        turns: history.landsOn(scene.held.turns),
+        items: history.landsOn(scene.held.items),
+        stacked: history.overlap(scene.held.stacked),
+        multiCell: history.overlap(scene.held.multiCell),
+        partner: history.partner("partner probe brick"),
+        stranded: history.stranded("base brick"),
+      };
+    };
+    const edited = histories[2];
+    const editedWorld = worlds[2];
+    if (!edited || !editedWorld) throw new Error("no edited history");
+    answersOf(2);
+    edited.carry(editedWorld.held.stacked, "base brick");
+    for (const name of editedWorld.firstOfGroups) edited.reinsert(name);
+    const answers = histories.map((_, k) => answersOf(k));
+    const specified = histories.map((history, k) => {
+      const oracle = new NamingOracle(history);
+      const held = worlds[k]?.held;
+      if (!held) throw new Error(`no world ${k}`);
+      return {
+        turns: oracle.landsOn(held.turns),
+        items: oracle.landsOn(held.items),
+        stacked: oracle.overlap(held.stacked),
+        multiCell: oracle.overlap(held.multiCell),
+        partner: oracle.partner("partner probe brick"),
+        stranded: oracle.stranded("base brick"),
+      };
+    });
+    const mirrors = histories.map((history, k) => {
+      const mirror = new MainMirror(history, new NamingOracle(history));
+      const held = worlds[k]?.held;
+      if (!held) throw new Error(`no world ${k}`);
+      return {
+        turns: JSON.stringify(mirror.landsOn(held.turns)),
+        items: JSON.stringify(mirror.landsOn(held.items)),
+        stacked: mirror.overlap(held.stacked),
+        partner: mirror.overlap(history.entry("partner probe brick"), "partner probe brick"),
+        stranded: mirror.stranded("base brick"),
+      };
+    });
+    const [inOrder, reversed, reAdded] = mirrors;
+    const witnessed = WITNESSED_OFFICIAL.filter(
+      (probe) => inOrder?.[probe] !== reversed?.[probe] && inOrder?.[probe] !== reAdded?.[probe],
+    );
+    const expected = {
+      turns: ["jumper at turn 0", "jumper at turn 1"],
+      items: ["custom brick", "official brick"],
+      stacked: overlapAnswer("lower stacked brick", [28, -1], OFFICIAL_3001, [0, 24, 8, 32]),
+      multiCell: overlapAnswer(
+        "jumper at the first cell",
+        [38, -1],
+        OFFICIAL_3794B,
+        [8, 16, 0, 24],
+      ),
+      partner: "lower partner brick",
+      stranded: "rider west north",
+    };
+    expect({
+      answers,
+      specified,
+      witnessed,
+      shapeIdsDiffer: brickShape(built[0]) !== brickShape(built[3]),
+    }).toEqual({
+      answers: [expected, expected, expected, expected],
+      specified: [expected, expected, expected, expected],
+      witnessed: [...WITNESSED_OFFICIAL],
+      shapeIdsDiffer: true,
+    });
+  }, 120_000);
+
+  it("names the covered and uncovered owner of real Technic pins and holes, imported from the pinned LDraw library, for the same world however it was reached, as the specification names it: a pin's owner when only its mate zone's cell blocks, an uncovered model at a later cell before it, and the lower of two pins' owners at one cell", async () => {
+    const built = await Promise.all([
+      technicNamingParts(),
+      technicNamingParts(),
+      technicNamingParts(),
+    ]);
+    const worlds = built.map((parts) => technicNamingWorld(parts));
+    const names = (worlds[0]?.entries ?? []).map((entry) => entry.name);
+    const histories = built.map((parts, k) =>
+      insertAll(
+        new NamingHistory(parts, worlds[k]?.entries ?? [], 1 + 100 * k),
+        k === 1 ? names.toReversed() : names,
+      ),
+    );
+    const answersOf = (k: number) => {
+      const history = histories[k];
+      const scene = worlds[k];
+      if (!history || !scene) throw new Error(`no history ${k}`);
+      return {
+        tierTwo: history.overlap(scene.held.tierTwo),
+        laterTierOne: history.overlap(scene.held.laterTierOne),
+        covered: history.overlap(scene.held.covered),
+      };
+    };
+    const edited = histories[2];
+    const editedWorld = worlds[2];
+    if (!edited || !editedWorld) throw new Error("no edited history");
+    answersOf(2);
+    edited.carry(editedWorld.held.covered, "pin over a plate");
+    for (const name of editedWorld.firstOfGroups) edited.reinsert(name);
+    const answers = histories.map((_, k) => answersOf(k));
+    const specified = histories.map((history, k) => {
+      const oracle = new NamingOracle(history);
+      const held = worlds[k]?.held;
+      if (!held) throw new Error(`no world ${k}`);
+      return {
+        tierTwo: oracle.overlap(held.tierTwo),
+        laterTierOne: oracle.overlap(held.laterTierOne),
+        covered: oracle.overlap(held.covered),
+      };
+    });
+    const mirrors = histories.map((history, k) => {
+      const held = worlds[k]?.held;
+      if (!held) throw new Error(`no world ${k}`);
+      return new MainMirror(history, new NamingOracle(history)).overlap(held.covered);
+    });
+    const first = namedPiece(built[0] ?? (await technicNamingParts()), "pin over plate");
+    const second = namedPiece(built[0] ?? (await technicNamingParts()), "pin over plate twin");
+    const coveredOwner =
+      first.item < second.item ? "first of two pins over plates" : "second of two pins over plates";
+    const expected = {
+      tierTwo: overlapAnswer("pin over a plate", [0, -1], OFFICIAL_3024, [0, 8, 0, 24]),
+      laterTierOne: overlapAnswer("lone plate", [10, 0], OFFICIAL_3024, [0, 8, 0, 24]),
+      covered: overlapAnswer(coveredOwner, [20, -1], OFFICIAL_3024, [0, 8, 0, 24]),
+    };
+    expect({
+      answers,
+      specified,
+      coveredWitness: mirrors[0] !== mirrors[1] && mirrors[0] !== mirrors[2],
+    }).toEqual({
+      answers: [expected, expected, expected],
+      specified: [expected, expected, expected],
+      coveredWitness: true,
+    });
+  }, 120_000);
 });

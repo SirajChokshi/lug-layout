@@ -12,7 +12,6 @@ import {
   NO_SHAPE,
   ProposalProgress,
   VolumeIndex,
-  firstOverlap,
   firstOverlapFrom,
   ModelConnectors,
   type CellParts,
@@ -32,7 +31,8 @@ import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } 
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
 import { TRACK_FAMILY } from "./finders.ts";
-import { MateZones, type PlacedParts } from "./mate-zones.ts";
+import { MateZones, copyBlocker, type OwnerOrder, type PlacedParts } from "./mate-zones.ts";
+import { placementBefore } from "./placement-order.ts";
 import { BLOCKED, FREE, PoseMemo, UNKNOWN } from "./pose-memo.ts";
 import type { FrozenTechnic } from "./frozen-technic.ts";
 import type { PartBoxes } from "./part-boxes.ts";
@@ -129,6 +129,7 @@ export interface IPlacementSearch {
     boxes: PartBoxes,
     technic: FrozenTechnic,
     pose: LatticePose,
+    item: string,
   ): void;
   awaitTables(placement: number, volumes: CellVolumes, pose: LatticePose): void;
   tablesFailed(placement: number): void;
@@ -177,6 +178,7 @@ export interface IPlacementSearch {
 }
 
 interface Placed extends PlacedParts {
+  readonly item: string;
   readonly model: ModelConnectors;
   readonly volumes: FrozenVolumes;
   readonly technic: FrozenTechnic;
@@ -713,6 +715,26 @@ export class PlacementSearch implements IPlacementSearch {
     (this.withheld.size > 0 && this.withheld.has(owner)) ||
     this.zones.exempts(owner, cellX, cellZ, heldCell);
 
+  private readonly rival = placementChoice().overlap;
+
+  private readonly ahead: OwnerOrder = (owner, than) => {
+    const placed = this.placedAt(owner);
+    const leader = this.placedAt(than);
+    return placementBefore(placed.pose, placed.item, leader.pose, leader.item);
+  };
+
+  private readonly collectBlocker = (owner: number, cellX: number, cellZ: number): boolean => {
+    if (
+      owner !== this.moving &&
+      !(this.withheld.size > 0 && this.withheld.has(owner)) &&
+      !this.zones.covers(owner, cellX, cellZ) &&
+      this.ahead(owner, this.hit.owner)
+    ) {
+      copyBlocker(owner, this.rival, this.hit);
+    }
+    return true;
+  };
+
   model(
     parts: ReadonlyArray<ConnectorTable | null>,
     instances: PartInstances,
@@ -728,6 +750,7 @@ export class PlacementSearch implements IPlacementSearch {
     boxes: PartBoxes,
     technic: FrozenTechnic,
     pose: LatticePose,
+    item: string,
   ): void {
     if (this.placed.has(placement))
       throw new RangeError(`placement ${placement} is already placed`);
@@ -742,6 +765,7 @@ export class PlacementSearch implements IPlacementSearch {
     this.solver.insert(model, at, placement);
     const vertical = this.verticalBox.measure(model, at);
     this.placed.set(placement, {
+      item,
       model,
       volumes,
       boxes,
@@ -1247,18 +1271,18 @@ export class PlacementSearch implements IPlacementSearch {
   ): boolean {
     this.zones.clear();
     if (hinted && !exemptable && this.hintBlocks(volumes, pose)) return true;
-    const placed = this.placedIfOverlapping(volumes, pose);
+    const overlapping = this.firstOverlappingCell(volumes, pose);
     return (
-      placed !== null && this.blockedDespiteZones(model, boxes, technic, pose, placed, exemptable)
+      overlapping !== NO_OVERLAP &&
+      this.blockedDespiteZones(model, boxes, technic, pose, overlapping, exemptable, !hinted)
     );
   }
 
-  private placedIfOverlapping(volumes: CellVolumes, pose: LatticePose): VolumeBuffer | null {
+  private firstOverlappingCell(volumes: CellVolumes, pose: LatticePose): number {
     const placed = this.scratch.place(volumes, pose);
     const at = firstOverlapFrom(placed, this.volumes, this.exempt, this.hit, NO_OVERLAP);
-    if (at === NO_OVERLAP) return null;
-    this.remember(at);
-    return placed;
+    if (at !== NO_OVERLAP) this.remember(at);
+    return at;
   }
 
   private blockedDespiteZones(
@@ -1266,13 +1290,44 @@ export class PlacementSearch implements IPlacementSearch {
     boxes: PartBoxes,
     technic: TechnicSet,
     pose: LatticePose,
-    placed: VolumeBuffer,
+    overlapping: number,
     exemptable: boolean,
+    naming: boolean,
   ): boolean {
-    if (!exemptable || this.collectZones(model, boxes, technic, pose) === 0) return true;
-    return (
-      firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
-      this.zones.firstOverlap(this.volumes, placed, this.hit)
+    const blocking = this.blockingCell(model, boxes, technic, pose, overlapping, exemptable);
+    if (blocking === NO_OVERLAP) return false;
+    if (naming) this.nameBlocker(blocking);
+    return true;
+  }
+
+  private blockingCell(
+    model: ModelConnectors,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    pose: LatticePose,
+    overlapping: number,
+    exemptable: boolean,
+  ): number {
+    if (!exemptable || this.collectZones(model, boxes, technic, pose) === 0) return overlapping;
+    const placed = this.scratch;
+    const uncovered = firstOverlapFrom(placed, this.volumes, this.exempt, this.hit, NO_OVERLAP);
+    if (uncovered !== NO_OVERLAP) return uncovered;
+    return this.zones.firstOverlap(this.volumes, placed, this.hit);
+  }
+
+  private nameBlocker(cell: number): void {
+    const hit = this.hit;
+    if (this.zones.covers(hit.owner, hit.cellX, hit.cellZ)) {
+      this.zones.leastOverlapAt(this.volumes, this.scratch, cell, this.ahead, hit);
+      return;
+    }
+    this.volumes.firstOverlap(
+      hit.cellX,
+      hit.cellZ,
+      this.scratch,
+      cell,
+      this.collectBlocker,
+      this.rival,
     );
   }
 
@@ -1320,6 +1375,14 @@ export class PlacementSearch implements IPlacementSearch {
         owners.push(this.contact.owner);
       }
     }
+    for (let i = 1; i < owners.length; i++) {
+      const owner = owners[i] ?? NO_PLACEMENT;
+      let j = i - 1;
+      for (; j >= 0 && this.ahead(owner, owners[j] ?? NO_PLACEMENT); j--) {
+        owners[j + 1] = owners[j] ?? NO_PLACEMENT;
+      }
+      owners[j + 1] = owner;
+    }
     return owners;
   }
 
@@ -1358,11 +1421,9 @@ export class PlacementSearch implements IPlacementSearch {
     for (const [other, mates] of before) {
       const placed = this.placed.get(other);
       if (!placed || mates === 0) continue;
+      if (stranded !== null && !this.ahead(other, stranded)) continue;
       this.solver.evaluate(placed.model, placed.pose, this.report);
-      if (this.report.count === 0 && !restsOnTable(other)) {
-        stranded = other;
-        break;
-      }
+      if (this.report.count === 0 && !restsOnTable(other)) stranded = other;
     }
     for (const [placement, placed] of removed) {
       this.solver.insert(placed.model, placed.pose, placement);
@@ -1427,10 +1488,10 @@ export class PlacementSearch implements IPlacementSearch {
     try {
       this.solver.reinsertWithdrawn();
       this.zones.clear();
-      const placed = this.placedIfOverlapping(volumes, pose);
-      if (placed === null) return NO_PLACEMENT;
+      const overlapping = this.firstOverlappingCell(volumes, pose);
+      if (overlapping === NO_OVERLAP) return NO_PLACEMENT;
       const mated = this.solver.votes(model, pose) > 0;
-      return this.blockedDespiteZones(model, boxes, technic, pose, placed, mated)
+      return this.blockedDespiteZones(model, boxes, technic, pose, overlapping, mated, true)
         ? this.hit.owner
         : NO_PLACEMENT;
     } finally {
