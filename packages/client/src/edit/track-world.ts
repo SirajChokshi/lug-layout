@@ -161,9 +161,9 @@ export class TrackWorld implements ITrackWorld {
   private roads: ReadonlyArray<RoadPlacement> = [];
   private track: TrackDrawing | null = null;
   private pendingRestored: TrackDrawing | null = null;
-  private readonly modelTracks = new Map<Placeable, ModelTrackEnds>();
+  private readonly modelTracks = new Map<string, ModelTrackEnds>();
   private readonly carriedPartSets = new WeakMap<ModelTrackEnds, ReadonlySet<number>>();
-  private readonly exactTrackParts = new Map<Placeable, ReadonlySet<number>>();
+  private readonly exactTrackParts = new Map<string, ReadonlySet<number>>();
   private heldTrackModels: ReadonlyArray<PlacedModel> = [];
   private readonly heldRanges = new Map<PlacedModel, readonly [number, number]>();
   private layoutVersion = 0;
@@ -325,10 +325,10 @@ export class TrackWorld implements ITrackWorld {
   modelTrack(placeable: Placeable): ModelTrackEnds | null {
     const catalog = this.trackCatalog;
     if (!catalog) return null;
-    let track = this.modelTracks.get(placeable);
+    let track = this.modelTracks.get(placeable.id);
     if (!track) {
       track = modelTrackEnds(placeable.partTransforms, this.catalog.parts(), catalog);
-      this.modelTracks.set(placeable, track);
+      this.modelTracks.set(placeable.id, track);
     }
     return track;
   }
@@ -349,10 +349,10 @@ export class TrackWorld implements ITrackWorld {
     const carried = this.modelTrack(placeable);
     const frame = latticeFrame(handle.x, handle.z, handle.rot);
     if (!drawing || !carried || !frame || carried.pieces.length === 0) return null;
-    let instances = this.exactTrackParts.get(placeable);
+    let instances = this.exactTrackParts.get(placeable.id);
     if (!instances) {
       instances = new Set(carried.pieces.map((piece) => piece.instance));
-      this.exactTrackParts.set(placeable, instances);
+      this.exactTrackParts.set(placeable.id, instances);
     }
     return {
       instances,

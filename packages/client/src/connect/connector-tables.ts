@@ -2,6 +2,7 @@ import { ConnectorTable, type SnapShapes } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import type { PartConnectors } from "@brr/catalog";
 import type { IPlaceableCatalog, PartConnectorRecord } from "../catalog/placeable-catalog.ts";
+import { RequestOrder } from "../catalog/request-order.ts";
 import type { Placeable } from "../edit/placeable.ts";
 import { errorText } from "../edit/error-text.ts";
 import { PLACEABLE_CATALOG, SNAP_SHAPES } from "../tokens.ts";
@@ -44,6 +45,7 @@ export class ConnectorTables implements IConnectorTables {
   private readonly loading = new Map<string, Promise<PlaceableConnectorTables>>();
   private readonly ready = new Map<string, PlaceableConnectorTables>();
   private readonly partTables = new WeakMap<PartConnectors, PartTable>();
+  private readonly builds = new RequestOrder();
 
   constructor(
     @inject(PLACEABLE_CATALOG) private readonly catalog: ConnectorRecordSource,
@@ -72,39 +74,44 @@ export class ConnectorTables implements IConnectorTables {
     return this.ready.get(placeable.id) ?? null;
   }
 
-  private async build(placeable: ConnectedPlaceable): Promise<PlaceableConnectorTables> {
+  private build(placeable: ConnectedPlaceable): Promise<PlaceableConnectorTables> {
     const used = usedPartIndices(placeable);
     const parts = this.catalog.parts();
+    const records = Promise.all(
+      used.map((partIndex) => {
+        const part = parts[partIndex];
+        if (!part) {
+          return Promise.reject(
+            new Error(`${placeable.id} uses part index ${partIndex}, outside the catalog`),
+          );
+        }
+        return this.catalog
+          .partConnectorRecord(placeable.id, partIndex)
+          .then((record) => ({ partIndex, partId: part.id, record }));
+      }),
+    );
+    return this.builds.adopt(records, (loaded) => this.tablesOf(used, loaded));
+  }
+
+  private tablesOf(
+    used: ReadonlyArray<number>,
+    loaded: ReadonlyArray<{
+      readonly partIndex: number;
+      readonly partId: string;
+      readonly record: PartConnectorRecord;
+    }>,
+  ): PlaceableConnectorTables {
     const tables = Array.from<unknown, ConnectorTable | null>(
       { length: (used.at(-1) ?? -1) + 1 },
       () => null,
     );
     const withoutRecords: PartWithoutConnectorRecord[] = [];
-    const outcomes = await Promise.all(
-      used.map((partIndex) => {
-        const part = parts[partIndex];
-        if (!part)
-          throw new Error(`${placeable.id} uses part index ${partIndex}, outside the catalog`);
-        return this.partTable(placeable.id, partIndex, part.id).then((outcome) => ({
-          partIndex,
-          part,
-          outcome,
-        }));
-      }),
-    );
-    for (const { partIndex, part, outcome } of outcomes) {
+    for (const { partIndex, partId, record } of loaded) {
+      const outcome = this.tableOf(record, partId);
       if (outcome.kind === "table") tables[partIndex] = outcome.table;
-      else withoutRecords.push({ partIndex, partId: part.id, reason: outcome.reason });
+      else withoutRecords.push({ partIndex, partId, reason: outcome.reason });
     }
     return { tables, withoutRecords };
-  }
-
-  private async partTable(
-    placeableId: string,
-    partIndex: number,
-    partId: string,
-  ): Promise<PartTable> {
-    return this.tableOf(await this.catalog.partConnectorRecord(placeableId, partIndex), partId);
   }
 
   private tableOf(record: PartConnectorRecord, partId: string): PartTable {

@@ -52,7 +52,7 @@ export class PlanFacts {
   private readonly dirty = new Set<PlacedModel>();
   private readonly nearby = new Set<PlacedModel>();
   private readonly removedIds = new Set<number>();
-  private readonly walked = new Set<PlacedModel>();
+  private readonly walked = new Set<number>();
   private readonly fresh = new Set<PlacedModel>();
   private readonly rewritten = new Set<PlacedModel>();
   private readonly unsupportedIds = new Set<number>();
@@ -105,9 +105,17 @@ export class PlanFacts {
   noteRemoved(models: ReadonlyArray<PlacedModel>): void {
     for (const model of models) {
       this.unsupportedIds.delete(model.id);
-      this.walked.delete(model);
+      this.walked.delete(model.id);
       this.removedIds.add(model.id);
       this.nearbyOf(model);
+    }
+  }
+
+  noteReplaced(removed: ReadonlyArray<PlacedModel>, added: ReadonlyArray<PlacedModel>): void {
+    for (let i = 0; i < added.length; i++) {
+      const from = removed[i];
+      const to = added[i];
+      if (from && to) to.facts.set(from.facts);
     }
   }
 
@@ -166,14 +174,14 @@ export class PlanFacts {
 
   private addedMayOverlap(): boolean {
     for (const model of this.fresh) {
-      if (!this.walked.has(model)) return true;
+      if (!this.walked.has(model.id)) return true;
       if (model.facts[FACT_OVERLAP_SEGMENT] !== NO_OVERLAP_PARTNER) return true;
     }
     return false;
   }
 
   private remeasureBeside(model: PlacedModel, rewalk: boolean): boolean {
-    if (!this.walked.has(model)) return this.measure(model);
+    if (!this.walked.has(model.id)) return this.measure(model);
     const id = this.measurableIdOf(model);
     if (id === NOT_PLACED) return this.measure(model);
     const changed =
@@ -216,11 +224,11 @@ export class PlanFacts {
     const unmapped = this.unmappedOf(model.placeable);
     facts[FACT_FLAGS] = searchable && unmapped !== null ? 0 : FLAG_UNMEASURED;
     if (searchable) {
-      this.walked.add(model);
+      this.walked.add(model.id);
       this.writePartner(model, id);
       this.writeHeld(model, id);
     } else {
-      this.walked.delete(model);
+      this.walked.delete(model.id);
       facts[FACT_OVERLAP_SEGMENT] = NO_OVERLAP_PARTNER;
       facts[FACT_OVERLAP_SOURCE] = NO_OVERLAP_PARTNER;
       this.unsupportedIds.delete(model.id);
