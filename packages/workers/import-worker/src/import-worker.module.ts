@@ -1,5 +1,11 @@
+import {
+  LINK_PROGRESS,
+  LINK_PROGRESS_SHARE,
+  linkProgressModule,
+  reportingFetch,
+} from "@brr/catalog/link-progress";
 import { LdrawMirror, ModelImportEngine } from "@brr/import";
-import type { RpcPort } from "@brr/rpc";
+import { openLinkProgressBroadcast, type RpcPort } from "@brr/rpc";
 import { assetCacheModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { BakeHelperRegistry } from "./bake-helper-registry.ts";
@@ -21,7 +27,10 @@ import {
 function importWorkerModule(port: RpcPort): ContainerModule {
   return new ContainerModule(({ bind }) => {
     bind(IMPORT_PORT).toConstantValue(port);
-    bind(IMPORT_FETCH).toConstantValue((url) => fetch(url));
+    bind(LINK_PROGRESS_SHARE).toDynamicValue(openLinkProgressBroadcast).inSingletonScope();
+    bind(IMPORT_FETCH)
+      .toDynamicValue((context) => reportingFetch((url) => fetch(url), context.get(LINK_PROGRESS)))
+      .inSingletonScope();
     bind(IMPORT_CLOCK).toConstantValue(() => performance.now());
     bind(COMPILER_LOADER).to(CompilerLoader).inSingletonScope();
     bind(LDRAW_MIRROR_FACTORY)
@@ -44,5 +53,5 @@ function importWorkerModule(port: RpcPort): ContainerModule {
 }
 
 export function importWorkerModules(port: RpcPort): ContainerModule[] {
-  return [importWorkerModule(port), assetCacheModule];
+  return [importWorkerModule(port), assetCacheModule, linkProgressModule];
 }
