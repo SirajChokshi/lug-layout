@@ -752,36 +752,54 @@ it("keeps every holder under its own container, and the scene's direct children 
   ]);
 });
 
+function settlingBackend() {
+  vi.useFakeTimers({ toFake: ["performance"] });
+  const backend = new ThreeSceneBackend();
+  backend.resize(640, 480);
+  const z = CHUNK_LDU / 2;
+  const viewFrom = (x: number): void => backend.setView(x, VIEW_EYE_HEIGHT_LDU, z, x, 0, z + 1);
+  const rebasedChunks = (): ReadonlyArray<readonly [number, number]> =>
+    backend.rebaseLog().map(({ chunkX, chunkZ }) => [chunkX, chunkZ] as const);
+  return { backend, viewFrom, rebasedChunks };
+}
+
 describe("the render origin", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("rebases to the eye's chunk once the eye has been still for the settle time, without another setView", () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-    const backend = new ThreeSceneBackend();
-    backend.resize(640, 480);
-    const z = CHUNK_LDU / 2;
-    const firstX = CHUNK_LDU / 2;
-    const nextChunkX = CHUNK_LDU + CHUNK_LDU / 2;
-    const rebasedChunks = (): ReadonlyArray<readonly [number, number]> =>
-      backend.rebaseLog().map(({ chunkX, chunkZ }) => [chunkX, chunkZ] as const);
+  it("asks for no frame while the eye has just moved, then for one once it has been still for the settle time in another chunk, leaving the move of the origin to that frame", () => {
+    const { backend, viewFrom, rebasedChunks } = settlingBackend();
+    viewFrom(CHUNK_LDU / 2);
+    viewFrom(CHUNK_LDU + CHUNK_LDU / 2);
+    frameDrawn(backend);
+    const frameWhileMoving = backend.needsFrame();
 
-    backend.setView(firstX, VIEW_EYE_HEIGHT_LDU, z, firstX, 0, z + 1);
-    backend.setView(nextChunkX, VIEW_EYE_HEIGHT_LDU, z, nextChunkX, 0, z + 1);
-    const whileMoving = rebasedChunks();
     vi.advanceTimersByTime(WELL_PAST_SETTLE_MS);
-    const ray = new Float64Array(6);
-    backend.rayThrough(0, 0, ray);
 
-    expect({ whileMoving, settled: rebasedChunks(), eyeX: ray[0], eyeZ: ray[2] }).toEqual({
-      whileMoving: [[0, 0]],
-      settled: [
-        [0, 0],
-        [1, 0],
-      ],
-      eyeX: nextChunkX,
-      eyeZ: z,
+    expect({
+      frameWhileMoving,
+      frameOnceStill: backend.needsFrame(),
+      rebased: rebasedChunks(),
+    }).toEqual({
+      frameWhileMoving: false,
+      frameOnceStill: true,
+      rebased: [[0, 0]],
+    });
+  });
+
+  it("asks for no frame when the eye is back in the origin's chunk by the settle time", () => {
+    const { backend, viewFrom, rebasedChunks } = settlingBackend();
+    viewFrom(CHUNK_LDU / 2);
+    viewFrom(CHUNK_LDU + CHUNK_LDU / 2);
+    viewFrom(CHUNK_LDU / 4);
+    frameDrawn(backend);
+
+    vi.advanceTimersByTime(WELL_PAST_SETTLE_MS);
+
+    expect({ frame: backend.needsFrame(), rebased: rebasedChunks() }).toEqual({
+      frame: false,
+      rebased: [[0, 0]],
     });
   });
 });
