@@ -19,7 +19,7 @@ import {
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";
 
-export function bindLinkProgress(bind: Bind): void {
+function bindLinkProgress(bind: Bind): void {
   bind(LINK_PROGRESS)
     .toDynamicValue((context) => new LinkProgress(context.get(LINK_PROGRESS_SHARE)))
     .inSingletonScope();

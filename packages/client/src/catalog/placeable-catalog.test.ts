@@ -2,6 +2,7 @@ import {
   ASSET_FETCHER,
   AssetResponseError,
   AssetStalledError,
+  DEFAULT_LINK_SILENCE_LIMIT_MS,
   PART_BUNDLE_LOADER,
   type IAssetFetcher,
 } from "@brr/catalog";
@@ -130,7 +131,10 @@ async function paletteAfterTheFirstRecordFails(failure: Error) {
 }
 
 it("lets the models asked for after a stalled record adopt once the stall is reported, as after an HTTP error", async () => {
-  const stall = new AssetStalledError("https://bucket.test/standard/model.json", 30_000);
+  const stall = new AssetStalledError(
+    "https://bucket.test/standard/model.json",
+    DEFAULT_LINK_SILENCE_LIMIT_MS,
+  );
   const stalled = await paletteAfterTheFirstRecordFails(stall);
   const refused = await paletteAfterTheFirstRecordFails(
     new AssetResponseError("https://bucket.test/standard/model.json", 503),

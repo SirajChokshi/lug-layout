@@ -297,36 +297,6 @@ it("fails a request that gets no answer for 50 s with an error naming the file, 
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("fails a response that goes silent partway through its body 50 s after the last chunk", async () => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const { network } = await networkFetcher();
-  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        setTimeout(() => controller.enqueue(encoder.encode('{"manifestFile"')), 10_000);
-        init.signal?.addEventListener("abort", () =>
-          controller.error(new DOMException("aborted", "AbortError")),
-        );
-      },
-    });
-    return new Response(body);
-  });
-  const loading = network.text(POINTER);
-  const watch = watched(loading);
-
-  await vi.advanceTimersByTimeAsync(10_000 + SILENCE_LIMIT_MS - 1);
-  expect(watch.settled()).toBe(false);
-  await vi.advanceTimersByTimeAsync(1);
-
-  await expect(loading).rejects.toBeInstanceOf(AssetStalledError);
-  await expect(loading).rejects.toMatchObject({
-    url: `${BUCKET}${POINTER}`,
-    silenceLimitMs: SILENCE_LIMIT_MS,
-    message: `GET ${BUCKET}${POINTER} sent nothing for 50 s`,
-  });
-  expect(vi.getTimerCount()).toBe(0);
-});
-
 it("keeps a response that sends something every 49.999 s, headers included, however long it takes in all", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
@@ -421,7 +391,7 @@ it("fails every request still waiting once nothing has arrived from the server f
     return Promise.resolve(new Response(body));
   });
   const neverAnswered = network.bytes(WAITING);
-  const cutOff = network.bytes(FLOWING);
+  const cutOff = network.text(FLOWING);
   const watches = [watched(neverAnswered), watched(cutOff)];
 
   await vi.advanceTimersByTimeAsync(lastByteMs + SILENCE_LIMIT_MS - 1);

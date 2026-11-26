@@ -1,7 +1,7 @@
 export { AssetResponseError } from "./asset-response-error.ts";
 export { AssetStalledError } from "./asset-stalled-error.ts";
 export type { ICatalogApi } from "./catalog-api-client.ts";
-export { bindLinkProgress, catalogModule } from "./catalog.module.ts";
+export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
 export { DEFAULT_FETCH_POOL_POLICY, type FetchPoolPolicy } from "./fetch-pool.ts";
 export { DEFAULT_LINK_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
