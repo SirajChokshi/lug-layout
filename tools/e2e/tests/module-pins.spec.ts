@@ -33,6 +33,7 @@ const SEED_RANGE = 2 ** 31;
 const DEFAULT_SEED = 7;
 const GENERATOR_ATTEMPTS = 8;
 const TOGGLE_KEY = "a";
+const ROAD_SNAP_KEY = "s";
 const ASSIST_FLOOR_LDU = STUD;
 const ASSIST_CAP_LDU = 3 * STUD;
 const ZOOM_STEP_IN = -150;
@@ -129,6 +130,10 @@ async function importModels(
   models: ReadonlyArray<{ readonly names: { readonly file: string }; readonly text: string }>,
 ): Promise<{ readonly editor: EditorPage; readonly items: ReadonlyArray<string> }> {
   const editor = await EditorPage.open(page);
+  const roadSnap = page.getByRole("checkbox", { name: /^Snap road pieces/u, includeHidden: true });
+  await expect(roadSnap).toBeChecked();
+  await editor.press(ROAD_SNAP_KEY);
+  await expect(roadSnap).not.toBeChecked();
   await editor.serveLdrawLibrary();
   const items: string[] = [];
   for (const model of models) {
