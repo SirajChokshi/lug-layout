@@ -9729,6 +9729,16 @@ async function openedWithStudsChecked(repository: MemoryRepository, landing: "ea
     originChunkZ: -2,
   });
   await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+  await vi.waitFor(
+    () => {
+      const { farTier, meshes } = editor.snapshot();
+      expect({ farTier, settled: meshesSettled(meshes) }).toEqual({
+        farTier: "ready",
+        settled: true,
+      });
+    },
+    { timeout: 60_000 },
+  );
   const issues = plans.issues(planId).map((issue) => issue.message);
   const chunks = [...backend.chunks].toSorted(([a], [b]) => a - b);
   expect(selectAt(editor, backend, 320, 500)?.item).toBe(PLAIN_MODULE);
