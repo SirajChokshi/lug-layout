@@ -2,6 +2,7 @@ import type { ServiceIdentifier } from "inversify";
 import type { ICatalogApi } from "./catalog-api-client.ts";
 import type { FetchPoolPolicy } from "./fetch-pool.ts";
 import type { ILibraryPartCatalog } from "./library-part-catalog.ts";
+import type { ILinkProgress } from "./link-progress.ts";
 import type { IAssetFetcher, IPartBundleLoader } from "./part-bundle.ts";
 
 export const BUNDLE_BASE_URL: ServiceIdentifier<string> = Symbol.for("brr.catalog.BundleBaseUrl");
@@ -29,4 +30,7 @@ export const FETCH_POOL_POLICY: ServiceIdentifier<FetchPoolPolicy> = Symbol.for(
 );
 export const ASSET_SILENCE_LIMIT_MS: ServiceIdentifier<number> = Symbol.for(
   "brr.catalog.AssetSilenceLimitMs",
+);
+export const LINK_PROGRESS: ServiceIdentifier<ILinkProgress> = Symbol.for(
+  "brr.catalog.LinkProgress",
 );

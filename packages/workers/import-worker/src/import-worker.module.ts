@@ -1,3 +1,9 @@
+import {
+  LINK_PROGRESS,
+  LINK_PROGRESS_CHANNEL,
+  LinkProgress,
+  reportingProgress,
+} from "@brr/catalog";
 import { LdrawMirror, ModelImportEngine } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
 import { assetCacheModule } from "@brr/storage";
@@ -21,7 +27,14 @@ import {
 function importWorkerModule(port: RpcPort): ContainerModule {
   return new ContainerModule(({ bind }) => {
     bind(IMPORT_PORT).toConstantValue(port);
-    bind(IMPORT_FETCH).toConstantValue((url) => fetch(url));
+    bind(LINK_PROGRESS)
+      .toDynamicValue(() => new LinkProgress(new BroadcastChannel(LINK_PROGRESS_CHANNEL)))
+      .inSingletonScope();
+    bind(IMPORT_FETCH)
+      .toDynamicValue((context) =>
+        reportingProgress((url) => fetch(url), context.get(LINK_PROGRESS)),
+      )
+      .inSingletonScope();
     bind(IMPORT_CLOCK).toConstantValue(() => performance.now());
     bind(COMPILER_LOADER).to(CompilerLoader).inSingletonScope();
     bind(LDRAW_MIRROR_FACTORY)

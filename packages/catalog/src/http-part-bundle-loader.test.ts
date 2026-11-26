@@ -4,12 +4,14 @@ import { AssetResponseError } from "./asset-response-error.ts";
 import { AssetStalledError } from "./asset-stalled-error.ts";
 import { catalogModule } from "./catalog.module.ts";
 import { DEFAULT_ASSET_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
+import { LinkProgress, type LinkChannel } from "./link-progress.ts";
 import type { IAssetFetcher } from "./part-bundle.ts";
 import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   FETCH_POOL_POLICY,
+  LINK_PROGRESS,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";
@@ -224,11 +226,28 @@ const BUCKET = "https://bucket.test/";
 const SILENCE_LIMIT_MS = DEFAULT_ASSET_SILENCE_LIMIT_MS;
 const encoder = new TextEncoder();
 
-async function networkFetcher(): Promise<IAssetFetcher> {
+const openChannels: BroadcastChannel[] = [];
+let channelCount = 0;
+
+afterEach(() => {
+  for (const channel of openChannels.splice(0)) channel.close();
+});
+
+async function networkFetcher(): Promise<{
+  network: IAssetFetcher;
+  linkChannel: BroadcastChannel;
+  otherContext: LinkChannel;
+}> {
+  channelCount += 1;
+  const name = `bundle-link-${channelCount}`;
+  const own = new BroadcastChannel(name);
+  const otherContext = new BroadcastChannel(name);
+  openChannels.push(own, otherContext);
   const container = new Container();
   await container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue(BUCKET);
-  return container.get(NETWORK_ASSET_FETCHER);
+  container.rebind(LINK_PROGRESS).toConstantValue(new LinkProgress(own));
+  return { network: container.get(NETWORK_ASSET_FETCHER), linkChannel: own, otherContext };
 }
 
 function watched<T>(loading: Promise<T>): { settled: () => boolean } {
@@ -273,7 +292,7 @@ function pacedBody(chunks: ReadonlyArray<string>, everyMs: number): ReadableStre
 
 it("fails a request that gets no answer for 30 s with an error naming the file, and not before", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const network = await networkFetcher();
+  const { network } = await networkFetcher();
   vi.stubGlobal("fetch", (_url: string, init: RequestInit) => hangs(init));
   const loading = network.bytes(POINTER);
   const watch = watched(loading);
@@ -294,7 +313,7 @@ it("fails a request that gets no answer for 30 s with an error naming the file, 
 
 it("fails a response that goes silent partway through its body 30 s after the last chunk", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const network = await networkFetcher();
+  const { network } = await networkFetcher();
   vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -324,7 +343,7 @@ it("fails a response that goes silent partway through its body 30 s after the la
 
 it("keeps a response that sends something every 29.999 s, headers included, however long it takes in all", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const network = await networkFetcher();
+  const { network } = await networkFetcher();
   const chunks = ["slow ", "but ", "steady ", "bytes"];
   const pace = SILENCE_LIMIT_MS - 1;
   vi.stubGlobal(
@@ -353,7 +372,7 @@ const FLOWING = "standard/flowing.glb";
 
 it("keeps a request queued behind another response for as long as that response keeps arriving", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const network = await networkFetcher();
+  const { network } = await networkFetcher();
   const flowing = ["one ", "two ", "three ", "four ", "five ", "six ", "seven ", "eight ", "nine"];
   const chunkEveryMs = 10_000;
   const queuedAnswerMs = (flowing.length + 1) * chunkEveryMs;
@@ -376,7 +395,7 @@ it("keeps a request queued behind another response for as long as that response 
 
 it("fails a response the server hangs while others keep arriving, once nothing has arrived for 30 s", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const network = await networkFetcher();
+  const { network } = await networkFetcher();
   const flowing = ["a", "b", "c", "d", "e"];
   const chunkEveryMs = 20_000;
   const lastChunkMs = flowing.length * chunkEveryMs;
@@ -401,7 +420,7 @@ it("fails a response the server hangs while others keep arriving, once nothing h
 
 it("fails every request still waiting once nothing has arrived from the server for 30 s", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const network = await networkFetcher();
+  const { network } = await networkFetcher();
   const lastByteMs = 5_000;
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
     if (!url.endsWith(FLOWING)) return hangs(init);
@@ -430,9 +449,31 @@ it("fails every request still waiting once nothing has arrived from the server f
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it("keeps a request waiting while another context reports progress, and fails it 30 s after the last report", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  const { network, linkChannel, otherContext } = await networkFetcher();
+  vi.stubGlobal("fetch", (_url: string, init: RequestInit) => hangs(init));
+  const waiting = network.bytes(QUEUED);
+  const watch = watched(waiting);
+  const reportedAtMs = 20_000;
+  await vi.advanceTimersByTimeAsync(reportedAtMs);
+  const delivered = new Promise((done) =>
+    linkChannel.addEventListener("message", done, { once: true }),
+  );
+  otherContext.postMessage(null, []);
+  await delivered;
+
+  await vi.advanceTimersByTimeAsync(SILENCE_LIMIT_MS - 1);
+  expect(watch.settled()).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+
+  await expect(waiting).rejects.toBeInstanceOf(AssetStalledError);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it("reads exactly what was sent and leaves no timer behind, however the request ends", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const network = await networkFetcher();
+  const { network } = await networkFetcher();
   const sent = encoder.encode("añb€c");
   const split = [sent.slice(0, 2), sent.slice(2, 5), sent.slice(5)];
   respondWith(split);

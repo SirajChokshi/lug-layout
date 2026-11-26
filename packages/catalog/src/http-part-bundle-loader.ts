@@ -65,12 +65,14 @@ import type {
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts";
+import type { ILinkProgress } from "./link-progress.ts";
 import {
   ASSET_FETCHER,
   ASSET_SILENCE_LIMIT_MS,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   FETCH_POOL_POLICY,
+  LINK_PROGRESS,
 } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
@@ -147,24 +149,12 @@ export const DEFAULT_ASSET_SILENCE_LIMIT_MS = 30_000;
 
 const utf8 = new TextDecoder();
 
-class LinkProgress {
-  private lastAt = Number.NEGATIVE_INFINITY;
-
-  mark(): void {
-    this.lastAt = performance.now();
-  }
-
-  quietMs(): number {
-    return performance.now() - this.lastAt;
-  }
-}
-
 class SilenceWatch {
   readonly signal: AbortSignal;
   readonly stalled: Promise<never>;
   private timer: ReturnType<typeof setTimeout>;
 
-  constructor(url: string, limitMs: number, link: LinkProgress) {
+  constructor(url: string, limitMs: number, link: ILinkProgress) {
     const controller = new AbortController();
     const { promise, reject } = Promise.withResolvers<never>();
     this.signal = controller.signal;
@@ -207,7 +197,7 @@ function joined(chunks: ReadonlyArray<Uint8Array>, length: number): ArrayBuffer 
 async function download(
   url: string,
   signal: AbortSignal,
-  link: LinkProgress,
+  link: ILinkProgress,
 ): Promise<ArrayBuffer> {
   const response = await fetch(url, { signal });
   link.mark();
@@ -226,11 +216,10 @@ async function download(
 
 @injectable()
 export class HttpAssetFetcher implements IAssetFetcher {
-  private readonly link = new LinkProgress();
-
   constructor(
     @inject(BUNDLE_BASE_URL) private readonly baseUrl: string,
     @inject(ASSET_SILENCE_LIMIT_MS) private readonly silenceLimitMs: number,
+    @inject(LINK_PROGRESS) private readonly link: ILinkProgress,
   ) {
     if (!Number.isInteger(silenceLimitMs) || silenceLimitMs <= 0) {
       throw new Error(

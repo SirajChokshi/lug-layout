@@ -7,6 +7,13 @@ export { DEFAULT_FETCH_POOL_POLICY, type FetchPoolPolicy } from "./fetch-pool.ts
 export { DEFAULT_ASSET_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
 export type { ILibraryPartCatalog, LibraryPartList } from "./library-part-catalog.ts";
 export {
+  LINK_PROGRESS_CHANNEL,
+  LinkProgress,
+  reportingProgress,
+  type ILinkProgress,
+  type LinkChannel,
+} from "./link-progress.ts";
+export {
   ConnectorRecords,
   partConnectors,
   type ConnectorIndexPaths,
@@ -66,6 +73,7 @@ export {
   CATALOG_API_BASE_URL,
   FETCH_POOL_POLICY,
   LIBRARY_PART_CATALOG,
+  LINK_PROGRESS,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";
