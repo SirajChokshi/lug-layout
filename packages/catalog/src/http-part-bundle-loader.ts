@@ -164,10 +164,10 @@ class SilenceWatch {
       reject(new AssetStalledError(url, limitMs));
       controller.abort();
     };
-    this.progressed();
+    this.markProgress();
   }
 
-  progressed(): void {
+  markProgress(): void {
     clearTimeout(this.timer);
     this.timer = setTimeout(this.stall, this.limitMs);
   }
@@ -197,14 +197,14 @@ function joined(chunks: ReadonlyArray<Uint8Array>, length: number): ArrayBuffer 
 
 async function download(url: string, watch: SilenceWatch): Promise<ArrayBuffer> {
   const response = await fetch(url, { signal: watch.signal });
-  watch.progressed();
+  watch.markProgress();
   if (!response.ok) throw new AssetResponseError(url, response.status);
   if (response.body === null) return new ArrayBuffer(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
   for (let read = await reader.read(); !read.done; read = await reader.read()) {
-    watch.progressed();
+    watch.markProgress();
     chunks.push(read.value);
     length += read.value.byteLength;
   }

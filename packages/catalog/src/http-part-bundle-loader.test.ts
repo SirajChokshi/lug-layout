@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AssetResponseError } from "./asset-response-error.ts";
 import { AssetStalledError } from "./asset-stalled-error.ts";
 import { catalogModule } from "./catalog.module.ts";
+import { DEFAULT_ASSET_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
 import type { IAssetFetcher } from "./part-bundle.ts";
 import {
   ASSET_FETCHER,
@@ -220,7 +221,7 @@ it("tells an HTTP error status apart from a request that got no response", async
 });
 
 const BUCKET = "https://bucket.test/";
-const SILENCE_LIMIT_MS = 30_000;
+const SILENCE_LIMIT_MS = DEFAULT_ASSET_SILENCE_LIMIT_MS;
 const encoder = new TextEncoder();
 
 async function networkFetcher(): Promise<IAssetFetcher> {
@@ -273,7 +274,15 @@ function pacedBody(chunks: ReadonlyArray<string>, everyMs: number): ReadableStre
 it("fails a request that gets no answer for 30 s with an error naming the file, and not before", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const network = await networkFetcher();
-  vi.stubGlobal("fetch", () => new Promise<Response>(() => undefined));
+  vi.stubGlobal(
+    "fetch",
+    (_url: string, init: RequestInit) =>
+      new Promise<Response>((_answer, refuse) => {
+        init.signal?.addEventListener("abort", () =>
+          refuse(new DOMException("aborted", "AbortError")),
+        );
+      }),
+  );
   const loading = network.bytes(POINTER);
   const watch = watched(loading);
 
@@ -294,12 +303,17 @@ it("fails a request that gets no answer for 30 s with an error naming the file, 
 it("fails a response that goes silent partway through its body 30 s after the last chunk", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const network = await networkFetcher();
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      setTimeout(() => controller.enqueue(encoder.encode('{"manifestFile"')), 10_000);
-    },
+  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => controller.enqueue(encoder.encode('{"manifestFile"')), 10_000);
+        init.signal?.addEventListener("abort", () =>
+          controller.error(new DOMException("aborted", "AbortError")),
+        );
+      },
+    });
+    return new Response(body);
   });
-  vi.stubGlobal("fetch", async () => new Response(body));
   const loading = network.text(POINTER);
   const watch = watched(loading);
 
@@ -308,6 +322,11 @@ it("fails a response that goes silent partway through its body 30 s after the la
   await vi.advanceTimersByTimeAsync(1);
 
   await expect(loading).rejects.toBeInstanceOf(AssetStalledError);
+  await expect(loading).rejects.toMatchObject({
+    url: `${BUCKET}${POINTER}`,
+    silenceLimitMs: SILENCE_LIMIT_MS,
+    message: `GET ${BUCKET}${POINTER} sent nothing for 30 s`,
+  });
   expect(vi.getTimerCount()).toBe(0);
 });
 
