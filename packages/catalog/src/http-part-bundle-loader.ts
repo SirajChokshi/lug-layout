@@ -65,7 +65,7 @@ import type {
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts";
-import type { ILinkProgress } from "./link-progress.ts";
+import type { ILinkProgress } from "./link-progress/link-progress.ts";
 import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,

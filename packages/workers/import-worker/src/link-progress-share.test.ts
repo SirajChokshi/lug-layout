@@ -28,13 +28,13 @@ it("carries one worker's link progress to every listener in another worker throu
   expect(heardBySecondListener).toBe(1);
 });
 
-it("ignores a message on the broadcast that isn't a link progress envelope, and still carries the next share", async () => {
+it("ignores messages on the broadcast that aren't link progress envelopes, and still carries the next share", async () => {
   const reading = workerContainer().get(LINK_PROGRESS);
   const waiting = workerContainer().get(LINK_PROGRESS);
   const stranger = new BroadcastChannel("brr.linkProgress.v1");
-  const strangerPost: RpcPort = stranger;
-  strangerPost.postMessage({ kind: "progress" }, []);
-  strangerPost.postMessage({ protocol: "brr.linkProgress", version: 1 }, []);
+  const strangerPort: RpcPort = stranger;
+  strangerPort.postMessage({ kind: "progress" }, []);
+  strangerPort.postMessage({ protocol: "brr.linkProgress", version: 1 }, []);
 
   reading.markProgress();
 

@@ -8,7 +8,7 @@
     "./connector-license": "./src/connector-license.ts",
     "./connector-records": "./src/connector-records.ts",
     "./glb": "./src/glb.ts",
-    "./link-progress": "./src/link-progress.module.ts",
+    "./link-progress": "./src/link-progress/index.ts",
     "./model-part-cells": "./src/model-part-cells.ts"
   },
   "scripts": {

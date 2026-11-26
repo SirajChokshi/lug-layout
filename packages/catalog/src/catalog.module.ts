@@ -7,7 +7,7 @@ import {
   HttpPartBundleLoader,
 } from "./http-part-bundle-loader.ts";
 import { HttpLibraryPartCatalog } from "./library-part-catalog.ts";
-import { bindLinkProgress } from "./link-progress.module.ts";
+import { bindLinkProgress } from "./link-progress/link-progress.module.ts";
 import {
   CATALOG_API,
   FETCH_POOL_POLICY,

@@ -5,7 +5,7 @@ interface LinkProgressShared {
   readonly kind: "progress";
 }
 
-const SHARED: LinkProgressShared = { kind: "progress" };
+const PROGRESS: LinkProgressShared = { kind: "progress" };
 
 function isLinkProgressEnvelope(data: unknown): boolean {
   return (
@@ -37,7 +37,7 @@ class LinkProgressBroadcast {
   }
 
   share(): void {
-    this.endpoint.post(SHARED);
+    this.endpoint.post(PROGRESS);
   }
 
   listen(listener: () => void): void {

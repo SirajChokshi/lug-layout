@@ -1,5 +1,5 @@
 import { inject, injectable } from "inversify";
-import { LINK_PROGRESS_SHARE } from "./tokens.ts";
+import { LINK_PROGRESS_SHARE } from "../tokens.ts";
 
 export const LINK_PROGRESS_MIN_SHARE_GAP_MS = 1000;
 

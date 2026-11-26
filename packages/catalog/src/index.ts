@@ -6,7 +6,11 @@ export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts"
 export { DEFAULT_FETCH_POOL_POLICY, type FetchPoolPolicy } from "./fetch-pool.ts";
 export { DEFAULT_LINK_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
 export type { ILibraryPartCatalog, LibraryPartList } from "./library-part-catalog.ts";
-export { reportingFetch, type ILinkProgress, type ILinkProgressShare } from "./link-progress.ts";
+export {
+  reportingFetch,
+  type ILinkProgress,
+  type ILinkProgressShare,
+} from "./link-progress/link-progress.ts";
 export {
   ConnectorRecords,
   partConnectors,

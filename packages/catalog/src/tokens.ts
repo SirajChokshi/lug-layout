@@ -2,7 +2,7 @@ import type { ServiceIdentifier } from "inversify";
 import type { ICatalogApi } from "./catalog-api-client.ts";
 import type { FetchPoolPolicy } from "./fetch-pool.ts";
 import type { ILibraryPartCatalog } from "./library-part-catalog.ts";
-import type { ILinkProgress, ILinkProgressShare } from "./link-progress.ts";
+import type { ILinkProgress, ILinkProgressShare } from "./link-progress/link-progress.ts";
 import type { IAssetFetcher, IPartBundleLoader } from "./part-bundle.ts";
 
 export const BUNDLE_BASE_URL: ServiceIdentifier<string> = Symbol.for("brr.catalog.BundleBaseUrl");
