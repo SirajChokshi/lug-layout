@@ -1934,7 +1934,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       views.matrices,
       meshes.kind[row] === MESH_KIND_BODY ? views.colors : undefined,
     );
-    if (!swaps) return mesh;
+    if (!swaps) {
+      mesh.computeBoundingSphere();
+      return mesh;
+    }
     if (nearCount > 0) {
       this.capturePartState(
         mesh,
@@ -1997,6 +2000,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       views.matrices,
       undefined,
     );
+    mesh.computeBoundingSphere();
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
@@ -2091,6 +2095,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       new InstancedBufferAttribute(matrices, MATRIX4_FLOATS),
       undefined,
     );
+    mesh.computeBoundingSphere();
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
@@ -2110,7 +2115,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     if (colors) mesh.instanceColor = colors;
     mesh.matrixAutoUpdate = false;
     mesh.receiveShadow = this.look.shadows && !material.transparent;
-    mesh.computeBoundingSphere();
     return mesh;
   }
 
