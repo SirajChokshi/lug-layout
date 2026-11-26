@@ -2,8 +2,8 @@ import {
   ASSET_FETCHER,
   AssetResponseError,
   AssetStalledError,
-  DEFAULT_LINK_SILENCE_LIMIT_MS,
   LINK_PROGRESS_SHARE,
+  LINK_SILENCE_LIMIT_MS,
   NETWORK_ASSET_FETCHER,
   type IAssetFetcher,
 } from "@brr/catalog";
@@ -16,7 +16,6 @@ const BUCKET = "https://bucket.test/";
 const PART = "standard/part.0123456789abcdef.glb";
 const WHOLE_FILE = "the whole file";
 const ALL_WAITS_MS = 31_000;
-const SILENCE_LIMIT_MS = DEFAULT_LINK_SILENCE_LIMIT_MS;
 const utf8 = new TextEncoder();
 
 type Attempt = () => Promise<ArrayBuffer>;
@@ -27,7 +26,7 @@ const networkError: Attempt = async () => {
 };
 
 const stall: Attempt = async () => {
-  throw new AssetStalledError(`${BUCKET}${PART}`, SILENCE_LIMIT_MS);
+  throw new AssetStalledError(`${BUCKET}${PART}`, LINK_SILENCE_LIMIT_MS);
 };
 
 function refused(status: number, retryAfterMs: number | null = null): Attempt {
@@ -192,7 +191,7 @@ it("reads Retry-After from a response in seconds, and falls back to the schedule
 
 it("doesn't count a wait between attempts as silence: the next attempt still waits 50 s of its own", async () => {
   fakeClock();
-  const refusedAtMs = SILENCE_LIMIT_MS - 1_000;
+  const refusedAtMs = LINK_SILENCE_LIMIT_MS - 1_000;
   const refusedLate: Answer = () =>
     new Promise((_answer, refuse) =>
       setTimeout(() => refuse(new TypeError("Failed to fetch")), refusedAtMs),
@@ -205,7 +204,7 @@ it("doesn't count a wait between attempts as silence: the next attempt still wai
     .finally(() => (settled = true));
   const secondStartMs = refusedAtMs + 1_000;
 
-  await vi.advanceTimersByTimeAsync(secondStartMs + SILENCE_LIMIT_MS - 1);
+  await vi.advanceTimersByTimeAsync(secondStartMs + LINK_SILENCE_LIMIT_MS - 1);
   expect(settled).toBe(false);
   await vi.advanceTimersByTimeAsync(1);
 

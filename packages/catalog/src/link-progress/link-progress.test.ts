@@ -1,67 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { LINK_PROGRESS_MIN_SHARE_GAP_MS, LinkProgress, reportingFetch } from "./link-progress.ts";
+import { LINK_PROGRESS_MIN_SHARE_GAP_MS, LinkProgress } from "./link-progress.ts";
 import { Peers } from "./link-progress.test-support.ts";
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-const encoder = new TextEncoder();
-const STATUS_TEXT = "Not Found";
-
-it("counts the headers and every chunk as they arrive, and passes the response through unchanged", async () => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  const link = new LinkProgress(new Peers());
-  const chunks = ["0 FILE ", "parts/", "3001.dat"];
-  const headersAfterMs = 4_000;
-  const chunkEveryMs = 1_000;
-  const pacedBody = new ReadableStream<Uint8Array>({
-    start(controller) {
-      chunks.forEach((chunk, i) =>
-        setTimeout(
-          () => {
-            controller.enqueue(encoder.encode(chunk));
-            if (i === chunks.length - 1) controller.close();
-          },
-          headersAfterMs + chunkEveryMs * (i + 1),
-        ),
-      );
-    },
-  });
-  const response = reportingFetch(
-    () =>
-      new Promise((answer) =>
-        setTimeout(
-          () =>
-            answer(
-              new Response(pacedBody, {
-                status: 404,
-                statusText: STATUS_TEXT,
-                headers: { "x-mirror": "raw" },
-              }),
-            ),
-          headersAfterMs,
-        ),
-      ),
-    link,
-  )("https://mirror.test/parts/3001.dat");
-
-  await vi.advanceTimersByTimeAsync(headersAfterMs);
-  const answered = await response;
-  expect(link.silenceMs()).toBe(0);
-  const text = answered.text();
-  for (let i = 0; i < chunks.length; i++) {
-    await vi.advanceTimersByTimeAsync(chunkEveryMs / 2);
-    expect(link.silenceMs()).toBe(chunkEveryMs / 2);
-    await vi.advanceTimersByTimeAsync(chunkEveryMs / 2);
-    expect(link.silenceMs()).toBe(0);
-  }
-  expect([answered.status, answered.statusText, answered.headers.get("x-mirror")]).toEqual([
-    404,
-    STATUS_TEXT,
-    "raw",
-  ]);
-  await expect(text).resolves.toBe(chunks.join(""));
 });
 
 it("shares a burst of progress with its peers once per gap, and counts what a peer shares", async () => {

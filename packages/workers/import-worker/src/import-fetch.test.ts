@@ -1,4 +1,8 @@
-import { LINK_PROGRESS_SHARE } from "@brr/catalog/link-progress";
+import {
+  LINK_PROGRESS_SHARE,
+  LINK_SILENCE_LIMIT_MS,
+  type ILinkProgressShare,
+} from "@brr/catalog/link-progress";
 import type { RpcPort } from "@brr/rpc";
 import { Container } from "inversify";
 import { afterEach, expect, it, vi } from "vitest";
@@ -6,16 +10,16 @@ import { importWorkerModules } from "./import-worker.module.ts";
 import { IMPORT_FETCH } from "./tokens.ts";
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
+const silentPeers: ILinkProgressShare = { share: () => undefined, listen: () => undefined };
 const FILE = "https://bucket.test/library-connectors/connectivity-3755a.0123456789abcdef.json";
+const MIRROR_FILE =
+  "https://ldraw-library.test/kulits/ldraw-parts/c70360d1c588be894997b2168c61909bc8058c4d/ldraw/parts/3023b.dat";
 const ALL_WAITS_MS = 31_000;
 
 function importFetch(): (url: string) => Promise<Response> {
   const container = new Container();
   container.load(...importWorkerModules(idlePort));
-  container.rebind(LINK_PROGRESS_SHARE).toConstantValue({
-    share: () => undefined,
-    listen: () => undefined,
-  });
+  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
   return container.get(IMPORT_FETCH);
 }
 
@@ -56,4 +60,35 @@ it("hands back the sixth 503 as the response, for the worker's own message", asy
   await vi.advanceTimersByTimeAsync(ALL_WAITS_MS);
   expect((await reading).status).toBe(503);
   expect(network.calls()).toBe(6);
+});
+
+it("fails an import worker read that hears nothing on the link for 55 s, naming the file and aborting the request", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  let aborted = false;
+  vi.stubGlobal(
+    "fetch",
+    (_url: string, init: RequestInit) =>
+      new Promise<Response>((_answer, refuse) => {
+        init.signal?.addEventListener("abort", () => {
+          aborted = true;
+          refuse(new DOMException("aborted", "AbortError"));
+        });
+      }),
+  );
+  const read = importFetch()(MIRROR_FILE);
+  let settled = false;
+  read.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+
+  await vi.advanceTimersByTimeAsync(LINK_SILENCE_LIMIT_MS - 1);
+  expect(settled).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+
+  await expect(read).rejects.toMatchObject({
+    url: MIRROR_FILE,
+    message: `GET ${MIRROR_FILE} sent nothing for 55 s`,
+  });
+  expect(aborted).toBe(true);
 });

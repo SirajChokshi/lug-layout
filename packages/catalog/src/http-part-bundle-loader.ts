@@ -1,5 +1,4 @@
 import { AssetResponseError } from "./asset-response-error.ts";
-import { AssetStalledError } from "./asset-stalled-error.ts";
 import { retryAfterMs } from "./asset-retry.ts";
 import {
   ConnectorRecords,
@@ -67,13 +66,13 @@ import type {
 } from "./part-bundle.ts";
 import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts";
 import type { ILinkProgress } from "./link-progress/link-progress.ts";
+import { markedChunks, silenceBounded } from "./link-progress/silence-watch.ts";
 import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   FETCH_POOL_POLICY,
   LINK_PROGRESS,
-  LINK_SILENCE_LIMIT_MS,
 } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
@@ -146,36 +145,7 @@ function connectorIndexPaths(
   };
 }
 
-export const DEFAULT_LINK_SILENCE_LIMIT_MS = 50_000;
-
 const utf8 = new TextDecoder();
-
-class SilenceWatch {
-  readonly signal: AbortSignal;
-  readonly stalled: Promise<never>;
-  private timer: ReturnType<typeof setTimeout>;
-
-  constructor(url: string, limitMs: number, link: ILinkProgress) {
-    const controller = new AbortController();
-    const { promise, reject } = Promise.withResolvers<never>();
-    this.signal = controller.signal;
-    this.stalled = promise;
-    const check = (): void => {
-      const remainingMs = limitMs - link.silenceMs();
-      if (remainingMs > 0) {
-        this.timer = setTimeout(check, Math.ceil(remainingMs));
-        return;
-      }
-      reject(new AssetStalledError(url, limitMs));
-      controller.abort();
-    };
-    this.timer = setTimeout(check, limitMs);
-  }
-
-  stop(): void {
-    clearTimeout(this.timer);
-  }
-}
 
 function joined(chunks: ReadonlyArray<Uint8Array>, length: number): ArrayBuffer {
   const only = chunks.length === 1 ? chunks[0] : undefined;
@@ -206,14 +176,7 @@ async function download(
     throw new AssetResponseError(url, response.status, retryAfterMs(response.headers));
   }
   if (response.body === null) return new ArrayBuffer(0);
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  for (let read = await reader.read(); !read.done; read = await reader.read()) {
-    link.markProgress();
-    chunks.push(read.value);
-    length += read.value.byteLength;
-  }
+  const { chunks, length } = await markedChunks(response.body, link);
   return joined(chunks, length);
 }
 
@@ -221,15 +184,8 @@ async function download(
 export class HttpAssetFetcher implements IAssetFetcher {
   constructor(
     @inject(BUNDLE_BASE_URL) private readonly baseUrl: string,
-    @inject(LINK_SILENCE_LIMIT_MS) private readonly linkSilenceLimitMs: number,
     @inject(LINK_PROGRESS) private readonly link: ILinkProgress,
-  ) {
-    if (!Number.isInteger(linkSilenceLimitMs) || linkSilenceLimitMs <= 0) {
-      throw new Error(
-        `a link silence limit of ${linkSilenceLimitMs} ms is not a positive whole number of milliseconds`,
-      );
-    }
-  }
+  ) {}
 
   bytes(path: string): Promise<ArrayBuffer> {
     return this.get(path);
@@ -241,10 +197,7 @@ export class HttpAssetFetcher implements IAssetFetcher {
 
   private get(path: string): Promise<ArrayBuffer> {
     const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
-    const watch = new SilenceWatch(url, this.linkSilenceLimitMs, this.link);
-    return Promise.race([watch.stalled, download(url, watch.signal, this.link)]).finally(() =>
-      watch.stop(),
-    );
+    return silenceBounded(url, this.link, (signal) => download(url, signal, this.link));
   }
 }
 

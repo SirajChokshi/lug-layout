@@ -3,7 +3,7 @@ import {
   LINK_PROGRESS,
   LINK_PROGRESS_SHARE,
   linkProgressModule,
-  reportingFetch,
+  watchedFetch,
 } from "@brr/catalog/link-progress";
 import { LdrawMirror, ModelImportEngine } from "@brr/import";
 import { openLinkProgressBroadcast, type RpcPort } from "@brr/rpc";
@@ -31,7 +31,9 @@ function importWorkerModule(port: RpcPort): ContainerModule {
     bind(LINK_PROGRESS_SHARE).toDynamicValue(openLinkProgressBroadcast).inSingletonScope();
     bind(IMPORT_FETCH)
       .toDynamicValue((context) =>
-        retryingFetch(reportingFetch((url) => fetch(url), context.get(LINK_PROGRESS))),
+        retryingFetch(
+          watchedFetch((url, signal) => fetch(url, { signal }), context.get(LINK_PROGRESS)),
+        ),
       )
       .inSingletonScope();
     bind(IMPORT_CLOCK).toConstantValue(() => performance.now());

@@ -31,9 +31,6 @@ export const LIBRARY_PART_CATALOG: ServiceIdentifier<ILibraryPartCatalog> = Symb
 export const FETCH_POOL_POLICY: ServiceIdentifier<FetchPoolPolicy> = Symbol.for(
   "brr.catalog.FetchPoolPolicy",
 );
-export const LINK_SILENCE_LIMIT_MS: ServiceIdentifier<number> = Symbol.for(
-  "brr.catalog.LinkSilenceLimitMs",
-);
 export const LINK_PROGRESS_SHARE: ServiceIdentifier<ILinkProgressShare> = Symbol.for(
   "brr.catalog.LinkProgressShare",
 );

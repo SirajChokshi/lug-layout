@@ -4,13 +4,9 @@ export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
 export { DEFAULT_FETCH_POOL_POLICY, type FetchPoolPolicy } from "./fetch-pool.ts";
-export { DEFAULT_LINK_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
 export type { ILibraryPartCatalog, LibraryPartList } from "./library-part-catalog.ts";
-export {
-  reportingFetch,
-  type ILinkProgress,
-  type ILinkProgressShare,
-} from "./link-progress/link-progress.ts";
+export type { ILinkProgress, ILinkProgressShare } from "./link-progress/link-progress.ts";
+export { LINK_SILENCE_LIMIT_MS } from "./link-progress/silence-watch.ts";
 export {
   ConnectorRecords,
   partConnectors,
@@ -73,7 +69,6 @@ export {
   LIBRARY_PART_CATALOG,
   LINK_PROGRESS,
   LINK_PROGRESS_SHARE,
-  LINK_SILENCE_LIMIT_MS,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
   RETRIED_ASSET_FETCHER,

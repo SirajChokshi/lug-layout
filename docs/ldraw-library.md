@@ -26,6 +26,8 @@ Every other object is stored with `Cache-Control: public, max-age=31536000, immu
 
 `VITE_LDRAW_LIBRARY_BASE_URL` reaches the client as `ldrawLibraryBaseUrl` (`LDRAW_LIBRARY_BASE_URL` token). The import request passes it to the worker as `ldrawLibraryUrl`, and the worker passes it to `LdrawMirror`. Without it, the mirror reads `https://raw.githubusercontent.com`.
 
+If the mirror stops sending, a read fails with `GET <file> sent nothing for 55 s` once it has waited 55 s and nothing has arrived for 55 s on any of the app's reads, and the import fails with it (`docs/part-bundle.md`, *Stalled reads*).
+
 ## Switching deployed builds from GitHub to R2
 
 `public_base_url` in `infra/cloudflare/ldraw-library.json` is the switch. Merging changes to the bucket, the publisher or the workflow never breaks Vercel Production or previews while it is `null`, whether or not the owner has applied, published or approved anything yet.

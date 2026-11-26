@@ -1,5 +1,5 @@
 import { LINK_PROGRESS, LINK_PROGRESS_SHARE } from "@brr/catalog/link-progress";
-import type { RpcPort } from "@brr/rpc";
+import { LINK_PROGRESS_PROTOCOL, RpcEndpoint, type RpcPort } from "@brr/rpc";
 import { Container } from "inversify";
 import { expect, it, vi } from "vitest";
 import { importWorkerModules } from "./import-worker.module.ts";
@@ -28,15 +28,14 @@ it("carries one worker's link progress to every listener in another worker throu
   expect(heardBySecondListener).toBe(1);
 });
 
-it("ignores messages on the broadcast that aren't link progress envelopes, and still carries the next share", async () => {
-  const reading = workerContainer().get(LINK_PROGRESS);
+it("ignores messages on the broadcast that aren't link progress envelopes, and still carries the envelope sent after them", async () => {
   const waiting = workerContainer().get(LINK_PROGRESS);
-  const stranger = new BroadcastChannel("brr.linkProgress.v1");
+  const { name, version } = LINK_PROGRESS_PROTOCOL;
+  const stranger = new BroadcastChannel(`${name}.v${version}`);
   const strangerPort: RpcPort = stranger;
   strangerPort.postMessage({ kind: "progress" }, []);
-  strangerPort.postMessage({ protocol: "brr.linkProgress", version: 1 }, []);
-
-  reading.markProgress();
+  strangerPort.postMessage({ protocol: name, version }, []);
+  new RpcEndpoint(strangerPort, LINK_PROGRESS_PROTOCOL).post({ kind: "progress" });
 
   await vi.waitFor(() => expect(waiting.silenceMs()).toBeLessThan(Infinity));
   stranger.close();

@@ -3,8 +3,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AssetResponseError } from "./asset-response-error.ts";
 import { AssetStalledError } from "./asset-stalled-error.ts";
 import { catalogModule } from "./catalog.module.ts";
-import { DEFAULT_LINK_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
 import { Peers } from "./link-progress/link-progress.test-support.ts";
+import { LINK_SILENCE_LIMIT_MS } from "./link-progress/silence-watch.ts";
 import type { IAssetFetcher } from "./part-bundle.ts";
 import {
   ASSET_FETCHER,
@@ -224,7 +224,7 @@ it("tells an HTTP error status apart from a request that got no response", async
 });
 
 const BUCKET = "https://bucket.test/";
-const SILENCE_LIMIT_MS = DEFAULT_LINK_SILENCE_LIMIT_MS;
+const SILENCE_LIMIT_MS = LINK_SILENCE_LIMIT_MS;
 const encoder = new TextEncoder();
 
 async function networkFetcher(): Promise<{ network: IAssetFetcher; peers: Peers }> {
@@ -276,7 +276,7 @@ function pacedBody(chunks: ReadonlyArray<string>, everyMs: number): ReadableStre
   });
 }
 
-it("fails a request that gets no answer for 50 s with an error naming the file, and not before", async () => {
+it("fails a request that gets no answer for 55 s with an error naming the file, and not before", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   vi.stubGlobal("fetch", (_url: string, init: RequestInit) => hangs(init));
@@ -292,12 +292,12 @@ it("fails a request that gets no answer for 50 s with an error naming the file, 
   await expect(loading).rejects.toMatchObject({
     url: `${BUCKET}${POINTER}`,
     silenceLimitMs: SILENCE_LIMIT_MS,
-    message: `GET ${BUCKET}${POINTER} sent nothing for 50 s`,
+    message: `GET ${BUCKET}${POINTER} sent nothing for 55 s`,
   });
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("keeps a response that sends something every 49.999 s, headers included, however long it takes in all", async () => {
+it("keeps a response that sends something every 54.999 s, headers included, however long it takes in all", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   const chunks = ["slow ", "but ", "steady ", "bytes"];
@@ -349,7 +349,7 @@ it("keeps a request queued behind another response for as long as that response 
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("fails a response the server hangs while other responses keep arriving, once nothing has arrived for 50 s", async () => {
+it("fails a response the server hangs while other responses keep arriving, once nothing has arrived for 55 s", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   const flowing = ["a", "b", "c", "d", "e"];
@@ -374,7 +374,7 @@ it("fails a response the server hangs while other responses keep arriving, once 
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("fails every request still waiting once nothing has arrived from the server for 50 s", async () => {
+it("fails every request still waiting once nothing has arrived from the server for 55 s", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network } = await networkFetcher();
   const lastByteMs = 5_000;
@@ -405,7 +405,7 @@ it("fails every request still waiting once nothing has arrived from the server f
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("keeps a request waiting while a peer shares progress, and fails it 50 s after the last share", async () => {
+it("keeps a request waiting while a peer shares progress, and fails it 55 s after the last share", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   const { network, peers } = await networkFetcher();
   vi.stubGlobal("fetch", (_url: string, init: RequestInit) => hangs(init));
