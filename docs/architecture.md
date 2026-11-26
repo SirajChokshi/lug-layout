@@ -748,7 +748,7 @@ export class LayoutService implements ILayoutService {
 - Each thread owns **its own Inversify container**, built in its worker entry from that worker's modules. No singletons and no service instances are shared across threads.
   - **Main thread:** client, render (MVP), storage and ui-facing modules. Remote engines are bound to **proxy implementations** from `rpc`: `SIM_CLIENT → SimWorkerProxy`, `IMPORT_CLIENT → ImportWorkerProxy`.
   - **Sim worker:** `sim` engine, a track/road graph snapshot and a clock. It exposes `ISimEngine` over `rpc`.
-  - **Import worker:** `import`, `catalog` (read-only), compile-wasm and `storage`'s `assetCacheModule` (only the asset cache, shared with the main thread through IndexedDB; `storageModule` binds the same plus the main thread's repositories). It exposes `IImportEngine`.
+  - **Import worker:** `import`, `catalog` (read-only), compile-wasm, `storage`'s `assetCacheModule` (only the asset cache, shared with the main thread through IndexedDB; `storageModule` binds the same plus the main thread's repositories) and `catalog`'s `linkProgressModule` (only the link progress clock, which shares download progress with the other threads; `catalogModule` binds the same plus the main thread's catalog services). It exposes `IImportEngine`.
   - **Render worker (P1):** `render`, `catalog` and the OffscreenCanvas. The main thread then binds `SCENE_BACKEND → RenderWorkerProxy`.
 - Cross-thread traffic only goes through `rpc` messages:
   - typed request and response unions;

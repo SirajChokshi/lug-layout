@@ -1,4 +1,4 @@
-import { LINK_PROGRESS, LINK_PROGRESS_SHARE } from "@brr/catalog";
+import { LINK_PROGRESS, LINK_PROGRESS_SHARE } from "@brr/catalog/link-progress";
 import type { RpcPort } from "@brr/rpc";
 import { Container } from "inversify";
 import { expect, it, vi } from "vitest";
