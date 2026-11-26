@@ -178,6 +178,7 @@ export class SparseConnectorFinder implements MateFinder {
   private slotStatus = new Uint8Array(INITIAL_SLOTS);
   private slotNext = new Int32Array(INITIAL_SLOTS);
   private slotRegionNext = new Int32Array(INITIAL_SLOTS);
+  private slotRegionPrev = new Int32Array(INITIAL_SLOTS);
   private slotOwner = new Int32Array(INITIAL_SLOTS);
   private slotConnector = new Int32Array(INITIAL_SLOTS);
   private slotInstance = new Int32Array(INITIAL_SLOTS);
@@ -232,7 +233,10 @@ export class SparseConnectorFinder implements MateFinder {
       this.slotLineShared[slot] = turned.lineShared[i] ?? 0;
       this.slotNext[slot] = this.cells.get(this.keyOf(x, y, z, CELL_SIXTEENTHS));
       this.cells.set(this.cellKey, slot);
-      this.slotRegionNext[slot] = this.regions.get(this.keyOf(x, y, z, REGION_SIXTEENTHS));
+      const head = this.regions.get(this.keyOf(x, y, z, REGION_SIXTEENTHS));
+      this.slotRegionNext[slot] = head;
+      this.slotRegionPrev[slot] = NO_SLOT;
+      if (head !== NO_SLOT) this.slotRegionPrev[head] = slot;
       this.regions.set(this.cellKey, slot);
       this.countChunk(x, y, z, 1);
     }
@@ -982,12 +986,9 @@ export class SparseConnectorFinder implements MateFinder {
   private turnModel(model: ModelConnectors): TurnedModel {
     const turned = new TurnedModel(model);
     const n = model.count;
-    turned.connectorClass = new Int32Array(n);
+    turned.connectorClass = this.classes.classesOf(model);
     turned.position = new Int32Array(QUARTER_TURNS * n * VECTOR_FLOATS);
     turned.axis = new Int8Array(QUARTER_TURNS * n);
-    for (let i = 0; i < n; i++) {
-      turned.connectorClass[i] = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
-    }
     turned.classes = Int32Array.from(new Set(turned.connectorClass));
     turned.classCount = this.classes.count;
     turned.axisClasses = new Uint8Array(QUARTER_TURNS * AXIS_CODES * turned.classCount);
@@ -1149,25 +1150,15 @@ export class SparseConnectorFinder implements MateFinder {
   }
 
   private unlinkRegion(target: number): void {
-    const x = this.slotX[target] ?? 0;
-    const y = this.slotY[target] ?? 0;
-    const z = this.slotZ[target] ?? 0;
-    let previous = NO_SLOT;
-    const key = this.keyOf(x, y, z, REGION_SIXTEENTHS);
-    for (
-      let slot = this.regions.get(key);
-      slot !== NO_SLOT;
-      slot = this.slotRegionNext[slot] ?? NO_SLOT
-    ) {
-      if (slot !== target) {
-        previous = slot;
-        continue;
-      }
-      const next = this.slotRegionNext[slot] ?? NO_SLOT;
-      if (previous === NO_SLOT) this.regions.set(this.keyOf(x, y, z, REGION_SIXTEENTHS), next);
-      else this.slotRegionNext[previous] = next;
-      return;
-    }
+    const previous = this.slotRegionPrev[target] ?? NO_SLOT;
+    const next = this.slotRegionNext[target] ?? NO_SLOT;
+    if (previous === NO_SLOT) {
+      const x = this.slotX[target] ?? 0;
+      const y = this.slotY[target] ?? 0;
+      const z = this.slotZ[target] ?? 0;
+      this.regions.set(this.keyOf(x, y, z, REGION_SIXTEENTHS), next);
+    } else this.slotRegionNext[previous] = next;
+    if (next !== NO_SLOT) this.slotRegionPrev[next] = previous;
   }
 
   private countChunk(x: number, y: number, z: number, delta: number): void {
@@ -1186,6 +1177,7 @@ export class SparseConnectorFinder implements MateFinder {
     this.slotStatus = grown(this.slotStatus, new Uint8Array(capacity));
     this.slotNext = grown(this.slotNext, new Int32Array(capacity));
     this.slotRegionNext = grown(this.slotRegionNext, new Int32Array(capacity));
+    this.slotRegionPrev = grown(this.slotRegionPrev, new Int32Array(capacity));
     this.slotOwner = grown(this.slotOwner, new Int32Array(capacity));
     this.slotConnector = grown(this.slotConnector, new Int32Array(capacity));
     this.slotInstance = grown(this.slotInstance, new Int32Array(capacity));

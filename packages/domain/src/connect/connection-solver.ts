@@ -198,7 +198,7 @@ export class ConnectionSolver {
     }
   }
 
-  private reinsertWithdrawn(): void {
+  reinsertWithdrawn(): void {
     if (this.withdrawal.owed) this.reinsertOwed();
   }
 
