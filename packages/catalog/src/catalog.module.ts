@@ -1,4 +1,4 @@
-import { ContainerModule, type Bind } from "inversify";
+import { ContainerModule } from "inversify";
 import { HttpCatalogApi } from "./catalog-api-client.ts";
 import { DEFAULT_FETCH_POOL_POLICY } from "./fetch-pool.ts";
 import {
@@ -9,26 +9,19 @@ import {
 import { HttpLibraryPartCatalog } from "./library-part-catalog.ts";
 import { LinkProgress } from "./link-progress.ts";
 import {
-  LINK_PROGRESS,
-  LINK_PROGRESS_SHARE,
-  LINK_SILENCE_LIMIT_MS,
   CATALOG_API,
   FETCH_POOL_POLICY,
   LIBRARY_PART_CATALOG,
+  LINK_PROGRESS,
+  LINK_SILENCE_LIMIT_MS,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";
 
-function bindLinkProgress(bind: Bind): void {
-  bind(LINK_PROGRESS)
-    .toDynamicValue((context) => new LinkProgress(context.get(LINK_PROGRESS_SHARE)))
-    .inSingletonScope();
-}
-
 export const catalogModule = new ContainerModule(({ bind }) => {
   bind(FETCH_POOL_POLICY).toConstantValue(DEFAULT_FETCH_POOL_POLICY);
   bind(LINK_SILENCE_LIMIT_MS).toConstantValue(DEFAULT_LINK_SILENCE_LIMIT_MS);
-  bindLinkProgress(bind);
+  bind(LINK_PROGRESS).to(LinkProgress).inSingletonScope();
   bind(NETWORK_ASSET_FETCHER).to(HttpAssetFetcher).inSingletonScope();
   bind(PART_BUNDLE_LOADER).to(HttpPartBundleLoader).inSingletonScope();
   bind(CATALOG_API).to(HttpCatalogApi).inSingletonScope();

@@ -3,15 +3,15 @@ import { Container } from "inversify";
 import { expect, it, vi } from "vitest";
 import { mainThreadModules } from "./client.module.ts";
 
-function tab() {
+function tabContainer(): Container {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
-  return container.get(LINK_PROGRESS);
+  return container;
 }
 
 it("carries one tab's link progress to another tab's main thread through the broadcast it binds", async () => {
-  const reading = tab();
-  const waiting = tab();
+  const reading = tabContainer().get(LINK_PROGRESS);
+  const waiting = tabContainer().get(LINK_PROGRESS);
   expect(waiting.silenceMs()).toBe(Infinity);
 
   reading.markProgress();

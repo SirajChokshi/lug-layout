@@ -68,11 +68,11 @@ import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts
 import type { ILinkProgress } from "./link-progress.ts";
 import {
   ASSET_FETCHER,
-  LINK_SILENCE_LIMIT_MS,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   FETCH_POOL_POLICY,
   LINK_PROGRESS,
+  LINK_SILENCE_LIMIT_MS,
 } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
