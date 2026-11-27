@@ -1,6 +1,7 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
   BogieDetector,
+  TruckPairDetector,
   ConnectorTable,
   measuredRail,
   ModelConnectors,
@@ -97,6 +98,7 @@ export async function attachRunningGear(directory: string): Promise<void> {
   const detector = new RunningGearDetector(
     new WheelsetDetector(compiler.rails.map((rail) => measuredRail(rail.railHeads))),
     new BogieDetector(mating),
+    new TruckPairDetector(mating.shapes),
   );
   const tables = new Map<string, Promise<ConnectorTable | null>>();
   const tableOf = (partId: string): Promise<ConnectorTable | null> => {

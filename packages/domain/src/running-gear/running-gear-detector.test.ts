@@ -30,6 +30,7 @@ import {
 import { MODEL_ROOT, type PartInstances } from "../connect/submodel-frames.ts";
 import { MATE_PASS_MODEL, MatePairs } from "../connect/mate-pairs.ts";
 import { BogieDetector } from "./bogie-detector.ts";
+import { TruckPairDetector } from "./truck-pair-detector.ts";
 import { measuredRail } from "./measured-rail.ts";
 import type { PartExtents } from "./part-extents.ts";
 import { PartRollingTable } from "./part-rolling.ts";
@@ -55,6 +56,7 @@ const detector = new RunningGearDetector(
     ]),
   ]),
   new BogieDetector(mating),
+  new TruckPairDetector(mating.shapes),
 );
 
 type Vec = readonly [number, number, number];

@@ -1,4 +1,4 @@
-import { compareExactRational, exactRationalEquals } from "@brr/math";
+import { compareExactRational, exactRationalEquals, type ExactRational } from "@brr/math";
 import { AXIS_FREE, AXIS_POS_Y, axisDimension, axisSign } from "../connect/connector-table.ts";
 import { MATE_PASS_PART, type MatePairs } from "../connect/mate-pairs.ts";
 import type { AuthoredBoxes } from "./authored-boxes.ts";
@@ -338,40 +338,124 @@ export function ridingSets(
   return riding;
 }
 
+export type PivotPair = readonly [ReadonlyArray<ExactRational>, ReadonlyArray<ExactRational>];
+
+export interface MergeablePairs {
+  mergeable(
+    members: ReadonlyArray<number>,
+    trucks: readonly [number, number],
+    vehicleOf: Int32Array,
+  ): PivotPair | null;
+}
+
+export interface Merge {
+  readonly trucks: readonly [number, number];
+  readonly groups: ReadonlyArray<number>;
+  readonly pivots: PivotPair;
+}
+
+export interface Rounds {
+  readonly credits: ReadonlyArray<Credit>;
+  readonly merges: ReadonlyArray<Merge>;
+}
+
+function withoutSharedTrucks(pairs: ReadonlyArray<Merge>): Merge[] {
+  const named = new Map<number, number>();
+  for (const merge of pairs) {
+    for (const truck of merge.trucks) named.set(truck, (named.get(truck) ?? 0) + 1);
+  }
+  return pairs.filter((merge) => merge.trucks.every((truck) => named.get(truck) === 1));
+}
+
+function applyMerge(merge: Merge, riders: Riders, tied: TiedGroups, wheels: number[][]): void {
+  const [kept, absorbed] = merge.trucks;
+  riders.vehicleOf.forEach((vehicle, instance) => {
+    if (vehicle === kept) riders.bogieOf[instance] = 0;
+    if (vehicle === absorbed) {
+      riders.vehicleOf[instance] = kept;
+      riders.bogieOf[instance] = 1;
+    }
+  });
+  for (const group of merge.groups) {
+    for (const member of tied.groups[group]?.members ?? []) {
+      riders.vehicleOf[member] = kept;
+      riders.bogieOf[member] = ON_BODY;
+    }
+  }
+  wheels[kept] = [...(wheels[kept] ?? []), ...(wheels[absorbed] ?? [])];
+  wheels[absorbed] = [];
+}
+
+function ontoMergedTruck(credit: Credit, merges: ReadonlyArray<Merge>): Credit {
+  for (const { trucks } of merges) {
+    const bogie = trucks.indexOf(credit.vehicle);
+    if (bogie >= 0) return { group: credit.group, vehicle: trucks[0], bogie };
+  }
+  return credit;
+}
+
 export function creditInRounds(
   tied: TiedGroups,
   riders: Riders,
   candidates: number,
-  wheels: ReadonlyArray<ReadonlyArray<number>>,
-): Credit[] {
+  wheels: number[][],
+  pairs: MergeablePairs | null,
+): Rounds {
   const credits: Credit[] = [];
-  const credited = new Uint8Array(tied.groups.length);
+  const merges: Merge[] = [];
+  const settled = new Uint8Array(tied.groups.length);
+  const merged = new Set<number>();
   for (;;) {
     const riding = ridingSets(riders, candidates, wheels);
-    const round: Credit[] = [];
+    const collected: Credit[] = [];
+    const named = new Map<string, Merge>();
     tied.groups.forEach((group, g) => {
-      if (credited[g] === 1 || group.matesRiding) return;
+      if (settled[g] === 1 || group.matesRiding) return;
       const bearing = tied.bearsOn(g, riding);
-      if (bearing.size !== 1 || tied.anchored(g, bearing, wheels) || tied.undecidable(g)) return;
+      if (bearing.size < 1 || bearing.size > 2) return;
+      if (tied.anchored(g, bearing, wheels) || tied.undecidable(g)) return;
+      if (bearing.size === 2) {
+        const [a = 0, b = 0] = [...bearing.keys()].toSorted((x, y) => x - y);
+        if (!pairs || merged.has(a) || merged.has(b)) return;
+        const pivots = pairs.mergeable(group.members, [a, b], riders.vehicleOf);
+        if (!pivots) return;
+        const key = `${a} ${b}`;
+        const known = named.get(key);
+        named.set(key, {
+          trucks: [a, b],
+          groups: [...(known?.groups ?? []), g],
+          pivots: known?.pivots ?? pivots,
+        });
+        return;
+      }
       const [[vehicle, entry] = []] = bearing;
       if (vehicle === undefined || !entry) return;
       const bogies = new Set([...entry.borne].map((i) => riders.bogieOf[i] ?? ON_BODY));
       const [only] = bogies;
-      round.push({
+      collected.push({
         group: g,
         vehicle,
         bogie: bogies.size === 1 && only !== undefined ? only : ON_BODY,
       });
     });
-    if (round.length === 0) return credits;
-    for (const credit of round) {
-      credited[credit.group] = 1;
+    const roundMerges = withoutSharedTrucks([...named.values()]);
+    if (collected.length === 0 && roundMerges.length === 0) return { credits, merges };
+    for (const merge of roundMerges) {
+      applyMerge(merge, riders, tied, wheels);
+      for (const group of merge.groups) settled[group] = 1;
+      merged.add(merge.trucks[0]);
+      merged.add(merge.trucks[1]);
+    }
+    const roundCredits = collected.map((credit) => ontoMergedTruck(credit, roundMerges));
+    for (const credit of roundCredits) {
+      settled[credit.group] = 1;
       for (const member of tied.groups[credit.group]?.members ?? []) {
         riders.vehicleOf[member] = credit.vehicle;
         riders.bogieOf[member] = credit.bogie;
       }
     }
-    credits.push(...round);
+    credits.push(...roundCredits);
+    merges.push(...roundMerges);
   }
 }
 

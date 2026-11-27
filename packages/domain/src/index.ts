@@ -130,6 +130,7 @@ export {
 } from "./running-gear/running-gear-detector.ts";
 export { WheelsetDetector } from "./running-gear/wheelset-detector.ts";
 export { BogieDetector } from "./running-gear/bogie-detector.ts";
+export { TruckPairDetector } from "./running-gear/truck-pair-detector.ts";
 export { measuredRail, type MeasuredRail } from "./running-gear/measured-rail.ts";
 export { PartRollingTable } from "./running-gear/part-rolling.ts";
 export { partExtents, type PartExtents } from "./running-gear/part-extents.ts";

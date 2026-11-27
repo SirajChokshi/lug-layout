@@ -18,6 +18,7 @@ import { CAP_FAR, CAP_ROOT, SECTION_ROUND, SnapShapes } from "../src/connect/sna
 import { MODEL_ROOT, type PartInstances } from "../src/connect/submodel-frames.ts";
 import { MATE_PASS_MODEL, MATE_PASS_SUBMODEL, MatePairs } from "../src/connect/mate-pairs.ts";
 import { BogieDetector } from "../src/running-gear/bogie-detector.ts";
+import { TruckPairDetector } from "../src/running-gear/truck-pair-detector.ts";
 import { measuredRail } from "../src/running-gear/measured-rail.ts";
 import type { PartExtents } from "../src/running-gear/part-extents.ts";
 import { PartRollingTable } from "../src/running-gear/part-rolling.ts";
@@ -389,7 +390,11 @@ const exposed = {
   reach: new Float32Array(connectorCount).fill(shapes.length(PIN)),
 };
 const wheelsets = new WheelsetDetector(rails);
-const gear = new RunningGearDetector(wheelsets, new BogieDetector(mating));
+const gear = new RunningGearDetector(
+  wheelsets,
+  new BogieDetector(mating),
+  new TruckPairDetector(mating.shapes),
+);
 const found = wheelsets.detect(instances, onRails);
 const resolved = gear.detect({
   instances,

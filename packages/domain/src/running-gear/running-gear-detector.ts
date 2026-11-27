@@ -1,4 +1,4 @@
-import { formatExactRational } from "@brr/math";
+import { exactRational, exactRationalToFloat64, formatExactRational } from "@brr/math";
 import type {
   ConnectorMate,
   ConnectorRef,
@@ -37,12 +37,14 @@ import {
   NO_VEHICLE,
   ON_BODY,
   outsideRefusals,
+  type Merge,
   type TiedGroupPoses,
   type OutsideRefusal,
   type Riders,
 } from "./tied-groups.ts";
 import { AxleHeights } from "./support-plane.ts";
 import { AuthoredBoxes } from "./authored-boxes.ts";
+import type { TruckPairDetector } from "./truck-pair-detector.ts";
 import type { AuthoredPoses } from "./authored-poses.ts";
 import type { DetectedWheelset, WheelsetDetector } from "./wheelset-detector.ts";
 
@@ -138,6 +140,7 @@ export class RunningGearDetector {
   constructor(
     private readonly wheelsetDetector: WheelsetDetector,
     private readonly bogieDetector: BogieDetector,
+    private readonly truckPairDetector: TruckPairDetector,
   ) {}
 
   detect(input: RunningGearInput): RunningGear {
@@ -289,33 +292,76 @@ export class RunningGearDetector {
     };
     const tied =
       candidates.length > 0 ? new TiedGroups(poses, mates, riders, instances.count) : null;
-    const credits = tied ? creditInRounds(tied, riders, candidates.length, wheels) : [];
+    const truckPairs = tied
+      ? this.truckPairDetector.pairs({
+          frames,
+          instances,
+          connectors,
+          mates,
+          authored: poses.authored,
+          boxes: poses.boxes,
+          trucks: candidates.map((gear, v) => ({
+            seated: (seatedOf[v]?.seated ?? []).flatMap((w) =>
+              this.clearanceWheelset(wheelsets[w]),
+            ),
+            hasBogies: gear.bogies.length > 0,
+          })),
+        })
+      : null;
+    const { credits, merges } = tied
+      ? creditInRounds(tied, riders, candidates.length, wheels, truckPairs)
+      : { credits: [], merges: [] };
+    const mergeOf = new Map(merges.map((merge) => [merge.trucks[0], merge]));
+    const absorbed = new Set(merges.map((merge) => merge.trucks[1]));
+    const ownOf = (v: number): number[] => {
+      const merge = mergeOf.get(v);
+      if (!merge) return seatedOf[v]?.own ?? [];
+      return merge.trucks.flatMap((t) => seatedOf[t]?.own ?? []);
+    };
+    const seatedFor = (v: number): number[] => {
+      const merge = mergeOf.get(v);
+      if (!merge) return seatedOf[v]?.seated ?? [];
+      return merge.trucks.flatMap((t) => seatedOf[t]?.seated ?? []);
+    };
     const ridingOf = candidates.map((): number[] => []);
     riders.vehicleOf.forEach((v, instance) => {
       if (v !== NO_VEHICLE) ridingOf[v]?.push(instance);
     });
     const heights = new AxleHeights(frames);
     const checks = candidates.map((_, v) => {
-      const own = seatedOf[v]?.own ?? [];
-      const seated = seatedOf[v]?.seated ?? [];
+      const own = ownOf(v);
       const members = new Set(wheels[v] ?? []);
       const riding = ridingOf[v] ?? [];
-      const refusal = clearance(
-        frames,
-        heights,
-        instances,
-        extents,
-        seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
-        riding.filter((instance) => !members.has(instance)),
-        poses.authored,
-      );
+      const refusal = absorbed.has(v)
+        ? null
+        : clearance(
+            frames,
+            heights,
+            instances,
+            extents,
+            seatedFor(v).flatMap((w) => this.clearanceWheelset(wheelsets[w])),
+            riding.filter((instance) => !members.has(instance)),
+            poses.authored,
+          );
       return { own, riding, refusal };
     });
-    const survivors = new Set(candidates.flatMap((_, v) => (checks[v]?.refusal ? [] : [v])));
+    const survivors = new Set(
+      candidates.flatMap((_, v) => (checks[v]?.refusal || absorbed.has(v) ? [] : [v])),
+    );
+    const owned = [
+      ...credits,
+      ...merges.flatMap((merge) =>
+        merge.groups.map((group) => ({ group, vehicle: merge.trucks[0], bogie: ON_BODY })),
+      ),
+    ];
     const outside = tied
-      ? outsideRefusals(tied, riders, candidates.length, wheels, credits, survivors)
+      ? outsideRefusals(tied, riders, candidates.length, wheels, owned, survivors)
       : new Map<number, OutsideRefusal>();
     candidates.forEach((gear, v) => {
+      if (absorbed.has(v)) {
+        excluded.add(gear.body);
+        return;
+      }
       const check = checks[v];
       if (!check) return;
       const failure = check.refusal ?? outside.get(v);
@@ -333,8 +379,16 @@ export class RunningGearDetector {
       excluded.add(gear.body);
     });
     const kept = candidates.flatMap((gear, v) => (excluded.has(gear.body) ? [] : [{ gear, v }]));
-    const resolved = kept.map(({ gear }) => gear);
+    const resolved = kept.map(({ gear, v }) => {
+      const merge = mergeOf.get(v);
+      return merge ? this.mergedGear(gear, merge) : gear;
+    });
     const vehicleOf = new Map(resolved.map((gear, index) => [gear.body, index]));
+    kept.forEach(({ v }, index) => {
+      const absorbedTruck = mergeOf.get(v)?.trucks[1];
+      const body = absorbedTruck === undefined ? undefined : candidates[absorbedTruck]?.body;
+      if (body !== undefined) vehicleOf.set(body, index);
+    });
     const vehicleOfInstance = new Int32Array(instances.count).fill(NO_VEHICLE);
     kept.forEach(({ v }, index) => {
       for (const instance of ridingOf[v] ?? []) vehicleOfInstance[instance] = index;
@@ -342,13 +396,28 @@ export class RunningGearDetector {
     const ends = this.endCandidates(exposed, resolved, vehicleOfInstance);
     const vehicles = kept.map(({ gear, v }, index) => {
       const riding = ridingOf[v] ?? [];
+      const merge = mergeOf.get(v);
+      const end = ends[index] ?? { front: [], rear: [] };
+      if (merge) {
+        return this.mergedRecord(
+          merge,
+          resolved[index] ?? gear,
+          merge.trucks.map((t) => seatedOf[t]?.own ?? []),
+          merge.trucks.flatMap((t) => (candidates[t] ? [candidates[t].body] : [])),
+          partition,
+          wheelsets,
+          riding.filter((instance) => riders.bogieOf[instance] === ON_BODY),
+          [0, 1].map((b) => riding.filter((instance) => riders.bogieOf[instance] === b)),
+          end,
+        );
+      }
       return this.vehicleRecord(
         gear,
         partition,
         wheelsets,
         riding.filter((instance) => riders.bogieOf[instance] === ON_BODY),
         gear.bogies.map((_, b) => riding.filter((instance) => riders.bogieOf[instance] === b)),
-        ends[index] ?? { front: [], rear: [] },
+        end,
         frames,
         instances,
         connectors,
@@ -603,6 +672,74 @@ export class RunningGearDetector {
       wheelsets: [
         ...own,
         ...wheelsets.flatMap((_, w) => (partition.unseatedBy[w] === gear.body ? [w] : [])),
+      ].flatMap((w) => {
+        const wheelset = wheelsets[w];
+        return wheelset ? [this.wheelsetRecord(wheelset, partition.seated[w] === 1)] : [];
+      }),
+      frontEndCandidates: ends.front,
+      rearEndCandidates: ends.rear,
+    };
+  }
+
+  private mergedGear(truck: BodyGear, merge: Merge): BodyGear {
+    const guides: Guide[] = merge.pivots
+      .map((pivot, bogie) => ({
+        kind: "bogiePivot" as const,
+        position: exactRationalToFloat64(pivot[truck.travel] ?? exactRational(0n, 1n)),
+        bogie,
+        wheelset: null,
+      }))
+      .toSorted((a, b) => b.position - a.position);
+    return { body: truck.body, bogies: [], fixedAxles: [], travel: truck.travel, guides };
+  }
+
+  private mergedRecord(
+    merge: Merge,
+    gear: BodyGear,
+    truckWheelsets: ReadonlyArray<ReadonlyArray<number>>,
+    truckBodies: ReadonlyArray<number>,
+    partition: RunningGearPartition,
+    wheelsets: ReadonlyArray<DetectedWheelset>,
+    bodyInstances: ReadonlyArray<number>,
+    bogieMembers: ReadonlyArray<ReadonlyArray<number>>,
+    ends: EndCandidates,
+  ): ModelVehicle {
+    const lateral = gear.travel === 0 ? 2 : 0;
+    const own = truckWheelsets.flat();
+    const local = new Map(own.map((w, index) => [w, index]));
+    const front = gear.guides[0];
+    const rear = gear.guides.at(-1);
+    const originTravel = ((front?.position ?? 0) + (rear?.position ?? 0)) / 2;
+    const originLateral =
+      own.reduce(
+        (sum, w) => sum + midpoint(wheelsets[w]?.axisLine ?? new Float64Array(6), lateral),
+        0,
+      ) / Math.max(own.length, 1);
+    const origin: [number, number] =
+      gear.travel === 0 ? [originTravel, originLateral] : [originLateral, originTravel];
+    const guide = (g: Guide | undefined): VehicleGuide => ({
+      kind: "bogiePivot",
+      position: (g?.position ?? 0) - originTravel,
+      bogie: g?.bogie ?? 0,
+      wheelset: null,
+    });
+    const bodies = new Set(truckBodies);
+    return {
+      origin,
+      yaw: gear.travel === 0 ? 0 : QUARTER_TURN,
+      guides: [guide(front), guide(rear)],
+      body: [...bodyInstances],
+      bogies: merge.pivots.map((pivot, index) => ({
+        instances: [...(bogieMembers[index] ?? [])],
+        pivot: [0, 1, 2].map((row) =>
+          exactRationalToFloat64(pivot[row] ?? exactRational(0n, 1n)),
+        ) as [number, number, number],
+        wheelsets: (truckWheelsets[index] ?? []).map((w) => local.get(w) ?? 0),
+      })),
+      fixedAxles: [],
+      wheelsets: [
+        ...own,
+        ...wheelsets.flatMap((_, w) => (bodies.has(partition.unseatedBy[w] ?? -1) ? [w] : [])),
       ].flatMap((w) => {
         const wheelset = wheelsets[w];
         return wheelset ? [this.wheelsetRecord(wheelset, partition.seated[w] === 1)] : [];

@@ -112,7 +112,7 @@ function wheelsetPlane(
   };
 }
 
-interface AuthoredPlane {
+export interface AuthoredPlane {
   readonly up: number;
   readonly upSign: number;
   readonly railTopHeight: ExactRational;
@@ -152,7 +152,7 @@ function carriedTo(pose: ReadonlyArray<ExactRational>, local: SignedAxis): Signe
   return { axis, sign: unit };
 }
 
-function authoredPlane(
+export function authoredPlane(
   frames: SubmodelFrames,
   instances: PartInstances,
   authored: AuthoredBoxes,

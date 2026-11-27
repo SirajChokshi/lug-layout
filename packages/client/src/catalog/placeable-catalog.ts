@@ -13,6 +13,7 @@ import {
 } from "@brr/catalog";
 import {
   BogieDetector,
+  TruckPairDetector,
   ConnectorTable,
   measuredRail,
   ModelConnectors,
@@ -211,6 +212,7 @@ function runningGearDetection(rails: ReadonlyArray<BundleRail>): RunningGearDete
   const detector = new RunningGearDetector(
     new WheelsetDetector(rails.map((rail) => measuredRail(rail.railHeads))),
     new BogieDetector(mating),
+    new TruckPairDetector(mating.shapes),
   );
   return { shapes, mating, detector };
 }
