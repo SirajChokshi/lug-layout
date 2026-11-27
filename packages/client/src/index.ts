@@ -364,20 +364,26 @@ export type {
   UnjoinedEndView,
 } from "./edit/track-extension.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
-export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
+export {
+  CATEGORY_LABEL,
+  PALETTE_CATEGORIES,
+  PALETTE_TABS,
+  colorDisplayName,
+} from "./catalog/palette-index.ts";
 export type {
   PaletteCategory,
   PaletteColorChoice,
   PaletteEntry,
   PaletteFilter,
+  PaletteTab,
 } from "./catalog/palette-index.ts";
+export type { LibraryFilterScope } from "./catalog/library-filters.ts";
 export type {
   IPaletteSearch,
   PaletteColors,
   PaletteRow,
   PaletteSearchSnapshot,
   PaletteSection,
-  PaletteTab,
 } from "./catalog/palette-search.ts";
 export type { IPaletteDrag } from "./catalog/palette-drag.ts";
 export type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";

@@ -1,4 +1,5 @@
 import type { LibraryPartList } from "@brr/catalog";
+import type { LibraryQuery, QueryTerm } from "./library-query.ts";
 import type { CatalogColorView } from "./placeable-catalog.ts";
 import { normalizedSearchText, searchWords, withSpellings } from "./search-text.ts";
 
@@ -20,15 +21,15 @@ export interface LibraryPartMatches {
   readonly total: number;
 }
 
-interface QueryWord {
-  readonly word: string;
-  readonly negated: boolean;
-}
-
 interface Ranked {
   readonly part: number;
   readonly score: number;
   readonly colors: ReadonlyArray<CatalogColorView>;
+}
+
+interface ColorText {
+  readonly words: string;
+  readonly phrase: string;
 }
 
 const EXACT_NUMBER = 8;
@@ -39,12 +40,9 @@ const PREFIX_TITLE_WORD = 3;
 const PREFIX_TAG = 1;
 const PRODUCED_COLOR = EXACT_TITLE_WORD;
 const LEAD_WORD = 1;
-const NEGATION = "-";
 const LATTICE_SIZE = /^(\d+)x(\d+)$/u;
-const UNFINISHED_SIZE = /(\d+)\s*[x×]\s*$/u;
-const QUERY_PUNCTUATION = /["#]/gu;
-const WHITESPACE = /\s+/u;
 const SPACE = " ";
+const PHRASE_BREAK = "|";
 const CATALOG_NUMBER_KEYWORD = /^(?:bricklink|rebrickable)\s+(\S+)$/iu;
 
 function spaced(words: ReadonlyArray<string>): string {
@@ -62,45 +60,48 @@ function withSwappedSizes(words: ReadonlyArray<string>): ReadonlyArray<string> {
   });
 }
 
-function queryWords(query: string): ReadonlyArray<QueryWord> {
-  return normalizedSearchText(query)
-    .replace(UNFINISHED_SIZE, "$1x")
-    .replace(QUERY_PUNCTUATION, SPACE)
-    .split(WHITESPACE)
-    .flatMap((token) => {
-      const negated = token.startsWith(NEGATION);
-      return searchWords(negated ? token.slice(NEGATION.length) : token).map((word) => ({
-        word,
-        negated,
-      }));
-    });
-}
-
 function textScore(text: string, word: string, exact: number, prefix: number): number {
   if (text.includes(`${SPACE}${word}${SPACE}`)) return exact;
   return text.includes(`${SPACE}${word}`) ? prefix : 0;
+}
+
+function phraseScore(
+  text: string,
+  words: ReadonlyArray<string>,
+  exact: number,
+  prefix: number,
+): number {
+  return textScore(text, words.join(SPACE), exact, prefix) * words.length;
 }
 
 export class LibraryPartIndex {
   private readonly parts: ReadonlyArray<LibraryPartView>;
   private readonly titleText: ReadonlyArray<string>;
   private readonly tagText: ReadonlyArray<string>;
+  private readonly titlePhrase: ReadonlyArray<string>;
+  private readonly tagPhrase: ReadonlyArray<string>;
   private readonly numberText: ReadonlyArray<string>;
   private readonly leadWord: ReadonlyArray<string>;
   private readonly titleWords: Uint16Array;
-  private readonly colorText = new Map<number, string>();
+  private readonly colorText = new Map<number, ColorText>();
   private readonly byId = new Map<string, number>();
 
   constructor({ file, colors }: LibraryPartList) {
     const colorViews = new Map<number, CatalogColorView>();
     for (const color of colors) {
       colorViews.set(color.code, { code: color.code, name: color.name, rgb: color.rgb });
-      this.colorText.set(color.code, spaced(withSpellings(searchWords(color.name))));
+      const words = searchWords(color.name);
+      this.colorText.set(color.code, {
+        words: spaced(withSpellings(words)),
+        phrase: spaced(words),
+      });
     }
     const { id, title, category, keywords, rebrickable, colorCount } = file.parts;
     const parts: LibraryPartView[] = [];
     const titleText: string[] = [];
     const tagText: string[] = [];
+    const titlePhrase: string[] = [];
+    const tagPhrase: string[] = [];
     const numberText: string[] = [];
     const leadWord: string[] = [];
     this.titleWords = new Uint16Array(id.length);
@@ -121,20 +122,15 @@ export class LibraryPartIndex {
       const ownTitle = searchWords(part.title);
       const ownKeywords = keywords[i] ?? [];
       const keywordNumbers = ownKeywords.flatMap((keyword) => keywordNumber(keyword) ?? []);
+      const tags = [
+        searchWords(part.category),
+        ...ownKeywords.filter((keyword) => keywordNumber(keyword) === null).map(searchWords),
+      ];
       parts.push(part);
       titleText.push(spaced(withSpellings(withSwappedSizes(ownTitle))));
-      tagText.push(
-        spaced(
-          withSpellings(
-            withSwappedSizes([
-              ...searchWords(part.category),
-              ...ownKeywords
-                .filter((keyword) => keywordNumber(keyword) === null)
-                .flatMap(searchWords),
-            ]),
-          ),
-        ),
-      );
+      tagText.push(spaced(withSpellings(withSwappedSizes(tags.flat()))));
+      titlePhrase.push(spaced(ownTitle));
+      tagPhrase.push(tags.map(spaced).join(PHRASE_BREAK));
       numberText.push(
         spaced([part.id, part.rebrickable, ...keywordNumbers].map(normalizedSearchText)),
       );
@@ -145,6 +141,8 @@ export class LibraryPartIndex {
     this.parts = parts;
     this.titleText = titleText;
     this.tagText = tagText;
+    this.titlePhrase = titlePhrase;
+    this.tagPhrase = tagPhrase;
     this.numberText = numberText;
     this.leadWord = leadWord;
   }
@@ -158,14 +156,13 @@ export class LibraryPartIndex {
     return index === undefined ? undefined : this.parts[index];
   }
 
-  search(query: string, limit: number, excluded: ReadonlySet<string>): LibraryPartMatches {
-    const words = queryWords(query);
-    if (!words.some((word) => !word.negated)) return { hits: [], total: 0 };
+  search(query: LibraryQuery, limit: number, excluded: ReadonlySet<string>): LibraryPartMatches {
+    if (!query.includesAnything) return { hits: [], total: 0 };
     const ranked: Ranked[] = [];
     for (let i = 0; i < this.parts.length; i++) {
       const part = this.parts[i];
       if (part === undefined || excluded.has(part.id)) continue;
-      const match = this.match(i, part, words);
+      const match = this.match(i, part, query.terms);
       if (match !== null) ranked.push(match);
     }
     ranked.sort(
@@ -183,24 +180,62 @@ export class LibraryPartIndex {
     };
   }
 
+  private ownScore(index: number, term: QueryTerm): number {
+    switch (term.kind) {
+      case "word":
+        return Math.max(
+          textScore(this.numberText[index] ?? "", term.word, EXACT_NUMBER, PREFIX_NUMBER),
+          textScore(this.titleText[index] ?? "", term.word, EXACT_TITLE_WORD, PREFIX_TITLE_WORD),
+          textScore(this.tagText[index] ?? "", term.word, EXACT_TAG, PREFIX_TAG),
+        );
+      case "number":
+        return textScore(this.numberText[index] ?? "", term.number, EXACT_NUMBER, PREFIX_NUMBER);
+      case "phrase":
+        return Math.max(
+          phraseScore(
+            this.titlePhrase[index] ?? "",
+            term.words,
+            EXACT_TITLE_WORD,
+            PREFIX_TITLE_WORD,
+          ),
+          phraseScore(this.tagPhrase[index] ?? "", term.words, EXACT_TAG, PREFIX_TAG),
+        );
+      default: {
+        const unhandled: never = term;
+        throw new Error(`unhandled query term ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private names(color: CatalogColorView, term: QueryTerm): boolean {
+    const text = this.colorText.get(color.code);
+    if (text === undefined) return false;
+    switch (term.kind) {
+      case "word":
+        return text.words.includes(`${SPACE}${term.word}`);
+      case "phrase":
+        return text.phrase.includes(`${SPACE}${term.words.join(SPACE)}`);
+      case "number":
+        return false;
+      default: {
+        const unhandled: never = term;
+        throw new Error(`unhandled query term ${String(unhandled)}`);
+      }
+    }
+  }
+
   private match(
     index: number,
     part: LibraryPartView,
-    words: ReadonlyArray<QueryWord>,
+    terms: ReadonlyArray<QueryTerm>,
   ): Ranked | null {
     let score = 0;
     let ownMatches = 0;
     let colors = part.colors;
-    for (const { word, negated } of words) {
-      const own = Math.max(
-        textScore(this.numberText[index] ?? "", word, EXACT_NUMBER, PREFIX_NUMBER),
-        textScore(this.titleText[index] ?? "", word, EXACT_TITLE_WORD, PREFIX_TITLE_WORD),
-        textScore(this.tagText[index] ?? "", word, EXACT_TAG, PREFIX_TAG),
-      );
-      const named = colors.filter((color) =>
-        (this.colorText.get(color.code) ?? "").includes(`${SPACE}${word}`),
-      );
-      if (negated) {
+    for (const term of terms) {
+      const own = this.ownScore(index, term);
+      const named = colors.filter((color) => this.names(color, term));
+      if (term.negated) {
         if (own > 0) return null;
         colors = colors.filter((color) => !named.includes(color));
       } else if (named.length > 0) {
@@ -208,7 +243,8 @@ export class LibraryPartIndex {
         score += Math.max(own, PRODUCED_COLOR);
         if (own > 0) ownMatches++;
       } else if (own > 0) {
-        score += own + (this.leadWord[index] === word ? LEAD_WORD : 0);
+        const lead = term.kind === "word" && this.leadWord[index] === term.word;
+        score += own + (lead ? LEAD_WORD : 0);
         ownMatches++;
       } else {
         return null;

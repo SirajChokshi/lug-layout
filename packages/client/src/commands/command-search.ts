@@ -1,5 +1,7 @@
 import type { CatalogSearchView } from "../catalog/catalog-search.ts";
+import { LibraryQuery } from "../catalog/library-query.ts";
 import type { PaletteIndex } from "../catalog/palette-index.ts";
+import { workerHitsFor } from "../catalog/palette-results.ts";
 import type { CatalogItemView } from "../catalog/placeable-catalog.ts";
 import { COMMANDS, isHotbarCommand, type CommandId, type CommandSpec } from "./editor-commands.ts";
 
@@ -123,18 +125,19 @@ function browse(sources: PaletteSources): ReadonlyArray<PaletteResult> {
 }
 
 function serverItems(
-  query: string,
-  { remote, catalog, recent }: PaletteSources,
+  query: LibraryQuery,
+  { remote, catalog, index, recent }: PaletteSources,
   listed: ReadonlyArray<PaletteResult>,
 ): ReadonlyArray<ItemResult> {
-  if (remote.query !== query.trim() || remote.hits.length === 0) return [];
+  const workerHits = workerHitsFor(query, remote);
+  if (workerHits === null || workerHits.length === 0) return [];
   const shown = new Set(
     listed.flatMap((result) => (result.kind === "item" ? [result.item.id] : [])),
   );
   const byId = new Map(catalog.map((item) => [item.id, item]));
-  return remote.hits.flatMap((hit): ItemResult[] => {
+  return workerHits.flatMap((hit): ItemResult[] => {
     const item = byId.get(hit.id);
-    if (item === undefined || shown.has(item.id)) return [];
+    if (item === undefined || shown.has(item.id) || !index.admits(item.id, query)) return [];
     return [{ kind: "item", item, recent: recent.includes(item.id) }];
   });
 }
@@ -158,7 +161,8 @@ export function searchPalette(
       order: scored.length,
     });
   }
-  for (const hit of sources.index.search(query, "all")) {
+  const parsed = LibraryQuery.parse(query);
+  for (const hit of sources.index.search(parsed, "all")) {
     const narrowed = hit.items.length < hit.entry.items.length;
     itemsInHitOrder(sources.index, hit.items, narrowed).forEach((item, variant) => {
       const recent = sources.recent.includes(item.id);
@@ -171,5 +175,5 @@ export function searchPalette(
     });
   }
   const ranked = scored.toSorted(byScore).map((entry) => entry.result);
-  return [...ranked, ...serverItems(query, sources, ranked)].slice(0, RESULT_LIMIT);
+  return [...ranked, ...serverItems(parsed, sources, ranked)].slice(0, RESULT_LIMIT);
 }

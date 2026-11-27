@@ -6,6 +6,7 @@ import {
   type LibraryPartHit,
   type LibraryPartView,
 } from "./library-part-index.ts";
+import { LibraryQuery } from "./library-query.ts";
 
 export type LibrarySearchStatus = "off" | "idle" | "loading" | "ready" | "unavailable";
 
@@ -21,7 +22,7 @@ export interface LibrarySearchView {
 export interface ILibraryPartSearch {
   view(): LibrarySearchView;
   subscribe(listener: () => void): () => void;
-  search(query: string, excluded: ReadonlySet<string>): void;
+  search(query: LibraryQuery, excluded: ReadonlySet<string>): void;
   part(id: string): LibraryPartView | null;
 }
 
@@ -36,6 +37,7 @@ export class LibraryPartSearch implements ILibraryPartSearch {
   private loading: Promise<void> | null = null;
   private absent = false;
   private excluded = NOTHING_EXCLUDED;
+  private query = LibraryQuery.parse("");
   private state: LibrarySearchView = {
     query: "",
     status: "idle",
@@ -60,10 +62,11 @@ export class LibraryPartSearch implements ILibraryPartSearch {
     return this.index?.part(id) ?? null;
   }
 
-  search(query: string, excluded: ReadonlySet<string>): void {
-    const trimmed = query.trim();
+  search(query: LibraryQuery, excluded: ReadonlySet<string>): void {
+    const trimmed = query.text;
     if (trimmed === this.state.query && excluded === this.excluded) return;
     this.excluded = excluded;
+    this.query = query;
     if (this.absent) {
       this.set({ ...this.state, query: trimmed, status: "off", hits: [], total: 0 });
       return;
@@ -73,7 +76,7 @@ export class LibraryPartSearch implements ILibraryPartSearch {
       return;
     }
     if (this.index !== null) {
-      this.set(this.searched(this.index, trimmed));
+      this.set(this.searched(this.index, query));
       return;
     }
     this.set({ ...this.state, query: trimmed, status: "loading", hits: [], total: 0, error: null });
@@ -90,7 +93,7 @@ export class LibraryPartSearch implements ILibraryPartSearch {
           return;
         }
         this.index = new LibraryPartIndex(list);
-        this.set(this.searched(this.index, this.state.query));
+        this.set(this.searched(this.index, this.query));
       },
       (error: unknown) => {
         this.loading = null;
@@ -106,12 +109,13 @@ export class LibraryPartSearch implements ILibraryPartSearch {
     return this.loading;
   }
 
-  private searched(index: LibraryPartIndex, query: string): LibrarySearchView {
-    if (query.length < MIN_QUERY_LENGTH) {
-      return { query, status: "idle", hits: [], total: 0, parts: index.size, error: null };
+  private searched(index: LibraryPartIndex, query: LibraryQuery): LibrarySearchView {
+    const { text } = query;
+    if (text.length < MIN_QUERY_LENGTH) {
+      return { query: text, status: "idle", hits: [], total: 0, parts: index.size, error: null };
     }
     const { hits, total } = index.search(query, LIBRARY_RESULT_LIMIT, this.excluded);
-    return { query, status: "ready", hits, total, parts: index.size, error: null };
+    return { query: text, status: "ready", hits, total, parts: index.size, error: null };
   }
 
   private set(next: LibrarySearchView): void {
