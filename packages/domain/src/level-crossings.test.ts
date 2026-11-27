@@ -1,9 +1,16 @@
+import { readFileSync } from "node:fs";
 import { pose16, zeta16, type Pose16 } from "@brr/math";
-import { LevelCrossingFacts, PlanOutlinesFile, TrackCatalog } from "@brr/schema/bundle";
+import {
+  BundleIndex,
+  LevelCrossingFacts,
+  PartShape,
+  TrackCatalog,
+  type PlanOutline,
+  type PlanPoint,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { describe, expect, it } from "vitest";
 import crossingJson from "../../../docs/verified-facts/level-crossing.json" with { type: "json" };
-import outlinesJson from "../../../docs/verified-facts/plan-outlines.json" with { type: "json" };
 import catalogJson from "../../../docs/verified-facts/track-catalog.json" with { type: "json" };
 import {
   LevelCrossings,
@@ -14,11 +21,19 @@ import {
 } from "./level-crossings.ts";
 import { PlacedOutline } from "./plan/placed-outline.ts";
 import { NO_STUD, type RoadPlacement } from "./road-joins.ts";
-import { pieceFrameOutline } from "./track/piece-outline.ts";
+
+const STANDARD_BUNDLE = new URL(
+  "../../../tools/asset-pipeline/dist/bundle/standard/",
+  import.meta.url,
+);
+
+function bundleFile(file: string): unknown {
+  return JSON.parse(readFileSync(new URL(file, STANDARD_BUNDLE), "utf8"));
+}
 
 const facts = decodedOrThrow(decode(LevelCrossingFacts, crossingJson), "level-crossing.json");
-const outlines = decodedOrThrow(decode(PlanOutlinesFile, outlinesJson), "plan-outlines.json");
 const catalog = decodedOrThrow(decode(TrackCatalog, catalogJson), "track-catalog.json");
+const bundle = decodedOrThrow(decode(BundleIndex, bundleFile("manifest.json")), "manifest.json");
 
 const STUD = 20;
 const SIXTEENTHS = 16;
@@ -26,10 +41,21 @@ const PLATE_STUDS = 32;
 const ALONG_Z = 4;
 const SLEEPER_END = 80;
 
-function outlineOf(part: string) {
-  const outline = outlines.outlines.find((entry) => entry.part === part);
+function outlineOf(part: string): PlanOutline {
+  const entry = bundle.catalogParts.find((catalogPart) => catalogPart.id === part);
+  if (!entry) throw new Error(`no catalog part ${part} in the bundle`);
+  const { outline } = decodedOrThrow(
+    decode(PartShape, bundleFile(entry.shape.file)),
+    entry.shape.file,
+  );
   if (!outline) throw new Error(`no plan outline for ${part}`);
-  return outline.rings;
+  return outline;
+}
+
+function trackShapeOutline(pieceId: string): PlanOutline {
+  const shape = bundle.trackShapes.find((entry) => entry.piece === pieceId);
+  if (!shape) throw new Error(`no track shape for ${pieceId} in the bundle`);
+  return shape.outline;
 }
 
 function rampPart(part: string): RampPart {
@@ -51,10 +77,7 @@ function placedPiece(piece: CatalogPiece, pose: Pose16): PlacedOutline {
   const key = `${piece.id}|${pose.heading}|${pose.position.join(",")}`;
   let outline = placedPieces.get(key);
   if (!outline) {
-    outline = PlacedOutline.ofTrackPiece(
-      pieceFrameOutline(outlineOf(piece.part), piece.partFrame),
-      pose,
-    );
+    outline = PlacedOutline.ofTrackPiece(trackShapeOutline(piece.id), pose);
     placedPieces.set(key, outline);
   }
   return outline;
@@ -148,6 +171,33 @@ function crossingTracksOverStreet(
   return levelCrossings([userBuiltStreet()], [track(piece, pose)], []).map(
     (crossing) => crossing.tracks,
   );
+}
+
+function crossingsOverStreet(outline: PlanOutline, pose: Pose16, system: string) {
+  return levelCrossings(
+    [userBuiltStreet()],
+    [
+      {
+        outline: PlacedOutline.ofTrackPiece(outline, pose),
+        bedLdu: 0,
+        railTopLdu: railTop(system),
+      },
+    ],
+    [rampPart("ldraw:4515")],
+  );
+}
+
+function midpoint(a: PlanPoint, b: PlanPoint): PlanPoint {
+  return [Math.trunc((a[0] + b[0]) / 2), Math.trunc((a[1] + b[1]) / 2)];
+}
+
+function withDegeneratePiecesOnItsBoundary(outline: PlanOutline): PlanOutline {
+  const [outer, ...rest] = outline;
+  const [first, second, third, fourth] = outer ?? [];
+  if (!outer || !first || !second || !third || !fourth) throw new Error("no outer ring to dirty");
+  const spike: PlanPoint[] = [second, midpoint(second, third), second];
+  const needle: PlanPoint[] = [third, third, fourth];
+  return [[first, first, ...spike, ...outer.slice(2)], ...rest, needle];
 }
 
 function straightRunAcross(xStuds = 0, zStuds = 0): CrossingTrack[] {
@@ -246,6 +296,26 @@ describe("levelCrossings", () => {
       rightHand: crossingTracksOverStreet("ldraw:75541-f1", at(8, -10, 6)),
       leftHand: crossingTracksOverStreet("ldraw:75542-f1", at(0, -12, ALONG_Z)),
     }).toEqual({ rightHand: [[0]], leftHand: [[0]] });
+  });
+
+  it("crosses a user's own street the same way whether a track outline is clean or carries repeated points, spikes and needle rings on its own boundary, as older bundles do", () => {
+    const placed: ReadonlyArray<readonly [string, Pose16]> = [
+      ["ldraw:74747", at(-8, -8, ALONG_Z)],
+      ["ldraw:75541-f1", at(8, -10, 6)],
+    ];
+    for (const [pieceId, pose] of placed) {
+      const piece = catalog.pieces.find((entry) => entry.id === pieceId);
+      if (!piece) throw new Error(`no catalog piece ${pieceId}`);
+      const clean = crossingsOverStreet(trackShapeOutline(pieceId), pose, piece.system);
+      expect(clean.length).toBeGreaterThan(0);
+      expect(
+        crossingsOverStreet(
+          withDegeneratePiecesOnItsBoundary(trackShapeOutline(pieceId)),
+          pose,
+          piece.system,
+        ),
+      ).toEqual(clean);
+    }
   });
 
   it("crosses a one-stud road strip where its own square lies under the track's ends and not a stud beyond them, whatever stands higher beside it in the same stud cell", () => {

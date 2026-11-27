@@ -3,7 +3,6 @@ import {
   BundleLod,
   BundleManifest,
   LevelCrossingFacts,
-  PlanOutlinesFile,
   SectionVocabularyFile,
   TablePlane,
   TrackCatalog,
@@ -50,6 +49,7 @@ import {
   readLdrawCategories,
   type LdrawCategories,
 } from "./catalog/part-categories.ts";
+import { planOutlines } from "./crossing/level-crossing.ts";
 import {
   catalogSourceDirectory,
   fetchAuditInputs,
@@ -538,13 +538,31 @@ async function addVerifiedFacts(directory: string): Promise<void> {
   );
 }
 
-async function readPlanOutlines(): Promise<ReadonlyMap<string, PlanOutline>> {
-  const path = join(repoRoot, BUNDLE_DATA_FILES.planOutlines);
-  const { outlines } = decodedOrThrow(
-    decode(PlanOutlinesFile, JSON.parse(await readFile(path, "utf8"))),
-    path,
+async function catalogPlanOutlines(): Promise<ReadonlyMap<string, PlanOutline>> {
+  const catalogPath = join(repoRoot, BUNDLE_DATA_FILES.trackCatalog);
+  const crossingPath = join(repoRoot, BUNDLE_DATA_FILES.levelCrossing);
+  const catalog = decodedOrThrow(
+    decode(TrackCatalog, JSON.parse(await readFile(catalogPath, "utf8"))),
+    catalogPath,
   );
-  return new Map(outlines.map((outline) => [outline.part, outline.rings]));
+  const crossing = decodedOrThrow(
+    decode(LevelCrossingFacts, JSON.parse(await readFile(crossingPath, "utf8"))),
+    crossingPath,
+  );
+  const parts = new Set([
+    ...catalog.pieces.map((piece) => piece.part),
+    ...crossing.ramps.map((ramp) => ramp.part),
+  ]);
+  const outlines = new Map<string, PlanOutline>();
+  for (const [part, { rings, roundedLdu }] of planOutlines(new LdrawLibrary([ldrawRoot]), [
+    ...parts,
+  ])) {
+    process.stdout.write(
+      `plan outline ${part}: ${rings.length} rings, largest rounding ${roundedLdu} LDU\n`,
+    );
+    outlines.set(part, rings);
+  }
+  return outlines;
 }
 
 const BYTES_PER_KB = 1024;
@@ -752,7 +770,7 @@ async function bundleCommand(): Promise<void> {
     catalogSources(catalog, LIBRARY_PART_SOURCES),
   );
   reportLibraryParts(libraryParts);
-  const outlines = await readPlanOutlines();
+  const outlines = await catalogPlanOutlines();
   const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, libraryParts, outlines };
   for (const build of builds) await compileLod(build, shared);
   if (!(await studAuditCommand(undefined))) {

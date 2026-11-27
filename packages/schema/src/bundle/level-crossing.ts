@@ -49,12 +49,3 @@ export const LevelCrossingFacts = v.object({
   ramps: v.array(CrossingRamp),
 });
 export type LevelCrossingFacts = v.InferOutput<typeof LevelCrossingFacts>;
-
-export const PartOutline = v.object({ part: v.string(), rings: PlanOutline, roundedLdu: Positive });
-export type PartOutline = v.InferOutput<typeof PartOutline>;
-
-export const PlanOutlinesFile = v.object({
-  unitsPerLdu: v.literal(OUTLINE_UNITS_PER_LDU),
-  outlines: v.array(PartOutline),
-});
-export type PlanOutlinesFile = v.InferOutput<typeof PlanOutlinesFile>;

@@ -1,5 +1,6 @@
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import { headingFootprints, planHull, verticalRange } from "@brr/domain/heading-footprints";
+import { withoutDegeneratePieces } from "@brr/domain/degenerate-outline";
 import { pieceFrameOutline } from "@brr/domain/piece-outline";
 import {
   BundleCredit,
@@ -142,7 +143,7 @@ export async function attachRecords(
       piece.id,
       mesh,
       piece.partFrame.headingHalfSteps,
-      pieceFrameOutline(outline, piece.partFrame),
+      withoutDegeneratePieces(pieceFrameOutline(outline, piece.partFrame)),
     );
   });
   await writeJson(join(directory, PART_TABLE_FILE), { parts });
