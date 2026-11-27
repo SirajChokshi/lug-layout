@@ -317,6 +317,7 @@ export class RailYard implements IRailYard {
   private readonly parked: Parked[] = [];
   private readonly ghostBuffers = new GhostBuffers();
   private readonly aimScratch = new AimScratch();
+  private readonly coupleScratch = new AimScratch();
   private hidden = false;
   private watched: ObstacleModels | null = null;
 
@@ -416,7 +417,7 @@ export class RailYard implements IRailYard {
     }
     const prepared = this.prepare(members, rails);
     if (typeof prepared === "string") return { kind: "refused", reason: prepared, seat: stood };
-    const coupled = this.stand(coupledLabel, prepared, rails, head);
+    const coupled = this.stand(coupledLabel, prepared, rails, head, this.coupleScratch);
     if (typeof coupled === "string") return { kind: "refused", reason: coupled, seat: stood };
     const other = this.holderOf(coupled.pieces, holder);
     if (other) {

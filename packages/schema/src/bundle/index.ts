@@ -1235,7 +1235,10 @@ export const VehicleBogie = v.object({
     Vec3,
     v.description("the pivot mate's male connector origin, in the model frame, in LDU"),
   ),
-  wheelsets: v.array(Count),
+  wheelsets: v.pipe(
+    v.array(Count),
+    v.description("indexes into the vehicle's wheelsets: the bogie's own seated wheelsets"),
+  ),
 });
 export type VehicleBogie = v.InferOutput<typeof VehicleBogie>;
 
@@ -1249,7 +1252,10 @@ export const ModelVehicle = v.pipe(
     guides: v.tuple([VehicleGuide, VehicleGuide]),
     body: v.array(Count),
     bogies: v.array(VehicleBogie),
-    fixedAxles: v.array(Count),
+    fixedAxles: v.pipe(
+      v.array(Count),
+      v.description("indexes into wheelsets: the seated wheelsets the body carries directly"),
+    ),
     wheelsets: v.array(VehicleWheelset),
     frontEndCandidates: v.array(ConnectorRef),
     rearEndCandidates: v.array(ConnectorRef),

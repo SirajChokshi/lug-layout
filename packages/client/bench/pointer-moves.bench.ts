@@ -30,6 +30,9 @@ const FIXTURE_STARTER = "station-stop";
 const SHELF_WAITS = 500;
 const SHELF_WAIT_MS = 10;
 const TRACK_ITEM = "track:lego-9v";
+const TRAIN_ITEM = "omr:10020-1";
+const TRAIN_RUN_Z = 6400;
+const TRAIN_RUN = [320, 3520] as const;
 const SWITCH_PIECE = /^track-piece:ldraw:7554[12]-/u;
 const RAY_HEIGHT_LDU = 10_000;
 const TILE_LDU = 640;
@@ -320,6 +323,11 @@ function moves(): (i: number) => void {
         editor.pointerMove(0, 0);
       };
     }
+    case "train-held":
+      return (i) => {
+        aimAt(TRAIN_RUN[0] + 400 + (i % 29) * 71.3, TRAIN_RUN_Z + (i % 5) * 3.1);
+        editor.pointerMove(0, 0);
+      };
     case "track-hover": {
       editor.chooseItem(TRACK_ITEM);
       stroke([
@@ -499,6 +507,24 @@ function measureLongSession(): void {
   }
 }
 
+async function holdTrainOverRails(): Promise<void> {
+  editor.chooseItem(TRACK_ITEM);
+  stroke([
+    [TRAIN_RUN[0], TRAIN_RUN_Z],
+    [TRAIN_RUN[1], TRAIN_RUN_Z],
+  ]);
+  editor.chooseItem(TRAIN_ITEM);
+  while (editor.snapshot().pendingItem !== null) {
+    await new Promise((resolve) => setTimeout(resolve, SHELF_WAIT_MS));
+  }
+  aimAt(TRAIN_RUN[0] + 400, TRAIN_RUN_Z);
+  editor.pointerMove(0, 0);
+  if (editor.snapshot().hover?.onRails !== true) {
+    throw new Error(`${TRAIN_ITEM} held over the run does not stand on the rails`);
+  }
+}
+
+if (mode === "train-held") await holdTrainOverRails();
 if (mode === "long-session") measureLongSession();
 else measureWindows(moves());
 process.exit(0);

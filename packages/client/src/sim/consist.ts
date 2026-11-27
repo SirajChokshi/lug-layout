@@ -125,11 +125,11 @@ function boundsEnd(orientation: Orientation, boxes: Float64Array, end: End): Cou
   for (const bogie of vehicle.bogies) for (const instance of bogie.instances) consider(instance);
   if (!Number.isFinite(extreme))
     throw new Error(`the vehicle's parts have no bounds at its ${end}`);
-  const bogie = bogieHolding(vehicle, new Set([holder]));
+  const bogie = vehicle.bogies.findIndex((candidate) => candidate.instances.includes(holder));
   return {
     xLdu: outward * extreme,
     zLdu: 0,
-    mount: bogie === null ? "body" : bogieMount(orientation, bogie),
+    mount: bogie < 0 ? "body" : bogieMount(orientation, bogie),
   };
 }
 
