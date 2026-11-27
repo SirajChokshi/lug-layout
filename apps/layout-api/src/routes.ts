@@ -28,7 +28,11 @@ export type WorldRoute =
   | { readonly kind: "version"; readonly world: RecordId; readonly version: number }
   | { readonly kind: "share-link-list"; readonly world: RecordId }
   | { readonly kind: "share-link-create"; readonly world: RecordId }
-  | { readonly kind: "share-link-revoke"; readonly world: RecordId; readonly link: RecordId };
+  | { readonly kind: "share-link-revoke"; readonly world: RecordId; readonly link: RecordId }
+  | { readonly kind: "thread-list"; readonly world: RecordId }
+  | { readonly kind: "thread-start"; readonly world: RecordId }
+  | { readonly kind: "thread-reply"; readonly world: RecordId; readonly thread: RecordId }
+  | { readonly kind: "thread-resolve"; readonly world: RecordId; readonly thread: RecordId };
 
 export type RouteResult =
   | { readonly kind: "public"; readonly route: PublicRoute }
@@ -80,6 +84,11 @@ const inWorld = (groups: ReadonlyArray<string>) => ({ world: captured(groups, 0)
 const withFile = (groups: ReadonlyArray<string>) => ({
   world: captured(groups, 0),
   sha256: captured(groups, 1),
+});
+
+const inThread = (groups: ReadonlyArray<string>) => ({
+  world: captured(groups, 0),
+  thread: captured(groups, 1),
 });
 
 function versionList(groups: ReadonlyArray<string>, url: URL): RouteResult {
@@ -166,6 +175,21 @@ const RULES: ReadonlyArray<PathRule> = [
         link: captured(groups, 1),
       })),
     },
+  },
+  {
+    path: path(`/v1/worlds/${ID}/threads`),
+    methods: {
+      GET: worldRoute((groups) => ({ kind: "thread-list", ...inWorld(groups) })),
+      POST: worldRoute((groups) => ({ kind: "thread-start", ...inWorld(groups) })),
+    },
+  },
+  {
+    path: path(`/v1/worlds/${ID}/threads/${ID}/comments`),
+    methods: { POST: worldRoute((groups) => ({ kind: "thread-reply", ...inThread(groups) })) },
+  },
+  {
+    path: path(`/v1/worlds/${ID}/threads/${ID}/resolution`),
+    methods: { PUT: worldRoute((groups) => ({ kind: "thread-resolve", ...inThread(groups) })) },
   },
 ];
 

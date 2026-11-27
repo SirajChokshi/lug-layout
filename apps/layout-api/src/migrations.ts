@@ -89,4 +89,31 @@ export const LAYOUT_MIGRATIONS: ReadonlyArray<Migration> = [
       "CREATE INDEX share_links_by_world ON share_links (world_id, created_at)",
     ],
   },
+  {
+    version: 3,
+    statements: [
+      `CREATE TABLE comment_threads (
+        id TEXT PRIMARY KEY,
+        world_id TEXT NOT NULL REFERENCES worlds (id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        pin TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        resolved_by TEXT,
+        resolved_at INTEGER,
+        FOREIGN KEY (world_id, version) REFERENCES world_versions (world_id, version),
+        CHECK ((resolved_by IS NULL) = (resolved_at IS NULL))
+      ) STRICT`,
+      "CREATE INDEX comment_threads_by_world ON comment_threads (world_id, created_at)",
+      `CREATE TABLE comments (
+        id TEXT PRIMARY KEY,
+        world_id TEXT NOT NULL REFERENCES worlds (id) ON DELETE CASCADE,
+        thread_id TEXT NOT NULL REFERENCES comment_threads (id) ON DELETE CASCADE,
+        author_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      ) STRICT`,
+      "CREATE INDEX comments_by_world ON comments (world_id, created_at)",
+      "CREATE INDEX comments_by_thread ON comments (thread_id, created_at)",
+    ],
+  },
 ];
