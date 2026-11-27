@@ -149,16 +149,36 @@ interface Scenario {
   readonly mates: ReadonlyArray<MateSpec>;
   readonly exposed?: ReadonlyArray<readonly [number, number]>;
   readonly submodels?: ReadonlyArray<Vec>;
+  readonly submodelParents?: ReadonlyArray<number>;
+  readonly submodelRotations?: ReadonlyArray<ReadonlyArray<number>>;
 }
 
 function translated(offset: Vec, at: Vec): Vec {
   return [offset[0] + at[0], offset[1] + at[1], offset[2] + at[2]];
 }
 
+function rotated(rotation: ReadonlyArray<number>, v: Vec): Vec {
+  const row = (r: number) =>
+    (rotation[3 * r] ?? 0) * v[0] +
+    (rotation[3 * r + 1] ?? 0) * v[1] +
+    (rotation[3 * r + 2] ?? 0) * v[2];
+  return [row(0), row(1), row(2)];
+}
+
+function composed(outer: ReadonlyArray<number>, inner: ReadonlyArray<number>): number[] {
+  return [0, 1, 2].flatMap((r) =>
+    [0, 1, 2].map((c) =>
+      [0, 1, 2].reduce((sum, k) => sum + (outer[3 * r + k] ?? 0) * (inner[3 * k + c] ?? 0), 0),
+    ),
+  );
+}
+
 function run(scenario: Scenario) {
   const frames = scenario.submodels ?? [];
   const frameAt = (submodel: number | undefined): Vec =>
     submodel === undefined ? [0, 0, 0] : (frames[submodel] ?? [0, 0, 0]);
+  const frameRotation = (submodel: number | undefined): ReadonlyArray<number> =>
+    submodel === undefined ? UPRIGHT : (scenario.submodelRotations?.[submodel] ?? UPRIGHT);
   const names = Object.keys(scenario.parts);
   const parts = names.map((name) => scenario.parts[name]);
   const specOf = (instance: number, connector: number): ConnectorSpec | undefined =>
@@ -168,16 +188,20 @@ function run(scenario: Scenario) {
     partIndex: Uint32Array.from(scenario.placed, (p) => names.indexOf(p.part)),
     matrices: Float64Array.from(
       scenario.placed.flatMap((p) => {
-        const [x, y, z] = translated(frameAt(p.submodel), p.at);
-        const r = p.rotation ?? UPRIGHT;
+        const outer = frameRotation(p.submodel);
+        const [x, y, z] = translated(frameAt(p.submodel), rotated(outer, p.at));
+        const r = composed(outer, p.rotation ?? UPRIGHT);
         return [r[0], r[1], r[2], x, r[3], r[4], r[5], y, r[6], r[7], r[8], z].map((v) => v ?? 0);
       }),
     ),
     submodels: {
       count: frames.length,
-      parent: Int32Array.from(frames, () => MODEL_ROOT),
+      parent: Int32Array.from(frames, (_, s) => scenario.submodelParents?.[s] ?? MODEL_ROOT),
       matrices: Float64Array.from(
-        frames.flatMap(([x, y, z]) => [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z]),
+        frames.flatMap(([x, y, z], s) => {
+          const r = frameRotation(s);
+          return [r[0], r[1], r[2], x, r[3], r[4], r[5], y, r[6], r[7], r[8], z].map((v) => v ?? 0);
+        }),
       ),
       ofPart: Int32Array.from(scenario.placed, (p) => p.submodel ?? MODEL_ROOT),
     },
@@ -988,47 +1012,149 @@ function shiftedOrnamentCar(z: number): Scenario {
   };
 }
 
-const LOOSE = (extents: { readonly min: Vec; readonly max: Vec }): Part => ({
-  connectors: [],
-  extents,
-});
-const WAGON_ON_RAILS: Part = { ...WAGON, extents: { min: [-50, -5, -40], max: [50, 5, 40] } };
-const SECOND_WAGON_X = 140;
+type Extents = { readonly min: Vec; readonly max: Vec };
 
-function wagonsWithLoads(): Scenario {
+function loose(extents: Extents, faces: ReadonlyArray<ConnectorSpec> = []): Part {
+  return { connectors: faces, extents };
+}
+
+const WAGON_ON_RAILS: Part = { ...WAGON, extents: { min: [-50, -5, -40], max: [50, 5, 40] } };
+const WAGON_TOP = 35;
+const SIXTEENTH = 1 / 16;
+const LID: Extents = { min: [-20, 0, -20], max: [20, 4, 20] };
+const SMALL: Extents = { min: [-3, 0, -3], max: [3, 2, 3] };
+const AXLE_SOCKET: ConnectorSpec = {
+  at: [0, 0, 0],
+  axis: AXIS_NEG_Y,
+  gender: GENDER_FEMALE,
+  shape: AXLE_HOLE,
+};
+const AXLE_PEG: ConnectorSpec = {
+  at: [0, 0, 0],
+  axis: AXIS_POS_Y,
+  gender: GENDER_MALE,
+  shape: AXLE,
+};
+const WAGON_INSTANCES = [0, 1, 2];
+
+function loadedWagon(
+  parts: Readonly<Record<string, Part>>,
+  loads: ReadonlyArray<Placement>,
+  mates: ReadonlyArray<MateSpec> = [],
+): Scenario {
+  return {
+    parts: { ...PARTS, wagon: WAGON_ON_RAILS, ...parts },
+    placed: [
+      { part: "wagon", at: [0, 30, 0] },
+      { part: "wheels", at: [-30, 7, 0] },
+      { part: "wheels", at: [30, 7, 0] },
+      ...loads,
+    ],
+    mates: [...WAGON_AXLES.slice(0, 2), ...mates],
+  };
+}
+
+function inSubmodel(scenario: Scenario, submodelOf: ReadonlyArray<number>): Scenario {
+  return {
+    ...scenario,
+    placed: scenario.placed.map((placement, i) => ({ ...placement, submodel: submodelOf[i] ?? 0 })),
+  };
+}
+
+function riding(gear: ReturnType<typeof run>) {
+  return gear.vehicles.map((vehicle) => ({
+    body: vehicle.body,
+    bogies: vehicle.bogies.map((carrier) => carrier.instances),
+  }));
+}
+
+function nestedFrameWagon(): Scenario {
+  const scenario = loadedWagon({ lid: loose(LID) }, [{ part: "lid", at: [0, WAGON_TOP, 0] }]);
+  return {
+    ...inSubmodel(scenario, [1, 1, 1, 2]),
+    submodels: [
+      [0.3, 0, 0],
+      [0.3, 0, 0],
+      [0.3, 0, 0],
+    ],
+    submodelParents: [MODEL_ROOT, 0, 0],
+  };
+}
+
+function plankAcrossWagons(): Scenario {
   return {
     parts: {
       ...PARTS,
       wagon: WAGON_ON_RAILS,
-      roof: LOOSE({ min: [-25, 0, -40], max: [25, 4, 40] }),
-      lamp: LOOSE({ min: [-5, 0, -5], max: [5, 8, 5] }),
-      plank: LOOSE({ min: [-40, 0, -10], max: [40, 2, 10] }),
-      figure: LOOSE({ min: [-5, 0, -5], max: [5, 30, 5] }),
+      plank: loose({ min: [-40, 0, -10], max: [40, 2, 10] }),
     },
-    placed: [
-      ...wagons(SECOND_WAGON_X),
-      { part: "roof", at: [0, 35, 0] },
-      { part: "lamp", at: [0, 39, 0] },
-      { part: "plank", at: [SECOND_WAGON_X / 2, 35, 0] },
-      { part: "figure", at: [0, 0, 80] },
-      { part: "roof", at: [SECOND_WAGON_X, 35.0625, 0] },
-    ],
+    placed: [...wagons(140), { part: "plank", at: [70, WAGON_TOP, 0] }],
     mates: WAGON_AXLES,
   };
 }
 
-function bogieCarWithStep(): Scenario {
+function plankOnRefusedAndSoundWagons(): Scenario {
+  const plank = plankAcrossWagons();
+  return {
+    ...plank,
+    parts: {
+      ...plank.parts,
+      wagon: { ...WAGON_ON_RAILS, connectors: [...WAGON.connectors, AXLE_PEG] },
+      skirt: loose({ min: [-5, -40, -5], max: [5, 0, 5] }, [AXLE_SOCKET]),
+    },
+    placed: [...plank.placed, { part: "skirt", at: [0, 30, 50] }],
+    mates: [...plank.mates, { male: [0, 4], female: [7, 0] }],
+  };
+}
+
+function tiltedPlateWagon(): Scenario {
+  const scenario = loadedWagon(
+    { plate: loose({ min: [-5, 0, -5], max: [5, 4, 5] }, [AXLE_SOCKET]), lid: loose(SMALL) },
+    [
+      { part: "plate", at: [0, 0, 0], submodel: 0 },
+      { part: "lid", at: [0, 4, 0], submodel: 0 },
+    ],
+    [{ male: [0, 4], female: [3, 0] }],
+  );
+  return {
+    ...scenario,
+    parts: {
+      ...scenario.parts,
+      wagon: { ...WAGON_ON_RAILS, connectors: [...WAGON.connectors, AXLE_PEG] },
+    },
+    submodels: [[0, 100, 0]],
+    submodelRotations: [EIGHTH_TURN_ABOUT_X],
+  };
+}
+
+function drawbarResting(): Scenario {
+  const drawbar: Part = { ...DRAWBAR, extents: { min: [-35, 0, -10], max: [-15, 2, 10] } };
+  return {
+    parts: { ...PARTS, wagon: WAGON_ON_RAILS, drawbar, rider: loose(SMALL) },
+    placed: [
+      ...wagons(150),
+      { part: "drawbar", at: [75, WAGON_TOP, 0] },
+      { part: "rider", at: [55, WAGON_TOP + 2, 0] },
+    ],
+    mates: [...WAGON_AXLES, { male: [6, 0], female: [0, 2] }, { male: [3, 3], female: [6, 1] }],
+  };
+}
+
+function bogieCarWithExtents(
+  parts: Readonly<Record<string, Part>>,
+  loads: ReadonlyArray<Placement>,
+  mates: ReadonlyArray<MateSpec> = [],
+): Scenario {
   const car = bogieCar();
   return {
-    ...car,
     parts: {
       ...PARTS,
       body: { ...BODY, extents: { min: [-100, -2, -40], max: [100, 10, 40] } },
       frame: { ...FRAME, extents: { min: [-30, -10, -40], max: [30, 0, 40] } },
-      step: LOOSE({ min: [-5, 0, -5], max: [5, 4, 5] }),
-      crate: LOOSE({ min: [-20, 0, -20], max: [20, 20, 20] }),
+      ...parts,
     },
-    placed: [...car.placed, { part: "step", at: [80, 20, 0] }, { part: "crate", at: [0, 40, 0] }],
+    placed: [...car.placed, ...loads],
+    mates: [...car.mates, ...mates],
   };
 }
 
@@ -1768,24 +1894,231 @@ describe("RunningGearDetector", () => {
     expect(gear.vehicles[0]?.rearEndCandidates).toEqual([{ instance: 0, connector: 5 }]);
   });
 
-  it("lets a sub-assembly resting exactly from above on one car ride in its body, and what rests on that too, while one beside the car, one across two cars and one a sixteenth above its car stay", () => {
-    const gear = run(wagonsWithLoads());
+  describe("sub-assemblies resting on a vehicle (RG 4.63)", () => {
+    const BARE: Part = { connectors: [] };
 
-    expect(gear.vehicles.map((vehicle) => vehicle.body)).toEqual([
-      [0, 1, 2, 6, 7],
-      [3, 4, 5],
-    ]);
-  });
-
-  it("credits a sub-assembly resting only on a bogie to that bogie, and one resting on the body to the body", () => {
-    const [vehicle] = run(bogieCarWithStep()).vehicles;
-
-    expect({ body: vehicle?.body, bogies: vehicle?.bogies.map((b) => b.instances) }).toEqual({
-      body: [0, 8],
-      bogies: [
-        [1, 2, 3, 7],
-        [4, 5, 6],
+    it.each([
+      [
+        "a loose sub-assembly mated to a riding instance is neither credited nor a carrier for one resting on it",
+        drawbarResting(),
+        {
+          riding: [
+            { body: [0, 1, 2], bogies: [] },
+            { body: [3, 4, 5], bogies: [] },
+          ],
+          couplings: 1,
+        },
       ],
+      [
+        "an instance without extents neither rests nor carries",
+        loadedWagon({ bare: BARE, lid: loose(LID) }, [
+          { part: "bare", at: [0, WAGON_TOP, 0] },
+          { part: "lid", at: [0, WAGON_TOP + 4, 0] },
+        ]),
+        { riding: [{ body: WAGON_INSTANCES, bogies: [] }], couplings: 0 },
+      ],
+      [
+        "a mated multi-part loose group is credited as one unit",
+        loadedWagon(
+          {
+            lid: loose({ min: [-20, 0, -20], max: [62, 4, 20] }, [
+              { ...AXLE_SOCKET, at: [60, 0, 0] },
+            ]),
+            flag: loose({ min: [-2, 0, -2], max: [2, 20, 2] }, [AXLE_PEG]),
+          },
+          [
+            { part: "lid", at: [0, WAGON_TOP, 0] },
+            { part: "flag", at: [60, WAGON_TOP + 1, 0] },
+          ],
+          [{ male: [4, 0], female: [3, 0] }],
+        ),
+        { riding: [{ body: [...WAGON_INSTANCES, 3, 4], bogies: [] }], couplings: 0 },
+      ],
+    ])("step 2: %s", (_name, scenario, expected) => {
+      const gear = run(scenario);
+
+      expect({ riding: riding(gear), couplings: gear.vehicleCouplings.length }).toEqual(expected);
+    });
+
+    it.each([
+      [
+        "contact across nested sub-model frames counts",
+        nestedFrameWagon(),
+        [...WAGON_INSTANCES, 3],
+      ],
+      [
+        "an origin off the sixteenth grid gives no contact",
+        loadedWagon({ lid: loose(LID) }, [{ part: "lid", at: [0.01, WAGON_TOP, 0] }]),
+        WAGON_INSTANCES,
+      ],
+      [
+        "up not identified in the frame gives no contact",
+        tiltedPlateWagon(),
+        [...WAGON_INSTANCES, 3],
+      ],
+      [
+        "side-only contact and zero-length plan touch give no contact",
+        loadedWagon(
+          {
+            block: loose({ min: [0, 0, -10], max: [20, 10, 10] }),
+            tile: loose({ min: [0, 0, -10], max: [20, 2, 10] }),
+          },
+          [
+            { part: "block", at: [50, WAGON_TOP - 10, 0] },
+            { part: "tile", at: [50, WAGON_TOP, 30] },
+          ],
+        ),
+        WAGON_INSTANCES,
+      ],
+      [
+        "a part seated on studs without a mate isn't credited",
+        loadedWagon({ plate: loose({ min: [-20, 0, -20], max: [20, 8, 20] }) }, [
+          { part: "plate", at: [0, WAGON_TOP - 4, 0] },
+        ]),
+        WAGON_INSTANCES,
+      ],
+      [
+        "a sixteenth gap gives no contact",
+        loadedWagon({ lid: loose(LID) }, [{ part: "lid", at: [0, WAGON_TOP + SIXTEENTH, 0] }]),
+        WAGON_INSTANCES,
+      ],
+    ])("step 3: %s", (_name, scenario, body) => {
+      expect(riding(run(scenario))).toEqual([{ body, bogies: [] }]);
+    });
+
+    it.each([
+      [
+        "a stack resting only on an unsupported loose group stays, while one resting on the vehicle too rides",
+        loadedWagon(
+          {
+            pillar: loose({ min: [-10, 0, -10], max: [10, WAGON_TOP, 10] }),
+            plank: loose({ min: [-10, 0, -10], max: [35, 2, 10] }),
+            box: loose(SMALL),
+          },
+          [
+            { part: "pillar", at: [70, 0, 0] },
+            { part: "plank", at: [40, WAGON_TOP, 0] },
+            { part: "box", at: [78, WAGON_TOP, 0] },
+          ],
+        ),
+        [...WAGON_INSTANCES, 4],
+      ],
+      [
+        "two hops through loose groups are credited",
+        loadedWagon(
+          {
+            lamp: loose(SMALL),
+            box: loose({ min: [-10, 0, -10], max: [10, 6, 10] }),
+            lid: loose(LID),
+          },
+          [
+            { part: "lamp", at: [0, WAGON_TOP + 10, 0] },
+            { part: "box", at: [0, WAGON_TOP + 4, 0] },
+            { part: "lid", at: [0, WAGON_TOP, 0] },
+          ],
+        ),
+        [...WAGON_INSTANCES, 3, 4, 5],
+      ],
+    ])("step 4: %s", (_name, scenario, body) => {
+      expect(riding(run(scenario))).toEqual([{ body, bogies: [] }]);
+    });
+
+    it.each([
+      [
+        "resting on both a vehicle's body and its bogie credits to the body",
+        bogieCarWithExtents(
+          {
+            cap: loose(SMALL, [{ ...AXLE_SOCKET, at: [-10, 0, 0] }]),
+            step: loose({ min: [-3, 0, -3], max: [3, 20, 3] }, [AXLE_PEG]),
+          },
+          [
+            { part: "cap", at: [95, 40, 0] },
+            { part: "step", at: [85, 20, 0] },
+          ],
+          [{ male: [8, 0], female: [7, 0] }],
+        ),
+        [
+          {
+            body: [0, 7, 8],
+            bogies: [
+              [1, 2, 3],
+              [4, 5, 6],
+            ],
+          },
+        ],
+      ],
+      [
+        "resting only on a bogie credits to that bogie",
+        bogieCarWithExtents({ step: loose(SMALL) }, [{ part: "step", at: [80, 20, 0] }]),
+        [
+          {
+            body: [0],
+            bogies: [
+              [1, 2, 3, 7],
+              [4, 5, 6],
+            ],
+          },
+        ],
+      ],
+      [
+        "resting on two vehicles credits nothing",
+        plankAcrossWagons(),
+        [
+          { body: [0, 1, 2], bogies: [] },
+          { body: [3, 4, 5], bogies: [] },
+        ],
+      ],
+    ])("step 5: %s", (_name, scenario, expected) => {
+      expect(riding(run(scenario))).toEqual(expected);
+    });
+
+    it("step 6: a credited part below the rail top over a head band refuses the vehicle as belowRailTop", () => {
+      const gear = run(
+        loadedWagon(
+          {
+            lid: loose({ min: [-20, 0, -40], max: [20, 4, 56] }, [
+              { ...AXLE_SOCKET, at: [0, 0, 50] },
+            ]),
+            hanger: loose({ min: [-5, -40, -5], max: [5, 0, 5] }, [AXLE_PEG]),
+          },
+          [
+            { part: "lid", at: [0, WAGON_TOP, 0] },
+            { part: "hanger", at: [0, WAGON_TOP, 50] },
+          ],
+          [{ male: [4, 0], female: [3, 0] }],
+        ),
+      );
+
+      expect({
+        vehicles: gear.vehicles.length,
+        unresolved: clearanceReports(gear.unresolvedRunningGear),
+      }).toEqual({
+        vehicles: 0,
+        unresolved: [{ reason: "belowRailTop", instances: [4], wheelsets: [1, 2] }],
+      });
+    });
+
+    it("step 6: no cascade: a sub-assembly resting on two candidate vehicles stays outside both when one of them fails clearance", () => {
+      const gear = run(plankOnRefusedAndSoundWagons());
+
+      expect({
+        riding: riding(gear),
+        unresolved: clearanceReports(gear.unresolvedRunningGear),
+      }).toEqual({
+        riding: [{ body: [3, 4, 5], bogies: [] }],
+        unresolved: [{ reason: "belowRailTop", instances: [7], wheelsets: [1, 2] }],
+      });
+    });
+
+    it("step 7: a credited part's exposed connector becomes an end candidate", () => {
+      const scenario = loadedWagon(
+        { lid: loose(LID, [{ at: [20, 2, 0], axis: AXIS_POS_X, gender: GENDER_MALE }]) },
+        [{ part: "lid", at: [40, WAGON_TOP, 0] }],
+      );
+
+      expect(run({ ...scenario, exposed: [[3, 0]] }).vehicles[0]?.frontEndCandidates).toEqual([
+        { instance: 3, connector: 0 },
+      ]);
     });
   });
 });

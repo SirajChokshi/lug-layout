@@ -220,10 +220,10 @@ export function restingCredits(
   const { groups, groupOf } = looseGroups(count, mates, vehicleOf);
   const contact = new ExactContact(frames, instances, extents);
   const stride = bogieOf.reduce((top, bogie) => Math.max(top, bogie), ON_BODY) + 2;
-  const rigid = (instance: number) =>
+  const carrierOf = (instance: number) =>
     (vehicleOf[instance] ?? NO_VEHICLE) * stride + (bogieOf[instance] ?? ON_BODY) - ON_BODY;
-  const supports = groups.map(() => new Set<number>());
-  const restsOnGroup = groups.map(() => new Set<number>());
+  const carriers = groups.map(() => new Set<number>());
+  const restedOnBy = groups.map((): number[] => []);
   const boxes = modelBoxes(instances, extents);
   const tops = new Float64Array(count);
   for (let i = 0; i < count; i++) tops[i] = boxes[i * BOX_FLOATS + AXES + MODEL_UP] ?? Number.NaN;
@@ -231,6 +231,7 @@ export function restingCredits(
     .filter((i) => !Number.isNaN(tops[i] ?? Number.NaN))
     .toSorted((a, b) => (tops[a] ?? 0) - (tops[b] ?? 0));
   groups.forEach((members, g) => {
+    const restsOn = new Set<number>();
     for (const upper of members) {
       const bottom = boxes[upper * BOX_FLOATS + MODEL_UP] ?? Number.NaN;
       if (Number.isNaN(bottom)) continue;
@@ -242,32 +243,30 @@ export function restingCredits(
         const other = groupOf[lower] ?? NO_GROUP;
         if (other === g || (!riding && other === NO_GROUP)) continue;
         if (!planReach(boxes, upper, lower) || !contact.restsOn(upper, lower)) continue;
-        if (riding) supports[g]?.add(rigid(lower));
-        else restsOnGroup[g]?.add(other);
+        if (riding) carriers[g]?.add(carrierOf(lower));
+        else restsOn.add(other);
       }
     }
+    for (const other of restsOn) restedOnBy[other]?.push(g);
   });
-  for (let grew = true; grew;) {
-    grew = false;
-    groups.forEach((_, g) => {
-      const own = supports[g];
-      if (!own) return;
-      for (const other of restsOnGroup[g] ?? []) {
-        for (const support of supports[other] ?? []) {
-          if (own.has(support)) continue;
-          own.add(support);
-          grew = true;
-        }
-      }
-    });
+  const work = groups.flatMap((_, g) => ((carriers[g]?.size ?? 0) > 0 ? [g] : []));
+  for (let lower = work.pop(); lower !== undefined; lower = work.pop()) {
+    const below = carriers[lower] ?? new Set<number>();
+    for (const upper of restedOnBy[lower] ?? []) {
+      const above = carriers[upper];
+      if (!above) continue;
+      const before = above.size;
+      for (const carrier of below) above.add(carrier);
+      if (above.size > before) work.push(upper);
+    }
   }
   return groups.flatMap((members, g) => {
-    const held = [...(supports[g] ?? [])];
-    const vehicles = new Set(held.map((key) => Math.floor(key / stride)));
+    const carrierKeys = [...(carriers[g] ?? [])];
+    const vehicles = new Set(carrierKeys.map((key) => Math.floor(key / stride)));
     const [vehicle] = vehicles;
-    const [only] = held;
+    const [only] = carrierKeys;
     if (vehicles.size !== 1 || vehicle === undefined || only === undefined) return [];
-    const bogie = held.length === 1 ? (only % stride) + ON_BODY : ON_BODY;
+    const bogie = carrierKeys.length === 1 ? (only % stride) + ON_BODY : ON_BODY;
     return [{ vehicle, bogie, instances: members }];
   });
 }
