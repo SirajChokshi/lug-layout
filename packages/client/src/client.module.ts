@@ -55,6 +55,7 @@ import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { PlanSheetService } from "./plan/plan-sheet-service.ts";
+import { PdfSheetWriter } from "./sheets/pdf-sheet-writer.ts";
 import { PlanDrawing } from "./sheets/plan-drawing.ts";
 import { SheetComposer } from "./sheets/sheet-composer.ts";
 import { CourierTypeface } from "./sheets/sheet-typeface.ts";
@@ -134,6 +135,7 @@ import {
   SHEET_TILER,
   SHEET_TYPEFACE,
   SVG_SHEET_WRITER,
+  PDF_SHEET_WRITER,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
@@ -182,6 +184,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PLAN_DRAWING).to(PlanDrawing).inSingletonScope();
   bind(SHEET_COMPOSER).to(SheetComposer).inSingletonScope();
   bind(SVG_SHEET_WRITER).to(SvgSheetWriter).inSingletonScope();
+  bind(PDF_SHEET_WRITER).to(PdfSheetWriter).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();

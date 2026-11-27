@@ -2,6 +2,7 @@ import { injectable } from "inversify";
 
 export interface ISheetTypeface {
   readonly svgFontFamily: string;
+  pdfFontName(bold: boolean): string;
   widthMm(text: string, sizeMm: number): number;
   capHeightMm(sizeMm: number): number;
   fitted(text: string, sizeMm: number, widthMm: number): string;
@@ -19,6 +20,10 @@ function characters(text: string): string[] {
 @injectable()
 export class CourierTypeface implements ISheetTypeface {
   readonly svgFontFamily = "'Courier New', Courier, monospace";
+
+  pdfFontName(bold: boolean): string {
+    return bold ? "Courier-Bold" : "Courier";
+  }
 
   widthMm(text: string, sizeMm: number): number {
     return characters(text).length * COURIER_ADVANCE_EM * sizeMm;

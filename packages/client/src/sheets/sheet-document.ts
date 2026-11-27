@@ -13,6 +13,18 @@ export interface SheetDocument {
   readonly pages: ReadonlyArray<SheetPage>;
 }
 
+export interface SheetFile {
+  readonly fileName: string;
+  readonly mimeType: string;
+  readonly bytes: Uint8Array;
+  readonly pages: number;
+  readonly notes: ReadonlyArray<string>;
+}
+
+export interface ISheetWriter {
+  write(document: SheetDocument, baseName: string): SheetFile;
+}
+
 export type SheetLayout =
   | { readonly kind: "whole" }
   | {
@@ -62,7 +74,7 @@ export function sheetLayoutProblems(layout: SheetLayout): ReadonlyArray<string> 
   }
 }
 
-export type SheetFormat = "svg";
+export type SheetFormat = "svg" | "pdf";
 
 export interface SheetRequest {
   readonly layout: SheetLayout;
