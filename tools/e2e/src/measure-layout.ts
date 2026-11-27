@@ -15,7 +15,7 @@ import {
 
 const DEFAULT_CHROME = "/usr/local/bin/google-chrome";
 const VIEWPORT = { width: 1600, height: 900 } as const;
-const READY_TIMEOUT_MS = 900_000;
+const READY_TIMEOUT_MS = 3_600_000;
 const EDIT_TIMEOUT_MS = 120_000;
 const POLL_MS = 500;
 const EDIT_POLL_MS = 20;
