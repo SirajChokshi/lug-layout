@@ -42,6 +42,26 @@ export function openDatabase(
   return requestResult(request);
 }
 
+export async function inStore<T>(
+  factory: IDBFactory,
+  database: string,
+  store: StoreSpec,
+  mode: IDBTransactionMode,
+  use: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  const db = await openDatabase(factory, database, [store]);
+  try {
+    const transaction = db.transaction(store.name, mode);
+    const [result] = await Promise.all([
+      requestResult(use(transaction.objectStore(store.name))),
+      transactionDone(transaction),
+    ]);
+    return result;
+  } finally {
+    db.close();
+  }
+}
+
 export function deleteDatabase(factory: IDBFactory, name: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = factory.deleteDatabase(name);

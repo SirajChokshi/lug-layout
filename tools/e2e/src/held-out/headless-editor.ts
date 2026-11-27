@@ -226,6 +226,10 @@ class MemoryWorldRepository implements IWorldRepository {
     this.worlds.delete(id);
   }
 
+  async restoreVersion(): Promise<void> {
+    throw new Error("the headless editor keeps no versions");
+  }
+
   async shardFiles(): Promise<never[]> {
     return [];
   }

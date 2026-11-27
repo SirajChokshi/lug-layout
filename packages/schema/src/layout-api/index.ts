@@ -223,6 +223,15 @@ export type VersionListResponse = v.InferOutput<typeof VersionListResponse>;
 export const VersionResponse = v.object({ version: VersionSummary, snapshot: WorldSnapshot });
 export type VersionResponse = v.InferOutput<typeof VersionResponse>;
 
+export const CloudWorldLink = v.object({
+  id: v.pipe(v.string(), v.minLength(1, "is empty")),
+  account: RecordId,
+  world: RecordId,
+  version: v.nullable(VersionNumber),
+  content: v.nullable(Sha256),
+});
+export type CloudWorldLink = v.InferOutput<typeof CloudWorldLink>;
+
 export const ErrorResponse = v.object({ error: v.string() });
 export type ErrorResponse = v.InferOutput<typeof ErrorResponse>;
 

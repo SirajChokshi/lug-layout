@@ -245,6 +245,10 @@ class FailingSaveRepository implements IWorldRepository {
     this.worlds.delete(id);
   }
 
+  async restoreVersion(): Promise<void> {
+    throw new Error("this test keeps no versions");
+  }
+
   async putImportedFile(file: ImportedFile): Promise<void> {
     this.imports.set(file.sha256, file);
   }

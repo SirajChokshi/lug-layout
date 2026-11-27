@@ -153,6 +153,15 @@ export type {
 export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
+export { CLOUD_WORLDS } from "@brr/storage";
+export type {
+  AccountWorld,
+  CloudSignIn,
+  CloudSyncState,
+  CloudView,
+  ICloudWorlds,
+  WorldVersion,
+} from "@brr/storage";
 export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";
 export { NO_ROW } from "@brr/domain";
 export {

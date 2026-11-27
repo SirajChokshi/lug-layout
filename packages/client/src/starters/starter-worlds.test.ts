@@ -253,6 +253,10 @@ class MemoryRepository implements IWorldRepository {
     this.worlds.delete(id);
   }
 
+  async restoreVersion(): Promise<void> {
+    throw new Error("this test keeps no versions");
+  }
+
   async shardFiles(): Promise<never[]> {
     return [];
   }

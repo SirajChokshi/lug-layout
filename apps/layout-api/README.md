@@ -54,7 +54,7 @@ A snapshot is the world's manifest plus the SHA-256 of each shard, note shard an
    - `parent` isn't a version of this world.
 
    So every saved version reopens, with every model file it needs.
-4. It answers 201 with the new version, numbered one past the newest, and `previousHead`. Every save becomes a new version and moves `head`, whatever `parent` says: nothing is overwritten. A client that saved from an older version than `previousHead` knows another save came in between (B6.2 shows that).
+4. It answers 201 with the new version, numbered one past the newest, and `previousHead`. Every save becomes a new version and moves `head`, whatever `parent` says: nothing is overwritten. A client that saved from an older version than `previousHead` knows another save came in between; the web app's `CloudWorldRepository` (`packages/storage`) tells the user, and keeps both versions.
 
 Saving the same state again stores nothing new: its files and snapshot are already there, so only the version row is added.
 
@@ -98,6 +98,6 @@ pnpm --filter @brr/layout-api dev --persist-to .wrangler/state
 pnpm --filter @brr/layout-api measure <world directory>...
 ```
 
-`wrangler dev` sends no mail. It keeps each message, and the local explorer lists them at `http://127.0.0.1:8787/cdn-cgi/local/explorer/api/local/email/sending`; the tests and `measure` read the link from there.
+Point the web app at it with `VITE_LAYOUT_API_BASE_URL=http://127.0.0.1:8787 pnpm --filter @brr/web dev`; without that variable the app saves only to IndexedDB and shows no account. `wrangler dev` sends no mail. It keeps each message, and the local explorer lists them at `http://127.0.0.1:8787/cdn-cgi/local/explorer/api/local/email/sending`; the tests and `measure` read the link from there.
 
 `measure` saves each world directory (the unpacked layout of a `.brr.zip`: `manifest.json`, `shards/<sx>_<sz>.json`, `imports/<sha256>/<name>`, as `apps/web/starters` holds them) as the next version of one new world, then reads every version back and checks each file byte for byte. It prints, per version, how many shards and model files the save had to upload and how long uploading, saving and reading back took.
