@@ -307,6 +307,7 @@ export class RunningGearDetector {
         extents,
         seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
         riding.filter((instance) => !members.has(instance)),
+        poses.authored,
       );
       return { own, riding, refusal };
     });

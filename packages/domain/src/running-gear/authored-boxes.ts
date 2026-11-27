@@ -63,6 +63,7 @@ function mappedBound(
 
 export class AuthoredBoxes {
   private readonly boxes = new Map<number, ExactBox | null>();
+  private readonly exactPoses = new Map<number, ReadonlyArray<ExactRational> | null>();
 
   constructor(
     private readonly instances: PartInstances,
@@ -70,11 +71,19 @@ export class AuthoredBoxes {
     private readonly poses: AuthoredPoses | null,
   ) {}
 
+  pose(instance: number): ReadonlyArray<ExactRational> | null {
+    const known = this.exactPoses.get(instance);
+    if (known !== undefined) return known;
+    const pose = exactPose(this.poses?.[instance]);
+    this.exactPoses.set(instance, pose);
+    return pose;
+  }
+
   box(instance: number): ExactBox | null {
     const known = this.boxes.get(instance);
     if (known !== undefined) return known;
     const part = this.extents[this.instances.partIndex[instance] ?? -1];
-    const pose = exactPose(this.poses?.[instance]);
+    const pose = this.pose(instance);
     const box = part && pose ? [0, 1, 2].map((row) => mappedBound(pose, part, row)) : null;
     this.boxes.set(instance, box);
     return box;
