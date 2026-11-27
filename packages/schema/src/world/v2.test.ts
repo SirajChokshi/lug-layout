@@ -105,9 +105,43 @@ const LAYERS = rows(RICH_MANIFEST, "layers");
 const PLANS = rows(RICH_MANIFEST, "plans");
 const NOTE_SHARD_ENTRIES = rows(RICH_MANIFEST, "noteShards");
 const EVENT = { ...Object(RICH_MANIFEST["event"]) };
+const TABLE_TYPES = rows(RICH_MANIFEST, "tableTypes");
+const FOOTPRINT: Json = { ...Object(PLANS[0]?.["footprint"]) };
+const TABLES = rows(FOOTPRINT, "tables");
 
 function manifestWith(patch: Json): Json {
   return { ...RICH_MANIFEST, ...patch };
+}
+
+function tablesWith(tables: ReadonlyArray<Json>): Json {
+  return manifestWith({ plans: replaced(PLANS, 0, { footprint: { ...FOOTPRINT, tables } }) });
+}
+
+function tableWith(index: number, patch: Json): Json {
+  return tablesWith(replaced(TABLES, index, patch));
+}
+
+function tableTypeWith(index: number, patch: Json): Json {
+  return manifestWith({ tableTypes: replaced(TABLE_TYPES, index, patch) });
+}
+
+const HEADER_KEYS = new Set([
+  "name",
+  "bundleVersion",
+  "view",
+  "disclaimer",
+  "consists",
+  "layers",
+  "groups",
+  "contributors",
+  "plans",
+  "activePlan",
+  "tableTypes",
+  "event",
+]);
+
+function worldHeaderFields(manifest: Json): Json {
+  return Object.fromEntries(Object.entries(manifest).filter(([key]) => HEADER_KEYS.has(key)));
 }
 
 function eventWith(patch: Json): Json {
@@ -272,9 +306,65 @@ describe("world schema v2", () => {
       "$.noteShards",
     ],
     ["an unknown key", manifestWith({ layer: 0 }), "$.layer"],
+    ["an empty table type list", manifestWith({ tableTypes: [] }), "$.tableTypes"],
+    [
+      "table types out of id order",
+      manifestWith({ tableTypes: backwards(TABLE_TYPES) }),
+      "$.tableTypes",
+    ],
+    ["a table type no mm wide", tableTypeWith(0, { widthMm: 0 }), "$.tableTypes.0.widthMm"],
+    [
+      "a table type a fraction of a mm deep",
+      tableTypeWith(0, { depthMm: 600.5 }),
+      "$.tableTypes.0.depthMm",
+    ],
+    ["a negative count owned", tableTypeWith(1, { owned: -1 }), "$.tableTypes.1.owned"],
+    ["a blank table type name", tableTypeWith(1, { name: " " }), "$.tableTypes.1.name"],
+    ["a table type id past 65535", tableTypeWith(1, { id: 65536 }), "$.tableTypes.1.id"],
+    [
+      "a table with no number",
+      tablesWith([
+        Object.fromEntries(Object.entries(TABLES[2] ?? {}).filter(([k]) => k !== "number")),
+      ]),
+      "$.plans.0.footprint.tables.0.number",
+    ],
+    ["a table numbered 0", tableWith(0, { number: 0 }), "$.plans.0.footprint.tables.0.number"],
+    ["a repeated table number", tableWith(1, { number: 1 }), "$.plans.0.footprint.tables"],
   ])("rejects a manifest with %s at its path", (_name, value, path) => {
     const decoded = decode(WorldManifestV2, value);
     expect(decoded.ok ? [] : decoded.issues.map((issue) => issue.path)).toContain(path);
+  });
+
+  it.each([
+    [
+      "a typed table whose type the manifest doesn't list",
+      tableWith(2, { type: 7 }),
+      "must give each typed table a table type the manifest lists",
+    ],
+    [
+      "typed tables but no table types",
+      Object.fromEntries(Object.entries(RICH_MANIFEST).filter(([key]) => key !== "tableTypes")),
+      "must give each typed table a table type the manifest lists",
+    ],
+    [
+      "a typed table a stud wider than its type",
+      tableWith(0, { rect: { x: 0, z: 0, width: 1532, depth: 762 } }),
+      "must give each typed table its table type's width and depth, in either orientation, and its height",
+    ],
+    [
+      "a typed table at another height than its type",
+      tableWith(1, { heightMm: 900 }),
+      "must give each typed table its table type's width and depth, in either orientation, and its height",
+    ],
+    [
+      "an untyped table given a type whose size it doesn't have",
+      tableWith(2, { type: 1 }),
+      "must give each typed table its table type's width and depth, in either orientation, and its height",
+    ],
+  ])("rejects a manifest with %s", (_name, value, message) => {
+    const decoded = decode(WorldManifestV2, value);
+    expect(decoded.ok ? [] : decoded.issues).toContainEqual({ path: "$.plans", message });
+    expect(decode(WorldHeader, worldHeaderFields(value)).ok).toBe(false);
   });
 
   it("accepts the 29th of February only in a leap year", () => {
