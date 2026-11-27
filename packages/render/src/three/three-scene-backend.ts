@@ -48,7 +48,6 @@ import {
   type BufferMemory,
   type ChunkInstances,
   type EdgeMarker,
-  type MarkerKind,
   type ChunkTier,
   type FarModelPlacement,
   type GeometrySet,
@@ -104,8 +103,15 @@ import {
   type InstancePage,
 } from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
+import {
+  GHOST_HIT_RENDER_ORDER,
+  GHOST_OUTLINE_RENDER_ORDER,
+  ISSUE_RENDER_ORDER,
+  SELECTION_RENDER_ORDER,
+} from "./render-orders.ts";
 import { KeyOrderedChildren, opaqueSort, transparentSort } from "./tie-order.ts";
 import { TrackEndArrows } from "./track-end-arrows.ts";
+import { EdgeMarkers } from "./edge-markers.ts";
 import { GHOST_EDGE_SLOT, chunkEdgeSlot, vehicleEdgeSlot, writeEdgeId } from "./edge-ids.ts";
 import {
   MESH_KIND_BODY,
@@ -195,14 +201,7 @@ const GHOST_HIT_COLOR = 0xffc400;
 const GHOST_HIT_OPACITY = 0.9;
 const GHOST_PRECISE_COLOR = 0x00b8ff;
 const SELECTION_COLOR = 0xff8c00;
-const SELECTION_RENDER_ORDER = 1;
-const ISSUE_RENDER_ORDER = 2;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
-const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
-  joined: 0x1fbf4a,
-  open: 0xffb000,
-  mismatch: 0xe0202a,
-};
 const FLOOR_COLOR = 0xd8d2c8;
 const INACTIVE_FLOOR_COLOR = 0xe6e2dc;
 const ROOM_OUTLINE_COLOR = 0x3a3a3a;
@@ -730,13 +729,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   );
   private readonly ghostBox = new Float64Array(BOUNDS_FLOATS);
   private ghostPrecise = false;
-  private readonly markerBox = new BoxGeometry(1, 1, 1);
-  private readonly markerMaterials: Readonly<Record<MarkerKind, MeshBasicNodeMaterial>> = {
-    joined: new MeshBasicNodeMaterial({ color: MARKER_COLORS.joined }),
-    open: new MeshBasicNodeMaterial({ color: MARKER_COLORS.open }),
-    mismatch: new MeshBasicNodeMaterial({ color: MARKER_COLORS.mismatch }),
-  };
-  private readonly markerGroup = new Group();
+  private readonly edgeMarkers = new EdgeMarkers();
   private markers: ReadonlyArray<EdgeMarker> = [];
   private readonly trackEndArrows = new TrackEndArrows();
   private trackEnds: ReadonlyArray<TrackEndMarker> = [];
@@ -838,10 +831,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
     this.ghostHit.visible = false;
     this.ghostHit.matrixAutoUpdate = false;
-    this.ghostHit.renderOrder = 3;
+    this.ghostHit.renderOrder = GHOST_HIT_RENDER_ORDER;
     this.scene.add(this.ghostHit);
-    this.markerGroup.matrixAutoUpdate = false;
-    this.scene.add(this.markerGroup);
+    this.scene.add(this.edgeMarkers.group);
     this.scene.add(this.trackEndArrows.group);
     this.scene.add(this.guides.lines);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
@@ -1450,7 +1442,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const z1 = box[5] ?? 0;
     const outline = this.ghostOutline;
     outline.matrixAutoUpdate = false;
-    outline.renderOrder = 2;
+    outline.renderOrder = GHOST_OUTLINE_RENDER_ORDER;
     outline.visible = this.ghostPrecise;
     outline.scale.set(x1 - x0, y1 - y0, z1 - z0);
     outline.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
@@ -1477,40 +1469,15 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
     if (markers === this.markers) return;
     this.changed = true;
-    this.markerGroup.clear();
     this.markers = markers;
-    for (const marker of markers) {
-      const mesh = new Mesh(this.markerBox, this.markerMaterials[marker.kind]);
-      mesh.matrixAutoUpdate = false;
-      this.markerGroup.add(mesh);
-    }
-    this.positionMarkers();
-  }
-
-  private positionMarkers(): void {
-    const meshes = this.markerGroup.children;
-    for (let i = 0; i < meshes.length; i++) {
-      const mesh = meshes[i];
-      const marker = this.markers[i];
-      if (!mesh || !marker) continue;
-      const { box } = marker;
-      mesh.position.set(
-        (box.minX + box.maxX) / 2 - this.renderOriginX,
-        (box.minY + box.maxY) / 2,
-        (box.minZ + box.maxZ) / 2 - this.renderOriginZ,
-      );
-      mesh.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
-      mesh.updateMatrix();
-    }
-    this.markerGroup.updateMatrixWorld(true);
+    this.edgeMarkers.set(markers, this.renderOriginX, this.renderOriginZ);
   }
 
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
     if (markers === this.trackEnds) return;
     this.changed = true;
     this.trackEnds = markers;
-    this.trackEndArrows.set(markers);
-    this.trackEndArrows.place(this.renderOriginX, this.renderOriginZ);
+    this.trackEndArrows.set(markers, this.renderOriginX, this.renderOriginZ);
   }
 
   setGround(ground: GroundSettings | null): void {
@@ -1670,8 +1637,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setGuides(segments: ReadonlyArray<GuideSegment>): void {
     this.changed = true;
-    this.guides.set(segments);
-    this.guides.place(this.renderOriginX, this.renderOriginZ);
+    this.guides.set(segments, this.renderOriginX, this.renderOriginZ);
   }
 
   projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void {
@@ -2228,7 +2194,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     for (const anchored of this.selectionObjects) this.positionAnchored(anchored);
     this.positionAnchored(this.ghostHitAnchor);
     for (const record of this.vehicles.values()) this.placeVehicle(record);
-    this.positionMarkers();
+    this.edgeMarkers.place(this.renderOriginX, this.renderOriginZ);
     this.trackEndArrows.place(this.renderOriginX, this.renderOriginZ);
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);

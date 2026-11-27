@@ -25,8 +25,7 @@ for (let r = 0; r < RULERS; r++) {
 
 function redrawRulers(calls: number): void {
   for (let call = 0; call < calls; call++) {
-    guides.set(segments);
-    guides.place((call % REBASE_ORIGINS) * CHUNK_LDU, 0);
+    guides.set(segments, (call % REBASE_ORIGINS) * CHUNK_LDU, 0);
   }
 }
 

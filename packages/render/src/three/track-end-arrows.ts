@@ -1,14 +1,4 @@
-import {
-  attribute,
-  cameraViewMatrix,
-  mat3,
-  mat4,
-  normalLocal,
-  positionLocal,
-  select,
-  varying,
-  vec3,
-} from "three/tsl";
+import { attribute, select, vec3 } from "three/tsl";
 import {
   BoxGeometry,
   Color,
@@ -17,29 +7,32 @@ import {
   Float32BufferAttribute,
   Group,
   InstancedBufferGeometry,
-  InstancedInterleavedBuffer,
   InterleavedBufferAttribute,
-  InterpolationSamplingMode,
-  InterpolationSamplingType,
   Matrix3,
   Matrix4,
   Mesh,
-  MeshBasicNodeMaterial,
   Quaternion,
   Uint32BufferAttribute,
   Vector3,
   type BufferGeometry,
   type Camera,
   type Node,
-  type NodeBuilder,
   type Sphere,
 } from "three/webgpu";
 import type { TrackEndKind, TrackEndMarker } from "../scene-backend.ts";
 import { MATRIX4_FLOATS } from "./instance-page.ts";
+import {
+  addSlotAttributes,
+  OVERLAY_SLOT_FLOATS,
+  OverlaySlotMaterial,
+  SlotBuffer,
+  writeSlotColor,
+  writeSlotMatrices,
+  XYZ_FLOATS,
+} from "./overlay-slots.ts";
 import { ProjectedOpaqueOrder } from "./projected-opaque-order.ts";
+import { TRACK_END_GROUP_ORDER, TRACK_END_RENDER_ORDER } from "./render-orders.ts";
 
-const TRACK_END_GROUP_ORDER = 3;
-const TRACK_END_RENDER_ORDER = 3;
 const TRACK_END_COLORS: Readonly<Record<TrackEndKind, number>> = {
   open: 0xffb000,
   gap: 0xe0202a,
@@ -55,21 +48,13 @@ const POST_HEIGHT_LDU = 96;
 const HEAD = 0;
 const POST = 1;
 const PARTS_PER_ARROW: ArrowTemplate["partSpheres"]["length"] = 2;
-const XYZ_FLOATS = 3;
-const MATRIX4_COLUMN_FLOATS = 4;
-const MATRIX3_FLOATS = 9;
-const SLOT_NORMAL_OFFSET = MATRIX4_FLOATS;
-const SLOT_COLOR_OFFSET = SLOT_NORMAL_OFFSET + MATRIX3_FLOATS;
-const SLOT_PART_OFFSET = SLOT_COLOR_OFFSET + XYZ_FLOATS;
-const SLOT_FLOATS = SLOT_PART_OFFSET + 1;
+const SLOT_PART_OFFSET = OVERLAY_SLOT_FLOATS;
+const ARROW_SLOT_FLOATS = SLOT_PART_OFFSET + 1;
 
 const ENDS_GROUP_WORLD = new Matrix4();
 const PART_LOCAL = new Matrix4();
 
 const VERTEX_PART = "vertexPart";
-const SLOT_WORLD = ["slotWorld0", "slotWorld1", "slotWorld2", "slotWorld3"] as const;
-const SLOT_NORMAL = ["slotNormal0", "slotNormal1", "slotNormal2"] as const;
-const SLOT_COLOR = "slotColor";
 const SLOT_PART = "slotPart";
 
 interface ArrowTemplate {
@@ -138,56 +123,14 @@ function markerAt(markers: ReadonlyArray<TrackEndMarker>, arrow: number): TrackE
   return marker;
 }
 
-function slotWorld(): Node<"mat4"> {
-  const [column0, column1, column2, column3] = SLOT_WORLD;
-  return mat4(
-    attribute(column0, "vec4"),
-    attribute(column1, "vec4"),
-    attribute(column2, "vec4"),
-    attribute(column3, "vec4"),
-  );
-}
-
-function slotNormalMatrix(): Node<"mat3"> {
-  const [column0, column1, column2] = SLOT_NORMAL;
-  return mat3(attribute(column0, "vec3"), attribute(column1, "vec3"), attribute(column2, "vec3"));
-}
-
-class SlotBuffer extends InstancedInterleavedBuffer {
-  private readonly uploadRange = { start: 0, count: 0 };
-
-  constructor(array: Float32Array, stride: number) {
-    super(array, stride);
-    this.updateRanges.push(this.uploadRange);
-  }
-
-  uploadSlots(slots: number): void {
-    this.uploadRange.count = slots * this.stride;
-    this.needsUpdate = true;
-  }
-
-  override clearUpdateRanges(): void {}
-}
-
-class TrackEndArrowMaterial extends MeshBasicNodeMaterial {
+class TrackEndArrowMaterial extends OverlaySlotMaterial {
   constructor() {
     super({ depthTest: false });
-    this.colorNode = varying(attribute(SLOT_COLOR, "vec3")).setInterpolation(
-      InterpolationSamplingType.FLAT,
-      InterpolationSamplingMode.EITHER,
-    );
-  }
-
-  override setupPosition(builder: NodeBuilder): Node {
-    const position = super.setupPosition(builder);
-    normalLocal.assign(slotNormalMatrix().mul(normalLocal));
-    return position;
   }
 
   override setupPositionView(): Node<"vec3"> {
-    const viewPosition = cameraViewMatrix.mul(slotWorld()).mul(positionLocal).xyz;
     const inSlotsPart = attribute(VERTEX_PART, "float").equal(attribute(SLOT_PART, "float"));
-    return select(inSlotsPart, viewPosition, vec3(0));
+    return select(inSlotsPart, super.setupPositionView(), vec3(0));
   }
 }
 
@@ -205,7 +148,7 @@ export class TrackEndArrows {
   private arrowCount = 0;
   private records = new Float32Array(0);
   private worlds = new Float64Array(0);
-  private slots = new SlotBuffer(new Float32Array(0), SLOT_FLOATS);
+  private slots = new SlotBuffer(new Float32Array(0), ARROW_SLOT_FLOATS);
   private readonly arrowPosition = new Vector3();
   private readonly arrowTurn = new Euler();
   private readonly arrowQuaternion = new Quaternion();
@@ -227,7 +170,7 @@ export class TrackEndArrows {
     this.group.add(this.mesh);
   }
 
-  set(markers: ReadonlyArray<TrackEndMarker>): void {
+  set(markers: ReadonlyArray<TrackEndMarker>, renderOriginX: number, renderOriginZ: number): void {
     for (let arrow = 0; arrow < markers.length; arrow++) markerAt(markers, arrow);
     this.markers = markers;
     this.arrowCount = markers.length;
@@ -236,14 +179,13 @@ export class TrackEndArrows {
     for (let arrow = 0; arrow < this.arrowCount; arrow++) {
       const color = this.kindColors[markerAt(markers, arrow).kind];
       for (let part = HEAD; part <= POST; part++) {
-        const record = (arrow * PARTS_PER_ARROW + part) * SLOT_FLOATS;
-        this.records[record + SLOT_COLOR_OFFSET] = color.r;
-        this.records[record + SLOT_COLOR_OFFSET + 1] = color.g;
-        this.records[record + SLOT_COLOR_OFFSET + 2] = color.b;
-        this.records[record + SLOT_PART_OFFSET] = part;
+        const recordOffset = (arrow * PARTS_PER_ARROW + part) * ARROW_SLOT_FLOATS;
+        writeSlotColor(this.records, recordOffset, color);
+        this.records[recordOffset + SLOT_PART_OFFSET] = part;
       }
     }
     this.mesh.visible = items > 0;
+    this.place(renderOriginX, renderOriginZ);
   }
 
   place(renderOriginX: number, renderOriginZ: number): void {
@@ -257,16 +199,12 @@ export class TrackEndArrows {
       this.partWorld.multiplyMatrices(this.arrowWorld, PART_LOCAL);
       this.partNormal.getNormalMatrix(this.partWorld);
       const world = this.partWorld.elements;
-      const normal = this.partNormal.elements;
       for (let f = 0; f < MATRIX4_FLOATS; f++) {
         this.worlds[arrow * MATRIX4_FLOATS + f] = world[f] ?? 0;
       }
       for (let part = HEAD; part <= POST; part++) {
-        const record = (arrow * PARTS_PER_ARROW + part) * SLOT_FLOATS;
-        for (let f = 0; f < MATRIX4_FLOATS; f++) this.records[record + f] = world[f] ?? 0;
-        for (let f = 0; f < MATRIX3_FLOATS; f++) {
-          this.records[record + SLOT_NORMAL_OFFSET + f] = normal[f] ?? 0;
-        }
+        const recordOffset = (arrow * PARTS_PER_ARROW + part) * ARROW_SLOT_FLOATS;
+        writeSlotMatrices(this.records, recordOffset, this.partWorld, this.partNormal);
       }
     }
   }
@@ -275,13 +213,12 @@ export class TrackEndArrows {
     const items = this.arrowCount * PARTS_PER_ARROW;
     const visible = this.projection.project(camera, this.worlds, this.template.partSpheres, items);
     this.mesh.geometry.instanceCount = visible;
-    if (visible === 0) return;
     const order = this.projection.visibleItems;
     const slots = this.slots.array;
     for (let slot = 0; slot < visible; slot++) {
-      const from = (order[slot] ?? 0) * SLOT_FLOATS;
-      const to = slot * SLOT_FLOATS;
-      for (let f = 0; f < SLOT_FLOATS; f++) slots[to + f] = this.records[from + f] ?? 0;
+      const from = (order[slot] ?? 0) * ARROW_SLOT_FLOATS;
+      const to = slot * ARROW_SLOT_FLOATS;
+      for (let f = 0; f < ARROW_SLOT_FLOATS; f++) slots[to + f] = this.records[from + f] ?? 0;
     }
     this.slots.uploadSlots(visible);
   }
@@ -289,9 +226,9 @@ export class TrackEndArrows {
   private reserve(items: number): void {
     let capacity = Math.max(this.slots.count, PARTS_PER_ARROW);
     while (capacity < items) capacity *= 2;
-    this.records = new Float32Array(capacity * SLOT_FLOATS);
+    this.records = new Float32Array(capacity * ARROW_SLOT_FLOATS);
     this.worlds = new Float64Array((capacity / PARTS_PER_ARROW) * MATRIX4_FLOATS);
-    this.slots = new SlotBuffer(new Float32Array(capacity * SLOT_FLOATS), SLOT_FLOATS);
+    this.slots = new SlotBuffer(new Float32Array(capacity * ARROW_SLOT_FLOATS), ARROW_SLOT_FLOATS);
     this.projection.reserve(capacity);
     const previous = this.mesh.geometry;
     this.mesh.geometry = this.geometryFor(this.slots);
@@ -305,21 +242,7 @@ export class TrackEndArrows {
     geometry.setAttribute("position", new Float32BufferAttribute(positions, XYZ_FLOATS));
     geometry.setAttribute("normal", new Float32BufferAttribute(normals, XYZ_FLOATS));
     geometry.setAttribute(VERTEX_PART, new Float32BufferAttribute(vertexParts, 1));
-    SLOT_WORLD.forEach((name, column) => {
-      const offset = column * MATRIX4_COLUMN_FLOATS;
-      geometry.setAttribute(
-        name,
-        new InterleavedBufferAttribute(slots, MATRIX4_COLUMN_FLOATS, offset),
-      );
-    });
-    SLOT_NORMAL.forEach((name, column) => {
-      const offset = SLOT_NORMAL_OFFSET + column * XYZ_FLOATS;
-      geometry.setAttribute(name, new InterleavedBufferAttribute(slots, XYZ_FLOATS, offset));
-    });
-    geometry.setAttribute(
-      SLOT_COLOR,
-      new InterleavedBufferAttribute(slots, XYZ_FLOATS, SLOT_COLOR_OFFSET),
-    );
+    addSlotAttributes(geometry, slots);
     geometry.setAttribute(SLOT_PART, new InterleavedBufferAttribute(slots, 1, SLOT_PART_OFFSET));
     geometry.instanceCount = 0;
     return geometry;

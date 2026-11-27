@@ -32,14 +32,13 @@ function marker(
   return { xLdu, yLdu, zLdu, headingRadians, kind };
 }
 
-function setAndPlace(
+function withMarkers(
   arrows: TrackEndArrows,
   markers: ReadonlyArray<TrackEndMarker>,
   originX = 0,
   originZ = 0,
 ): TrackEndArrows {
-  arrows.set(markers);
-  arrows.place(originX, originZ);
+  arrows.set(markers, originX, originZ);
   return arrows;
 }
 
@@ -97,7 +96,7 @@ function slotBuffer(geometry: BufferGeometry): InterleavedBufferAttribute["data"
   return part.data;
 }
 
-const SLOT_FLOATS = 29;
+const ARROW_SLOT_FLOATS = 29;
 
 function posedLikeMeshesInGroups(arrow: TrackEndMarker, originX: number, originZ: number) {
   const scene = new Scene();
@@ -143,7 +142,7 @@ function bitwiseEqual(a: ReadonlyArray<number>, b: ReadonlyArray<number>): boole
 }
 
 it("draws each arrow's head and post as their own items in depth order, so another arrow can fall between an arrow's post and its head, and leaves out arrows behind the camera", () => {
-  const arrows = setAndPlace(new TrackEndArrows(), [
+  const arrows = withMarkers(new TrackEndArrows(), [
     marker(0, 0, -Math.PI / 2),
     marker(40, -10, 0),
     marker(0, 2000, 0),
@@ -172,7 +171,7 @@ it("gives every item, after a rebase too, the world matrix, normal matrix and co
   const mismatches: string[] = [];
   for (const [originX, originZ] of origins) {
     for (const arrow of markers) {
-      const arrows = setAndPlace(new TrackEndArrows(), [arrow], originX, originZ);
+      const arrows = withMarkers(new TrackEndArrows(), [arrow], originX, originZ);
       const geometry = drawn(
         arrows,
         cameraLookingDownZ(arrow.xLdu - originX, arrow.zLdu - originZ),
@@ -210,17 +209,17 @@ it("writes and uploads the slots a view draws, follows a rebase, a moved camera 
     versions.push(slots.version);
     pendingUploads.push({
       ranges: slots.updateRanges.map(({ start, count }) => ({ start, count })),
-      visibleFloats: geometry.instanceCount * SLOT_FLOATS,
+      visibleFloats: geometry.instanceCount * ARROW_SLOT_FLOATS,
     });
     slots.clearUpdateRanges();
   };
 
-  setAndPlace(arrows, [marker(0, 0, 0), marker(100, -10, 0)]);
+  withMarkers(arrows, [marker(0, 0, 0), marker(100, -10, 0)]);
   draw(cameraLookingDownZ());
   arrows.place(640, 0);
   draw(cameraLookingDownZ(-640));
   draw(cameraLookingAwayFromZ());
-  setAndPlace(
+  withMarkers(
     arrows,
     [marker(0, 0, 0), marker(100, -10, 0), marker(200, -20, 0), marker(300, 5, 0)],
     640,
@@ -252,18 +251,18 @@ it("writes and uploads the slots a view draws, follows a rebase, a moved camera 
     grownBufferUploaded: true,
   });
   expect([pendingUploads[0], pendingUploads[1], pendingUploads[3]]).toEqual([
-    { ranges: [{ start: 0, count: 4 * SLOT_FLOATS }], visibleFloats: 4 * SLOT_FLOATS },
-    { ranges: [{ start: 0, count: 4 * SLOT_FLOATS }], visibleFloats: 4 * SLOT_FLOATS },
-    { ranges: [{ start: 0, count: 8 * SLOT_FLOATS }], visibleFloats: 8 * SLOT_FLOATS },
+    { ranges: [{ start: 0, count: 4 * ARROW_SLOT_FLOATS }], visibleFloats: 4 * ARROW_SLOT_FLOATS },
+    { ranges: [{ start: 0, count: 4 * ARROW_SLOT_FLOATS }], visibleFloats: 4 * ARROW_SLOT_FLOATS },
+    { ranges: [{ start: 0, count: 8 * ARROW_SLOT_FLOATS }], visibleFloats: 8 * ARROW_SLOT_FLOATS },
   ]);
 });
 
 it("refuses markers with a hole before changing anything, and keeps placing and drawing the arrows it had", () => {
-  const arrows = setAndPlace(new TrackEndArrows(), [marker(0, 0, 0)]);
+  const arrows = withMarkers(new TrackEndArrows(), [marker(0, 0, 0)]);
   const holed: TrackEndMarker[] = [marker(100, 0, 0)];
   holed.length = 2;
 
-  expect(() => arrows.set(holed)).toThrow("track-end marker 1 is missing");
+  expect(() => arrows.set(holed, 0, 0)).toThrow("track-end marker 1 is missing");
   arrows.place(640, 0);
   expect(slotNames(drawn(arrows, cameraLookingDownZ(-640)))).toEqual([
     "head at x -640",
