@@ -1361,14 +1361,16 @@ class LiveWorld {
       this.search.evaluate(entry.piece.connectors, entry.pose, report);
       if (report.count > 0) mated.push([placement, entry]);
     }
+    const lowestFirst = mated.toSorted(([, a], [, b]) => {
+      if (listedBefore(a, b)) return -1;
+      return listedBefore(b, a) ? 1 : 0;
+    });
     return this.search.withdrawn(removed, () => {
-      let first: readonly [number, Listed] | null = null;
-      for (const [placement, entry] of mated) {
+      for (const [placement, entry] of lowestFirst) {
         this.search.evaluate(entry.piece.connectors, entry.pose, report);
-        if (report.count > 0 || this.restsOnTable(placement)) continue;
-        if (first === null || listedBefore(entry, first[1])) first = [placement, entry];
+        if (report.count === 0 && !this.restsOnTable(placement)) return stranded(placement);
       }
-      return first === null ? { kind: "none" } : stranded(first[0]);
+      return { kind: "none" };
     });
   }
 }
