@@ -6,6 +6,7 @@ import {
   LineSegments,
 } from "three/webgpu";
 import type { GuideKind, GuideSegment } from "../scene-backend.ts";
+import { GUIDE_RENDER_ORDER } from "./render-orders.ts";
 
 const GUIDE_KINDS: ReadonlyArray<GuideKind> = ["ruler", "axis", "draft", "refused"];
 const GUIDE_COLORS: Readonly<Record<GuideKind, number>> = {
@@ -14,7 +15,6 @@ const GUIDE_COLORS: Readonly<Record<GuideKind, number>> = {
   draft: 0x2f74e8,
   refused: 0xd32f2f,
 };
-const GUIDE_RENDER_ORDER = 3;
 const FLOATS_PER_VERTEX = 3;
 const VERTICES_PER_SEGMENT = 2;
 const FLOATS_PER_SEGMENT = FLOATS_PER_VERTEX * VERTICES_PER_SEGMENT;
@@ -42,7 +42,7 @@ export class GuideLines {
     this.reserve(INITIAL_SEGMENTS);
   }
 
-  set(segments: ReadonlyArray<GuideSegment>): void {
+  set(segments: ReadonlyArray<GuideSegment>, renderOriginX: number, renderOriginZ: number): void {
     if (segments.length > this.kinds.length) this.reserve(segments.length * 2);
     const first = segments[0];
     this.anchorX = first?.ax ?? 0;
@@ -71,6 +71,7 @@ export class GuideLines {
     if (recoloured && color instanceof BufferAttribute) color.needsUpdate = true;
     geometry.setDrawRange(0, segments.length * VERTICES_PER_SEGMENT);
     this.lines.visible = segments.length > 0;
+    this.place(renderOriginX, renderOriginZ);
   }
 
   place(renderOriginX: number, renderOriginZ: number): void {

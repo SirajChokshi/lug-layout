@@ -92,8 +92,7 @@ const rows: string[] = [];
 for (const count of ARROW_COUNTS) {
   const spread = markers(count);
   const arrows = new TrackEndArrows();
-  arrows.set(spread);
-  arrows.place(0, 0);
+  arrows.set(spread, 0, 0);
   const mesh = arrows.group.children[0];
   if (
     !(mesh instanceof Mesh) ||
@@ -133,7 +132,7 @@ for (const count of ARROW_COUNTS) {
       arrows.place((index % 2) * CHUNK_LDU, 0);
     }),
     await probe(`${label}: set the same markers again`, () => {
-      arrows.set(spread);
+      arrows.set(spread, 0, 0);
     }),
   );
 }

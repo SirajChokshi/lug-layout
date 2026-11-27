@@ -104,6 +104,12 @@ import {
   type InstancePage,
 } from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
+import {
+  GHOST_HIT_RENDER_ORDER,
+  GHOST_OUTLINE_RENDER_ORDER,
+  ISSUE_RENDER_ORDER,
+  SELECTION_RENDER_ORDER,
+} from "./render-orders.ts";
 import { KeyOrderedChildren, opaqueSort, transparentSort } from "./tie-order.ts";
 import { TrackEndArrows } from "./track-end-arrows.ts";
 import { GHOST_EDGE_SLOT, chunkEdgeSlot, vehicleEdgeSlot, writeEdgeId } from "./edge-ids.ts";
@@ -195,8 +201,6 @@ const GHOST_HIT_COLOR = 0xffc400;
 const GHOST_HIT_OPACITY = 0.9;
 const GHOST_PRECISE_COLOR = 0x00b8ff;
 const SELECTION_COLOR = 0xff8c00;
-const SELECTION_RENDER_ORDER = 1;
-const ISSUE_RENDER_ORDER = 2;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
   joined: 0x1fbf4a,
@@ -838,7 +842,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
     this.ghostHit.visible = false;
     this.ghostHit.matrixAutoUpdate = false;
-    this.ghostHit.renderOrder = 3;
+    this.ghostHit.renderOrder = GHOST_HIT_RENDER_ORDER;
     this.scene.add(this.ghostHit);
     this.markerGroup.matrixAutoUpdate = false;
     this.scene.add(this.markerGroup);
@@ -1450,7 +1454,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const z1 = box[5] ?? 0;
     const outline = this.ghostOutline;
     outline.matrixAutoUpdate = false;
-    outline.renderOrder = 2;
+    outline.renderOrder = GHOST_OUTLINE_RENDER_ORDER;
     outline.visible = this.ghostPrecise;
     outline.scale.set(x1 - x0, y1 - y0, z1 - z0);
     outline.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
@@ -1509,8 +1513,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     if (markers === this.trackEnds) return;
     this.changed = true;
     this.trackEnds = markers;
-    this.trackEndArrows.set(markers);
-    this.trackEndArrows.place(this.renderOriginX, this.renderOriginZ);
+    this.trackEndArrows.set(markers, this.renderOriginX, this.renderOriginZ);
   }
 
   setGround(ground: GroundSettings | null): void {
@@ -1670,8 +1673,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setGuides(segments: ReadonlyArray<GuideSegment>): void {
     this.changed = true;
-    this.guides.set(segments);
-    this.guides.place(this.renderOriginX, this.renderOriginZ);
+    this.guides.set(segments, this.renderOriginX, this.renderOriginZ);
   }
 
   projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void {

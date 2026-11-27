@@ -22,6 +22,7 @@ import type {
   ChunkTier,
   EdgeMarker,
   FarModelPlacement,
+  GuideSegment,
   NeededMeshListener,
   PartPalette,
   PlanOverlay,
@@ -389,6 +390,32 @@ it("draws the track-end arrows from the render origin, moving them when the eye 
   expect({ rebased, placedAfter: drawnTrackEnds(backend) }).toEqual({
     rebased: ["at x 10, z 30", "at x 10, z 30"],
     placedAfter: ["at x 50, z 70", "at x 50, z 70"],
+  });
+});
+
+function ruler(x: number, z: number): GuideSegment {
+  return { kind: "ruler", ax: x, ay: 0, az: z, bx: x + 40, by: 0, bz: z };
+}
+
+function drawnGuideOffset(backend: ThreeSceneBackend): string {
+  const world = backend["guides"].lines.matrixWorld.elements;
+  return `at x ${world[12]}, z ${world[14]}`;
+}
+
+it("draws the guides from the render origin, moving them when the eye rebases it and placing new ones from it", () => {
+  const { backend } = tieredBackend();
+  const originX = 20 * CHUNK_LDU;
+  const originZ = -13 * CHUNK_LDU;
+  backend.setView(0, VIEW_EYE_HEIGHT_LDU, 0, 0, 0, 1);
+  backend.setGuides([ruler(originX + 10, originZ + 30)]);
+
+  backend.setView(originX + 10, VIEW_EYE_HEIGHT_LDU, originZ + 30, originX + 10, 0, originZ + 31);
+  const rebased = drawnGuideOffset(backend);
+  backend.setGuides([ruler(originX + 50, originZ + 70)]);
+
+  expect({ rebased, placedAfter: drawnGuideOffset(backend) }).toEqual({
+    rebased: "at x 10, z 30",
+    placedAfter: "at x 50, z 70",
   });
 });
 

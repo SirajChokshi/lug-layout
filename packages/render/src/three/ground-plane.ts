@@ -26,10 +26,10 @@ import {
   vec3,
 } from "three/tsl";
 import { GUIDE_GRID_STUDS, type GroundSettings } from "../scene-backend.ts";
+import { GROUND_RENDER_ORDER } from "./render-orders.ts";
 
 const GROUND_COLOR = 0xbfbab0;
 const UPWARD_NORMAL_Y = 0.5;
-const GROUND_RENDER_ORDER = -1;
 const LINE_SOFTNESS_PX = 0.5;
 const VANISHED_SPACING_PX = 4;
 const FULL_SPACING_PX = 18;
