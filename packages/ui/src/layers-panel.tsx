@@ -1,4 +1,5 @@
 import {
+  BASE_LAYER_ID,
   OPACITY_PERCENT_MAX,
   layerTallyText,
   type IEditor,
@@ -228,6 +229,12 @@ function LayerRow({
   );
 }
 
+function removeTitle(layer: LayerRecordV2): string {
+  if (layer.id === BASE_LAYER_ID) return "Every world keeps its base layer";
+  if (layer.locked) return "Unlock this layer to remove it";
+  return "Remove this layer once nothing is on it";
+}
+
 function optionText(layer: LayerRecordV2): string {
   if (layer.locked) return `${layer.name} (locked)`;
   return layer.visible ? layer.name : `${layer.name} (hidden)`;
@@ -395,7 +402,8 @@ export function LayersPanel({
           <button
             type="button"
             className="layer-remove"
-            title="Remove this layer once nothing is on it"
+            title={removeTitle(currentLayer)}
+            disabled={currentLayer.id === BASE_LAYER_ID || currentLayer.locked}
             onClick={remove}
           >
             Remove

@@ -172,7 +172,7 @@ export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
 export type { ILayerService, LayerRemovalGuard } from "./layers/layer-service.ts";
 export { layerTallyText, type LayerTally } from "./layers/layer-tally.ts";
 export type { LayerTable } from "@brr/domain";
-export { OPACITY_PERCENT_MAX } from "@brr/schema/world";
+export { BASE_LAYER_ID, OPACITY_PERCENT_MAX } from "@brr/schema/world";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,

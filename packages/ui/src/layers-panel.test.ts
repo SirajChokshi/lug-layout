@@ -38,7 +38,17 @@ function press(name: string): void {
   fireEvent.click(screen.getByRole("button", { name }));
 }
 
-it("names a new layer as it's made, toggles, fades and reorders the layer it's on with the list drawn top first, puts new parts on a clicked layer, and says why a layer can't go", () => {
+function disabled(name: string): boolean {
+  return screen.getByRole("button", { name }).hasAttribute("disabled");
+}
+
+function typeOpacity(percent: string): void {
+  const opacity = screen.getByRole("spinbutton", { name: /Opacity/u });
+  fireEvent.change(opacity, { target: { value: percent } });
+  fireEvent.keyDown(opacity, { key: "Enter" });
+}
+
+it("names a new layer as it's made, toggles, fades and reorders the layer it's on with the list drawn top first, puts new parts on a clicked layer, and removes only an unlocked layer other than the base one", () => {
   const { editor, layers } = services();
   render(createElement(LayersPanel, { editor, layers, contents: new Map() }));
   const steps: Array<ReadonlyArray<string>> = [];
@@ -50,19 +60,16 @@ it("names a new layer as it's made, toggles, fades and reorders the layer it's o
   steps.push(listed());
   press('Show "Track"');
   press('Lock "Track"');
-  const opacity = screen.getByRole("spinbutton", { name: /Opacity/u });
-  fireEvent.change(opacity, { target: { value: "40" } });
-  fireEvent.keyDown(opacity, { key: "Enter" });
+  typeOpacity("40");
   const faded = layers.table().layer(1)?.opacity;
+  typeOpacity("150");
+  const refusal = screen.getByRole("alert").textContent;
   press("Move layer down");
   steps.push(listed());
-  const downAtBottom = screen
-    .getByRole("button", { name: "Move layer down" })
-    .hasAttribute("disabled");
-  press("Remove");
-  const refusal = screen.getByRole("alert").textContent;
+  const atBottom = { down: disabled("Move layer down"), remove: disabled("Remove") };
   fireEvent.click(within(screen.getByRole("list")).getByText("Parts"));
   steps.push(listed());
+  const baseRemove = disabled("Remove");
   press('Lock "Track"');
   fireEvent.click(within(screen.getByRole("list")).getByText("Track"));
   press("Move layer up");
@@ -70,7 +77,7 @@ it("names a new layer as it's made, toggles, fades and reorders the layer it's o
   press("Remove");
   steps.push(listed());
 
-  expect({ steps, downAtBottom, refusal, faded }).toEqual({
+  expect({ steps, faded, refusal, atBottom, baseRemove }).toEqual({
     steps: [
       ["Track active", "Parts"],
       ["Parts", "Track active hidden locked"],
@@ -78,8 +85,9 @@ it("names a new layer as it's made, toggles, fades and reorders the layer it's o
       ["Track active hidden", "Parts"],
       ["Parts active"],
     ],
-    downAtBottom: true,
-    refusal: '"Track" is locked; unlock it before removing it.',
     faded: 40,
+    refusal: "Opacity must be a percentage 0-100.",
+    atBottom: { down: true, remove: true },
+    baseRemove: true,
   });
 });
