@@ -25,10 +25,11 @@ interface HeldRequest {
 }
 
 class HeldRecordFetcher implements IAssetFetcher {
-  private readonly heldRequests = new Map<string, HeldRequest>();
+  private readonly releases = new Map<string, HeldRequest>();
   private holding: ReadonlySet<string> = new Set();
   private requested = 0;
   private answered = 0;
+  private progress = Promise.withResolvers<void>();
   readonly served = new Set<string>();
 
   hold(paths: ReadonlyArray<string>): void {
@@ -36,7 +37,7 @@ class HeldRecordFetcher implements IAssetFetcher {
   }
 
   get held(): ReadonlyArray<string> {
-    return [...this.heldRequests.keys()];
+    return [...this.releases.keys()];
   }
 
   release(path: string): void {
@@ -50,12 +51,10 @@ class HeldRecordFetcher implements IAssetFetcher {
   async whenQuiet(): Promise<void> {
     let requestedBefore: number;
     do {
+      while (this.outstanding > 0) await this.progress.promise;
       requestedBefore = this.requested;
       await new Promise((next) => setImmediate(next));
-    } while (
-      requestedBefore !== this.requested ||
-      this.answered + this.heldRequests.size < this.requested
-    );
+    } while (requestedBefore !== this.requested || this.outstanding > 0);
   }
 
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -67,10 +66,19 @@ class HeldRecordFetcher implements IAssetFetcher {
     return this.serve(path, () => readFile(new URL(path, bundleRoot), "utf8"));
   }
 
+  private get outstanding(): number {
+    return this.requested - this.answered - this.releases.size;
+  }
+
+  private madeProgress(): void {
+    this.progress.resolve();
+    this.progress = Promise.withResolvers<void>();
+  }
+
   private heldRequest(path: string): HeldRequest {
-    const request = this.heldRequests.get(path);
+    const request = this.releases.get(path);
     if (!request) throw new Error(`${path} isn't held`);
-    this.heldRequests.delete(path);
+    this.releases.delete(path);
     return request;
   }
 
@@ -79,12 +87,16 @@ class HeldRecordFetcher implements IAssetFetcher {
     try {
       const contents = await read();
       if (this.holding.has(path)) {
-        await new Promise<void>((release, fail) => this.heldRequests.set(path, { release, fail }));
+        await new Promise<void>((release, fail) => {
+          this.releases.set(path, { release, fail });
+          this.madeProgress();
+        });
       }
       this.served.add(path);
       return contents;
     } finally {
       this.answered++;
+      this.madeProgress();
     }
   }
 }
@@ -111,7 +123,7 @@ async function paletteWhenReleased(order: ReadonlyArray<number>) {
   fetcher.hold(records);
   const loading = Promise.all(SETS.map((id) => loadCatalogItem(catalog, id)));
   await fetcher.whenQuiet();
-  expect(fetcher.held.toSorted()).toEqual(records.toSorted());
+  expect(new Set(fetcher.held)).toEqual(new Set(records));
   for (const at of order) fetcher.release(records[at] ?? "");
   const placeables = await loading;
   return {
