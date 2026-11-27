@@ -11,8 +11,8 @@ import {
   type BomLine,
   type CatalogBom,
   type Crosswalk,
+  type Inventory,
   type OwnBuyLine,
-  type OwnedParts,
   type PlacementRegion,
   type ResolvedLine,
   type UncountedItem,
@@ -130,7 +130,7 @@ export interface IBomService {
     scope: BomScope,
     hidden?: HiddenLayerParts,
   ): Promise<BillOfMaterials>;
-  ownVsBuy(bom: BillOfMaterials, owned: OwnedParts): Promise<OwnVsBuyReport>;
+  ownVsBuy(bom: BillOfMaterials, owned: Inventory): Promise<OwnVsBuyReport>;
 }
 
 const NOTHING_UNCOUNTED: ReadonlyArray<UncountedItem> = [];
@@ -189,7 +189,7 @@ export class BomService implements IBomService {
     };
   }
 
-  async ownVsBuy(bom: BillOfMaterials, owned: OwnedParts): Promise<OwnVsBuyReport> {
+  async ownVsBuy(bom: BillOfMaterials, owned: Inventory): Promise<OwnVsBuyReport> {
     const { crosswalk, disclaimer } = await this.crosswalkOf(bom.lod);
     const compared = ownVsBuy(resolveLines(bom.ldraw, crosswalk), crosswalk, owned);
     return {

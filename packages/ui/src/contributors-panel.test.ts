@@ -23,7 +23,14 @@ it("names a new contributor as it's made, records a colour once the picker commi
   const { editor, contributors } = services();
   const edits: string[] = [];
   contributors.onEdit((change) => edits.push(change.action));
-  render(createElement(ContributorsPanel, { editor, contributors, contents: new Map() }));
+  render(
+    createElement(ContributorsPanel, {
+      editor,
+      contributors,
+      contents: new Map(),
+      selection: null,
+    }),
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "New contributor" }));
   const naming = screen.getByRole("textbox", { name: 'Rename contributor "Contributor 1"' });

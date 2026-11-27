@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { resolveLines, type Crosswalk } from "./catalog-ids.ts";
-import { ownVsBuy, readOwnedPartsCsv, type OwnedParts } from "./owned-parts.ts";
+import {
+  ownVsBuy,
+  readOwnedPartsCsv,
+  sumInventories,
+  type Inventory,
+  type OwnedParts,
+} from "./owned-parts.ts";
 
 const CUSTOM_BRICK = "custom:0f3a9c/my-brick.dat";
 
@@ -116,7 +122,7 @@ describe("ownVsBuy", () => {
       ].join("\n"),
     );
 
-    const result = ownVsBuy(lines, crosswalk, owned);
+    const result = ownVsBuy(lines, crosswalk, { rebrickable: owned.parts, ldraw: [] });
 
     expect(
       result.lines.map((line) => [line.part, line.ldrawColor, line.quantity, line.own, line.buy]),
@@ -150,5 +156,55 @@ describe("ownVsBuy", () => {
       { part: "ldraw:973c01", ldrawColor: 14, quantity: 1, expandedFrom: null },
       { part: "ldraw:hose-end", ldrawColor: 0, quantity: 1, expandedFrom: "ldraw:hose" },
     ]);
+  });
+
+  it("sums contributors' inventories into one budget whose counted LDraw parts join the Rebrickable stock through the crosswalk, match by LDraw id where Rebrickable has none, and expand like the parts list", () => {
+    const lines = resolveLines(
+      [
+        { part: "ldraw:3001", ldrawColor: 4, quantity: 5 },
+        { part: "ldraw:973c01", ldrawColor: 14, quantity: 2 },
+        { part: "ldraw:hose", ldrawColor: 4, quantity: 1 },
+      ],
+      crosswalk,
+    );
+    const ada: Inventory = {
+      rebrickable: [{ part: "3001", color: 4, quantity: 2 }],
+      ldraw: [{ part: "ldraw:3001old", color: 4, quantity: 2 }],
+    };
+    const linus: Inventory = {
+      rebrickable: [],
+      ldraw: [
+        { part: "ldraw:hose", color: 4, quantity: 1 },
+        { part: "ldraw:973c01", color: 14, quantity: 1 },
+        { part: "ldraw:3001old", color: 4, quantity: 4 },
+      ],
+    };
+
+    const budget = sumInventories([ada, linus]);
+    const result = ownVsBuy(lines, crosswalk, budget);
+
+    expect(budget).toEqual({
+      rebrickable: [{ part: "3001", color: 4, quantity: 2 }],
+      ldraw: [
+        { part: "ldraw:3001old", color: 4, quantity: 6 },
+        { part: "ldraw:973c01", color: 14, quantity: 1 },
+        { part: "ldraw:hose", color: 4, quantity: 1 },
+      ],
+    });
+    expect(
+      result.lines.map((line) => [
+        line.part,
+        line.ldrawColor,
+        line.own,
+        line.buy,
+        line.rebrickable,
+      ]),
+    ).toEqual([
+      ["ldraw:3001", 4, 5, 0, { part: "3001", color: 4 }],
+      ["ldraw:973c01", 14, 1, 1, null],
+      ["ldraw:hose-end", 4, 1, 0, { part: "end", color: 4 }],
+      ["ldraw:hose-end", 0, 1, 0, { part: "end", color: 0 }],
+    ]);
+    expect([result.own, result.buy, result.unmatched]).toEqual([8, 1, 1]);
   });
 });

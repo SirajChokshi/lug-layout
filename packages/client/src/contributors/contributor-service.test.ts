@@ -15,6 +15,10 @@ function contributorService() {
   return { contributors, changes };
 }
 
+function csv(name: string, text: string) {
+  return { name, text: async () => text };
+}
+
 describe("ContributorService", () => {
   it("reports each roster edit once, with the rosters before and after it, and nothing for a no-op or a refusal", () => {
     const { contributors, changes } = contributorService();
@@ -55,6 +59,83 @@ describe("ContributorService", () => {
 
     expect(decode(ContributorTableV2, roster, "contributors").ok).toBe(true);
     expect(new Set(roster.map((row) => row.color)).size).toBe(roster.length);
+  });
+
+  it("edits inventories as roster steps: a collection replaces only its Rebrickable lines, counts add LDraw lines and a 0 drops one, a rename keeps them, and a no-op or a refusal makes no step", async () => {
+    const { contributors, changes } = contributorService();
+    const ada = contributors.create("Ada");
+    const linus = contributors.create("Linus");
+    if (!ada.ok || !linus.ok) throw new Error("a contributor was refused");
+    const steps = () => changes.map(({ action, contributor }) => [action, contributor]);
+
+    contributors.countParts(ada.value, [
+      { part: "ldraw:74746", ldrawColor: 0, quantity: 2 },
+      { part: "custom:0f3a9c/my-brick.dat", ldrawColor: 1, quantity: 1 },
+    ]);
+    const read = await contributors.importCollection(
+      ada.value,
+      csv("ada.csv", "Part,Color,Quantity\n3001,4,6\nnot a row\n3001,4,2\n"),
+    );
+    contributors.setCount(ada.value, "ldraw:74746", 0, 40);
+    contributors.rename(ada.value, "Ada L.");
+    contributors.countParts(linus.value, [{ part: "ldraw:74746", ldrawColor: 0, quantity: 8 }]);
+    const budget = contributors.eventBudget();
+    const sameBudget = contributors.eventBudget() === budget;
+    const edited = steps();
+    const refused = {
+      fraction: contributors.setCount(ada.value, "ldraw:3811", 2, 1.5),
+      unlisted: contributors.setCount(9, "ldraw:3811", 2, 1),
+      noOp: contributors.setCount(ada.value, "ldraw:74746", 0, 40),
+      columns: await contributors.importCollection(ada.value, csv("x.csv", "Part,Colour\n")),
+    };
+    const afterRefusals = steps();
+    contributors.setCount(linus.value, "ldraw:74746", 0, 0);
+
+    expect(edited).toEqual([
+      ["add", ada.value],
+      ["add", linus.value],
+      ["inventory", ada.value],
+      ["inventory", ada.value],
+      ["inventory", ada.value],
+      ["rename", ada.value],
+      ["inventory", linus.value],
+    ]);
+    expect(afterRefusals).toEqual(edited);
+    expect(read.ok && [read.owned.total, read.owned.rejected.map((row) => row.line)]).toEqual([
+      8,
+      [3],
+    ]);
+    expect(refused).toEqual({
+      fraction: [
+        {
+          path: `inventory of contributor ${ada.value}.ldraw.0.quantity`,
+          message: "must be an integer",
+        },
+      ],
+      unlisted: [{ path: "contributor 9", message: "isn't on the roster" }],
+      noOp: [],
+      columns: {
+        ok: false,
+        problem: "x.csv: the first row must name the columns Part, Color and Quantity",
+      },
+    });
+    expect(budget).toEqual({
+      rebrickable: [{ part: "3001", color: 4, quantity: 8 }],
+      ldraw: [{ part: "ldraw:74746", color: 0, quantity: 48 }],
+    });
+    expect(sameBudget).toBe(true);
+    expect(contributors.roster()).toEqual([
+      {
+        id: ada.value,
+        name: "Ada L.",
+        color: contributors.roster()[0]?.color,
+        inventory: {
+          rebrickable: [{ part: "3001", color: 4, quantity: 8 }],
+          ldraw: [{ part: "ldraw:74746", color: 0, quantity: 40 }],
+        },
+      },
+      { id: linus.value, name: "Linus", color: contributors.roster()[1]?.color },
+    ]);
   });
 
   it("asks every removal guard first and keeps the contributor when one refuses", () => {

@@ -1,11 +1,15 @@
 import { isCustomPartId } from "@brr/schema/bundle";
-import type { Crosswalk, MissingMapping, ResolvedLine } from "./catalog-ids.ts";
+import { compareInventoryLines, type InventoryLine, type InventoryLines } from "@brr/schema/world";
+import {
+  resolveLines,
+  type Crosswalk,
+  type MissingMapping,
+  type ResolvedLine,
+} from "./catalog-ids.ts";
 
-export interface OwnedPart {
-  readonly part: string;
-  readonly color: number;
-  readonly quantity: number;
-}
+export type OwnedPart = InventoryLine;
+export type Inventory = InventoryLines;
+export const NO_INVENTORY: Inventory = { rebrickable: [], ldraw: [] };
 
 export interface RejectedRow {
   readonly line: number;
@@ -152,7 +156,24 @@ export function readOwnedPartsCsv(name: string, text: string): OwnedPartsRead {
   };
 }
 
-function unknownParts(crosswalk: Crosswalk, owned: OwnedParts): UnknownOwnedPart[] {
+export function canonicalLines(lines: Iterable<InventoryLine>): InventoryLine[] {
+  const totals = new Map<string, InventoryLine>();
+  for (const line of lines) {
+    const key = ownedKey(line.part, line.color);
+    const quantity = (totals.get(key)?.quantity ?? 0) + line.quantity;
+    totals.set(key, { part: line.part, color: line.color, quantity });
+  }
+  return [...totals.values()].filter((line) => line.quantity > 0).toSorted(compareInventoryLines);
+}
+
+export function sumInventories(inventories: ReadonlyArray<Inventory>): Inventory {
+  return {
+    rebrickable: canonicalLines(inventories.flatMap((inventory) => inventory.rebrickable)),
+    ldraw: canonicalLines(inventories.flatMap((inventory) => inventory.ldraw)),
+  };
+}
+
+function unknownParts(crosswalk: Crosswalk, owned: Inventory): UnknownOwnedPart[] {
   const knownParts = new Set<string>();
   const knownColors = new Set<number>();
   for (const entry of crosswalk.parts.values()) {
@@ -161,7 +182,7 @@ function unknownParts(crosswalk: Crosswalk, owned: OwnedParts): UnknownOwnedPart
   for (const entry of crosswalk.colors.values()) {
     if (entry.rebrickable !== null) knownColors.add(entry.rebrickable);
   }
-  return owned.parts.flatMap((owning): UnknownOwnedPart[] => {
+  return owned.rebrickable.flatMap((owning): UnknownOwnedPart[] => {
     const partKnown = knownParts.has(owning.part);
     const colorKnown = knownColors.has(owning.color);
     if (partKnown && colorKnown) return [];
@@ -170,15 +191,42 @@ function unknownParts(crosswalk: Crosswalk, owned: OwnedParts): UnknownOwnedPart
   });
 }
 
+interface Stock {
+  readonly key: string;
+  readonly rebrickable: { readonly part: string; readonly color: number } | null;
+}
+
+function rebrickableStock(part: string, color: number): Stock {
+  return { key: `rebrickable\u0000${ownedKey(part, color)}`, rebrickable: { part, color } };
+}
+
+function stockOf(crosswalk: Crosswalk, part: string, ldrawColor: number): Stock {
+  const rebrickablePart = crosswalk.parts.get(part)?.rebrickable ?? null;
+  const rebrickableColor = crosswalk.colors.get(ldrawColor)?.rebrickable ?? null;
+  return rebrickablePart === null || rebrickableColor === null
+    ? { key: `ldraw\u0000${ownedKey(part, ldrawColor)}`, rebrickable: null }
+    : rebrickableStock(rebrickablePart, rebrickableColor);
+}
+
 export function ownVsBuy(
   resolved: ReadonlyArray<ResolvedLine>,
   crosswalk: Crosswalk,
-  owned: OwnedParts,
+  owned: Inventory,
 ): OwnVsBuy {
   const available = new Map<string, number>();
-  for (const owning of owned.parts) {
-    const key = ownedKey(owning.part, owning.color);
-    available.set(key, (available.get(key) ?? 0) + owning.quantity);
+  const stock = ({ key }: Stock, quantity: number): void => {
+    available.set(key, (available.get(key) ?? 0) + quantity);
+  };
+  for (const owning of owned.rebrickable) {
+    stock(rebrickableStock(owning.part, owning.color), owning.quantity);
+  }
+  const counted = owned.ldraw.map((line) => ({
+    part: line.part,
+    ldrawColor: line.color,
+    quantity: line.quantity,
+  }));
+  for (const line of resolveLines(counted, crosswalk)) {
+    stock(stockOf(crosswalk, line.part, line.ldrawColor), line.quantity);
   }
   let own = 0;
   let unmatched = 0;
@@ -189,19 +237,13 @@ export function ownVsBuy(
       custom += line.quantity;
       continue;
     }
-    const part = crosswalk.parts.get(line.part)?.rebrickable ?? null;
-    const color = crosswalk.colors.get(line.ldrawColor)?.rebrickable ?? null;
-    if (part === null || color === null) {
-      unmatched += line.quantity;
-      lines.push({ ...line, rebrickable: null, own: 0, buy: line.quantity });
-      continue;
-    }
-    const key = ownedKey(part, color);
+    const { key, rebrickable } = stockOf(crosswalk, line.part, line.ldrawColor);
     const left = available.get(key) ?? 0;
     const taken = Math.min(left, line.quantity);
     available.set(key, left - taken);
     own += taken;
-    lines.push({ ...line, rebrickable: { part, color }, own: taken, buy: line.quantity - taken });
+    if (rebrickable === null) unmatched += line.quantity - taken;
+    lines.push({ ...line, rebrickable, own: taken, buy: line.quantity - taken });
   }
   const need = lines.reduce((sum, line) => sum + line.quantity, 0);
   return {

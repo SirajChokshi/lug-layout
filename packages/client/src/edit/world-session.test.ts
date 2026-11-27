@@ -18,6 +18,9 @@ import type { PlanArchive } from "@brr/schema/plan";
 import {
   BASE_LAYER,
   DEFAULT_WORLD_DOCUMENT,
+  inventoryEntry,
+  inventoryFile,
+  inventoryLines,
   noteShardEntry,
   noteShards,
   shardEntry,
@@ -26,6 +29,7 @@ import {
   worldShards,
   type ImportedFile,
   type LayerRecordV2,
+  type InventoryV2,
   type NoteRecordV2,
   type NoteShardV2,
   type PlacementRecordV2,
@@ -193,6 +197,7 @@ interface MemoryWorld {
   header: WorldHeader;
   readonly shards: Map<string, WorldShardV2>;
   readonly notes: Map<string, NoteShardV2>;
+  readonly inventories: Map<number, InventoryV2>;
 }
 
 class FailingSaveRepository implements IWorldRepository {
@@ -227,6 +232,7 @@ class FailingSaveRepository implements IWorldRepository {
       header,
       shards: new Map<string, WorldShardV2>(),
       notes: new Map<string, NoteShardV2>(),
+      inventories: new Map<number, InventoryV2>(),
     };
     this.worlds.set(id, world);
     return this.entry(id, world);
@@ -240,10 +246,19 @@ class FailingSaveRepository implements IWorldRepository {
     header: WorldHeader,
     shards: ReadonlyArray<WorldShardV2>,
     notes: ReadonlyArray<NoteShardV2>,
+    inventories: ReadonlyArray<InventoryV2>,
   ): Promise<WorldIndexEntry> {
     const id = `world-${this.nextId++}`;
-    this.worlds.set(id, { header, shards: new Map(), notes: new Map() });
-    return this.save(id, { header, put: shards, drop: [], putNotes: notes, dropNotes: [] });
+    this.worlds.set(id, { header, shards: new Map(), notes: new Map(), inventories: new Map() });
+    return this.save(id, {
+      header,
+      put: shards,
+      drop: [],
+      putNotes: notes,
+      dropNotes: [],
+      putInventories: inventories,
+      dropInventories: [],
+    });
   }
 
   async read(id: string): Promise<Decoded<StoredWorld>> {
@@ -251,8 +266,14 @@ class FailingSaveRepository implements IWorldRepository {
     if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
     const shards = [...world.shards.values()];
     const notes = [...world.notes.values()];
-    const manifest = worldManifest(world.header, shards.map(shardEntry), notes.map(noteShardEntry));
-    return { ok: true, value: { id, manifest, shards, notes } };
+    const inventories = [...world.inventories.values()];
+    const manifest = worldManifest(
+      world.header,
+      shards.map(shardEntry),
+      notes.map(noteShardEntry),
+      inventories.map(inventoryEntry),
+    );
+    return { ok: true, value: { id, manifest, shards, notes, inventories } };
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
@@ -261,12 +282,17 @@ class FailingSaveRepository implements IWorldRepository {
       header: change.header,
       shards: new Map(),
       notes: new Map(),
+      inventories: new Map(),
     };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
     for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
     for (const superChunk of change.dropNotes) world.notes.delete(shardName(superChunk));
     for (const shard of change.putNotes) world.notes.set(shardName(shard.superChunk), shard);
+    for (const contributor of change.dropInventories) world.inventories.delete(contributor);
+    for (const inventory of change.putInventories) {
+      world.inventories.set(inventory.contributor, inventory);
+    }
     this.worlds.set(id, world);
     return this.entry(id, world);
   }
@@ -493,12 +519,22 @@ describe("schema v2 document data", () => {
   ]);
   const PLATE: PlacementRecordV2 = { ref: BASEPLATE, color: 2, x: 0, z: 0, yPlates: 0, rot: 0 };
 
-  function showArchive(repository: IWorldRepository, placements: ReadonlyArray<PlacementRecordV2>) {
+  function showArchive(
+    repository: IWorldRepository,
+    placements: ReadonlyArray<PlacementRecordV2>,
+    inventories: ReadonlyArray<InventoryV2> = [],
+  ) {
     const shards = worldShards(placements, []);
     return repository.packArchive({
-      manifest: worldManifest(SHOW, shards.map(shardEntry), LABELS.map(noteShardEntry)),
+      manifest: worldManifest(
+        SHOW,
+        shards.map(shardEntry),
+        LABELS.map(noteShardEntry),
+        inventories.map(inventoryEntry),
+      ),
       shards,
       notes: LABELS,
+      inventories,
       credits: "credits",
       imports: [],
     });
@@ -613,6 +649,7 @@ describe("schema v2 document data", () => {
       ),
       shards,
       notes: LABELS,
+      inventories: [],
       credits: "credits",
       imports: [],
     });
@@ -674,6 +711,48 @@ describe("schema v2 document data", () => {
           message: "owns 1 note saved with this world, which this editor can't reassign yet",
         },
       ],
+    });
+  });
+
+  it("opens contributors' inventories with the roster, saves an edited or added one, and drops a removed contributor's", async () => {
+    const { session, repository, contributors } = await sessionOnIndexedDb();
+    const adas = inventoryFile(3, {
+      rebrickable: [{ part: "3811", color: 2, quantity: 4 }],
+      ldraw: [],
+    });
+    expect(await session.importWorld(showArchive(repository, [PLATE], [adas]))).toBe(true);
+    const id = session.view().world?.id ?? "";
+    const opened = contributors.roster();
+    const stored = async () => {
+      const read = await repository.read(id);
+      return read.ok ? read.value.inventories : null;
+    };
+
+    expect(contributors.setCount(3, BASEPLATE, 2, 2)).toEqual([]);
+    const grace = contributors.create("Grace");
+    if (!grace.ok) throw new Error("the contributor was refused");
+    expect(contributors.setCount(grace.value, BASEPLATE, 2, 1)).toEqual([]);
+    session.documentEdited();
+    const adaEdited = inventoryFile(3, {
+      rebrickable: [{ part: "3811", color: 2, quantity: 4 }],
+      ldraw: [{ part: BASEPLATE, color: 2, quantity: 2 }],
+    });
+    const gracesNew = inventoryFile(grace.value, {
+      rebrickable: [],
+      ldraw: [{ part: BASEPLATE, color: 2, quantity: 1 }],
+    });
+    await vi.waitFor(async () => expect(await stored()).toEqual([adaEdited, gracesNew]));
+    expect(contributors.remove(grace.value)).toEqual([]);
+    session.documentEdited();
+    await vi.waitFor(async () => expect(await stored()).toEqual([adaEdited]));
+    const manifest = await repository.read(id);
+
+    expect({
+      opened,
+      listed: manifest.ok && manifest.value.manifest.inventories,
+    }).toEqual({
+      opened: [{ ...SHOW.contributors?.[0], inventory: inventoryLines(adas) }],
+      listed: [{ contributor: 3, parts: 6 }],
     });
   });
 

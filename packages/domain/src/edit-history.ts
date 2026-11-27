@@ -1,5 +1,6 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 import type { ContributorRecordV2 } from "@brr/schema/world";
+import type { Inventory } from "./bom/owned-parts.ts";
 import type { NoteChange } from "./notes/note-state.ts";
 import type { EventRecordV2 } from "@brr/schema/world";
 import type { LayerAction, LayerChange } from "./layers/layer-table.ts";
@@ -62,8 +63,12 @@ export interface EventChange {
   readonly after: EventRecordV2 | null;
 }
 
-export type Roster = ReadonlyArray<ContributorRecordV2>;
-export type RosterAction = "add" | "rename" | "recolour" | "remove";
+export interface Contributor extends ContributorRecordV2 {
+  readonly inventory?: Inventory;
+}
+
+export type Roster = ReadonlyArray<Contributor>;
+export type RosterAction = "add" | "rename" | "recolour" | "remove" | "inventory";
 
 export interface RosterChange {
   readonly action: RosterAction;

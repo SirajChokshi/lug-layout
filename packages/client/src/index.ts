@@ -175,9 +175,9 @@ export type {
   ContributorRemovalGuard,
   IContributorService,
 } from "./contributors/contributor-service.ts";
-export { NO_OWNER, type Roster } from "@brr/domain";
+export { NO_OWNER, type Contributor, type Inventory, type Roster } from "@brr/domain";
 export type { LayerTable } from "@brr/domain";
-export { BASE_LAYER_ID, OPACITY_PERCENT_MAX } from "@brr/schema/world";
+export { BASE_LAYER_ID, OPACITY_PERCENT_MAX, inventoryParts } from "@brr/schema/world";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -475,6 +475,7 @@ export type {
   CatalogBom,
   CatalogLine,
   OwnedParts,
+  OwnedPartsRead,
   PlacementRegion,
   UnknownOwnedPart,
   UnmappedLine,
