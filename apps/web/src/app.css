@@ -1,16 +1,5 @@
 @import "@brr/ui/tokens.css";
-
-html,
-body,
-#root {
-  margin: 0;
-  height: 100%;
-  overflow: hidden;
-  font:
-    13px/1.4 system-ui,
-    sans-serif;
-  background: #d9e6f2;
-}
+@import "@brr/ui/base.css";
 
 .scene {
   position: fixed;
