@@ -38,6 +38,7 @@ const REGION: PlanRegion = {
     tables: [
       {
         id: "table-1",
+        number: 1,
         name: "Door top",
         rect: { x: 89, z: 41, width: 1234, depth: 567 },
         heightMm: 733,
@@ -54,6 +55,7 @@ function tableTop(): TableTop {
   if (!table) throw new Error("the region has a table");
   return {
     id: table.id,
+    number: table.number,
     name: table.name,
     heightMm: table.heightMm,
     surface: mmRectInWorld(REGION, table.rect),

@@ -24,6 +24,7 @@ import {
   type ConsistPose,
   type ConsistRef,
   NO_TRACK_CHANGE,
+  tableTypeSize,
   type TrackPieceAt,
   type TrackPieceRef,
   type EditKind,
@@ -249,10 +250,17 @@ import {
   type TrackSelectionView,
   type TrainSelectionView,
 } from "./selection.ts";
-import { ANNOTATION_SERVICE, EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
+import {
+  ANNOTATION_SERVICE,
+  EDITOR_CAMERA,
+  PLAN_SERVICE,
+  TABLE_GROUND,
+  TABLE_LIBRARY,
+} from "../tokens.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
+import type { ITableLibrary } from "../plan/table-library.ts";
 import {
   appendTrackChange,
   appendViewUpdate,
@@ -273,7 +281,7 @@ import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
 import { MeasureTool } from "./measure-tool.ts";
-import { TableTool } from "./table-tool.ts";
+import { TableTool, type ArmedTable } from "./table-tool.ts";
 import {
   FillTool,
   DEFAULT_FILL_GRID_STUDS,
@@ -527,11 +535,18 @@ export interface EditorSnapshot
   readonly rulers: number;
   readonly rulerDraft: boolean;
   readonly hoveredTable: string | null;
+  readonly armedTable: ArmedTableView | null;
   readonly fillGridStuds: number;
   readonly fillDraft: FillView | null;
   readonly lastFill: FillResult | null;
   readonly labels: ReadonlyArray<LabelView>;
   readonly ghostSettled: boolean;
+}
+
+export interface ArmedTableView extends ArmedTable {
+  readonly name: string;
+  readonly widthMm: number;
+  readonly depthMm: number;
 }
 
 export interface EditorCredits {
@@ -658,6 +673,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setRoadErase(erase: boolean): void;
   setMeasuring(on: boolean): void;
   setTableTool(on: boolean): void;
+  armTableType(typeId: number | null): void;
   cycleFillGrid(): void;
   fillTables(eventTimeMs: number): void;
   clearRulers(): void;
@@ -1348,6 +1364,7 @@ export class Editor implements IEditor, IEditedWorld {
     rulers: 0,
     rulerDraft: false,
     hoveredTable: null,
+    armedTable: null,
     fillGridStuds: DEFAULT_FILL_GRID_STUDS,
     fillDraft: null,
     lastFill: null,
@@ -1544,6 +1561,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
     @inject(ANNOTATION_SERVICE) private readonly annotations: IAnnotationService,
+    @inject(TABLE_LIBRARY) private readonly tableLibrary: ITableLibrary,
     @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
     @inject(EDITOR_FRAME_LOOP) private readonly frames: IEditorFrameLoop,
@@ -1576,7 +1594,11 @@ export class Editor implements IEditor, IEditedWorld {
       RESTS_ON_TABLE_Y_PLATES,
     );
     this.state = { ...this.state, ...session.view(), ...frames.view(), ...ground.view() };
-    this.reportedPlans = { regions: plans.plans(), activePlanId: plans.activePlanId() };
+    this.reportedPlans = {
+      regions: plans.plans(),
+      activePlanId: plans.activePlanId(),
+      tableTypes: plans.tableTypes(),
+    };
     session.subscribe(() => this.sessionChanged());
     frames.subscribe(() => this.update(this.frames.view()));
     ground.subscribe(() => this.update(this.ground.view()));
@@ -1733,7 +1755,11 @@ export class Editor implements IEditor, IEditedWorld {
       this.ground.lay(index.tablePlane);
       this.canvas = canvas;
       this.measure = new MeasureTool(-index.tablePlane.depthBelowTopLdu);
-      this.tables = new TableTool(this.plans, -index.tablePlane.depthBelowTopLdu);
+      this.tables = new TableTool(
+        this.plans,
+        this.tableLibrary,
+        -index.tablePlane.depthBelowTopLdu,
+      );
       this.fillTool = new FillTool(-index.tablePlane.depthBelowTopLdu);
       const catalog = await this.catalog.start(index);
       this.catalogItems = catalog.items;
@@ -4102,7 +4128,7 @@ export class Editor implements IEditor, IEditedWorld {
   setTableTool(on: boolean): void {
     if (on === (this.state.mode === "table")) return;
     if (!on) {
-      this.tables?.cancel();
+      this.tables?.arm(null);
       this.update({ mode: "select" });
       this.showGuides();
       return;
@@ -4113,6 +4139,24 @@ export class Editor implements IEditor, IEditedWorld {
     this.tables?.planChanged();
     this.update({ mode: "table", activeItem: null });
     this.showGuides();
+  }
+
+  armTableType(typeId: number | null): void {
+    const tables = this.tables;
+    if (!tables) return;
+    if (typeId !== null) {
+      this.setTableTool(true);
+      if (this.state.mode !== "table") return;
+    }
+    tables.arm(typeId);
+    this.showGuides();
+  }
+
+  private armedTableView(): ArmedTableView | null {
+    const armed = this.state.mode === "table" ? (this.tables?.armedTable ?? null) : null;
+    if (!armed) return null;
+    const type = this.tableLibrary.types().find((t) => t.id === armed.typeId);
+    return type ? { ...armed, name: type.name, ...tableTypeSize(type, armed.turn) } : null;
   }
 
   clearRulers(): void {
@@ -4338,9 +4382,16 @@ export class Editor implements IEditor, IEditedWorld {
   private reportPlans(): void {
     const regions = this.plans.plans();
     const activePlanId = this.plans.activePlanId();
+    const tableTypes = this.plans.tableTypes();
     const reported = this.reportedPlans;
-    if (regions === reported.regions && activePlanId === reported.activePlanId) return;
-    this.reportedPlans = { regions, activePlanId };
+    if (
+      regions === reported.regions &&
+      activePlanId === reported.activePlanId &&
+      tableTypes === reported.tableTypes
+    ) {
+      return;
+    }
+    this.reportedPlans = { regions, activePlanId, tableTypes };
     this.session.plansEdited(this.reportedPlans);
   }
 
@@ -4364,6 +4415,7 @@ export class Editor implements IEditor, IEditedWorld {
       rulers: this.measure?.count ?? 0,
       rulerDraft: this.measure?.drafting ?? false,
       hoveredTable: tables?.hoveredTable ?? null,
+      armedTable: this.armedTableView(),
       labels: this.labelsOf(this.state),
     });
   }
@@ -4649,6 +4701,10 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   rotate(eventTimeMs: number, direction: TurnDirection = 1): void {
+    if (this.state.mode === "table") {
+      if (!this.state.readOnly && this.tables?.turn()) this.showGuides();
+      return;
+    }
     if (this.state.mode === "road") {
       this.ghostRot = quarterTurned(this.ghostRot, direction);
       this.placeRot = this.ghostRot;
@@ -4889,6 +4945,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   cancelGesture(): void {
+    if (this.state.mode === "table" && this.tables?.armedTable) this.armTableType(null);
     if (this.gesture) this.endGesture();
     this.cancelFill();
     this.queueClick(null);

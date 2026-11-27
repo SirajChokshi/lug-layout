@@ -42,6 +42,7 @@ import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IAnnotationService } from "./notes/annotation-service.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
+import type { ITableLibrary } from "./plan/table-library.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
 import type { IPlanDrawing } from "./sheets/plan-drawing.ts";
 import type { ISheetComposer } from "./sheets/sheet-composer.ts";
@@ -172,6 +173,8 @@ export const SHEET_SETS: ServiceIdentifier<ISheetSets> = Symbol.for("brr.client.
 export const EVENT_DETAILS: ServiceIdentifier<IEventDetails> =
   Symbol.for("brr.client.EventDetails");
 export const LAYOUT_SIZE: ServiceIdentifier<ILayoutSize> = Symbol.for("brr.client.LayoutSize");
+export const TABLE_LIBRARY: ServiceIdentifier<ITableLibrary> =
+  Symbol.for("brr.client.TableLibrary");
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",
 );

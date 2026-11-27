@@ -649,18 +649,34 @@ function view(snapshot: EditorSnapshot): HintView {
           key("measure", "done"),
         ],
       };
-    case "table":
+    case "table": {
+      const armed = snapshot.armedTable;
+      if (armed) {
+        return {
+          tone: "place",
+          title: `Placing ${armed.name}`,
+          detail: `${armed.widthMm} × ${armed.depthMm} mm, its back-left corner on the 8-stud grid`,
+          hints: [
+            gesture("Click", "place one"),
+            key("rotate", "turn 90°"),
+            key("cancel", "put it down"),
+            key("draw-tables", "done"),
+          ],
+        };
+      }
       return {
         tone: "place",
         title: "Drawing tables",
-        detail: "edges land on the 8-stud grid",
+        detail: "edges land on the 8-stud grid; library tables keep their size",
         hints: [
-          gesture("Drag", "draw, or drag an edge to resize"),
+          gesture("Drag", "draw, move, or drag an edge to resize"),
+          key("rotate", "turn the table under the cursor"),
           key("delete", "remove the table under the cursor"),
           key("undo", "undo"),
           key("draw-tables", "done"),
         ],
       };
+    }
     case "select": {
       const { selection } = snapshot;
       if (snapshot.gesture) return gestureView(snapshot.gesture);

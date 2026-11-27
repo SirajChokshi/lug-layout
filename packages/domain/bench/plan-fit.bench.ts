@@ -69,6 +69,7 @@ function denseBoxes(count: number): Float64Array {
 
 const table: PlanTable = {
   id: "t",
+  number: 1,
   name: "Table 1",
   rect: { x: 0, z: 0, width: ROOM_MM, depth: ROOM_MM },
   heightMm: TABLE_HEIGHT_MM,

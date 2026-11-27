@@ -18,6 +18,7 @@ import {
   type IPlanService,
   type IPlanSheetService,
   type ISheetSets,
+  type ITableLibrary,
   type IRunningGear,
   type IScaleBar,
   type IStarterWorlds,
@@ -72,6 +73,7 @@ interface EditorAppProps {
   readonly sheetSets: ISheetSets;
   readonly events: IEventDetails;
   readonly layoutSize: ILayoutSize;
+  readonly tables: ITableLibrary;
   readonly bomService: IBomService;
   readonly ownedParts: IOwnedParts;
   readonly play: ITrainPlay;
@@ -169,6 +171,7 @@ export function EditorApp({
   sheetSets,
   events,
   layoutSize,
+  tables,
   bomService,
   ownedParts,
   play,
@@ -294,6 +297,8 @@ export function EditorApp({
           sheetSets={sheetSets}
           ready={snapshot.status === "ready"}
           readOnly={snapshot.readOnly}
+          library={tables}
+          armedType={snapshot.armedTable?.typeId ?? null}
         />
         {snapshot.status === "ready" && (
           <BomPanel

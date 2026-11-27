@@ -9,9 +9,21 @@ export interface MmRect {
 
 export interface PlanTable {
   readonly id: string;
+  readonly number: number;
   readonly name: string;
   readonly rect: MmRect;
   readonly heightMm: number;
+  readonly typeId?: number;
+}
+
+export interface TableType {
+  readonly id: number;
+  readonly name: string;
+  readonly widthMm: number;
+  readonly depthMm: number;
+  readonly heightMm: number;
+  readonly color: string;
+  readonly owned: number;
 }
 
 export interface PlanObstacle {
@@ -40,6 +52,7 @@ export interface PlanRegion {
 export interface PlanState {
   readonly regions: ReadonlyArray<PlanRegion>;
   readonly activePlanId: string | null;
+  readonly tableTypes: ReadonlyArray<TableType>;
 }
 
 export interface LduRect {

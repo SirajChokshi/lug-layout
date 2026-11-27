@@ -154,7 +154,7 @@ export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";
-export { NO_ROW } from "@brr/domain";
+export { NO_ROW, lowestFreeTableNumber, tableName } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
   DEFAULT_MAX_REACH_MM,
@@ -166,9 +166,11 @@ export {
   type PlanPlacementsView,
   type PlanRowSegment,
   type TableInput,
+  type TablePatch,
 } from "./plan/plan-service.ts";
 export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
+export type { ITableLibrary, TableTypeInput, TableTypeUsage } from "./plan/table-library.ts";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -236,6 +238,8 @@ export type {
   PlanRuleId,
   PlanTable,
   TableTop,
+  TableTurn,
+  TableType,
 } from "@brr/domain";
 export {
   ANNOTATION_SERVICE,
@@ -262,6 +266,7 @@ export {
   SHEET_SETS,
   EVENT_DETAILS,
   LAYOUT_SIZE,
+  TABLE_LIBRARY,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,

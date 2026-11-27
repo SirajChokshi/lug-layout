@@ -6,7 +6,7 @@ const CHUNK = 640;
 const BASEPLATE_LDU = 640;
 
 function table(id: string, x: number, z: number, width: number, depth: number): PlanTable {
-  return { id, name: id, rect: { x, z, width, depth }, heightMm: 750 };
+  return { id, number: 1, name: id, rect: { x, z, width, depth }, heightMm: 750 };
 }
 
 function region(tables: PlanTable[], overrides: Partial<PlanRegion> = {}): PlanRegion {
