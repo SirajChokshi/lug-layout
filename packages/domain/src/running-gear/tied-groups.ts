@@ -23,15 +23,15 @@ export interface Riders {
   readonly bogieOf: Int32Array;
 }
 
-export interface LoadPoses {
+export interface TiedGroupPoses {
   readonly identified: ExactBoxes;
   readonly authored: AuthoredBoxes;
   readonly boxes: Float64Array;
 }
 
-export interface LoadGroup {
+export interface TiedGroup {
   readonly members: ReadonlyArray<number>;
-  readonly excluded: boolean;
+  readonly matesRiding: boolean;
 }
 
 export interface Bearing {
@@ -121,41 +121,47 @@ function swapped(pair: PairCase): PairCase {
   return pair.decided ? { decided: true, a: pair.b, b: pair.a, up: pair.up } : pair;
 }
 
-export class LoadJudge {
-  readonly groups: ReadonlyArray<LoadGroup>;
+function addTo(map: Map<number, Set<number>>, key: number, value: number): void {
+  let set = map.get(key);
+  if (!set) {
+    set = new Set();
+    map.set(key, set);
+  }
+  set.add(value);
+}
+
+export class TiedGroups {
+  readonly groups: ReadonlyArray<TiedGroup>;
   readonly groupOf: Int32Array;
-  private readonly boxless: Uint8Array;
   private readonly floatBoxed: Uint8Array;
-  private readonly undecidableGroups = new Set<number>();
+  private readonly undecidedRiders = new Map<number, Set<number>>();
+  private readonly undecidedLoose = new Map<number, Set<number>>();
+  private readonly undecidableBySeating = new Set<number>();
 
   constructor(
-    private readonly poses: LoadPoses,
+    private readonly poses: TiedGroupPoses,
     mates: MatePairs,
     riders: Riders,
     count: number,
   ) {
-    this.boxless = new Uint8Array(count);
     this.floatBoxed = Uint8Array.from({ length: count }, (_, i) =>
       Number.isNaN(poses.boxes[i * BOX_FLOATS] ?? Number.NaN) ? 0 : 1,
     );
     const outside = (i: number) => riders.vehicleOf[i] === NO_VEHICLE;
     const ties = new UnionFind(count);
-    const excluded = new Uint8Array(count);
+    const matesRiding = new Uint8Array(count);
     for (let m = 0; m < mates.count; m++) {
       if (!readsAcrossParts(mates, m)) continue;
       const male = mates.maleInstance[m] ?? 0;
       const female = mates.femaleInstance[m] ?? 0;
       if (outside(male) && outside(female)) ties.union(male, female);
-      else if (outside(male)) excluded[male] = 1;
-      else if (outside(female)) excluded[female] = 1;
+      else if (outside(male)) matesRiding[male] = 1;
+      else if (outside(female)) matesRiding[female] = 1;
     }
     const loose = Array.from({ length: count }, (_, i) => i).filter(outside);
-    for (const i of loose) {
-      if (!poses.authored.box(i)) this.boxless[i] = 1;
-    }
     this.tieByGeometry(loose, ties);
     const indexOfRoot = new Map<number, number>();
-    const groups: Array<{ members: number[]; excluded: boolean }> = [];
+    const groups: Array<{ members: number[]; matesRiding: boolean }> = [];
     this.groupOf = new Int32Array(count).fill(NO_GROUP);
     for (const i of loose) {
       const root = ties.find(i);
@@ -163,20 +169,43 @@ export class LoadJudge {
       if (g === undefined) {
         g = groups.length;
         indexOfRoot.set(root, g);
-        groups.push({ members: [], excluded: false });
+        groups.push({ members: [], matesRiding: false });
       }
       const group = groups[g];
       if (!group) continue;
       group.members.push(i);
-      if (excluded[i] === 1) group.excluded = true;
+      if (matesRiding[i] === 1) group.matesRiding = true;
       this.groupOf[i] = g;
     }
     this.groups = groups;
   }
 
   undecidable(group: number): boolean {
-    if (this.undecidableGroups.has(group)) return true;
-    return (this.groups[group]?.members ?? []).some((i) => this.boxless[i] === 1);
+    if (this.undecidableBySeating.has(group)) return true;
+    return (this.groups[group]?.members ?? []).some(
+      (i) => this.undecidedRiders.has(i) || this.undecidedLoose.has(i),
+    );
+  }
+
+  reach(group: number, riders: Riders, riding: ReadonlyArray<ReadonlyArray<number>>): Set<number> {
+    const vehicles = new Set(this.bearsOn(group, riding).keys());
+    for (const member of this.groups[group]?.members ?? []) {
+      for (const rider of this.undecidedRiders.get(member) ?? []) {
+        const vehicle = riders.vehicleOf[rider] ?? NO_VEHICLE;
+        if (vehicle !== NO_VEHICLE) vehicles.add(vehicle);
+      }
+      for (const other of this.undecidedLoose.get(member) ?? []) {
+        const vehicle = riders.vehicleOf[other] ?? NO_VEHICLE;
+        if (vehicle !== NO_VEHICLE) {
+          vehicles.add(vehicle);
+          continue;
+        }
+        const otherGroup = this.groupOf[other] ?? NO_GROUP;
+        if (otherGroup === NO_GROUP || otherGroup === group) continue;
+        for (const borne of this.bearsOn(otherGroup, riding).keys()) vehicles.add(borne);
+      }
+    }
+    return vehicles;
   }
 
   bearsOn(group: number, riding: ReadonlyArray<ReadonlyArray<number>>): Map<number, Bearing> {
@@ -186,6 +215,10 @@ export class LoadJudge {
         for (const rider of instances) {
           if (this.skips(member, rider)) continue;
           const pair = this.pair(member, rider);
+          if (!pair.decided) {
+            addTo(this.undecidedRiders, member, rider);
+            continue;
+          }
           const isThrough = through(pair);
           if (!isThrough && !touches(pair)) continue;
           let entry = result.get(vehicle);
@@ -209,14 +242,14 @@ export class LoadJudge {
   ): boolean {
     const g = this.groups[group];
     if (!g) return false;
-    if (g.excluded) return true;
+    if (g.matesRiding) return true;
     const { authored } = this.poses;
     for (const vehicle of bearing.keys()) {
       let floor: Interval["low"] | null = null;
       for (const wheel of wheels[vehicle] ?? []) {
         const low = authored.box(wheel)?.[MODEL_UP]?.low;
         if (low === undefined) {
-          this.undecidableGroups.add(group);
+          this.undecidableBySeating.add(group);
           continue;
         }
         if (floor === null || compareExactRational(low, floor) < 0) floor = low;
@@ -225,7 +258,7 @@ export class LoadJudge {
       for (const member of g.members) {
         const low = authored.box(member)?.[MODEL_UP]?.low;
         if (low === undefined) {
-          this.boxless[member] = 1;
+          this.undecidableBySeating.add(group);
           continue;
         }
         if (compareExactRational(low, floor) < 0) return true;
@@ -245,25 +278,36 @@ export class LoadJudge {
     }
     const a = authored.box(n);
     const b = authored.box(r);
-    if (!a || !b) {
-      this.boxless[n] = 1;
-      this.boxless[r] = 1;
-      return { decided: false };
-    }
+    if (!a || !b) return { decided: false };
     return { decided: true, a, b, up: AXIS_POS_Y };
   }
 
+  private boxed(i: number): boolean {
+    return this.floatBoxed[i] === 1 && this.poses.authored.box(i) !== null;
+  }
+
   private skips(a: number, b: number): boolean {
-    if (this.floatBoxed[a] !== 1 || this.floatBoxed[b] !== 1) return false;
-    if (!this.poses.authored.box(a) || !this.poses.authored.box(b)) return false;
+    if (!this.boxed(a) || !this.boxed(b)) return false;
     return apart(this.poses.boxes, a, b);
+  }
+
+  private tie(a: number, b: number, ties: UnionFind): void {
+    const pair = this.pair(a, b);
+    if (!pair.decided) {
+      addTo(this.undecidedLoose, a, b);
+      addTo(this.undecidedLoose, b, a);
+      return;
+    }
+    if (through(pair) || restsOn(pair) || restsOn(swapped(pair))) ties.union(a, b);
   }
 
   private tieByGeometry(loose: ReadonlyArray<number>, ties: UnionFind): void {
     const { boxes } = this.poses;
-    const sorted = loose
-      .filter((i) => this.floatBoxed[i] === 1)
-      .toSorted((a, b) => (boxes[a * BOX_FLOATS] ?? 0) - (boxes[b * BOX_FLOATS] ?? 0));
+    const boxed = loose.filter((i) => this.boxed(i));
+    const unboxed = loose.filter((i) => !this.boxed(i));
+    const sorted = boxed.toSorted(
+      (a, b) => (boxes[a * BOX_FLOATS] ?? 0) - (boxes[b * BOX_FLOATS] ?? 0),
+    );
     for (let k = 0; k < sorted.length; k++) {
       const a = sorted[k] ?? 0;
       const reach = (boxes[a * BOX_FLOATS + BOX_AXES] ?? 0) + CANDIDATE_REACH_LDU;
@@ -271,10 +315,13 @@ export class LoadJudge {
         const b = sorted[j] ?? 0;
         if ((boxes[b * BOX_FLOATS] ?? 0) > reach) break;
         if (ties.find(a) === ties.find(b) || this.skips(a, b)) continue;
-        const pair = this.pair(a, b);
-        if (through(pair) || restsOn(pair) || restsOn(swapped(pair))) ties.union(a, b);
+        this.tie(a, b, ties);
       }
     }
+    unboxed.forEach((a, k) => {
+      for (const b of boxed) this.tie(a, b, ties);
+      for (const b of unboxed.slice(k + 1)) this.tie(a, b, ties);
+    });
   }
 }
 
@@ -292,20 +339,20 @@ export function ridingSets(
 }
 
 export function creditInRounds(
-  judge: LoadJudge,
+  tied: TiedGroups,
   riders: Riders,
   candidates: number,
   wheels: ReadonlyArray<ReadonlyArray<number>>,
 ): Credit[] {
   const credits: Credit[] = [];
-  const credited = new Uint8Array(judge.groups.length);
+  const credited = new Uint8Array(tied.groups.length);
   for (;;) {
     const riding = ridingSets(riders, candidates, wheels);
     const round: Credit[] = [];
-    judge.groups.forEach((group, g) => {
-      if (credited[g] === 1 || group.excluded) return;
-      const bearing = judge.bearsOn(g, riding);
-      if (bearing.size !== 1 || judge.anchored(g, bearing, wheels) || judge.undecidable(g)) return;
+    tied.groups.forEach((group, g) => {
+      if (credited[g] === 1 || group.matesRiding) return;
+      const bearing = tied.bearsOn(g, riding);
+      if (bearing.size !== 1 || tied.anchored(g, bearing, wheels) || tied.undecidable(g)) return;
       const [[vehicle, entry] = []] = bearing;
       if (vehicle === undefined || !entry) return;
       const bogies = new Set([...entry.borne].map((i) => riders.bogieOf[i] ?? ON_BODY));
@@ -319,7 +366,7 @@ export function creditInRounds(
     if (round.length === 0) return credits;
     for (const credit of round) {
       credited[credit.group] = 1;
-      for (const member of judge.groups[credit.group]?.members ?? []) {
+      for (const member of tied.groups[credit.group]?.members ?? []) {
         riders.vehicleOf[member] = credit.vehicle;
         riders.bogieOf[member] = credit.bogie;
       }
@@ -329,7 +376,7 @@ export function creditInRounds(
 }
 
 export function outsideRefusals(
-  judge: LoadJudge,
+  tied: TiedGroups,
   riders: Riders,
   candidates: number,
   wheels: ReadonlyArray<ReadonlyArray<number>>,
@@ -362,27 +409,32 @@ export function outsideRefusals(
     entry.groups.add(group);
   };
   const owners = new Map(credits.map((credit) => [credit.group, credit.vehicle]));
-  judge.groups.forEach((group, g) => {
+  tied.groups.forEach((group, g) => {
     const owner = owners.get(g);
     if (owner !== undefined) {
       const others = riding.map((instances, vehicle) => (vehicle === owner ? [] : instances));
-      for (const [vehicle, entry] of judge.bearsOn(g, others)) {
+      for (const [vehicle, entry] of tied.bearsOn(g, others)) {
         note(vehicle, "onSeveralVehicles", g, entry.members);
         note(owner, "onSeveralVehicles", g, entry.members);
       }
       return;
     }
-    const bearing = judge.bearsOn(g, riding);
-    const anchored = judge.anchored(g, bearing, wheels);
+    const bearing = tied.bearsOn(g, riding);
+    const anchored = tied.anchored(g, bearing, wheels);
+    const decided = new Set<number>();
     for (const [vehicle, entry] of bearing) {
       if (anchored && entry.through.size > 0) {
         note(vehicle, "throughAnchoredParts", g, entry.through);
+        decided.add(vehicle);
       } else if (!anchored && bearing.size >= 2) {
-        note(vehicle, "onSeveralVehicles", g, entry.members);
+        const bearingMembers = [...bearing.values()].flatMap((e) => [...e.members]);
+        note(vehicle, "onSeveralVehicles", g, bearingMembers);
+        decided.add(vehicle);
       }
     }
-    if (judge.undecidable(g)) {
-      for (const vehicle of survivors) note(vehicle, "groupUnidentified", g, group.members);
+    if (!tied.undecidable(g)) return;
+    for (const vehicle of tied.reach(g, riders, riding)) {
+      if (!decided.has(vehicle)) note(vehicle, "groupUnidentified", g, group.members);
     }
   });
   const refusals = new Map<number, OutsideRefusal>();

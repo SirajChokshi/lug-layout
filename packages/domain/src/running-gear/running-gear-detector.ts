@@ -33,14 +33,14 @@ import type { PartExtents } from "./part-extents.ts";
 import type { PartRollingTable } from "./part-rolling.ts";
 import {
   creditInRounds,
-  LoadJudge,
+  TiedGroups,
   NO_VEHICLE,
   ON_BODY,
   outsideRefusals,
-  type LoadPoses,
+  type TiedGroupPoses,
   type OutsideRefusal,
   type Riders,
-} from "./load-groups.ts";
+} from "./tied-groups.ts";
 import { AxleHeights } from "./support-plane.ts";
 import { AuthoredBoxes } from "./authored-boxes.ts";
 import type { AuthoredPoses } from "./authored-poses.ts";
@@ -282,14 +282,14 @@ export class RunningGearDetector {
     const wheels = seatedOf.map(({ seated }) =>
       seated.flatMap((w) => [...(wheelsets[w]?.memberInstances ?? [])]),
     );
-    const poses: LoadPoses = {
+    const poses: TiedGroupPoses = {
       identified: new ExactBoxes(frames, instances, extents),
       authored: new AuthoredBoxes(instances, extents, input.authored),
       boxes: modelBoxes(instances, extents),
     };
-    const judge =
-      candidates.length > 0 ? new LoadJudge(poses, mates, riders, instances.count) : null;
-    const credits = judge ? creditInRounds(judge, riders, candidates.length, wheels) : [];
+    const tied =
+      candidates.length > 0 ? new TiedGroups(poses, mates, riders, instances.count) : null;
+    const credits = tied ? creditInRounds(tied, riders, candidates.length, wheels) : [];
     const ridingOf = candidates.map((): number[] => []);
     riders.vehicleOf.forEach((v, instance) => {
       if (v !== NO_VEHICLE) ridingOf[v]?.push(instance);
@@ -312,8 +312,8 @@ export class RunningGearDetector {
       return { own, riding, refusal };
     });
     const survivors = new Set(candidates.flatMap((_, v) => (checks[v]?.refusal ? [] : [v])));
-    const outside = judge
-      ? outsideRefusals(judge, riders, candidates.length, wheels, credits, survivors)
+    const outside = tied
+      ? outsideRefusals(tied, riders, candidates.length, wheels, credits, survivors)
       : new Map<number, OutsideRefusal>();
     candidates.forEach((gear, v) => {
       const check = checks[v];
