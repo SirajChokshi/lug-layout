@@ -1233,7 +1233,9 @@ export const VehicleBogie = v.object({
   instances: v.array(Count),
   pivot: v.pipe(
     Vec3,
-    v.description("the pivot mate's male connector origin, in the model frame, in LDU"),
+    v.description(
+      "the pivot connector's origin, in the model frame, in LDU: the pivot mate's, or a merged truck's pivot point at its authored pose",
+    ),
   ),
   wheelsets: v.pipe(
     v.array(Count),
