@@ -19,6 +19,7 @@ import {
   contentAddressedFile,
   LIBRARY_CONNECTORS_FORMAT,
   LIBRARY_CONNECTORS_INDEX_FILE,
+  NO_ROLL,
   SectionVocabularyFile,
   ShadowPatchManifest,
 } from "@brr/schema/bundle";
@@ -162,6 +163,9 @@ function expectTableOf(table: PartConnectors, records: ReadonlyArray<ConnectorRe
     });
   }
   expect([...table.slide]).toEqual(records.flatMap((record) => record.faces.slide.map(Number)));
+  expect([...table.roll]).toEqual(
+    records.flatMap((record) => record.faces.roll ?? record.faces.gender.map(() => NO_ROLL)),
+  );
   expect(table.group).toEqual(records.flatMap((record) => record.faces.group));
   expect([...table.sectionStart]).toEqual(
     records.flatMap((record, i) =>

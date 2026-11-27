@@ -50,6 +50,7 @@ import {
 } from "./model-import.ts";
 import { ShadowMirror, type IShadowLibrary } from "./shadow-mirror.ts";
 import { NO_BYTE_CACHE } from "./verified-files.ts";
+import { transferablesOf } from "./worker-protocol.ts";
 
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = new URL("../../../.cache/ldraw/", import.meta.url);
@@ -724,6 +725,22 @@ it("draws bundle parts and reports, without drawing, a part the library lacks an
   expect(result.partIds).toEqual(["ldraw:3001"]);
   expect(result.submodels.count).toBe(0);
   expect(Array.from(result.submodels.ofPart)).toEqual([MODEL_ROOT]);
+});
+
+it("hands the main thread every connector column of every part as a transferable", async () => {
+  const result = await importWith(
+    nothingFound,
+    "transfer.ldr",
+    "0 Transfer\n1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n",
+  );
+  const transferred = new Set(transferablesOf(result));
+  const columns = result.connectors.flatMap((connectors) =>
+    connectors ? Object.values(connectors).filter((value) => ArrayBuffer.isView(value)) : [],
+  );
+  expect({
+    columns: columns.length > 0,
+    untransferred: columns.filter((column) => !transferred.has(column.buffer)).length,
+  }).toEqual({ columns: true, untransferred: 0 });
 });
 
 it("gives each placement of a sub-file its own sub-model instance and each drawn part its innermost one", async () => {

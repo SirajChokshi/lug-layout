@@ -110,6 +110,7 @@ function connectorBuffers(connectors: PartConnectors): ArrayBufferLike[] {
     connectors.sectionSize,
     connectors.sectionLength,
     connectors.piece,
+    connectors.roll,
     connectors.freeFace,
     connectors.freeOrigin,
     connectors.freeAxis,

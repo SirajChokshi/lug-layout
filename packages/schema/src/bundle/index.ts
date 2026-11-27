@@ -870,6 +870,7 @@ export const CONNECTIVITY_SOURCES: ReadonlyArray<number> = [
 const AXIS_FREE = -1;
 const MAX_PIECE = 0xffff;
 const AXIS_LAST = 5;
+export const NO_ROLL = -1;
 const VECTOR_FLOATS = 3;
 
 export const ConnectorPackage = v.picklist(["connectivity", "connectors"]);
@@ -890,6 +891,7 @@ const ConnectorFaces = v.object({
   sectionSize: v.array(Finite),
   sectionLength: v.array(Finite),
   piece: v.array(v.pipe(Integer, v.minValue(0), v.maxValue(MAX_PIECE))),
+  roll: v.optional(v.array(v.pipe(Integer, v.minValue(NO_ROLL), v.maxValue(AXIS_LAST)))),
 });
 
 const ConnectorFreeFaces = v.object({
@@ -926,6 +928,7 @@ export const ConnectorRecordFile = v.pipe(
     const sections = faces.sectionCode.length;
     return (
       perFace.every((column) => column.length === count) &&
+      (faces.roll === undefined || faces.roll.length === count) &&
       faces.origin.length === count * VECTOR_FLOATS &&
       faces.sectionSize.length === sections &&
       faces.sectionLength.length === sections &&

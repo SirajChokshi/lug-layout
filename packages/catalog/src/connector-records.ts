@@ -1,6 +1,7 @@
 import {
   ConnectorIndexFile,
   ConnectorRecordFile,
+  NO_ROLL,
   type UnreadableConnector,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -21,6 +22,7 @@ export interface PartConnectors {
   readonly sectionSize: Float64Array;
   readonly sectionLength: Float64Array;
   readonly piece: Uint16Array;
+  readonly roll: Int8Array;
   readonly freeFace: Uint32Array;
   readonly freeOrigin: Float64Array;
   readonly freeAxis: Float64Array;
@@ -66,6 +68,7 @@ export function partConnectors(records: ReadonlyArray<ConnectorRecordFile>): Par
     sectionSize: new Float64Array(sections),
     sectionLength: new Float64Array(sections),
     piece: new Uint16Array(faces),
+    roll: new Int8Array(faces).fill(NO_ROLL),
     freeFace: new Uint32Array(free),
     freeOrigin: new Float64Array(free * VECTOR_FLOATS),
     freeAxis: new Float64Array(free * VECTOR_FLOATS),
@@ -92,6 +95,7 @@ export function partConnectors(records: ReadonlyArray<ConnectorRecordFile>): Par
     out.sectionSize.set(columns.sectionSize, section);
     out.sectionLength.set(columns.sectionLength, section);
     out.piece.set(columns.piece, face);
+    if (columns.roll) out.roll.set(columns.roll, face);
     out.freeFace.set(
       loose.face.map((index) => index + face),
       freeAt,
