@@ -351,14 +351,6 @@ export interface TrackLoopsView {
   readonly previewed: string | null;
 }
 
-const NO_LOOPS: TrackLoopsView = {
-  closures: [],
-  checked: 0,
-  pairs: null,
-  waiting: 0,
-  previewed: null,
-};
-
 interface PreviewRun {
   readonly start: Pose16;
   readonly moves: ReadonlyArray<TrackMove>;
@@ -793,8 +785,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
   private previewLabelsSource: LaidPreview | null = null;
   private lastPreviewLabels: ReadonlyArray<LabelView> = [];
   private loopsViewAt = -1;
-  private loopsView: TrackLoopsView = NO_LOOPS;
-  private readonly loopViews = new WeakMap<LoopClosure, LoopClosureView>();
+  private loopsView: TrackLoopsView | null = null;
 
   constructor(
     { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
@@ -2120,28 +2111,26 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
 
   loops(): TrackLoopsView {
     const { closer } = this;
-    if (closer.version === this.loopsViewAt) return this.loopsView;
+    if (this.loopsView && closer.version === this.loopsViewAt) return this.loopsView;
     this.loopsViewAt = closer.version;
     this.loopsView = {
       closures: closer.closures().map((closure) => this.loopView(closure)),
       checked: closer.checked,
       pairs: closer.pairCount,
       waiting: closer.waiting,
-      previewed: closer.previewing,
+      previewed: closer.previewed()?.key ?? null,
     };
     return this.loopsView;
   }
 
   private loopView(closure: LoopClosure): LoopClosureView {
-    const known = this.loopViews.get(closure);
-    if (known) return known;
     const counts = new Map<string, LoopPartCount>();
     for (const move of closure.moves) {
       const { element, title } = this.pieceSet.element(this.kitPart(move).catalogIndex);
       const counted = counts.get(element)?.count ?? 0;
       counts.set(element, { part: element.replace(/^[a-z]+:/u, ""), title, count: counted + 1 });
     }
-    const view: LoopClosureView = {
+    return {
       key: closure.key,
       from: endView(closure.start, WORLD_TRACK_FRAME, this.endHeight(closure.from)),
       to: endView(closure.goal, WORLD_TRACK_FRAME, this.endHeight(closure.to)),
@@ -2149,8 +2138,6 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       pieces: closure.moves.length,
       parts: [...counts.values()].toSorted((a, b) => a.part.localeCompare(b.part)),
     };
-    this.loopViews.set(closure, view);
-    return view;
   }
 
   onExtension(xLdu: number, zLdu: number): boolean {

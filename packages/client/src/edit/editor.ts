@@ -2503,19 +2503,10 @@ export class Editor implements IEditor, IEditedWorld {
   closeTrackLoop(key: string | null, eventTimeMs: number): void {
     if (this.state.mode !== "track" || this.state.readOnly || this.tracks.holding()) return;
     if (this.tracks.dragging() || this.tracks.piering()) return;
-    const attempt = this.tracks.closeLoop(key);
-    switch (attempt.kind) {
-      case "none":
-        return;
-      case "lay":
-        this.commitLay(attempt.lay, eventTimeMs);
-        this.repaintTrackPreview();
-        return;
-      default: {
-        const unhandled: never = attempt;
-        throw new Error(`unhandled loop attempt ${String(unhandled)}`);
-      }
-    }
+    const lay = this.tracks.closeLoop(key);
+    if (!lay) return;
+    this.commitLay(lay, eventTimeMs);
+    this.repaintTrackPreview();
   }
 
   private enterRoadMode(id: string): void {

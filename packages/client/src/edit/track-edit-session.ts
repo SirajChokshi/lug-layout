@@ -177,10 +177,6 @@ export type ExtensionAttempt =
   | { readonly kind: "blocked" }
   | { readonly kind: "lay"; readonly lay: TrackLayRequest };
 
-export type LoopAttempt =
-  | { readonly kind: "none" }
-  | { readonly kind: "lay"; readonly lay: TrackLayRequest };
-
 export type SwitchAttempt =
   | { readonly kind: "none" }
   | { readonly kind: "refused"; readonly refusal: TrackClickRefusal }
@@ -225,7 +221,7 @@ export interface ITrackEditSession {
   dropExtension(): boolean;
   scanLoops(deadlineMs: number): TrackEditView | null;
   previewLoop(key: string | null): TrackEditView | null;
-  closeLoop(key: string | null): LoopAttempt;
+  closeLoop(key: string | null): TrackLayRequest | null;
   placeHeld(latticeX: number, latticeZ: number): HeldPlacement;
   throwSwitchAt(hitX: number, hitZ: number): SwitchAttempt;
   throwSwitch(piece: number, hitX: number, hitZ: number): SwitchAttempt;
@@ -676,23 +672,20 @@ export class TrackEditSession implements ITrackEditSession {
     return track.closer.preview(key) ? this.paint(track) : null;
   }
 
-  closeLoop(key: string | null): LoopAttempt {
+  closeLoop(key: string | null): TrackLayRequest | null {
     const track = this.trackWorld.drawing();
-    if (!track || this.held || this.worldSession.view().readOnly) return NOTHING;
+    if (!track || this.held || this.worldSession.view().readOnly) return null;
     const plan = track.loopPlan(key);
-    if (!plan) return NOTHING;
+    if (!plan) return null;
     track.closer.preview(null);
     this.lastBlock = null;
     this.lastWithheld = null;
     this.lastUnsupported = null;
     this.lastLow = null;
     return {
-      kind: "lay",
-      lay: {
-        change: plan.change,
-        sample: null,
-        origin: { kind: "loop", goal: plan.closure.goal, firstLaid: track.pieceCount },
-      },
+      change: plan.change,
+      sample: null,
+      origin: { kind: "loop", goal: plan.closure.goal, firstLaid: track.pieceCount },
     };
   }
 

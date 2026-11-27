@@ -100,10 +100,6 @@ export class LoopCloser {
     return this.previewKey === null ? null : this.find(this.previewKey);
   }
 
-  get previewing(): string | null {
-    return this.previewed()?.key ?? null;
-  }
-
   advance(deadlineMs: number): boolean {
     if (!this.scanning) return false;
     const pairs = (this.pairs ??= this.endPairs());

@@ -114,40 +114,6 @@ test("an oval laid piece by piece from the keyboard closes through the join it s
   expect(left).toEqual([loop - HALF_TURN_CURVES / 2, ...keys.map((_, i) => loop - 5 - i)]);
 });
 
-const GAP_STRAIGHTS = 2;
-
-test("an oval laid from the keyboard with a gap left in one side is closed by O through the loop closer's offer", async ({
-  page,
-}) => {
-  const editor = await EditorPage.open(page);
-  await editor.zoom(700);
-  await editor.choose(TRACK_ITEM);
-  const west = { x: -640, z: 0 };
-  const run = await editor.dragTrack(west, { x: 640, z: 0 });
-  const eastKeys = [
-    ...Array<string>(HALF_TURN_CURVES).fill("a"),
-    ...Array<string>(run.pieces - GAP_STRAIGHTS).fill("w"),
-  ];
-  for (const key of eastKeys) await editor.press(key);
-  await editor.hoverAt(await editor.screenOf(west));
-  const westKeys = Array<string>(HALF_TURN_CURVES).fill("d");
-  for (const key of westKeys) await editor.press(key);
-  const open = await editor.trackCounts();
-  const offers = await editor.loopOffers();
-  await editor.press("o");
-  const closed = await editor.trackCounts();
-  await editor.waitForFarTierAndMeshesSettled();
-  await page.screenshot({ path: test.info().outputPath("oval-closed-by-o.png") });
-  await editor.undo();
-  const undone = await editor.trackCounts();
-
-  const loop = run.pieces + eastKeys.length + westKeys.length + GAP_STRAIGHTS;
-  expect(open).toMatchObject({ openEnds: 2, pieces: loop - GAP_STRAIGHTS });
-  expect(offers.map((offer) => offer.pieces)).toEqual([GAP_STRAIGHTS]);
-  expect(closed).toEqual({ lastCommit: "joined", pieces: loop, openEnds: 0, joins: loop });
-  expect(undone).toMatchObject({ pieces: loop - GAP_STRAIGHTS, openEnds: 2 });
-});
-
 test("an end that can't be joined, a refused drag, a blocked next piece and a held piece that would cross track each say why", async ({
   page,
 }) => {

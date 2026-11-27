@@ -462,25 +462,16 @@ function endAt(end: TrackEndView): string {
   return `${studsText(end.xLdu)}, ${studsText(end.zLdu)}`;
 }
 
-function climbText(closure: LoopClosureView): string | null {
-  const rise = closure.to.yPlates - closure.from.yPlates;
-  if (rise === 0) return null;
-  const plates = Math.abs(rise);
-  return `${rise > 0 ? "climbs" : "drops"} ${plates} ${plates === 1 ? "plate" : "plates"} on the way`;
-}
-
 function loopText(closure: LoopClosureView): string {
   const parts = closure.parts
     .map((line) => `${integer.format(line.count)} × ${line.part} ${line.title}`)
     .join(", ");
-  const ends = `joins the open ends at studs ${endAt(closure.from)} and ${endAt(closure.to)}, ${studsText(closure.gapLdu)} studs apart`;
-  const climb = climbText(closure);
-  return `${sentence(parts)} It ${ends}${climb === null ? "" : `, and ${climb}`}.`;
+  return `${sentence(parts)} It joins the open ends at studs ${endAt(closure.from)} and ${endAt(closure.to)}, ${studsText(closure.gapLdu)} studs apart.`;
 }
 
 function checkingText(loops: TrackLoopsView): string {
-  if (loops.pairs === null) return "Looking for open ends that face each other…";
-  return `Checking pairs of open ends: ${integer.format(loops.checked)} of ${integer.format(loops.pairs)}…`;
+  const progress = loops.pairs === null ? "" : `: ${loops.checked} of ${loops.pairs}`;
+  return `Checking pairs of open ends${progress}…`;
 }
 
 export function TrackLoopsPanel({

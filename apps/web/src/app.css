@@ -1074,18 +1074,12 @@ footer a {
   font: inherit;
   font-weight: var(--weight-medium);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .track-loops-panel button:hover,
 .track-loops-panel li[data-previewed="true"] button {
   background: var(--accent);
   color: var(--text-on-accent);
-}
-
-.track-loops-panel button:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 .track-loops-panel li button:disabled {
