@@ -12,6 +12,7 @@ import {
   type IEditorCamera,
   type IPlanService,
   type IPlanSheetService,
+  type ISheetSets,
   type MmRect,
   type PlanIssue,
   type PlanRegion,
@@ -621,6 +622,7 @@ function ActivePlan({
   fillGridStuds,
   plans,
   sheets,
+  sheetSets,
   plan,
 }: {
   readonly camera: IEditorCamera;
@@ -630,6 +632,7 @@ function ActivePlan({
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
   readonly sheets: IPlanSheetService;
+  readonly sheetSets: ISheetSets;
   readonly plan: PlanRegion;
 }) {
   return (
@@ -682,7 +685,7 @@ function ActivePlan({
         plans={plans}
       />
       <ObstaclesEditor plan={plan} plans={plans} />
-      <PrintSheets editor={editor} sheets={sheets} plan={plan} />
+      <PrintSheets editor={editor} sheets={sheets} sheetSets={sheetSets} plan={plan} />
       <PlanChecks plans={plans} planId={plan.id} />
     </>
   );
@@ -758,6 +761,7 @@ export function PlanPanel({
   fillGridStuds,
   plans,
   sheets,
+  sheetSets,
   ready,
   readOnly,
 }: {
@@ -768,6 +772,7 @@ export function PlanPanel({
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
   readonly sheets: IPlanSheetService;
+  readonly sheetSets: ISheetSets;
   readonly ready: boolean;
   readonly readOnly: boolean;
 }) {
@@ -815,6 +820,7 @@ export function PlanPanel({
           fillGridStuds={fillGridStuds}
           plans={plans}
           sheets={sheets}
+          sheetSets={sheetSets}
           plan={active}
         />
       ) : (

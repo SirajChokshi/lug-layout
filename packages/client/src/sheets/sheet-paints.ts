@@ -28,6 +28,7 @@ export const PAINTS = {
   rule: outline(rgb("#444444"), 0.25),
   number: filled(PAPER, rgb("#1b4f72"), 0.4),
   numberFlagged: filled(PAPER, ISSUE, 0.6),
+  tableNumber: filled(PAPER, rgb("#8a6d3b"), 0.6),
   frame: outline(rgb("#9e9e9e"), 0.2),
   seam: outline(rgb("#616161"), 0.2, [2, 1.5]),
   registration: outline(rgb("#000000"), 0.15),

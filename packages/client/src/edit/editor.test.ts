@@ -90,6 +90,7 @@ import {
   type WorldChange,
 } from "@brr/storage";
 import { readZip } from "@brr/storage/zip";
+import { MAIN_PLAN_LAYERS } from "../sheets/sheet-sets.ts";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
@@ -115,6 +116,7 @@ import {
   PLACEMENT_SEARCH,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
+  SHEET_SETS,
   RAIL_YARD,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
@@ -8984,6 +8986,7 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   expect(sheetPaths(svg, "ramp")).toHaveLength(4);
 
   const tiled = container.get(PLAN_SHEET_SERVICE).download(editor, planId, {
+    selection: { name: "Main plan", content: "placements", layers: MAIN_PLAN_LAYERS },
     format: "svg",
     layout: { kind: "tiled", paper: "a4", orientation: "auto", denominator: 1, overlapMm: 10 },
   });
@@ -8993,7 +8996,7 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   );
   const tiles = [...pages].filter(([name]) => /^\d+-[A-Z]+\d+\.svg$/u.test(name));
   const onTiles = (kind: string) => new Set(tiles.flatMap(([, page]) => sheetPaths(page, kind)));
-  expect(tiled.fileName).toBe("Plan-1.plan-tiled-a4-1to1.svg.zip");
+  expect(tiled.fileName).toBe("Plan-1.main-plan-tiled-a4-1to1.svg.zip");
   expect([...pages.keys()][0]).toBe("01-cover.svg");
   expect(tiles.length).toBe(tiled.pages - (pages.size - tiles.length));
   expect(
@@ -9005,6 +9008,22 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   ).toEqual(new Set(["297×210"]));
   expect(onTiles("model")).toEqual(new Set(sheetPaths(svg, "model")));
   expect(onTiles("track")).toEqual(new Set(sheetPaths(svg, "track")));
+
+  const sheets = container.get(PLAN_SHEET_SERVICE);
+  const requests = container
+    .get(SHEET_SETS)
+    .sets(planId)
+    .map(({ layout, ...selection }) => ({ selection, layout, format: selection.format }));
+  const pack = await readZip(sheets.downloadAll(editor, planId, requests, "svg").bytes);
+  const packPages = [...(pack.ok ? pack.value.keys() : [])];
+  const pdfPack = sheets.downloadAll(editor, planId, requests, "pdf");
+  const separately = requests.map((request) => sheets.download(editor, planId, request).pages);
+  expect(packPages[0]).toBe("01-main-plan-cover.svg");
+  expect(packPages.filter((name) => /^\d+-table-plan-/u.test(name))).toEqual([
+    `${String((separately[0] ?? 0) + 1).padStart(2, "0")}-table-plan-sheet.svg`,
+  ]);
+  expect(pdfPack.fileName).toBe("Plan-1.sheets.pdf");
+  expect(pdfPack.pages).toBe(separately.reduce((sum, count) => sum + count, 0));
 }, 120_000);
 
 const SEAT_LEVEL_MODULE = "mils-plain";

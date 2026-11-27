@@ -6,6 +6,7 @@ import type { PlanSheet } from "../plan/plan-sheet.ts";
 import { PDF_SHEET_WRITER, SHEET_COMPOSER } from "../tokens.ts";
 import { group, rgb, type DrawItem, type Paint } from "./draw-list.ts";
 import type { SheetDocument, SheetPage } from "./sheet-document.ts";
+import { WHOLE_PLAN_SELECTION } from "./sheet-sets.ts";
 import { textStyle } from "./sheet-paints.ts";
 
 const container = new Container();
@@ -197,13 +198,17 @@ const SHEET: PlanSheet = {
 
 describe("PdfSheetWriter", () => {
   it("writes a PDF whose cross-reference table finds every object, with exact stream lengths and one page per sheet page", () => {
-    const tiled = composer.compose(SHEET, {
-      kind: "tiled",
-      paper: "a4",
-      orientation: "auto",
-      denominator: 5,
-      overlapMm: 10,
-    });
+    const tiled = composer.compose(
+      SHEET,
+      {
+        kind: "tiled",
+        paper: "a4",
+        orientation: "auto",
+        denominator: 5,
+        overlapMm: 10,
+      },
+      WHOLE_PLAN_SELECTION,
+    );
     const file = writer.write(tiled, "Club-show.plan-tiled-a4-1to5");
     const pdf = parse(file.bytes);
     const pageObjects = [...pdf.objects.values()].filter((body) =>
@@ -295,10 +300,15 @@ describe("PdfSheetWriter", () => {
   });
 
   it("writes the same bytes for the same sheets and a different file identifier for different sheets", () => {
-    const one = composer.compose(SHEET, { kind: "fit", paper: "a4", orientation: "auto" });
+    const one = composer.compose(
+      SHEET,
+      { kind: "fit", paper: "a4", orientation: "auto" },
+      WHOLE_PLAN_SELECTION,
+    );
     const other = composer.compose(
       { ...SHEET, name: "Club show (west hall)" },
       { kind: "fit", paper: "a4", orientation: "auto" },
+      WHOLE_PLAN_SELECTION,
     );
     const first = writer.write(one, "show").bytes;
     const again = writer.write(one, "show").bytes;

@@ -182,11 +182,15 @@ export {
   MAX_OVERLAP_MM,
   MIN_OVERLAP_MM,
   sheetLayoutProblems,
+  type SheetContent,
   type SheetFile,
   type SheetFormat,
   type SheetLayout,
   type SheetRequest,
+  type SheetSelection,
 } from "./sheets/sheet-document.ts";
+export { SHEET_LAYER_IDS, type SheetLayerId } from "./sheets/plan-drawing.ts";
+export type { ISheetSets, SheetSet, SheetSetPatch } from "./sheets/sheet-sets.ts";
 export { TILED_SCALE_DENOMINATORS, scaleText } from "./sheets/drawing-scale.ts";
 export {
   PAPER_SIZES,
@@ -229,6 +233,7 @@ export {
   TRAIN_PLAY,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
+  SHEET_SETS,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,

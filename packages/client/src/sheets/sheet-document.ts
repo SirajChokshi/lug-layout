@@ -1,6 +1,7 @@
 import type { DrawItem } from "./draw-list.ts";
 import { TILED_SCALE_DENOMINATORS } from "./drawing-scale.ts";
 import type { OrientationChoice, PageSize, PaperId } from "./paper.ts";
+import type { SheetLayerId } from "./plan-drawing.ts";
 
 export interface SheetPage {
   readonly name: string;
@@ -76,25 +77,50 @@ export function sheetLayoutProblems(layout: SheetLayout): ReadonlyArray<string> 
 
 export type SheetFormat = "svg" | "pdf";
 
+export type SheetContent = "placements" | "tables";
+
+export interface SheetSelection {
+  readonly name: string;
+  readonly content: SheetContent;
+  readonly layers: ReadonlyArray<SheetLayerId>;
+}
+
 export interface SheetRequest {
+  readonly selection: SheetSelection;
   readonly layout: SheetLayout;
   readonly format: SheetFormat;
 }
 
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9-]+/gu;
 
-export function sheetFileBase(planName: string, layout: SheetLayout): string {
-  const safe = planName.trim().replaceAll(FILE_NAME_UNSAFE, "-") || "plan";
+function fileSafe(text: string): string {
+  return text
+    .trim()
+    .replaceAll(FILE_NAME_UNSAFE, "-")
+    .replaceAll(/^-+|-+$/gu, "");
+}
+
+export function sheetFileBase(planName: string, sheetName: string, layout: SheetLayout): string {
+  const plan = fileSafe(planName) || "plan";
+  const sheet = fileSafe(sheetName).toLowerCase() || "plan";
   switch (layout.kind) {
     case "whole":
-      return `${safe}.plan`;
+      return `${plan}.${sheet}`;
     case "fit":
-      return `${safe}.plan-fit-${layout.paper}`;
+      return `${plan}.${sheet}-fit-${layout.paper}`;
     case "tiled":
-      return `${safe}.plan-tiled-${layout.paper}-1to${layout.denominator}`;
+      return `${plan}.${sheet}-tiled-${layout.paper}-1to${layout.denominator}`;
     default: {
       const unhandled: never = layout;
       throw new Error(`unhandled sheet layout ${String(unhandled)}`);
     }
   }
+}
+
+export function sheetSetFileBase(planName: string): string {
+  return `${fileSafe(planName) || "plan"}.sheets`;
+}
+
+export function pageFilePrefix(sheetName: string): string {
+  return fileSafe(sheetName).toLowerCase() || "plan";
 }

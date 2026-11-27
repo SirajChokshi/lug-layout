@@ -15,8 +15,8 @@ import {
   type PaperSize,
 } from "./paper.ts";
 import {
-  ALL_LAYERS,
   GEOMETRY_LAYERS,
+  segmentLayer,
   type IPlanDrawing,
   type SheetDrawing,
   type SheetLayerId,
@@ -30,7 +30,6 @@ import {
   text,
   verdictText,
   type Block,
-  type KeyRow,
   type TitleContent,
   type TitleLine,
 } from "./sheet-blocks.ts";
@@ -39,14 +38,54 @@ import {
   type SheetDocument,
   type SheetLayout,
   type SheetPage,
+  type SheetSelection,
 } from "./sheet-document.ts";
-import { legendEntries, registrationMark, type LegendExtra } from "./sheet-legend.ts";
+import { KEY_ROW_MM, PlacementKey, TableSchedule, type KeyTable } from "./sheet-keys.ts";
+import {
+  heightEntries,
+  legendEntries,
+  registrationMark,
+  type LegendExtra,
+} from "./sheet-legend.ts";
 import { PAINTS, SMALL_MM, TEXT_MM, TITLE_MM, textStyle } from "./sheet-paints.ts";
 import type { ISheetTypeface } from "./sheet-typeface.ts";
+import { TableHeights } from "./table-heights.ts";
 import type { ISheetTiler, TileGrid } from "./tile-grid.ts";
 
 export interface ISheetComposer {
-  compose(sheet: PlanSheet, layout: SheetLayout): SheetDocument;
+  compose(sheet: PlanSheet, layout: SheetLayout, selection: SheetSelection): SheetDocument;
+}
+
+class SheetJob {
+  readonly layers: ReadonlySet<SheetLayerId>;
+  readonly heights: TableHeights | null;
+
+  constructor(
+    readonly sheet: PlanSheet,
+    readonly selection: SheetSelection,
+  ) {
+    this.layers = new Set(selection.layers);
+    this.heights = selection.content === "tables" ? new TableHeights(sheet.tables) : null;
+  }
+
+  get title(): string {
+    return this.selection.name === ""
+      ? this.sheet.name
+      : `${this.selection.name} · ${this.sheet.name}`;
+  }
+
+  get keySheet(): PlanSheet {
+    return {
+      ...this.sheet,
+      placements: this.sheet.placements.filter((placement) =>
+        this.layers.has(segmentLayer(placement.segment)),
+      ),
+    };
+  }
+
+  get indexLayers(): ReadonlySet<SheetLayerId> {
+    return new Set([...GEOMETRY_LAYERS].filter((layer) => this.layers.has(layer)));
+  }
 }
 
 const WHOLE_MARGIN_MM = 15;
@@ -169,22 +208,20 @@ export class SheetComposer implements ISheetComposer {
     this.bounds = new DrawBounds(typeface);
   }
 
-  compose(sheet: PlanSheet, layout: SheetLayout): SheetDocument {
+  compose(sheet: PlanSheet, layout: SheetLayout, selection: SheetSelection): SheetDocument {
     const problems = sheetLayoutProblems(layout);
     if (problems.length > 0) throw new RangeError(problems.join(" "));
+    const job = new SheetJob(sheet, selection);
     switch (layout.kind) {
       case "whole":
-        return this.finished(sheet, this.whole(sheet));
+        return this.finished(job, this.whole(job));
       case "fit":
-        return this.finished(
-          sheet,
-          this.fitted(sheet, paperSize(layout.paper), layout.orientation),
-        );
+        return this.finished(job, this.fitted(job, paperSize(layout.paper), layout.orientation));
       case "tiled":
         return this.finished(
-          sheet,
+          job,
           this.tiled(
-            sheet,
+            job,
             paperSize(layout.paper),
             layout.orientation,
             layout.denominator,
@@ -198,16 +235,16 @@ export class SheetComposer implements ISheetComposer {
     }
   }
 
-  private whole(sheet: PlanSheet): PageDraft[] {
-    const drawing = this.drawings.draw(sheet, 1, ALL_LAYERS);
-    const legend = this.legend(sheet, []);
-    const keyWidth = this.blocks.keyWidth(sheet, Number.POSITIVE_INFINITY);
-    const sideWidth = Math.max(legend.width, keyWidth);
+  private whole(job: SheetJob): PageDraft[] {
+    const drawing = this.drawings.draw(job.sheet, 1, job.layers, job.heights);
+    const legend = this.legend(job, []);
+    const keyTable = this.keyTable(job, Number.POSITIVE_INFINITY);
+    const sideWidth = Math.max(legend.width, keyTable.widthMm);
     const contentWidth = drawing.extent.width + GAP_MM + sideWidth;
-    const title = this.blocks.title(this.titleContent(sheet, 1, "drawn at 1:1", []), contentWidth);
+    const title = this.blocks.title(this.titleContent(job, 1, "drawn at 1:1", []), contentWidth);
     const top = WHOLE_MARGIN_MM + title.height;
     const sideLeft = WHOLE_MARGIN_MM + drawing.extent.width + GAP_MM;
-    const key = this.blocks.keyColumn(sheet, this.blocks.keyRows(sheet, keyWidth), keyWidth);
+    const key = keyTable.column(0, keyTable.rowCount, false);
     const bodyHeight = Math.max(drawing.extent.height, key.height + GAP_MM + legend.height);
     const page: PageDraft = {
       name: "sheet",
@@ -227,13 +264,13 @@ export class SheetComposer implements ISheetComposer {
     return [page];
   }
 
-  private fitted(sheet: PlanSheet, paper: PaperSize, choice: Orientation | "auto"): PageDraft[] {
-    const legend = this.legend(sheet, []);
+  private fitted(job: SheetJob, paper: PaperSize, choice: Orientation | "auto"): PageDraft[] {
+    const legend = this.legend(job, []);
     const titleFor =
       (orientation: Orientation): TitleFor =>
       (denominator) =>
         this.titleContent(
-          sheet,
+          job,
           denominator,
           `drawn at ${scaleText(denominator)} to fit one ${paper.name} page (${orientation})`,
           [],
@@ -243,13 +280,13 @@ export class SheetComposer implements ISheetComposer {
         const page = paperPage(paper, orientation);
         const area = this.bodyArea(page, legend, titleFor(orientation));
         const denominator = largestFittingScale((n) =>
-          fits(this.drawings.extent(sheet, n, ALL_LAYERS), area),
+          fits(this.drawings.extent(job.sheet, n, job.layers), area),
         );
         return { page, area, denominator };
       }),
       (candidate) => candidate.denominator,
     );
-    const drawing = this.drawings.draw(sheet, best.denominator, ALL_LAYERS);
+    const drawing = this.drawings.draw(job.sheet, best.denominator, job.layers, job.heights);
     const first = this.bodyPage(
       "sheet",
       best.page,
@@ -262,17 +299,17 @@ export class SheetComposer implements ISheetComposer {
         size: { widthMm: drawing.extent.width, heightMm: drawing.extent.height },
       },
     );
-    return this.withKey(sheet, best.page, first);
+    return this.withKey(job, best.page, first);
   }
 
   private tiled(
-    sheet: PlanSheet,
+    job: SheetJob,
     paper: PaperSize,
     choice: Orientation | "auto",
     denominator: number,
     overlapMm: number,
   ): PageDraft[] {
-    const drawing = this.drawings.draw(sheet, denominator, ALL_LAYERS);
+    const drawing = this.drawings.draw(job.sheet, denominator, job.layers, job.heights);
     const best = bestBy(
       orientationsFor(choice).map((orientation) => {
         const page = paperPage(paper, orientation);
@@ -285,10 +322,10 @@ export class SheetComposer implements ISheetComposer {
       (candidate) => candidate.grid.count,
     );
     const { grid, page } = best;
-    const legend = this.legend(sheet, ["tile", "registration", "seam"]);
+    const legend = this.legend(job, ["tile", "registration", "seam"]);
     const titleFor: TitleFor = (indexDenominator) =>
       this.titleContent(
-        sheet,
+        job,
         indexDenominator,
         `tiled at ${scaleText(denominator)} over ${plural(grid.count, "page", "pages")} of ${paper.name} (${page.orientation}) with a ${overlapMm} mm overlap; this index is at ${scaleText(indexDenominator)}`,
         [{ text: TILE_INSTRUCTIONS, bold: false }],
@@ -308,13 +345,13 @@ export class SheetComposer implements ISheetComposer {
       ),
     );
     const factor = denominator / indexDenominator;
-    const index = this.drawings.draw(sheet, indexDenominator, GEOMETRY_LAYERS);
+    const index = this.drawings.draw(job.sheet, indexDenominator, job.indexLayers, job.heights);
     const cover = this.bodyPage("cover", page, legend, titleFor, index, {
       overlay: this.tileIndex(grid, factor),
       origin: [covered.x * factor, covered.y * factor],
       size: { widthMm: covered.width * factor, heightMm: covered.height * factor },
     });
-    const pages = this.withKey(sheet, page, cover);
+    const pages = this.withKey(job, page, cover);
     for (let row = 0; row < grid.rows; row++) {
       for (let column = 0; column < grid.columns; column++) {
         pages.push(this.tilePage(page, drawing, grid, column, row));
@@ -394,33 +431,33 @@ export class SheetComposer implements ISheetComposer {
     return { draft, regions, keyWidthMm: area.width };
   }
 
-  private withKey(sheet: PlanSheet, page: PaperPage, first: BodyPage): PageDraft[] {
+  private keyTable(job: SheetJob, maxWidthMm: number): KeyTable {
+    return job.heights
+      ? new TableSchedule(this.typeface, job.sheet, job.heights, maxWidthMm)
+      : new PlacementKey(this.typeface, job.keySheet, maxWidthMm);
+  }
+
+  private withKey(job: SheetJob, page: PaperPage, first: BodyPage): PageDraft[] {
     const pages: PageDraft[] = [first.draft];
-    const width = this.blocks.keyWidth(sheet, first.keyWidthMm);
-    const rows = this.blocks.keyRows(sheet, width);
-    const rowMm = this.blocks.keyRowMm;
+    const key = this.keyTable(job, first.keyWidthMm);
+    const width = key.widthMm;
     const regions = [...first.regions];
     let next = 0;
-    while (next < rows.length) {
+    while (next < key.rowCount) {
       const region = regions.shift() ?? this.keyPage(pages, page);
-      const capacity = Math.floor(region.box.height / rowMm);
+      const capacity = Math.floor(region.box.height / KEY_ROW_MM);
       if (width > region.box.width || capacity < MIN_KEY_ROWS) continue;
       const columns = Math.floor((region.box.width + GAP_MM) / (width + GAP_MM));
-      for (let column = 0; column < columns && next < rows.length; column++) {
-        const taken: KeyRow[] = [];
-        const continuing = next > 0 && rows[next]?.kind !== "header";
-        if (continuing) taken.push({ kind: "header" });
-        while (taken.length < capacity && next < rows.length) {
-          const row = rows[next];
-          if (row) taken.push(row);
-          next++;
-        }
+      for (let column = 0; column < columns && next < key.rowCount; column++) {
+        const continuing = next > 0;
+        const to = Math.min(key.rowCount, next + capacity - (continuing ? 1 : 0));
         region.page.items.push(
-          placed("key", this.blocks.keyColumn(sheet, taken, width), [
+          placed("key", key.column(next, to, continuing), [
             region.box.x + column * (width + GAP_MM),
             region.box.y,
           ]),
         );
+        next = to;
       }
     }
     return pages;
@@ -524,27 +561,40 @@ export class SheetComposer implements ISheetComposer {
     };
   }
 
-  private legend(sheet: PlanSheet, extras: ReadonlyArray<LegendExtra>): Block {
-    const layers: ReadonlyArray<SheetLayerId> = this.drawings.layersOf(sheet);
+  private legend(job: SheetJob, extras: ReadonlyArray<LegendExtra>): Block {
+    const layers = this.drawings.layersOf(job.sheet).filter((layer) => job.layers.has(layer));
     const flagged =
-      sheet.placements.some((placement) => placement.flagged) &&
+      job.sheet.placements.some((placement) => placement.flagged) &&
       (layers.includes("models") || layers.includes("track"));
-    return this.blocks.legend(legendEntries(layers, flagged ? ["issue", ...extras] : extras));
+    const all = flagged ? ["issue" as const, ...extras] : extras;
+    const { heights } = job;
+    if (!heights || !layers.includes("tables")) {
+      return this.blocks.legend(legendEntries(layers, all));
+    }
+    return this.blocks.legend([
+      ...legendEntries(
+        layers.filter((layer) => layer !== "tables"),
+        [],
+      ),
+      ...heightEntries(heights),
+      ...legendEntries([], all),
+    ]);
   }
 
   private titleContent(
-    sheet: PlanSheet,
+    job: SheetJob,
     denominator: number,
     scaleLine: string,
     extra: ReadonlyArray<TitleLine>,
     printNote = true,
   ): TitleContent {
+    const { sheet } = job;
     const { room } = sheet;
     const roomText = finiteRect(room)
       ? `Room ${areaText(room.maxX - room.minX, room.maxZ - room.minZ)}`
       : "No room drawn";
     return {
-      name: sheet.name,
+      name: job.title,
       denominator,
       lines: [
         {
@@ -558,7 +608,7 @@ export class SheetComposer implements ISheetComposer {
     };
   }
 
-  private finished(sheet: PlanSheet, drafts: ReadonlyArray<PageDraft>): SheetDocument {
+  private finished(job: SheetJob, drafts: ReadonlyArray<PageDraft>): SheetDocument {
     const pages: SheetPage[] = drafts.map((draft, i) => ({
       name: draft.name,
       size: draft.size,
@@ -570,13 +620,14 @@ export class SheetComposer implements ISheetComposer {
           box: { x: 0, y: 0, width: draft.size.widthMm, height: draft.size.heightMm },
         },
         ...draft.items,
-        ...this.footer(sheet, draft, i + 1, drafts.length),
+        ...this.footer(job, draft, i + 1, drafts.length),
       ],
     }));
-    return { title: sheet.name, pages };
+    return { title: job.title, pages };
   }
 
-  private footer(sheet: PlanSheet, draft: PageDraft, number: number, total: number): DrawItem[] {
+  private footer(job: SheetJob, draft: PageDraft, number: number, total: number): DrawItem[] {
+    const { sheet } = job;
     const { widthMm, heightMm } = draft.size;
     const footer = draft.footer;
     switch (footer.kind) {
@@ -592,7 +643,7 @@ export class SheetComposer implements ISheetComposer {
       case "page": {
         const width = widthMm - 2 * PAPER_MARGIN_MM;
         const block = this.blocks.footerLines(
-          [`${sheet.name} · ${footer.label} · page ${number} of ${total}`, sheet.disclaimer],
+          [`${job.title} · ${footer.label} · page ${number} of ${total}`, sheet.disclaimer],
           width,
         );
         return [
@@ -600,7 +651,7 @@ export class SheetComposer implements ISheetComposer {
         ];
       }
       case "tile":
-        return this.tileFooter(sheet, draft.size, footer, number, total);
+        return this.tileFooter(job, draft.size, footer, number, total);
       default: {
         const unhandled: never = footer;
         throw new Error(`unhandled footer ${String(unhandled)}`);
@@ -609,7 +660,7 @@ export class SheetComposer implements ISheetComposer {
   }
 
   private tileFooter(
-    sheet: PlanSheet,
+    job: SheetJob,
     size: PageSize,
     footer: Extract<FooterKind, { kind: "tile" }>,
     number: number,
@@ -636,7 +687,7 @@ export class SheetComposer implements ISheetComposer {
       barLeft - GAP_MM - left,
     );
     const below = this.blocks.footerLines(
-      [`${sheet.name} · ${scaleText(denominator)}, ${PRINT_AT_100}`, sheet.disclaimer],
+      [`${job.title} · ${scaleText(denominator)}, ${PRINT_AT_100}`, job.sheet.disclaimer],
       size.widthMm - 2 * PAPER_MARGIN_MM,
     );
     const barY = top + SMALL_MM * LINE_SPACING + CHECK_TICK_MM;

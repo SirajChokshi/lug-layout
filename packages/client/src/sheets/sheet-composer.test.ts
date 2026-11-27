@@ -13,7 +13,8 @@ import {
   type Point,
   type Similarity,
 } from "./draw-list.ts";
-import type { SheetLayout, SheetPage } from "./sheet-document.ts";
+import type { SheetLayout, SheetPage, SheetSelection } from "./sheet-document.ts";
+import { TABLE_PLAN_LAYERS, WHOLE_PLAN_SELECTION } from "./sheet-sets.ts";
 
 const container = new Container();
 container.load(
@@ -142,7 +143,9 @@ function tablesOn(page: SheetPage): Box[] {
 }
 
 function tilePages(layout: SheetLayout, sheet: PlanSheet = SHEET): SheetPage[] {
-  return composer.compose(sheet, layout).pages.filter((page) => /^[A-Z]+\d+$/u.test(page.name));
+  return composer
+    .compose(sheet, layout, WHOLE_PLAN_SELECTION)
+    .pages.filter((page) => /^[A-Z]+\d+$/u.test(page.name));
 }
 
 function titleLines(page: SheetPage): string[] {
@@ -260,14 +263,22 @@ describe("tiled sheets", () => {
   });
 
   it("refuse an overlap the registration marks can't fit in, and a scale off the ISO series", () => {
-    expect(() => composer.compose(SHEET, { ...TILED, overlapMm: 2 })).toThrow(RangeError);
-    expect(() => composer.compose(SHEET, { ...TILED, denominator: 3 })).toThrow(RangeError);
+    expect(() => composer.compose(SHEET, { ...TILED, overlapMm: 2 }, WHOLE_PLAN_SELECTION)).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      composer.compose(SHEET, { ...TILED, denominator: 3 }, WHOLE_PLAN_SELECTION),
+    ).toThrow(RangeError);
   });
 });
 
 describe("a sheet fitted to one page", () => {
   it("draws at the largest ISO 5455 scale whose drawing fits the paper, says so, and stays inside the margins", () => {
-    const [page] = composer.compose(SHEET, { kind: "fit", paper: "a4", orientation: "auto" }).pages;
+    const [page] = composer.compose(
+      SHEET,
+      { kind: "fit", paper: "a4", orientation: "auto" },
+      WHOLE_PLAN_SELECTION,
+    ).pages;
     if (!page) throw new Error("a fitted sheet has a page");
     expect(page.size).toEqual({ widthMm: 297, heightMm: 210 });
     expect(titleLines(page).join(" ")).toContain("drawn at 1:20 to fit one A4 page (landscape)");
@@ -293,11 +304,11 @@ describe("a sheet fitted to one page", () => {
       rings: square(400 + (i % 30) * 160, 800 + Math.floor(i / 30) * 160, 160),
       flagged: false,
     }));
-    const pages = composer.compose(sheetWith(many), {
-      kind: "fit",
-      paper: "a4",
-      orientation: "portrait",
-    }).pages;
+    const pages = composer.compose(
+      sheetWith(many),
+      { kind: "fit", paper: "a4", orientation: "portrait" },
+      WHOLE_PLAN_SELECTION,
+    ).pages;
     const listed = pages.flatMap((page) =>
       walk(page.items).flatMap(({ item, roles }) =>
         roles.includes("key") &&
@@ -311,5 +322,134 @@ describe("a sheet fitted to one page", () => {
     );
     expect(pages.length).toBeGreaterThan(1);
     expect(listed).toEqual(many.map((placement) => placement.number));
+  });
+});
+
+const SHOW: PlanRegion = {
+  ...REGION,
+  footprint: {
+    ...REGION.footprint,
+    tables: [
+      ...REGION.footprint.tables,
+      { id: "t3", name: "Side", rect: { x: 200, z: 900, width: 600, depth: 200 }, heightMm: 800 },
+    ],
+  },
+};
+
+const TRACK_PIECE: SheetPlacement = {
+  number: 2,
+  label: "Train Track 9V Straight #1",
+  parts: 1,
+  segment: "track",
+  rings: square(4000, 2000, 160),
+  flagged: false,
+};
+
+const TABLE_PLAN: SheetSelection = {
+  name: "Table plan",
+  content: "tables",
+  layers: TABLE_PLAN_LAYERS,
+};
+
+function legendLabels(page: SheetPage): string[] {
+  return walk(page.items).flatMap(({ item }) =>
+    item.kind === "text" && item.role === "legend" ? [item.text] : [],
+  );
+}
+
+function textsIn(page: SheetPage, role: string): string[] {
+  return walk(page.items).flatMap(({ item, roles }) =>
+    item.kind === "text" && roles.includes(role) ? [item.text] : [],
+  );
+}
+
+describe("sheet sets", () => {
+  it("draw a table plan: tables coloured by height and numbered at their centres, a schedule of each table, and a legend of heights", () => {
+    const sheet = { ...sheetWith([COTTAGE, TRACK_PIECE]), tables: tableTops(SHOW) };
+    const [page] = composer.compose(
+      sheet,
+      { kind: "fit", paper: "a3", orientation: "auto" },
+      TABLE_PLAN,
+    ).pages;
+    if (!page) throw new Error("a fitted sheet has a page");
+    const drawn = walk(page.items);
+    const fills = drawn.flatMap(({ item }) =>
+      item.kind === "rect" && item.role === "table" ? [JSON.stringify(item.paint.fill)] : [],
+    );
+    const tables = tablesOn(page);
+    const badges = drawn.flatMap(({ item, transform }) =>
+      item.kind === "circle" && item.role === "table-number"
+        ? [onPage(item.center, transform)]
+        : [],
+    );
+    const schedule = textsIn(page, "key");
+    const studs = SHOW.footprint.tables.map((table) => studsInside(SHOW, table.rect));
+    expect(fills).toHaveLength(3);
+    expect(fills[0]).toBe(fills[2]);
+    expect(fills[1]).not.toBe(fills[0]);
+    expect(badges.map(([x, y]) => [x.toFixed(6), y.toFixed(6)])).toEqual(
+      tables.map((table) => [
+        (table.x + table.width / 2).toFixed(6),
+        (table.y + table.height / 2).toFixed(6),
+      ]),
+    );
+    expect(textsIn(page, "drawing").filter((t) => /^\d+$/u.test(t))).toEqual(["1", "2", "3"]);
+    expect(schedule.slice(0, 7)).toEqual([
+      "Tables: numbers on the plan",
+      "No.",
+      "Height",
+      "Size",
+      "Studs on the lattice",
+      "From left, back wall",
+      "Table",
+    ]);
+    expect(schedule.slice(7, 13)).toEqual([
+      "1",
+      "80 cm",
+      "123.4 × 60 cm",
+      `${studs[0]?.studsWide} × ${studs[0]?.studsDeep}`,
+      "20, 20 cm",
+      "Front",
+    ]);
+    expect(schedule).toContain("3 tables at 2 heights");
+    expect(legendLabels(page)).toEqual([
+      "Room walls",
+      "Dimension in studs and cm",
+      "Table number (see schedule)",
+      "Table, 80 cm high",
+      "Table, 90 cm high",
+    ]);
+    expect(titleLines(page)[0]).toBe("Table plan · Club show");
+    expect(drawn.some(({ item }) => item.role === "model" || item.role === "number")).toBe(false);
+  });
+
+  it("draw only the layers a sheet set names, and list only the placements those layers show, under their plan numbers", () => {
+    const [page] = composer.compose(
+      sheetWith([COTTAGE, TRACK_PIECE]),
+      { kind: "whole" },
+      { name: "Track only", content: "placements", layers: ["room", "track", "numbers"] },
+    ).pages;
+    if (!page) throw new Error("a whole sheet has a page");
+    const roles = new Set(walk(page.items).map(({ item }) => item.role));
+    const key = textsIn(page, "key");
+    expect({
+      table: roles.has("table"),
+      model: roles.has("model"),
+      track: roles.has("track"),
+      room: roles.has("room"),
+    }).toEqual({ table: false, model: false, track: true, room: true });
+    expect(legendLabels(page)).toEqual([
+      "Room walls",
+      "Track piece outline",
+      "Placement number (see key)",
+    ]);
+    const badges = walk(page.items).flatMap(({ item, roles: groups }) =>
+      item.kind === "text" && item.role === "number" && groups.includes("layer-numbers")
+        ? [item.text]
+        : [],
+    );
+    expect(badges).toEqual(["2"]);
+    expect(key.slice(4, 7)).toEqual(["2", "1", "Train Track 9V Straight #1"]);
+    expect(key).not.toContain(COTTAGE.label);
   });
 });

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import type { PlanSheet } from "../plan/plan-sheet.ts";
 import { SHEET_COMPOSER, SVG_SHEET_WRITER } from "../tokens.ts";
+import { WHOLE_PLAN_SELECTION } from "./sheet-sets.ts";
 
 const container = new Container();
 container.load(
@@ -17,7 +18,7 @@ const composer = container.get(SHEET_COMPOSER);
 const writer = container.get(SVG_SHEET_WRITER);
 
 function planSheetSvg(sheet: PlanSheet): string {
-  const document = composer.compose(sheet, { kind: "whole" });
+  const document = composer.compose(sheet, { kind: "whole" }, WHOLE_PLAN_SELECTION);
   const [page] = document.pages;
   if (!page || document.pages.length !== 1) throw new Error("a whole sheet is one page");
   return writer.pageSvg(page, sheet.name);

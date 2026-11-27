@@ -3,18 +3,26 @@ import {
   MAX_OVERLAP_MM,
   MIN_OVERLAP_MM,
   PAPER_SIZES,
+  SHEET_LAYER_IDS,
   TILED_SCALE_DENOMINATORS,
   scaleText,
   sheetLayoutProblems,
   type IEditor,
   type IPlanSheetService,
+  type ISheetSets,
   type OrientationChoice,
   type PaperId,
   type PlanRegion,
+  type SheetContent,
+  type SheetFile,
   type SheetFormat,
+  type SheetLayerId,
   type SheetLayout,
+  type SheetRequest,
+  type SheetSet,
+  type SheetSetPatch,
 } from "@brr/client";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { downloadBlob } from "./download.ts";
 
 type SheetMode = SheetLayout["kind"];
@@ -36,6 +44,24 @@ const FORMATS: ReadonlyArray<{ readonly id: SheetFormat; readonly label: string 
   { id: "svg", label: "SVG" },
 ];
 
+const CONTENTS: ReadonlyArray<{ readonly id: SheetContent; readonly label: string }> = [
+  { id: "placements", label: "Plan and key" },
+  { id: "tables", label: "Table plan" },
+];
+
+const LAYER_LABELS: Readonly<Record<SheetLayerId, string>> = {
+  room: "Room",
+  tables: "Tables",
+  obstacles: "Obstacles",
+  roadway: "Roadway",
+  models: "Models",
+  track: "Track",
+  ramps: "Suggested ramps",
+  dimensions: "Dimensions",
+  numbers: "Placement numbers",
+  "table-numbers": "Table numbers",
+};
+
 function isMode(value: string): value is SheetMode {
   return MODES.some((mode) => mode.id === value);
 }
@@ -52,13 +78,53 @@ function isFormat(value: string): value is SheetFormat {
   return FORMATS.some((format) => format.id === value);
 }
 
-function layoutOf(
-  mode: SheetMode,
-  paper: PaperId,
-  orientation: OrientationChoice,
-  denominator: number,
-  overlapMm: number,
-): SheetLayout {
+function isContent(value: string): value is SheetContent {
+  return CONTENTS.some((content) => content.id === value);
+}
+
+interface LayoutChoices {
+  readonly mode: SheetMode;
+  readonly paper: PaperId;
+  readonly orientation: OrientationChoice;
+  readonly denominator: number;
+  readonly overlapMm: number;
+}
+
+function choicesOf(layout: SheetLayout): LayoutChoices {
+  switch (layout.kind) {
+    case "whole":
+      return {
+        mode: "whole",
+        paper: "a4",
+        orientation: "auto",
+        denominator: 1,
+        overlapMm: DEFAULT_OVERLAP_MM,
+      };
+    case "fit":
+      return {
+        mode: "fit",
+        paper: layout.paper,
+        orientation: layout.orientation,
+        denominator: 1,
+        overlapMm: DEFAULT_OVERLAP_MM,
+      };
+    case "tiled":
+      return {
+        mode: "tiled",
+        paper: layout.paper,
+        orientation: layout.orientation,
+        denominator: layout.denominator,
+        overlapMm: layout.overlapMm,
+      };
+    default: {
+      const unhandled: never = layout;
+      throw new Error(`unhandled sheet layout ${String(unhandled)}`);
+    }
+  }
+}
+
+function layoutOf(choices: LayoutChoices): SheetLayout {
+  const { mode, paper, orientation, denominator, overlapMm } = choices;
   switch (mode) {
     case "whole":
       return { kind: "whole" };
@@ -73,45 +139,117 @@ function layoutOf(
   }
 }
 
+function requestOf(set: SheetSet): SheetRequest {
+  return {
+    selection: { name: set.name, content: set.content, layers: set.layers },
+    layout: set.layout,
+    format: set.format,
+  };
+}
+
+function savedLines(file: SheetFile): ReadonlyArray<string> {
+  return [
+    `Saved ${file.pages === 1 ? "1 page" : `${file.pages} pages`} as ${file.fileName}. Print at 100% (actual size).`,
+    ...file.notes,
+  ];
+}
+
+function useSheetSetsVersion(sheetSets: ISheetSets): number {
+  return useSyncExternalStore(
+    (listener) => sheetSets.subscribe(listener),
+    () => sheetSets.version(),
+  );
+}
+
 export function PrintSheets({
   editor,
   sheets,
+  sheetSets,
   plan,
 }: {
   readonly editor: IEditor;
   readonly sheets: IPlanSheetService;
+  readonly sheetSets: ISheetSets;
   readonly plan: PlanRegion;
 }) {
-  const [mode, setMode] = useState<SheetMode>("tiled");
-  const [paper, setPaper] = useState<PaperId>("a4");
-  const [orientation, setOrientation] = useState<OrientationChoice>("auto");
-  const [denominator, setDenominator] = useState(1);
-  const [overlapMm, setOverlapMm] = useState(DEFAULT_OVERLAP_MM);
-  const [format, setFormat] = useState<SheetFormat>("pdf");
+  useSheetSetsVersion(sheetSets);
+  const [chosenId, setChosenId] = useState<string | null>(null);
   const [saved, setSaved] = useState<ReadonlyArray<string>>([]);
-  const layout = layoutOf(mode, paper, orientation, denominator, overlapMm);
-  const problems = sheetLayoutProblems(layout);
-  const onPaper = mode !== "whole";
-  const tiled = mode === "tiled";
-  const download = (): void => {
-    const file = sheets.download(editor, plan.id, { layout, format });
+  const sets = sheetSets.sets(plan.id);
+  const chosen = sets.find((set) => set.id === chosenId) ?? sets[0] ?? null;
+  const add = (): void => setChosenId(sheetSets.add(plan.id).id);
+  if (!chosen) {
+    return (
+      <section className="print-sheets" aria-label="Print sheets">
+        <h3>Print sheets</h3>
+        <p className="plan-meta">This plan has no sheets.</p>
+        <button type="button" data-action="add-sheet" onClick={add}>
+          Add sheet
+        </button>
+      </section>
+    );
+  }
+  const update = (patch: SheetSetPatch): void => sheetSets.update(plan.id, chosen.id, patch);
+  const choices = choicesOf(chosen.layout);
+  const choose = (patch: Partial<LayoutChoices>): void =>
+    update({ layout: layoutOf({ ...choices, ...patch }) });
+  const problems = sheetLayoutProblems(chosen.layout);
+  const onPaper = choices.mode !== "whole";
+  const tiled = choices.mode === "tiled";
+  const allValid = sets.every((set) => sheetLayoutProblems(set.layout).length === 0);
+  const save = (file: SheetFile): void => {
     downloadBlob(file.fileName, new Blob([file.bytes.slice()], { type: file.mimeType }));
-    setSaved([
-      `Saved ${file.pages === 1 ? "1 page" : `${file.pages} pages`} as ${file.fileName}. Print at 100% (actual size).`,
-      ...file.notes,
-    ]);
+    setSaved(savedLines(file));
   };
   return (
     <section className="print-sheets" aria-label="Print sheets">
       <h3>Print sheets</h3>
       <div className="plan-grid">
         <label className="mm-field">
+          Sheet
+          <select
+            name="sheet-set"
+            value={chosen.id}
+            onChange={(event) => setChosenId(event.target.value)}
+          >
+            {sets.map((set) => (
+              <option key={set.id} value={set.id}>
+                {set.name || "Untitled"}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="mm-field">
+          Name
+          <input
+            name="sheet-name"
+            value={chosen.name}
+            onChange={(event) => update({ name: event.target.value })}
+          />
+        </label>
+        <label className="mm-field">
+          Shows
+          <select
+            name="sheet-content"
+            value={chosen.content}
+            onChange={(event) => {
+              if (isContent(event.target.value)) update({ content: event.target.value });
+            }}
+          >
+            {CONTENTS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="mm-field">
           Layout
           <select
             name="sheet-layout"
-            value={mode}
+            value={choices.mode}
             onChange={(event) => {
-              if (isMode(event.target.value)) setMode(event.target.value);
+              if (isMode(event.target.value)) choose({ mode: event.target.value });
             }}
           >
             {MODES.map((option) => (
@@ -125,10 +263,10 @@ export function PrintSheets({
           Paper
           <select
             name="sheet-paper"
-            value={paper}
+            value={choices.paper}
             disabled={!onPaper}
             onChange={(event) => {
-              if (isPaper(event.target.value)) setPaper(event.target.value);
+              if (isPaper(event.target.value)) choose({ paper: event.target.value });
             }}
           >
             {PAPER_SIZES.map((option) => (
@@ -142,10 +280,10 @@ export function PrintSheets({
           Orientation
           <select
             name="sheet-orientation"
-            value={orientation}
+            value={choices.orientation}
             disabled={!onPaper}
             onChange={(event) => {
-              if (isOrientation(event.target.value)) setOrientation(event.target.value);
+              if (isOrientation(event.target.value)) choose({ orientation: event.target.value });
             }}
           >
             {ORIENTATIONS.map((option) => (
@@ -159,9 +297,9 @@ export function PrintSheets({
           Scale
           <select
             name="sheet-scale"
-            value={denominator}
+            value={choices.denominator}
             disabled={!tiled}
-            onChange={(event) => setDenominator(Number(event.target.value))}
+            onChange={(event) => choose({ denominator: Number(event.target.value) })}
           >
             {TILED_SCALE_DENOMINATORS.map((option) => (
               <option key={option} value={option}>
@@ -178,18 +316,18 @@ export function PrintSheets({
             min={MIN_OVERLAP_MM}
             max={MAX_OVERLAP_MM}
             step={1}
-            value={overlapMm}
+            value={choices.overlapMm}
             disabled={!tiled}
-            onChange={(event) => setOverlapMm(Number(event.target.value))}
+            onChange={(event) => choose({ overlapMm: Number(event.target.value) })}
           />
         </label>
         <label className="mm-field">
           Format
           <select
             name="sheet-format"
-            value={format}
+            value={chosen.format}
             onChange={(event) => {
-              if (isFormat(event.target.value)) setFormat(event.target.value);
+              if (isFormat(event.target.value)) update({ format: event.target.value });
             }}
           >
             {FORMATS.map((option) => (
@@ -200,6 +338,26 @@ export function PrintSheets({
           </select>
         </label>
       </div>
+      <fieldset className="sheet-layers">
+        <legend>Layers on this sheet</legend>
+        {SHEET_LAYER_IDS.map((layer) => (
+          <label key={layer}>
+            <input
+              type="checkbox"
+              name={`sheet-layer-${layer}`}
+              checked={chosen.layers.includes(layer)}
+              onChange={(event) =>
+                update({
+                  layers: event.target.checked
+                    ? [...chosen.layers, layer]
+                    : chosen.layers.filter((shown) => shown !== layer),
+                })
+              }
+            />
+            {LAYER_LABELS[layer]}
+          </label>
+        ))}
+      </fieldset>
       {problems.map((problem) => (
         <p key={problem} className="plan-errors">
           {problem}
@@ -210,10 +368,36 @@ export function PrintSheets({
           type="button"
           data-action="download-sheets"
           disabled={problems.length > 0}
-          title="Download the plan as printable sheets with a title block, legend and key"
-          onClick={download}
+          title="Download this sheet with its title block, legend and key"
+          onClick={() => save(sheets.download(editor, plan.id, requestOf(chosen)))}
         >
-          Download sheets
+          Download sheet
+        </button>
+        <button
+          type="button"
+          data-action="download-all-sheets"
+          disabled={!allValid}
+          title="Download every sheet of this plan in one file, in the format chosen above"
+          onClick={() =>
+            save(sheets.downloadAll(editor, plan.id, sets.map(requestOf), chosen.format))
+          }
+        >
+          Download all sheets
+        </button>
+      </div>
+      <div className="plan-actions">
+        <button type="button" data-action="add-sheet" onClick={add}>
+          Add sheet
+        </button>
+        <button
+          type="button"
+          data-action="remove-sheet"
+          onClick={() => {
+            sheetSets.remove(plan.id, chosen.id);
+            setChosenId(null);
+          }}
+        >
+          Delete sheet
         </button>
       </div>
       {saved.map((line) => (
