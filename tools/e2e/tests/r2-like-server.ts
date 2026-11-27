@@ -8,9 +8,6 @@ import { fileURLToPath } from "node:url";
 
 const BUNDLE_BUCKET = new URL("../../asset-pipeline/dist/", import.meta.url);
 const BUCKET_PATH = /^\/(?:bundle|library-connectors|shadow-library)\//u;
-const CONTENT_ADDRESSED_FILE = /\.[0-9a-f]{16}\.(?:glb|json|wasm|png)$/u;
-const IMMUTABLE = "public, max-age=31536000, immutable";
-const REVALIDATE = "no-cache";
 const HTTP_OK = 200;
 const HTTP_TEMPORARY_REDIRECT = 307;
 const HTTP_NOT_FOUND = 404;
@@ -25,7 +22,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 };
 
 export interface Throttle {
-  readonly servedBeforeLockout: number;
+  readonly startsAt: (path: string, served: number) => boolean;
   readonly lockoutMs: number;
 }
 
@@ -48,20 +45,18 @@ async function serveFile(request: IncomingMessage, response: ServerResponse): Pr
   }
   response.writeHead(HTTP_OK, {
     ...corsFor(request),
-    "Accept-Ranges": "bytes",
-    "Cache-Control": CONTENT_ADDRESSED_FILE.test(pathname) ? IMMUTABLE : REVALIDATE,
     "Content-Length": found.size,
     "Content-Type": CONTENT_TYPES[extname(pathname)] ?? "application/octet-stream",
-    ETag: `"${found.size.toString(16)}-${found.mtimeMs.toString(16)}"`,
   });
   createReadStream(fileURLToPath(file)).pipe(response);
 }
 
 export class R2LikeServer {
   private served = 0;
-  private refusals = 0;
+  private readonly refusals: string[] = [];
   private opaqueFailures = 0;
   private lockedUntilMs = 0;
+  private throttled = false;
 
   private constructor(
     private readonly throttle: Throttle | null,
@@ -74,10 +69,10 @@ export class R2LikeServer {
     throttle: Throttle | null = null,
   ): Promise<R2LikeServer> {
     const server = createServer((request, response) => bucket.answer(request, response));
-    const bucket = new R2LikeServer(
-      throttle,
-      () => new Promise((closed) => server.close(() => closed())),
-    );
+    const bucket = new R2LikeServer(throttle, () => {
+      server.closeAllConnections();
+      return new Promise((closed) => server.close(() => closed()));
+    });
     await new Promise<void>((listening) => server.listen(0, "127.0.0.1", listening));
     const { port } = server.address() as AddressInfo;
     const origin = `http://127.0.0.1:${port}`;
@@ -99,11 +94,7 @@ export class R2LikeServer {
     return bucket;
   }
 
-  lockOut(lockoutMs: number): void {
-    this.lockedUntilMs = performance.now() + lockoutMs;
-  }
-
-  refused(): number {
+  refused(): ReadonlyArray<string> {
     return this.refusals;
   }
 
@@ -116,15 +107,19 @@ export class R2LikeServer {
   }
 
   private answer(request: IncomingMessage, response: ServerResponse): void {
+    const path = new URL(request.url ?? "/", "http://bucket").pathname;
+    if (this.throttle !== null && !this.throttled && this.throttle.startsAt(path, this.served)) {
+      this.throttled = true;
+      this.lockedUntilMs = performance.now() + this.throttle.lockoutMs;
+    }
     if (performance.now() < this.lockedUntilMs) {
-      this.refusals += 1;
+      this.refusals.push(path);
       response
         .writeHead(HTTP_TOO_MANY_REQUESTS, { "Retry-After": RETRY_AFTER_S })
         .end("rate limited");
       return;
     }
     this.served += 1;
-    if (this.served === this.throttle?.servedBeforeLockout) this.lockOut(this.throttle.lockoutMs);
     void serveFile(request, response);
   }
 }

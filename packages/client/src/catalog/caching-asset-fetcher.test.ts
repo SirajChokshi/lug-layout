@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 
 const utf8 = new TextEncoder();
-const HTTP_SERVER_ERROR = 500;
+const HTTP_UNAVAILABLE = 503;
 const HTTP_NOT_FOUND = 404;
 
 function addressed(stem: string, extension: string, body: string): readonly [string, string] {
@@ -119,8 +119,8 @@ describe("caching asset fetcher", () => {
       await online.cache.get(BUNDLE_POINTER_FILE);
       expect(await session(offline, indexedDb).loader.loadManifestFile()).toBe(named);
     }
-    const failing = new FakeNetwork([[BUNDLE_POINTER_FILE, HTTP_SERVER_ERROR]]);
-    expect(await session(failing, indexedDb).loader.loadManifestFile()).toBe(FALLBACK_MANIFEST);
+    const unavailable = new FakeNetwork([[BUNDLE_POINTER_FILE, HTTP_UNAVAILABLE]]);
+    expect(await session(unavailable, indexedDb).loader.loadManifestFile()).toBe(FALLBACK_MANIFEST);
     expect(await session(offline, new IDBFactory()).loader.loadManifestFile()).toBe(
       FALLBACK_MANIFEST,
     );

@@ -102,9 +102,14 @@ it("waits 1, 2, 4, 8 and 16 s between attempts, and fails with the sixth attempt
 
 it("reads a 404, a 500, a stall, and a network error while the browser is offline only once", async () => {
   fakeClock();
-  for (const failure of [refused(404), refused(500), stall, "offline" as const]) {
-    if (failure === "offline") vi.stubGlobal("navigator", { onLine: false });
-    const network = new ScriptedNetwork([failure === "offline" ? networkError : failure, whole]);
+  for (const { failure, offline } of [
+    { failure: refused(404), offline: false },
+    { failure: refused(500), offline: false },
+    { failure: stall, offline: false },
+    { failure: networkError, offline: true },
+  ]) {
+    if (offline) vi.stubGlobal("navigator", { onLine: false });
+    const network = new ScriptedNetwork([failure, whole]);
     const outcome = bundleFetcher(network)
       .bytes(PART)
       .catch((error: unknown) => error);
@@ -153,12 +158,14 @@ function tooManyRequests(retryAfter: string): Answer {
 
 it("reads a body cut off by a network error again from the start, and keeps none of the cut-off bytes", async () => {
   fakeClock();
+  let pulls = 0;
   const cutOff: Answer = async () =>
     new Response(
       new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(utf8.encode(WHOLE_FILE.slice(0, 5)));
-          controller.error(new TypeError("network error"));
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) controller.enqueue(utf8.encode(WHOLE_FILE.slice(0, 5)));
+          else controller.error(new TypeError("network error"));
         },
       }),
     );

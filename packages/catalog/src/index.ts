@@ -1,6 +1,5 @@
 export { AssetResponseError } from "./asset-response-error.ts";
 export { AssetStalledError } from "./asset-stalled-error.ts";
-export { RetryingAssetFetcher } from "./retrying-asset-fetcher.ts";
 export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
@@ -28,6 +27,7 @@ export {
   INHERIT_COLOR,
 } from "./part-bundle.ts";
 export { PART_CELL_HEIGHT_INTS, PART_CELL_PLAN_INTS, modelPartCells } from "./model-part-cells.ts";
+export { RetryingAssetFetcher } from "./retrying-asset-fetcher.ts";
 export { undrawnPart } from "./undrawn-part.ts";
 export type {
   BricklinkPartCandidates,

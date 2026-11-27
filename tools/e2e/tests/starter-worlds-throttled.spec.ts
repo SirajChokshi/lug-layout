@@ -4,7 +4,17 @@ import { EditorPage } from "./editor-page.ts";
 import { R2LikeServer } from "./r2-like-server.ts";
 import { STARTER_VIEWPORT, walkEveryStarter } from "./starter-walk.ts";
 
-const R2_DEV_CUTOFF = { servedBeforeLockout: 850, lockoutMs: 10_000 } as const;
+const LOCKOUT_MS = 10_000;
+const R2_DEV_CUTOFF_REQUESTS = 850;
+const WORKER_READ = /^\/(?:library-connectors\/|bundle\/[^/]+\/brick-compile\.)/u;
+const AFTER_R2_DEV_CUTOFF = {
+  startsAt: (_path: string, served: number) => served === R2_DEV_CUTOFF_REQUESTS,
+  lockoutMs: LOCKOUT_MS,
+};
+const AT_THE_WORKERS_FIRST_READ = {
+  startsAt: (path: string) => WORKER_READ.test(path),
+  lockoutMs: LOCKOUT_MS,
+};
 
 test.use({ viewport: STARTER_VIEWPORT });
 
@@ -29,10 +39,10 @@ test("every starter opens and runs its trains while the bundle's cross-origin se
   page,
   baseURL,
 }) => {
-  const bucket = await R2LikeServer.serve(page.context(), pageOrigin(baseURL), R2_DEV_CUTOFF);
+  const bucket = await R2LikeServer.serve(page.context(), pageOrigin(baseURL), AFTER_R2_DEV_CUTOFF);
   try {
     await walkEveryStarter(page);
-    expect(bucket.refused()).toBeGreaterThan(0);
+    expect(bucket.refused().length).toBeGreaterThan(0);
     expect(bucket.failedOpaquely()).toBeGreaterThan(0);
     await expect(
       page.locator(".editor-hud dl > div").filter({ hasText: "Parts not drawn" }).locator("dd"),
@@ -46,16 +56,19 @@ test("a user's own model with a part the bundle doesn't ship imports while the b
   page,
   baseURL,
 }) => {
-  const bucket = await R2LikeServer.serve(page.context(), pageOrigin(baseURL));
+  const bucket = await R2LikeServer.serve(
+    page.context(),
+    pageOrigin(baseURL),
+    AT_THE_WORKERS_FIRST_READ,
+  );
   try {
     const editor = await EditorPage.open(page);
     await editor.serveLdrawLibrary();
     const file = test.info().outputPath("custom-tower.ldr");
     await writeFile(file, towerOfBricksTheBundleLacks());
-    bucket.lockOut(R2_DEV_CUTOFF.lockoutMs);
     const tower = await editor.importModel(file);
     expect(tower.status, tower.text).toBe("placeable");
-    expect(bucket.refused()).toBeGreaterThan(0);
+    expect(bucket.refused().filter((path) => WORKER_READ.test(path))).not.toEqual([]);
     expect(bucket.failedOpaquely()).toBeGreaterThan(0);
   } finally {
     await bucket.stop();
