@@ -10094,6 +10094,73 @@ it("stops a running train before a user's own tunnel too low for it, naming the 
   expect(Math.abs(throughTall?.xLdu ?? 0)).toBeGreaterThan(TUNNEL_ALONG_LDU);
 }, 240_000);
 
+const CANTILEVER_COLUMN_BRICKS = 3;
+const CANTILEVER_ARM_PLATES = 13;
+const CANTILEVER_ARM_STEP_LDU = 240;
+const CANTILEVER_COLUMN_FROM_TRACK_LDU =
+  CANTILEVER_ARM_PLATES * CANTILEVER_ARM_STEP_LDU - CANTILEVER_ARM_STEP_LDU / 2;
+
+function cantileverFile(name: string): Uint8Array {
+  const column = Array.from(
+    { length: CANTILEVER_COLUMN_BRICKS },
+    (_, k) => `1 7 0 ${-BRICK_LDU * (k + 1)} 0 0 0 1 0 1 0 -1 0 0 2456.dat`,
+  );
+  const armY = -BRICK_LDU * CANTILEVER_COLUMN_BRICKS - PLATE_LDU;
+  const arm = Array.from(
+    { length: CANTILEVER_ARM_PLATES },
+    (_, k) =>
+      `1 72 ${CANTILEVER_ARM_STEP_LDU / 2 + CANTILEVER_ARM_STEP_LDU * k} ${armY} 0 1 0 0 0 1 0 0 0 1 3027.dat`,
+  );
+  return userRoadFile(name, [...column, ...arm]);
+}
+
+it("stops a running train under a user's own long model reaching over the track from far beside it, naming it", async () => {
+  const sim = new InThreadSim();
+  const { editor, backend, frame, container, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(SIM_CLIENT).toConstantValue(sim);
+    },
+  );
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-64 * STUD, 0], [64 * STUD, 0]);
+  editor.chooseItem(null);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const cantilever = await importUserFile(
+    editor,
+    "my-cantilever.ldr",
+    cantileverFile("my-cantilever.ldr"),
+  );
+  for (const x of [-TUNNEL_ALONG_LDU, TUNNEL_ALONG_LDU]) {
+    await heldAlongTrack(editor, backend, frame, cantilever, x, CANTILEVER_COLUMN_FROM_TRACK_LDU);
+    editor.click(0, 0, 0);
+  }
+  await settledPlacer(editor, backend)(LOCOMOTIVE, 0, 0);
+  editor.chooseItem(null);
+  const play = container.get(TRAIN_PLAY);
+
+  await play.start();
+  play.drive(TRAIN_SPEED_LDU_PER_S);
+  sim.advance(THROUGH_TUNNEL_TICKS);
+  play.chooseDriven(0);
+  const { notice, trains, status } = play.snapshot();
+  play.stop();
+  const [train] = trains;
+
+  expect({ status, placements: editor.snapshot().placements, notice }).toEqual({
+    status: "running",
+    placements: 2,
+    notice: `${LOCOMOTIVE_LABEL} stopped: it would run into my-cantilever.ldr.`,
+  });
+  expect(train).toMatchObject({ blockedBy: "my-cantilever.ldr", speedLduPerS: 0 });
+  expect(Math.abs(train?.xLdu ?? 0) + (train?.lengthLdu ?? 0) / 2).toBeLessThan(TUNNEL_ALONG_LDU);
+}, 240_000);
+
 const LOOP_HALF_LDU = 72 * STUD;
 const LEVEL_HALF_LDU = 40 * STUD;
 const WHOLE_TRAIN_LEVEL_LDU = 15 * STUD;
