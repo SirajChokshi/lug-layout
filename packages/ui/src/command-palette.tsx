@@ -6,6 +6,7 @@ import {
   runEditorAction,
   runPlayAction,
   type CatalogItemView,
+  type CommandGroup,
   type EditorSnapshot,
   type ICommandPaletteSearch,
   type IEditor,
@@ -15,6 +16,8 @@ import {
   type ShellCommandId,
 } from "@brr/client";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import type { IconName } from "./icons/glyphs.ts";
+import { Icon } from "./icons/icon.tsx";
 import { CommandKeys } from "./keys.tsx";
 import { useCommandPaletteSnapshot } from "./use-command-palette-search.ts";
 import { usePlaySnapshot } from "./use-play.ts";
@@ -38,6 +41,21 @@ const KIND_LABELS: Readonly<Record<CatalogItemView["kind"], string>> = {
   track: "Track",
 };
 
+const KIND_ICONS: Readonly<Record<CatalogItemView["kind"], IconName>> = {
+  baseplate: "baseplate",
+  "road-plate": "road",
+  model: "set",
+  track: "track-straight",
+};
+
+const GROUP_ICONS: Readonly<Record<CommandGroup, IconName>> = {
+  Tools: "select",
+  Edit: "rotate",
+  View: "view-3d",
+  Play: "train",
+  Help: "keyboard",
+};
+
 function displayName(text: string): string {
   return text.replaceAll("_", " ");
 }
@@ -55,7 +73,7 @@ function ItemRow({ item, recent }: { readonly item: CatalogItemView; readonly re
         style={item.color ? { background: item.color.rgb } : undefined}
         aria-hidden="true"
       >
-        {item.color ? "" : KIND_LABELS[item.kind].charAt(0)}
+        {item.color ? null : <Icon name={KIND_ICONS[item.kind]} />}
       </span>
       <span className="cmdk-result-text">
         <span className="cmdk-result-title">{displayName(item.label)}</span>
@@ -79,8 +97,8 @@ function CommandRow({
   const on = commandActive(spec.id, snapshot);
   return (
     <>
-      <span className="cmdk-glyph command" aria-hidden="true">
-        ›
+      <span className="cmdk-glyph" aria-hidden="true">
+        <Icon name={GROUP_ICONS[spec.group]} />
       </span>
       <span className="cmdk-result-text">
         <span className="cmdk-result-title">{spec.title}</span>
