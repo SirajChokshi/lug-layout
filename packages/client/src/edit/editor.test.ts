@@ -3642,6 +3642,7 @@ function importReport(
     bakeRounds: 1,
     bakeIssue,
     bakeHelpersFailed: 0,
+    glyphFromCache: false,
     fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
     records: null,
     shadowLibrary: null,
@@ -3766,6 +3767,8 @@ function importedRecord(
       cells: model.cells,
       vehicles: model.vehicles,
       vehicleIssue: null,
+      glyph: null,
+      glyphIssue: null,
     },
   };
 }
@@ -4265,6 +4268,8 @@ class BakedRecordImporter implements IModelImporter {
         cells: model.cells,
         vehicles: model.vehicles,
         vehicleIssue: null,
+        glyph: null,
+        glyphIssue: null,
       },
     };
   }

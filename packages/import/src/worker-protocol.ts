@@ -79,6 +79,7 @@ export interface ImportWorkerPlaced {
 export function bakeTransferables(bake: ModelBake): Transferable[] {
   return [
     bake.studCover.visibleBits.buffer,
+    ...(bake.glyph ? [bake.glyph.buffer] : []),
     ...(bake.cells
       ? [
           bake.cells.footprint.buffer,

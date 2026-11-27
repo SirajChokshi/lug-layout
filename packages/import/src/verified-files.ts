@@ -21,7 +21,7 @@ export const NO_BYTE_CACHE: IByteCache = {
   put: async () => undefined,
 };
 
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice()));
   return [...digest].map((byte) => byte.toString(HEX_RADIX).padStart(HEX_PAIR, "0")).join("");
 }
