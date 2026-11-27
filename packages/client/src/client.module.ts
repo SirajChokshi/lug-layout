@@ -53,6 +53,7 @@ import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
+import { AnnotationService } from "./notes/annotation-service.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { PlanSheetService } from "./plan/plan-sheet-service.ts";
 import { PdfSheetWriter } from "./sheets/pdf-sheet-writer.ts";
@@ -78,6 +79,7 @@ import { VehicleIds } from "./trains/vehicle-ids.ts";
 import { FetchedStarterFiles } from "./starters/starter-files.ts";
 import { StarterWorlds } from "./starters/starter-worlds.ts";
 import {
+  ANNOTATION_SERVICE,
   BOM_SERVICE,
   OWNED_PARTS,
   CATALOG_SEARCH,
@@ -180,6 +182,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(TRACK_SCENE).to(TrackScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
+  bind(ANNOTATION_SERVICE).to(AnnotationService).inSingletonScope();
   bind(PLAN_SHEET_SERVICE).to(PlanSheetService).inSingletonScope();
   bind(SHEET_TYPEFACE).to(CourierTypeface).inSingletonScope();
   bind(SHEET_TILER).to(SheetTiler).inSingletonScope();

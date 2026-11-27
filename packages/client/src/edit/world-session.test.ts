@@ -117,7 +117,7 @@ class BaseplateWorld implements IEditedWorld {
   }
 
   contents(): WorldContents {
-    return { world: this.world, refs: [BASEPLATE], track: [], consists: [] };
+    return { world: this.world, refs: [BASEPLATE], track: [], consists: [], notes: [] };
   }
 
   placedCredits(): ReadonlyArray<ModelCredit> {

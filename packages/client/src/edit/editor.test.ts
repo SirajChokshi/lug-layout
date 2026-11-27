@@ -52,6 +52,7 @@ import {
 import {
   CandidatePoses,
   MateReport,
+  modelEnd,
   ProposalProgress,
   RoadNetwork,
   levelCrossings,
@@ -60,7 +61,7 @@ import {
   type RoadPlacement,
 } from "@brr/domain";
 import { LevelCrossingFacts } from "@brr/schema/bundle";
-import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { decode, decodedOrThrow, issueText } from "@brr/schema/decode";
 import crossingJson from "../../../../docs/verified-facts/level-crossing.json" with { type: "json" };
 import { PLATE_LDU, STUD_LDU, pose16, zeta16 } from "@brr/math";
 import { Container } from "inversify";
@@ -70,10 +71,14 @@ import type { Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
   noteShardEntry,
+  noteShards,
   shardEntry,
   shardName,
+  worldHeader,
   worldManifest,
   type ConsistRecordV1,
+  type LayerRecordV2,
+  type NoteRecordV2,
   type ImportedFile,
   type NoteShardV2,
   type WorldArchive,
@@ -107,6 +112,7 @@ import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import {
+  ANNOTATION_SERVICE,
   BOM_SERVICE,
   CONNECTION_SOLVER,
   CONNECTOR_TABLES,
@@ -144,6 +150,7 @@ import { rampChunkKey } from "./crossing-ramps.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./track-edit-session.ts";
+import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import type { TrackRouteView } from "./track-drawing.ts";
@@ -1130,6 +1137,244 @@ async function importUserFile(editor: IEditor, name: string, bytes: Uint8Array):
   if (!item) throw new Error(`${name} didn't import`);
   return item;
 }
+
+const NOTES_LAYER: LayerRecordV2 = {
+  id: 1,
+  name: "Notes",
+  kind: "notes",
+  visible: true,
+  locked: false,
+  opacity: 100,
+};
+const COTTAGE_FILE = "my-cottage.mpd";
+
+async function editorWithNotesLayer(extraNotes: ReadonlyArray<NoteRecordV2> = []) {
+  const started = await startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+  });
+  const { editor, backend, container } = started;
+  const repository = container.get(WORLD_REPOSITORY);
+  const cottage = await importUserFile(
+    editor,
+    COTTAGE_FILE,
+    userFileWithOwnPart(COTTAGE_FILE, CC_BY_4),
+  );
+  await placer(editor, backend)(cottage, 0, 0);
+  const archive = await repository.readArchive((await editor.exportWorld()).bytes);
+  if (!archive.ok) throw new Error(issueText(archive.issues));
+  const { manifest, shards, credits, imports } = archive.value;
+  const notes = noteShards(extraNotes);
+  const header = { ...worldHeader(manifest), layers: [...manifest.layers, NOTES_LAYER] };
+  const reopened = await editor.importWorld(
+    repository.packArchive({
+      manifest: worldManifest(header, manifest.shards, notes.map(noteShardEntry)),
+      shards,
+      notes,
+      credits,
+      imports,
+    }),
+  );
+  const [placed] = shards.flatMap((shard) => shard.placements);
+  if (!placed) throw new Error(`${COTTAGE_FILE} wasn't placed`);
+  return {
+    ...started,
+    reopened,
+    annotations: container.get(ANNOTATION_SERVICE),
+    repository,
+    placed,
+  };
+}
+
+function selectedBox(editor: IEditor) {
+  const primary = editor.snapshot().selection?.primary;
+  if (primary?.kind !== "model") throw new Error("no model is selected");
+  return primary.box;
+}
+
+function rulerEnds(annotations: IAnnotationService) {
+  return annotations.notes().flatMap(({ id, note }) => {
+    if (note.kind !== "ruler") return [];
+    const span = annotations.rulerSpan(id);
+    return [{ on: note.from.on, a: [span?.ax, span?.az] }];
+  });
+}
+
+describe("notes", () => {
+  it("a ruler attached to a user's own imported model follows it through a move and a turn, frees its end when the model is deleted, and undo and redo walk each step", async () => {
+    const { editor, backend, annotations, placed, reopened } = await editorWithNotesLayer();
+    expect(reopened).toBe(true);
+    selectAt(editor, backend, placed.x, placed.z);
+    const placedBox = selectedBox(editor);
+    const corner = { x: placedBox.minX, z: placedBox.minZ };
+    const added = annotations.add({
+      kind: "ruler",
+      layer: NOTES_LAYER.id,
+      from: modelEnd(placed, corner),
+      to: { on: "point", x: corner.x + 400, z: corner.z },
+      color: "#ff0000",
+    });
+    expect(added.ok).toBe(true);
+    const depth = editor.snapshot().history.undoDepth;
+
+    editor.moveSelectionBy(200, 0, 0);
+    const movedBox = selectedBox(editor);
+    const moved = rulerEnds(annotations);
+    editor.turnSelectedModelTo(1, 0);
+    const turnedBox = selectedBox(editor);
+    const turned = rulerEnds(annotations);
+    editor.deleteSelection(0);
+    const freed = rulerEnds(annotations);
+    const steps = editor.snapshot().history.undoDepth - depth;
+    const undone = [];
+    for (let step = 0; step < 3; step++) {
+      editor.undo(0);
+      undone.push(rulerEnds(annotations));
+    }
+    for (let step = 0; step < 3; step++) editor.redo(0);
+
+    expect({ moved, turned, freed, steps }).toEqual({
+      moved: [{ on: "model", a: [movedBox.minX, movedBox.minZ] }],
+      turned: [{ on: "model", a: [turnedBox.minX, turnedBox.maxZ] }],
+      freed: [{ on: "point", a: [turnedBox.minX, turnedBox.maxZ] }],
+      steps: 3,
+    });
+    expect(movedBox.minX).toBe(placedBox.minX + 200);
+    expect(undone).toEqual([turned, moved, [{ on: "model", a: [corner.x, corner.z] }]]);
+    expect(rulerEnds(annotations)).toEqual(freed);
+  }, 240_000);
+
+  it("keeps every kind of note with the world: a reopened world gives the same notes, and an exported world imports and exports again byte for byte", async () => {
+    const { editor, backend, annotations, placed } = await editorWithNotesLayer();
+    const layer = NOTES_LAYER.id;
+    const ids = [
+      annotations.add({
+        kind: "zone",
+        layer,
+        name: "Yard",
+        color: "#88cc44",
+        outline: [
+          [-640, -640],
+          [-640, 640],
+          [640, 640],
+          [640, -640],
+        ],
+      }),
+      annotations.add({
+        kind: "zone",
+        layer,
+        name: "Station",
+        color: "#4488cc",
+        outline: [
+          [7000, 0],
+          [7400, 0],
+          [7400, 200],
+          [7200, 400],
+          [7000, 200],
+        ],
+      }),
+      annotations.add({
+        kind: "text",
+        layer,
+        text: "Ada's cottage",
+        x: 0,
+        z: 200,
+        rot: 1,
+        heightStuds: 3,
+        color: "#202020",
+      }),
+      annotations.add({
+        kind: "ruler",
+        layer,
+        from: modelEnd(placed, { x: placed.x + 7, z: placed.z - 3 }),
+        to: { on: "point", x: 7000, z: 0 },
+        color: "#ff0000",
+      }),
+      annotations.add({
+        kind: "legend",
+        layer,
+        x: -1280,
+        z: -1280,
+        title: "Key",
+        entries: [
+          { color: "#88cc44", label: "Yard" },
+          { color: "#4488cc", label: "Station" },
+        ],
+      }),
+    ];
+    expect(ids.map((id) => id.ok)).toEqual([true, true, true, true, true]);
+    selectAt(editor, backend, placed.x, placed.z);
+    editor.moveSelectionBy(0, 120, 0);
+    const kept = annotations.records();
+    await vi.waitFor(() => expect(editor.snapshot().world?.save).toBe("saved"));
+    const id = editor.snapshot().world?.id;
+    if (!id) throw new Error("no current world");
+
+    expect(await editor.newWorld("Other")).toBe(true);
+    const inOther = annotations.records();
+    expect(await editor.openWorld(id)).toBe(true);
+    const reopened = annotations.records();
+    const exported = (await editor.exportWorld()).bytes;
+    expect(await editor.importWorld(exported)).toBe(true);
+    const imported = annotations.records();
+    const exportedAgain = (await editor.exportWorld()).bytes;
+
+    expect(kept.map((note) => note.kind)).toEqual(["zone", "zone", "text", "ruler", "legend"]);
+    expect(inOther).toEqual([]);
+    expect(reopened).toEqual(kept);
+    expect(imported).toEqual(kept);
+    expect(exportedAgain).toEqual(exported);
+  }, 240_000);
+
+  it("refuses a note on a layer that isn't a notes layer or a ruler on a model the world doesn't place, and a world file whose ruler names one, changing nothing", async () => {
+    const { editor, annotations, placed } = await editorWithNotesLayer();
+    const depth = editor.snapshot().history.undoDepth;
+    const label = {
+      kind: "text",
+      text: "Depot",
+      x: 0,
+      z: 0,
+      rot: 0,
+      heightStuds: 2,
+      color: "#000000",
+    } as const;
+    const elsewhere = { ...placed, x: placed.x + 20 };
+    const refusals = [
+      annotations.add({ ...label, layer: 0 }),
+      annotations.add({ ...label, layer: 2 }),
+      annotations.add({
+        kind: "ruler",
+        layer: NOTES_LAYER.id,
+        from: modelEnd(elsewhere, { x: 0, z: 0 }),
+        to: { on: "point", x: 100, z: 0 },
+        color: "#ff0000",
+      }),
+    ];
+    const unplaced = `names "${placed.ref}" at (${elsewhere.x}, ${placed.yPlates}, ${placed.z}) turned ${placed.rot}, which the world doesn't place`;
+
+    expect(refusals.map((refusal) => (refusal.ok ? null : refusal.issues))).toEqual([
+      [{ path: "note.layer", message: "names layer 0, a parts layer, not a notes one" }],
+      [{ path: "note.layer", message: "names layer 2, which the manifest doesn't list" }],
+      [{ path: "note.from", message: unplaced }],
+    ]);
+    expect([annotations.notes(), editor.snapshot().history.undoDepth]).toEqual([[], depth]);
+
+    const stray = await editorWithNotesLayer([
+      {
+        kind: "ruler",
+        index: 0,
+        layer: NOTES_LAYER.id,
+        from: modelEnd(elsewhere, { x: 0, z: 0 }),
+        to: { on: "point", x: 100, z: 0 },
+        color: "#ff0000",
+      },
+    ]);
+    expect(stray.reopened).toBe(false);
+    expect(stray.editor.snapshot().fileError).toBe(`import failed: note 0.from: ${unplaced}`);
+  }, 240_000);
+});
 
 function planWithoutIds(plans: IPlanService) {
   return plans.plans().map(({ id: _plan, footprint, ...region }) => ({
@@ -8108,6 +8353,7 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   "lay-track": "lays track against the drawing's own obstacles, which wait on seats",
   "throw-switch": "throws a switch without placing a model",
   plan: "edits plan regions only",
+  note: "edits notes only",
   "open-plan":
     "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
 };

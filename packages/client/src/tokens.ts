@@ -36,6 +36,7 @@ import type { ITableGround } from "./ground/table-ground.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
+import type { IAnnotationService } from "./notes/annotation-service.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
 import type { IPlanDrawing } from "./sheets/plan-drawing.ts";
@@ -137,6 +138,9 @@ export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.cli
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
+export const ANNOTATION_SERVICE: ServiceIdentifier<IAnnotationService> = Symbol.for(
+  "brr.client.AnnotationService",
+);
 export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
   "brr.client.PlanSheetService",
 );
