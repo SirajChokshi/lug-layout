@@ -35,6 +35,10 @@ export class ExactBoxes {
     this.placed = new PlacedInstance(frames);
   }
 
+  hasExtents(instance: number): boolean {
+    return Boolean(this.extents[this.instances.partIndex[instance] ?? -1]);
+  }
+
   sharedFrame(a: number, b: number): number {
     return commonFrame(this.frames, this.frames.frameOf(a), this.frames.frameOf(b));
   }

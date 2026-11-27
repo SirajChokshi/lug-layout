@@ -32,8 +32,9 @@ import { ExactBoxes, modelBoxes } from "./exact-boxes.ts";
 import type { PartExtents } from "./part-extents.ts";
 import type { PartRollingTable } from "./part-rolling.ts";
 import { NO_VEHICLE, ON_BODY, restingCredits, type Riders } from "./resting-ride.ts";
-import { shedding } from "./shedding.ts";
+import { shedding, type SheddingPoses } from "./shedding.ts";
 import { AxleHeights } from "./support-plane.ts";
+import { WrittenPoses } from "./written-pose.ts";
 import type { WrittenTransforms } from "./written-transforms.ts";
 import type { DetectedWheelset, WheelsetDetector } from "./wheelset-detector.ts";
 
@@ -276,8 +277,11 @@ export class RunningGearDetector {
       if (v !== NO_VEHICLE) ridingOf[v]?.push(instance);
     });
     const heights = new AxleHeights(frames);
-    const exact = new ExactBoxes(frames, instances, extents);
-    const boxes = modelBoxes(instances, extents);
+    const poses: SheddingPoses = {
+      identified: new ExactBoxes(frames, instances, extents),
+      written: new WrittenPoses(frames, instances, extents, input.written),
+      boxes: modelBoxes(instances, extents),
+    };
     const standing = Array.from(riders.vehicleOf.keys()).filter(
       (instance) => riders.vehicleOf[instance] === NO_VEHICLE,
     );
@@ -295,7 +299,7 @@ export class RunningGearDetector {
           extents,
           seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
           checked,
-        ) ?? shedding(exact, boxes, checked, standing);
+        ) ?? shedding(poses, checked, standing);
       if (!failure) return;
       unresolved.push({
         reason: failure.reason,

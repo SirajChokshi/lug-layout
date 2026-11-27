@@ -896,7 +896,11 @@ function stackedDrawbarWagons(): Scenario {
 
 function drawbarPieceWagons(): Scenario {
   return {
-    parts: { ...PARTS, wagon: WAGON, drawbar: DRAWBAR },
+    parts: {
+      ...PARTS,
+      wagon: { ...WAGON, extents: { min: [-50, -5, -40], max: [50, 5, 40] } },
+      drawbar: { ...DRAWBAR, extents: { min: [-25, -2, -5], max: [25, 2, 5] } },
+    },
     placed: [...wagons(150), { part: "drawbar", at: [75, 30, 0] }],
     mates: [...WAGON_AXLES, { male: [6, 0], female: [0, 2] }, { male: [3, 3], female: [6, 1] }],
   };
@@ -1106,6 +1110,14 @@ function riding(gear: ReturnType<typeof run>) {
     body: vehicle.body,
     bogies: vehicle.bogies.map((carrier) => carrier.instances),
   }));
+}
+
+function refusals(gear: ReturnType<typeof run>) {
+  return gear.unresolvedRunningGear.map((report) => [report.reason, report.instances]);
+}
+
+function outcome(gear: ReturnType<typeof run>) {
+  return { riding: riding(gear), refused: refusals(gear) };
 }
 
 function nestedFrameWagon(): Scenario {
@@ -1942,11 +1954,9 @@ describe("RunningGearDetector", () => {
         "a loose sub-assembly mated to a riding instance is neither credited nor a carrier for one resting on it",
         drawbarResting(),
         {
-          riding: [
-            { body: [0, 1, 2], bogies: [] },
-            { body: [3, 4, 5], bogies: [] },
-          ],
-          couplings: 1,
+          riding: [{ body: [3, 4, 5], bogies: [] }],
+          refused: [["shedsParts", [6]]],
+          couplings: 0,
         },
       ],
       [
@@ -1955,7 +1965,7 @@ describe("RunningGearDetector", () => {
           { part: "bare", at: [0, WAGON_TOP, 0] },
           { part: "lid", at: [0, WAGON_TOP + 4, 0] },
         ]),
-        { riding: [{ body: WAGON_INSTANCES, bogies: [] }], couplings: 0 },
+        { riding: [], refused: [["shedsParts", [4]]], couplings: 0 },
       ],
       [
         "a mated multi-part loose group is credited as one unit",
@@ -1972,29 +1982,29 @@ describe("RunningGearDetector", () => {
           ],
           [{ male: [4, 0], female: [3, 0] }],
         ),
-        { riding: [{ body: [...WAGON_INSTANCES, 3, 4], bogies: [] }], couplings: 0 },
+        { riding: [{ body: [...WAGON_INSTANCES, 3, 4], bogies: [] }], refused: [], couplings: 0 },
       ],
     ])("step 2: %s", (_name, scenario, expected) => {
       const gear = run(scenario);
 
-      expect({ riding: riding(gear), couplings: gear.vehicleCouplings.length }).toEqual(expected);
+      expect({ ...outcome(gear), couplings: gear.vehicleCouplings.length }).toEqual(expected);
     });
 
     it.each([
       [
         "contact across nested sub-model frames counts",
         nestedFrameWagon(),
-        [...WAGON_INSTANCES, 3],
+        { riding: [{ body: [...WAGON_INSTANCES, 3], bogies: [] }], refused: [] },
       ],
       [
         "an origin off the sixteenth grid gives no contact",
         loadedWagon({ lid: loose(LID) }, [{ part: "lid", at: [0.01, WAGON_TOP, 0] }]),
-        WAGON_INSTANCES,
+        { riding: [], refused: [["shedsParts", [3]]] },
       ],
       [
         "up not identified in the frame gives no contact",
         tiltedPlateWagon(),
-        [...WAGON_INSTANCES, 3],
+        { riding: [], refused: [["shedsParts", [4]]] },
       ],
       [
         "side-only contact and zero-length plan touch give no contact",
@@ -2008,22 +2018,22 @@ describe("RunningGearDetector", () => {
             { part: "tile", at: [50, WAGON_TOP, 30] },
           ],
         ),
-        WAGON_INSTANCES,
+        { riding: [{ body: WAGON_INSTANCES, bogies: [] }], refused: [] },
       ],
       [
         "a part seated on studs without a mate isn't credited",
         loadedWagon({ plate: loose({ min: [-20, 0, -20], max: [20, 8, 20] }) }, [
           { part: "plate", at: [0, WAGON_TOP - 4, 0] },
         ]),
-        WAGON_INSTANCES,
+        { riding: [], refused: [["shedsParts", [3]]] },
       ],
       [
         "a sixteenth gap gives no contact",
         loadedWagon({ lid: loose(LID) }, [{ part: "lid", at: [0, WAGON_TOP + SIXTEENTH, 0] }]),
-        WAGON_INSTANCES,
+        { riding: [], refused: [["shedsParts", [3]]] },
       ],
-    ])("step 3: %s", (_name, scenario, body) => {
-      expect(riding(run(scenario))).toEqual([{ body, bogies: [] }]);
+    ])("step 3: %s", (_name, scenario, expected) => {
+      expect(outcome(run(scenario))).toEqual(expected);
     });
 
     it.each([
@@ -2077,39 +2087,48 @@ describe("RunningGearDetector", () => {
           ],
           [{ male: [8, 0], female: [7, 0] }],
         ),
-        [
-          {
-            body: [0, 7, 8],
-            bogies: [
-              [1, 2, 3],
-              [4, 5, 6],
-            ],
-          },
-        ],
+        {
+          riding: [
+            {
+              body: [0, 7, 8],
+              bogies: [
+                [1, 2, 3],
+                [4, 5, 6],
+              ],
+            },
+          ],
+          refused: [],
+        },
       ],
       [
         "resting only on a bogie credits to that bogie",
         bogieCarWithExtents({ step: loose(SMALL) }, [{ part: "step", at: [80, 20, 0] }]),
-        [
-          {
-            body: [0],
-            bogies: [
-              [1, 2, 3, 7],
-              [4, 5, 6],
-            ],
-          },
-        ],
+        {
+          riding: [
+            {
+              body: [0],
+              bogies: [
+                [1, 2, 3, 7],
+                [4, 5, 6],
+              ],
+            },
+          ],
+          refused: [],
+        },
       ],
       [
-        "resting on two vehicles credits nothing",
+        "resting on two vehicles credits nothing, so each sheds it",
         plankAcrossWagons(),
-        [
-          { body: [0, 1, 2], bogies: [] },
-          { body: [3, 4, 5], bogies: [] },
-        ],
+        {
+          riding: [],
+          refused: [
+            ["shedsParts", [6]],
+            ["shedsParts", [6]],
+          ],
+        },
       ],
     ])("step 5: %s", (_name, scenario, expected) => {
-      expect(riding(run(scenario))).toEqual(expected);
+      expect(outcome(run(scenario))).toEqual(expected);
     });
 
     it("step 6: a credited part below the rail top over a head band refuses the vehicle as belowRailTop", () => {
@@ -2145,8 +2164,148 @@ describe("RunningGearDetector", () => {
         riding: riding(gear),
         unresolved: clearanceReports(gear.unresolvedRunningGear),
       }).toEqual({
-        riding: [{ body: [3, 4, 5], bogies: [] }],
-        unresolved: [{ reason: "belowRailTop", instances: [7], wheelsets: [1, 2] }],
+        riding: [],
+        unresolved: [
+          { reason: "belowRailTop", instances: [7], wheelsets: [1, 2] },
+          { reason: "shedsParts", instances: [6], wheelsets: [4, 5] },
+        ],
+      });
+    });
+
+    describe("step 6b: shedding", () => {
+      const POLE: Extents = { min: [-2, 0, -2], max: [2, 50, 2] };
+      const BLOCK: Extents = { min: [0, 0, -10], max: [20, 4, 10] };
+      const SLAB: Extents = { min: [-10, 0, -12], max: [10, 4, 12] };
+      const THREE_FOUR_FIVE_TURN = [0.6, 0, 0.8, 0, 1, 0, -0.8, 0, 0.6];
+      const STANDING: Readonly<Record<string, Part>> = {
+        lid: loose(LID),
+        pole: loose(POLE),
+        block: loose(BLOCK),
+        slab: loose(SLAB),
+        base: loose({ min: [-100, 0, -60], max: [100, 8, 60] }),
+        bare: BARE,
+        wheels: {
+          connectors: [AXLE_MALE],
+          rolling: wheels(
+            [
+              [44, 54],
+              [-54, -44],
+            ],
+            [{ reason: "unoriented" }],
+          ),
+        },
+      };
+      const standing = (loads: ReadonlyArray<Placement>) => run(loadedWagon(STANDING, loads));
+      const turnedSlab = (x: number) =>
+        refusals(standing([{ part: "slab", at: [x, 28, 0], rotation: THREE_FOUR_FIVE_TURN }]));
+
+      it.each([
+        ["over the body sheds", { part: "lid", at: [0, WAGON_TOP + 8, 0] }, [["shedsParts", [3]]]],
+        ["through the body sheds", { part: "pole", at: [0, 0, 0] }, [["shedsParts", [3]]]],
+        [
+          "wholly below the body, touching its bottom face, doesn't shed",
+          { part: "base", at: [0, 17, 0] },
+          [],
+        ],
+        ["plan-clear beside the body doesn't shed", { part: "pole", at: [200, 0, 0] }, []],
+      ] satisfies ReadonlyArray<[string, Placement, unknown]>)(
+        "an identified part %s",
+        (_name, load, refused) => {
+          expect(refusals(standing([load]))).toEqual(refused);
+        },
+      );
+
+      it.each([
+        ["over the body", { part: "lid", at: [0.0075, WAGON_TOP + 8, 0] }],
+        ["into the body's end by its authored 0.0075 LDU", { part: "block", at: [49.9925, 28, 0] }],
+      ] satisfies ReadonlyArray<[string, Placement]>)(
+        "an off-grid part %s sheds, decided on its authored pose",
+        (_name, load) => {
+          expect(outcome(standing([load]))).toEqual({
+            riding: [],
+            refused: [["shedsParts", [3]]],
+          });
+        },
+      );
+
+      it("an off-grid part plan-clear of every riding part doesn't shed", () => {
+        expect(outcome(standing([{ part: "pole", at: [200.0075, 0, 0] }]))).toEqual({
+          riding: [{ body: WAGON_INSTANCES, bogies: [] }],
+          refused: [],
+        });
+      });
+
+      it("an off-grid part touching a riding part only at a face doesn't shed", () => {
+        expect(refusals(standing([{ part: "block", at: [50, 28, 0.0075] }]))).toEqual([]);
+      });
+
+      it.each([
+        ["no extents", loadedWagon(STANDING, [{ part: "bare", at: [200, 0, 0] }])],
+        [
+          "no written transforms",
+          {
+            ...loadedWagon(STANDING, [{ part: "pole", at: [200.0075, 0, 0] }]),
+            written: null,
+          },
+        ],
+        [
+          "a singular written sub-model placement",
+          (() => {
+            const scenario: Scenario = {
+              ...loadedWagon(STANDING, [{ part: "pole", at: [200.0075, 0, 0], submodel: 0 }]),
+              submodels: [[0, 0, 0]],
+            };
+            return {
+              ...scenario,
+              written: { ...writtenScenario(scenario), placement: ["0 0 0 0 0 0 0 0 0 0 0 0"] },
+            };
+          })(),
+        ],
+      ] satisfies ReadonlyArray<[string, Scenario]>)(
+        "a standing part with %s fails closed as sheddingUnidentified",
+        (_name, scenario) => {
+          const gear = run(scenario);
+
+          expect({
+            riding: riding(gear),
+            unresolved: gear.unresolvedRunningGear.map((report) => ({
+              ...clearanceReports([report])[0],
+              unreadRows: report.unreadRows,
+            })),
+          }).toEqual({
+            riding: [],
+            unresolved: [
+              {
+                reason: "sheddingUnidentified",
+                instances: [3],
+                wheelsets: [1, 2],
+                unreadRows: [0, 1],
+              },
+            ],
+          });
+        },
+      );
+
+      it("a pair in a sub-model tilted off the model's up is decided in the model frame", () => {
+        const scenario = tiltedPlateWagon();
+        const clear: Scenario = {
+          ...scenario,
+          placed: scenario.placed.map((placement, i) =>
+            i === 4 ? { ...placement, at: [200, 4, 0] } : placement,
+          ),
+        };
+
+        expect(outcome(run(clear))).toEqual({
+          riding: [{ body: [...WAGON_INSTANCES, 3], bogies: [] }],
+          refused: [],
+        });
+      });
+
+      it("a rotated off-grid part is bounded by the exact image of its box, not a float box", () => {
+        expect({ touching: turnedSlab(65.6), overlapping: turnedSlab(65.5999) }).toEqual({
+          touching: [],
+          overlapping: [["shedsParts", [3]]],
+        });
       });
     });
 

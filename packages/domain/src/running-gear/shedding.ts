@@ -1,5 +1,6 @@
 import { compareExactRational } from "@brr/math";
-import { AXIS_FREE, axisDimension, axisSign } from "../connect/connector-table.ts";
+import { AXIS_FREE, AXIS_POS_Y, axisDimension, axisSign } from "../connect/connector-table.ts";
+import { MODEL_ROOT } from "../connect/submodel-frames.ts";
 import {
   BOX_AXES,
   BOX_FLOATS,
@@ -10,6 +11,13 @@ import {
   type ExactBoxes,
 } from "./exact-boxes.ts";
 import { overlapsWithLength } from "./placed-instance.ts";
+import type { WrittenPoses } from "./written-pose.ts";
+
+export interface SheddingPoses {
+  readonly identified: ExactBoxes;
+  readonly written: WrittenPoses;
+  readonly boxes: Float64Array;
+}
 
 export interface SheddingFailure {
   readonly reason: "shedsParts" | "sheddingUnidentified";
@@ -40,19 +48,33 @@ function floatMayReach(boxes: Float64Array, standing: number, rider: number): bo
   return top + CANDIDATE_REACH_LDU > bottom && planReach(boxes, standing, rider);
 }
 
-function pair(exact: ExactBoxes, boxes: Float64Array, standing: number, rider: number): Pair {
-  const frame = exact.sharedFrame(standing, rider);
-  const up = exact.up(standing, frame);
-  const a = exact.box(standing, frame);
-  const b = exact.box(rider, frame);
-  if (up === AXIS_FREE || !a || !b) return "unidentified";
-  if (!floatMayReach(boxes, standing, rider)) return "clear";
-  return inPath(a, b, up) ? "sheds" : "clear";
+function decided(poses: SheddingPoses, standing: number, rider: number, sheds: boolean): Pair {
+  return sheds && floatMayReach(poses.boxes, standing, rider) ? "sheds" : "clear";
+}
+
+function writtenPair(poses: SheddingPoses, standing: number, rider: number, shared: number): Pair {
+  const up = poses.written.up(shared);
+  if (up === null) return "unidentified";
+  const frame = up === AXIS_FREE ? MODEL_ROOT : shared;
+  const a = poses.written.box(standing, frame);
+  const b = poses.written.box(rider, frame);
+  if (!a || !b) return "unidentified";
+  return decided(poses, standing, rider, inPath(a, b, up === AXIS_FREE ? AXIS_POS_Y : up));
+}
+
+function pair(poses: SheddingPoses, standing: number, rider: number): Pair {
+  const { identified } = poses;
+  if (!identified.hasExtents(standing) || !identified.hasExtents(rider)) return "unidentified";
+  const frame = identified.sharedFrame(standing, rider);
+  const up = identified.up(standing, frame);
+  const a = identified.box(standing, frame);
+  const b = identified.box(rider, frame);
+  if (up === AXIS_FREE || !a || !b) return writtenPair(poses, standing, rider, frame);
+  return decided(poses, standing, rider, inPath(a, b, up));
 }
 
 export function shedding(
-  exact: ExactBoxes,
-  boxes: Float64Array,
+  poses: SheddingPoses,
   riding: ReadonlyArray<number>,
   standing: ReadonlyArray<number>,
 ): SheddingFailure | null {
@@ -62,7 +84,7 @@ export function shedding(
     let unplaced = false;
     let sheds = false;
     for (const rider of riding) {
-      const outcome = pair(exact, boxes, left, rider);
+      const outcome = pair(poses, left, rider);
       if (outcome === "sheds") {
         sheds = true;
         break;
