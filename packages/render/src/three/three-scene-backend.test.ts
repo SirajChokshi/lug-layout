@@ -24,6 +24,7 @@ import type {
   EdgeMarker,
   FarModelPlacement,
   FrameStats,
+  LookSettings,
   NeededMeshListener,
   PartPalette,
   PlanOverlay,
@@ -1114,7 +1115,10 @@ interface ShadowedBackend {
   shadowRange(): number;
 }
 
-function shadowedBackend(chunkOrigins: ReadonlyArray<readonly [number, number]>): ShadowedBackend {
+function shadowedBackend(
+  chunkOrigins: ReadonlyArray<readonly [number, number]>,
+  look: LookSettings = SHADOWS_ONLY,
+): ShadowedBackend {
   const { backend } = tieredBackend();
   let rendered: Object3D | undefined;
   const renderer = {
@@ -1125,7 +1129,7 @@ function shadowedBackend(chunkOrigins: ReadonlyArray<readonly [number, number]>)
     },
   } as unknown as WebGPURenderer;
   backend["renderer"] = renderer;
-  backend["light"](renderer, SHADOWS_ONLY);
+  backend["light"](renderer, look);
   sendChunks(backend, chunkOrigins);
   const shadowRange = (): number => {
     const sun = rendered?.children.find(
@@ -1221,4 +1225,14 @@ it("rests at the shadow range the live chunks need once a chunk is deleted, and 
     shrank: true,
     deleted: { asked: 0, stillAsking: false, far: restedFresh(SPREAD_CHUNKS.slice(0, 1)) },
   });
+});
+
+it.each([
+  { scene: "without shadows", look: { ...SHADOWS_ONLY, shadows: false }, chunks: SPREAD_CHUNKS },
+  { scene: "with shadows and no chunks", look: SHADOWS_ONLY, chunks: [] },
+])("asks for no further frame once a frame is drawn $scene", ({ look, chunks }) => {
+  const shadowed = shadowedBackend(chunks, look);
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+
+  expect(shadowed.backend.needsFrame()).toBe(false);
 });
