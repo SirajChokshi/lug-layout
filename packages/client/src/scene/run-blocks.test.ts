@@ -80,7 +80,7 @@ function session(
   openEnds: OpenEndRule = "brake",
 ): SimSession {
   const { layout, catalogPieces } = buildTrackPlan(plan, catalog);
-  const graph = new TrackGraph(layout);
+  const graph = TrackGraph.of(layout);
   const topology = simTopology(graph);
   const { track } = simTrackFromGraph(topology, routeSegments(graph, layout, catalogPieces));
   const spec = {

@@ -157,7 +157,7 @@ function blockLoop(): { readonly graph: TrackGraph; readonly track: SimTrack } {
       segments.push([straight]);
     }
   }
-  const graph = new TrackGraph(layout);
+  const graph = TrackGraph.of(layout);
   for (let edge = 0; edge < graph.edgeCount; edge++) {
     if (graph.successorStart[edge] === graph.successorStart[edge + 1]) {
       throw new Error(`the bench loop leaves directed edge ${edge} open`);

@@ -116,6 +116,11 @@ import { OBSTACLE_RECT_FLOATS, cellKey, type StudSeats } from "./track-obstacles
 import type { TrackSupport } from "./track-support.ts";
 import { writeChunkSquares } from "./plan-reach.ts";
 import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from "./track-bands.ts";
+import { TrackPlacements, contentOf, type TrackPlacement } from "./track-placements.ts";
+import { PlacementEnds } from "./placement-ends.ts";
+import { PlacementBands, type PlacementBand } from "./placement-bands.ts";
+import { SupportReach } from "./support-reach.ts";
+import { LevelVerdicts, type LevelVerdict } from "./level-verdicts.ts";
 import { heightText, type LabelView } from "./size-labels.ts";
 import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
@@ -158,6 +163,7 @@ const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
 const GROUND_PLATES = 0;
+const HELD_LEVEL: LevelVerdict = { held: true };
 const RAMP_HIGH_END = 1;
 const RAMP_CONNECTORS = 2;
 const INT16_MAX = 2 ** 15 - 1;
@@ -656,6 +662,16 @@ export class TrackDrawing implements ExtensionSite {
   private carriers: ReadonlyArray<TrackCarrier> = [];
   private heldCarrier = new Int32Array(0);
   private combined: TrackLayout;
+  private readonly placements = new TrackPlacements();
+  private readonly placementEnds: PlacementEnds;
+  private readonly placementBands = new PlacementBands((entry) => this.measureBand(entry));
+  private readonly supportReach = new SupportReach((entry, support) =>
+    this.measureReach(entry, support),
+  );
+  private readonly levelVerdicts = new LevelVerdicts((entry, support, band) =>
+    this.judgeLevel(entry, support, band),
+  );
+  private heldStale = false;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private pieceBoxes = new Float64Array(0);
@@ -756,7 +772,8 @@ export class TrackDrawing implements ExtensionSite {
     const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.combined = this.layout;
-    this.graph = new TrackGraph(this.layout);
+    this.placementEnds = new PlacementEnds(this.layout.pieces);
+    this.graph = TrackGraph.of(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
       const shape = kitFootprints(piece, shapes);
@@ -867,16 +884,18 @@ export class TrackDrawing implements ExtensionSite {
     );
   }
 
-  private measureSpan(placement: number): void {
-    const layout = this.combined;
-    const [bottom, top] = this.pieceRanges.get(layout.piece(placement)) ?? this.verticalRange();
-    const yPlates = layout.yPlates(placement);
-    const end = yPlates + layout.rise(placement);
-    const low = Math.min(yPlates, end) * PLATE_LDU;
-    const high = Math.max(yPlates, end) * PLATE_LDU;
-    this.spanBottom[placement] = bottom + low;
-    this.spanTop[placement] = top + high;
-    this.spanRailTop[placement] = this.railTopOf(layout.piece(placement)) + high;
+  private measureBand(entry: TrackPlacement): PlacementBand {
+    const outline = this.outlines.get(entry.piece);
+    const [bottom, top] = this.pieceRanges.get(entry.piece) ?? this.verticalRange();
+    const end = entry.yPlates + entry.rise;
+    const band = [Math.min(entry.yPlates, end), Math.max(entry.yPlates, end)] as const;
+    return {
+      framed: outline ? framedOutline(outline, entry.pose, entry.frame) : null,
+      band,
+      key: `${band[0]}:${band[1]}`,
+      bottomLdu: bottom + band[0] * PLATE_LDU,
+      topLdu: top + band[1] * PLATE_LDU,
+    };
   }
 
   get drawingPlates(): number {
@@ -1103,6 +1122,7 @@ export class TrackDrawing implements ExtensionSite {
     this.held = held;
     this.carriers = carriers;
     this.heldCarrier = heldCarrier;
+    this.heldStale = true;
     this.recomputeEnds();
   }
 
@@ -1228,48 +1248,24 @@ export class TrackDrawing implements ExtensionSite {
   unsupportedPieces(): ReadonlyArray<UnsupportedPiece> | null {
     const support = this.support;
     if (!support) return null;
-    const box = this.collisionBox;
-    const layout = this.combined;
+    const count = this.combined.count;
     const bands = this.supportBands(support);
     const found: UnsupportedPiece[] = [];
-    const levelHeld = new Uint8Array(layout.count);
+    const levelHeld = new Uint8Array(count);
     const ramps: number[] = [];
-    for (let p = 0; p < layout.count; p++) {
-      const catalogIndex = layout.piece(p);
-      const outline = this.outlines.get(catalogIndex);
-      const piece = this.pieces[catalogIndex];
-      if (!outline || !piece) continue;
-      const yPlates = layout.yPlates(p);
-      const band = bands.get(yPlates);
-      if (!band) throw new Error(`no support band was built for ${yPlates} plates up`);
+    for (let p = 0; p < count; p++) {
+      const entry = this.placements.at(p);
+      if (!this.outlines.has(entry.piece) || !this.pieces[entry.piece]) continue;
+      const band = bands.get(entry.yPlates);
+      if (!band) throw new Error(`no support band was built for ${entry.yPlates} plates up`);
       if (band.pending) return null;
-      if (layout.rise(p) !== 0) {
+      if (entry.rise !== 0) {
         ramps.push(p);
         continue;
       }
-      const onTable = yPlates === GROUND_PLATES;
-      const placement = layout.pose(p);
-      const frame = layout.frame(p);
-      const placed = framedOutlineInto(
-        outline,
-        placement,
-        frame,
-        this.framedScratchFor(outline.length),
-      );
-      outlineBox(placed, box, 0);
-      const { studlessTops } = band.field.support;
-      const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
-      const { seats } = band;
-      const { partFrame } = piece;
-      if (
-        (top === NO_OBSTACLE && onTable) ||
-        support.supported(catalogIndex, partFrame, placement, seats, studlessTops, frame, onTable)
-      ) {
-        levelHeld[p] = 1;
-        continue;
-      }
-      const block = top === NO_OBSTACLE ? null : band.field.describe(studlessTopBlocker(top));
-      found.push({ piece: p, block, tilted: false });
+      const verdict = this.levelVerdicts.of(entry, support, band);
+      if (verdict.held) levelHeld[p] = 1;
+      else found.push({ piece: p, block: verdict.block, tilted: false });
     }
     for (const p of ramps) {
       const rests = this.rampRests(p, support, bands, levelHeld);
@@ -1277,6 +1273,41 @@ export class TrackDrawing implements ExtensionSite {
       if (!rests) found.push({ piece: p, block: null, tilted: true });
     }
     return found;
+  }
+
+  private judgeLevel(entry: TrackPlacement, support: TrackSupport, band: LayingBand): LevelVerdict {
+    const outline = this.outlines.get(entry.piece);
+    const piece = this.pieces[entry.piece];
+    if (!outline || !piece) throw new Error(`track piece ${entry.piece} has no outline to judge`);
+    const box = this.collisionBox;
+    const onTable = entry.yPlates === GROUND_PLATES;
+    const placed = framedOutlineInto(
+      outline,
+      entry.pose,
+      entry.frame,
+      this.framedScratchFor(outline.length),
+    );
+    outlineBox(placed, box, 0);
+    const { studlessTops } = band.field.support;
+    const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
+    if (
+      (top === NO_OBSTACLE && onTable) ||
+      support.supported(
+        entry.piece,
+        piece.partFrame,
+        entry.pose,
+        band.seats,
+        studlessTops,
+        entry.frame,
+        onTable,
+      )
+    ) {
+      return HELD_LEVEL;
+    }
+    return {
+      held: false,
+      block: top === NO_OBSTACLE ? null : band.field.describe(studlessTopBlocker(top)),
+    };
   }
 
   private rampRests(
@@ -1319,32 +1350,38 @@ export class TrackDrawing implements ExtensionSite {
     return true;
   }
 
-  private supportBands(support: TrackSupport): ReadonlyMap<number, LayingBand> {
+  private measureReach(entry: TrackPlacement, support: TrackSupport): ReadonlyArray<number> | null {
+    const outline = this.outlines.get(entry.piece);
+    const piece = this.pieces[entry.piece];
+    if (!outline || !piece) return null;
     const box = this.collisionBox;
-    const layout = this.combined;
+    outlineBox(
+      framedOutlineInto(outline, entry.pose, entry.frame, this.framedScratchFor(outline.length)),
+      box,
+      0,
+    );
+    const reach = Array.from(box);
+    const antiStuds = support.antiStudPoints(entry.piece, piece.partFrame, entry.pose, entry.frame);
+    if (antiStuds.length > 0) {
+      outlineBox(antiStuds, box, 0);
+      reach.push(...box);
+    }
+    return reach;
+  }
+
+  private supportBands(support: TrackSupport): ReadonlyMap<number, LayingBand> {
     const reachAt = new Map<number, number[]>();
-    for (let p = 0; p < layout.count; p++) {
-      const catalogIndex = layout.piece(p);
-      const outline = this.outlines.get(catalogIndex);
-      const piece = this.pieces[catalogIndex];
-      if (!outline || !piece) continue;
-      const placement = layout.pose(p);
-      const frame = layout.frame(p);
-      const heights = layout.rise(p) === 0 ? [layout.yPlates(p)] : this.endHeightsOf(p);
-      outlineBox(
-        framedOutlineInto(outline, placement, frame, this.framedScratchFor(outline.length)),
-        box,
-        0,
-      );
-      const outlineReach = Array.from(box);
-      const antiStuds = support.antiStudPoints(catalogIndex, piece.partFrame, placement, frame);
-      if (antiStuds.length > 0) outlineBox(antiStuds, box, 0);
-      for (const yPlates of heights) {
-        const reach = reachAt.get(yPlates) ?? [];
-        reachAt.set(yPlates, reach);
-        reach.push(...outlineReach);
-        if (antiStuds.length > 0) reach.push(...box);
-      }
+    const reachAtHeight = (yPlates: number, boxes: ReadonlyArray<number>): void => {
+      const reach = reachAt.get(yPlates) ?? [];
+      reachAt.set(yPlates, reach);
+      reach.push(...boxes);
+    };
+    for (let p = 0; p < this.combined.count; p++) {
+      const entry = this.placements.at(p);
+      const boxes = this.supportReach.of(entry, support);
+      if (!boxes) continue;
+      if (entry.rise === 0) reachAtHeight(entry.yPlates, boxes);
+      else for (const yPlates of this.endHeightsOf(p)) reachAtHeight(yPlates, boxes);
     }
     const bands = new Map<number, LayingBand>();
     for (const [yPlates, reach] of reachAt) {
@@ -2081,10 +2118,12 @@ export class TrackDrawing implements ExtensionSite {
       if (!same) throw new Error(`laid track piece ${at.index} is not the piece the edit lifts`);
       touched.add(this.chunkOfPlaced(laid));
       this.layout.remove(at.index);
+      this.placements.lifted(at.index);
     }
     for (const at of change.lay) {
       const part = this.pieceByIndex(at.piece);
       this.layout.insert(at.index, at.piece, at.pose, at.yPlates, at.rise);
+      this.placements.laid(at.index, contentOf(this.layout, at.index));
       touched.add(this.chunkOfPlaced({ part, placement: at.pose, yPlates: at.yPlates, rise: 0 }));
     }
     this.indexChunks();
@@ -2381,7 +2420,7 @@ export class TrackDrawing implements ExtensionSite {
 
   private combine(): TrackLayout {
     if (this.held.length === 0) return this.layout;
-    const combined = new TrackLayout(this.pieces.map(pieceSpec));
+    const combined = new TrackLayout(this.layout.pieces);
     for (let p = 0; p < this.layout.count; p++) {
       combined.place(
         this.layout.piece(p),
@@ -2397,22 +2436,27 @@ export class TrackDrawing implements ExtensionSite {
 
   private recomputeEnds(): void {
     this.combined = this.combine();
+    if (this.heldStale) {
+      this.placements.heldFrom(this.combined);
+      this.heldStale = false;
+    }
     this.indexBands();
     this.previousCrossingOutlines = this.crossingOutlines;
     this.crossingOutlines = new Map();
     this.crossingPieceList = null;
-    this.graph = new TrackGraph(this.combined);
+    const ends = Array.from({ length: this.combined.count }, (_, p) =>
+      this.placementEnds.of(this.placements.at(p)),
+    );
+    this.graph = TrackGraph.fromEnds(this.combined, ends);
     const world: TrackEnd[] = [];
     const inRunFrames: TrackEnd[] = [];
     const owners: number[] = [];
     for (const end of this.graph.openEnds) {
       const placement = this.graph.endPlacement[end] ?? 0;
-      const connector = this.graph.endConnector[end] ?? 0;
-      const open: TrackEnd = {
-        pose: this.combined.connectorPose(placement, connector),
-        yPlates: this.combined.endYPlates(placement, connector),
-        frame: this.combined.frame(placement),
-      };
+      const piece = ends[placement];
+      const at = piece?.ends[this.graph.endConnector[end] ?? 0];
+      if (!piece || !at) throw new Error(`open end ${end} has no cached end on its piece`);
+      const open: TrackEnd = { pose: at.pose, yPlates: at.yPlates, frame: piece.placement.frame };
       if (open.frame.id !== WORLD_TRACK_FRAME.id) {
         inRunFrames.push(open);
         continue;
@@ -2436,22 +2480,22 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   private indexBands(): void {
-    const layout = this.combined;
+    const count = this.combined.count;
     const framed: Array<Float64Array | null> = [];
     const bands = new Map<string, readonly [number, number]>();
     const raised: number[] = [];
-    this.spanBottom = new Float64Array(layout.count);
-    this.spanTop = new Float64Array(layout.count);
-    this.spanRailTop = new Float64Array(layout.count);
-    for (let p = 0; p < layout.count; p++) {
-      const outline = this.outlines.get(layout.piece(p));
-      framed.push(outline ? framedOutline(outline, layout.pose(p), layout.frame(p)) : null);
-      const yPlates = layout.yPlates(p);
-      const end = yPlates + layout.rise(p);
-      const band = [Math.min(yPlates, end), Math.max(yPlates, end)] as const;
-      bands.set(`${band[0]}:${band[1]}`, band);
+    this.spanBottom = new Float64Array(count);
+    this.spanTop = new Float64Array(count);
+    this.spanRailTop = new Float64Array(count);
+    for (let p = 0; p < count; p++) {
+      const entry = this.placements.at(p);
+      const { framed: outline, band, key, bottomLdu, topLdu } = this.placementBands.of(entry);
+      framed.push(outline);
+      bands.set(key, band);
       if (band[1] !== GROUND_PLATES) raised.push(p);
-      this.measureSpan(p);
+      this.spanBottom[p] = bottomLdu;
+      this.spanTop[p] = topLdu;
+      this.spanRailTop[p] = this.railTopOf(entry.piece) + band[1] * PLATE_LDU;
     }
     this.raisedAt = Int32Array.from(raised);
     this.framed = framed;

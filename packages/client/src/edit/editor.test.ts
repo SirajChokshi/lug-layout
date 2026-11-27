@@ -10601,6 +10601,7 @@ const SESSION_EDIT_KINDS = [
   "ground stroke",
   "baseplate placed, moved, turned or removed",
   "raised stroke",
+  "rising stroke",
   "switch lay",
   "lever throw",
   "platform moved, turned or removed",
@@ -10622,6 +10623,8 @@ const PLATFORM_BRICKS_Z = [
   -300, -260, -220, -180, -140, -100, -60, -20, 20, 60, 100, 140, 180, 220, 260, 300,
 ];
 const RUN_HALF_LDU = 480;
+const RISE_STUB_FROM_LDU = 1920;
+const RISE_STUB_TO_LDU = 1300;
 const PLATFORM_STROKE_HALF_LDU = 240;
 const PLATFORM_SHIFT_LDU = 8 * STUD;
 const SHIFT_STEPS = 5;
@@ -10773,7 +10776,13 @@ it("keeps track support, clearance, blocking and the trains after every edit of 
     openedAgain: 0,
     freshEditors: 0,
     baseplateEdits: 0,
+    rampsResting: 0,
+    rampsUndone: 0,
+    rampsRedone: 0,
+    rampsReloaded: 0,
   };
+  const rampCount = () =>
+    session.editor.dump().laidTrack.filter((piece) => (piece.rise ?? 0) !== 0).length;
   const tools = () => ({
     editor: session.editor,
     backend: session.backend,
@@ -10796,6 +10805,26 @@ it("keeps track support, clearance, blocking and the trains after every edit of 
     ) {
       seen.seatedOnPlatform++;
     }
+  };
+  const risingStroke = async (row: number): Promise<boolean> => {
+    const { editor, draw } = tools();
+    const before = rampCount();
+    const z = platformAt[1] + row;
+    drawnAt(editor, 0);
+    draw([platformAt[0] - RISE_STUB_FROM_LDU, z], [platformAt[0] - RISE_STUB_TO_LDU, z]);
+    const stubEnd = editor
+      .dump()
+      .trackEnds.filter((end) => end.yPlates === 0 && end.zLdu === z)
+      .toSorted((a, b) => b.xLdu - a.xLdu)
+      .find((end) => end.xLdu < platformAt[0] - PLATFORM_STROKE_HALF_LDU);
+    if (!stubEnd) return false;
+    drawnAt(editor, PLATFORM_PLATES);
+    draw([stubEnd.xLdu, z], [platformAt[0], z]);
+    await piersPlaced(editor);
+    drawnAt(editor, 0);
+    if (rampCount() <= before) return false;
+    if ((editor.snapshot().track?.lastUnsupported?.tilted ?? 0) === 0) seen.rampsResting++;
+    return true;
   };
   {
     const { editor, backend, place, draw } = tools();
@@ -10832,12 +10861,17 @@ it("keeps track support, clearance, blocking and the trains after every edit of 
     const lane = FREE_LANES_Z[Math.floor(random() * FREE_LANES_Z.length)] ?? 0;
     const shift =
       (Math.floor(random() * SHIFT_STEPS) - Math.floor(SHIFT_STEPS / 2)) * SHIFT_STEP_LDU;
+    const rampsBefore = rampCount();
     switch (edit) {
       case "ground stroke":
         draw([shift - RUN_HALF_LDU, lane], [shift + RUN_HALF_LDU, lane]);
         break;
       case "raised stroke":
         raisedStroke(shift, PLATFORM_ROWS_Z[Math.floor(random() * PLATFORM_ROWS_Z.length)] ?? 0);
+        break;
+      case "rising stroke":
+        if (await risingStroke(PLATFORM_ROWS_Z[Math.floor(random() * PLATFORM_ROWS_Z.length)] ?? 0))
+          planned.unshift("undo", "redo");
         break;
       case "switch lay":
         laySwitchAt(
@@ -10931,6 +10965,11 @@ it("keeps track support, clearance, blocking and the trains after every edit of 
       session.container.get(PLAN_SERVICE),
       samples,
     );
+    const rampsAfter = rampCount();
+    if (edit === "undo" && rampsAfter < rampsBefore) seen.rampsUndone++;
+    if (edit === "redo" && rampsAfter > rampsBefore) seen.rampsRedone++;
+    const reloaded = edit === "world opened again" || edit === "a fresh editor continues";
+    if (reloaded && rampsAfter > 0 && rampsAfter === rampsBefore) seen.rampsReloaded++;
     expect(observed, `step ${step}: ${edit}`).toEqual(
       await freshlyComputed(session.editor, repository, samples),
     );

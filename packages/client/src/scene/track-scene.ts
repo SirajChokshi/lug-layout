@@ -175,7 +175,7 @@ export class TrackScene implements ITrackScene {
   async load(lod: BundleLod): Promise<SceneSummary> {
     const bundle = await this.loader.load(lod, TRACK_PARTS);
     const { layout, catalogPieces } = buildTrackPlan(this.plan, bundle.trackCatalog);
-    const graph = new TrackGraph(layout);
+    const graph = TrackGraph.of(layout);
     this.frame(graph);
     const colors = new ColorTable(bundle);
     const chunks = trackChunks(layout, catalogPieces, bundle, colors);
