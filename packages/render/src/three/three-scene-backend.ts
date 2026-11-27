@@ -2228,14 +2228,17 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     camera.updateMatrixWorld();
   }
 
-  private fitShadowRange(): boolean {
+  private fitShadowRange(): void {
     const shadowNode = this.shadowNode;
-    if (!shadowNode || this.chunkList.length === 0) return true;
+    if (!shadowNode || this.chunkList.length === 0) return;
     this.sceneBounds.refresh(this.chunkList);
     const reach = this.sceneBounds.reachFrom(this.eyeX, this.eyeY, this.eyeZ);
     const needed = Math.max(reach, SHADOW_MIN_FAR_LDU);
     if (this.shadowRange.fit(needed)) this.applyShadowRange(shadowNode, this.shadowRange.far);
-    return this.shadowRange.atRest;
+  }
+
+  private shadowsAtRest(): boolean {
+    return !this.shadowNode || this.chunkList.length === 0 || this.shadowRange.atRest;
   }
 
   private applyShadowRange(shadowNode: CSMShadowNode, far: number): void {
@@ -2553,7 +2556,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const renderer = this.renderer;
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
     this.throwIfFailed();
-    const shadowsAtRest = this.fitShadowRange();
+    this.fitShadowRange();
     this.readTierStats(out);
     this.showFarModels();
     renderer.info.reset();
@@ -2565,7 +2568,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     out.renderOriginChunkZ = this.renderOriginZ / CHUNK_LDU;
     out.rebaseCount = this.rebaseCount;
     this.frame++;
-    this.changed = !shadowsAtRest;
+    this.changed = !this.shadowsAtRest();
   }
 
   needsFrame(): boolean {

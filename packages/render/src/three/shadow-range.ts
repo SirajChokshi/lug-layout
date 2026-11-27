@@ -16,13 +16,13 @@ export class ShadowRange {
     const still = neededLdu === this.lastNeededLdu;
     this.lastNeededLdu = neededLdu;
     const restRange = neededLdu * SHADOW_FAR_HYSTERESIS;
-    const keeps = still ? this.farLdu === restRange : this.covers(neededLdu);
+    const keeps = still ? this.farLdu === restRange : this.withinBand(neededLdu);
     if (keeps) return false;
     this.farLdu = restRange;
     return true;
   }
 
-  private covers(neededLdu: number): boolean {
+  private withinBand(neededLdu: number): boolean {
     return neededLdu <= this.farLdu && neededLdu * SHADOW_FAR_HYSTERESIS >= this.farLdu;
   }
 }

@@ -6,6 +6,7 @@ import {
 } from "@brr/catalog";
 import { CHUNK_LDU } from "@brr/math";
 import {
+  DirectionalLight,
   InstancedMesh,
   Matrix3,
   Matrix4,
@@ -1092,6 +1093,7 @@ const SHADOWS_ONLY = {
   shadows: true,
   oit: false,
 } as const;
+const SETTLING_FRAMES_ALLOWED = 3;
 
 function frameStats(): FrameStats {
   return {
@@ -1107,21 +1109,42 @@ function frameStats(): FrameStats {
   };
 }
 
-function shadowedBackend(
-  chunkOrigins: ReadonlyArray<readonly [number, number]>,
-): ThreeSceneBackend {
+interface ShadowedBackend {
+  readonly backend: ThreeSceneBackend;
+  shadowRange(): number;
+}
+
+function shadowedBackend(chunkOrigins: ReadonlyArray<readonly [number, number]>): ShadowedBackend {
   const { backend } = tieredBackend();
+  let rendered: Object3D | undefined;
   const renderer = {
     shadowMap: { enabled: false },
     info: { reset: () => undefined, render: { drawCalls: 0, triangles: 0 } },
-    render: () => undefined,
+    render: (scene: Object3D) => {
+      rendered = scene;
+    },
   } as unknown as WebGPURenderer;
   backend["renderer"] = renderer;
   backend["light"](renderer, SHADOWS_ONLY);
+  sendChunks(backend, chunkOrigins);
+  const shadowRange = (): number => {
+    const sun = rendered?.children.find(
+      (child): child is DirectionalLight => child instanceof DirectionalLight && child.castShadow,
+    );
+    return (
+      (sun?.shadow as { shadowNode?: { maxFar: number } } | undefined)?.shadowNode?.maxFar ?? 0
+    );
+  };
+  return { backend, shadowRange };
+}
+
+function sendChunks(
+  backend: ThreeSceneBackend,
+  chunkOrigins: ReadonlyArray<readonly [number, number]>,
+): void {
   chunkOrigins.forEach(([originX, originZ], key) =>
     backend.setChunk(key, { ...chunkOf(0), originX, originZ }),
   );
-  return backend;
 }
 
 function viewedAlong(backend: ThreeSceneBackend, eyeHeights: ReadonlyArray<number>): void {
@@ -1132,13 +1155,17 @@ function viewedAlong(backend: ThreeSceneBackend, eyeHeights: ReadonlyArray<numbe
   }
 }
 
-function restedRange(backend: ThreeSceneBackend): { asked: number; far: number } {
+function rested({ backend, shadowRange }: ShadowedBackend): {
+  asked: number;
+  stillAsking: boolean;
+  far: number;
+} {
   let asked = 0;
-  while (backend.needsFrame()) {
+  while (backend.needsFrame() && asked < SETTLING_FRAMES_ALLOWED) {
     asked++;
     backend.renderFrame(frameStats());
   }
-  return { asked, far: backend["shadowNode"]?.maxFar ?? 0 };
+  return { asked, stillAsking: backend.needsFrame(), far: shadowRange() };
 }
 
 const SPREAD_CHUNKS = [
@@ -1146,6 +1173,12 @@ const SPREAD_CHUNKS = [
   [19_200, 12_800],
 ] as const;
 const RESTING_EYE_LDU = 12_000;
+
+function restedFresh(chunkOrigins: ReadonlyArray<readonly [number, number]>): number {
+  const fresh = shadowedBackend(chunkOrigins);
+  viewedAlong(fresh.backend, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
+  return rested(fresh).far;
+}
 
 it.each([
   {
@@ -1161,24 +1194,31 @@ it.each([
 ])(
   "asks for frames after the view stops only until the shadow range rests, and rests at one range whichever way the view came: $path",
   ({ eyeHeights, asked }) => {
-    const backend = shadowedBackend(SPREAD_CHUNKS);
-    viewedAlong(backend, eyeHeights);
+    const shadowed = shadowedBackend(SPREAD_CHUNKS);
+    viewedAlong(shadowed.backend, eyeHeights);
 
-    const fresh = shadowedBackend(SPREAD_CHUNKS);
-    viewedAlong(fresh, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
-    expect(restedRange(backend)).toEqual({ asked, far: restedRange(fresh).far });
+    expect(rested(shadowed)).toEqual({
+      asked,
+      stillAsking: false,
+      far: restedFresh(SPREAD_CHUNKS),
+    });
   },
 );
 
-it("rests at the shadow range the live chunks need once a chunk is deleted", () => {
-  const backend = shadowedBackend(SPREAD_CHUNKS);
-  viewedAlong(backend, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
-  const before = restedRange(backend).far;
-  backend.deleteChunk(1);
-  viewedAlong(backend, [RESTING_EYE_LDU]);
+it("rests at the shadow range the live chunks need once a chunk is deleted, and keeps it when a chunk is rebuilt with the same parts", () => {
+  const shadowed = shadowedBackend(SPREAD_CHUNKS);
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
+  const before = rested(shadowed).far;
+  sendChunks(shadowed.backend, SPREAD_CHUNKS);
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+  const rebuilt = rested(shadowed);
+  shadowed.backend.deleteChunk(1);
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+  const deleted = rested(shadowed);
 
-  const live = shadowedBackend(SPREAD_CHUNKS.slice(0, 1));
-  viewedAlong(live, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
-  const after = restedRange(backend).far;
-  expect({ shrank: after < before, after }).toEqual({ shrank: true, after: restedRange(live).far });
+  expect({ rebuilt, shrank: deleted.far < before, deleted }).toEqual({
+    rebuilt: { asked: 0, stillAsking: false, far: before },
+    shrank: true,
+    deleted: { asked: 0, stillAsking: false, far: restedFresh(SPREAD_CHUNKS.slice(0, 1)) },
+  });
 });
