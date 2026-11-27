@@ -69,7 +69,7 @@ test("trains set by hand on a hand-drawn oval, imported ones included, couple wh
   await editor.placeAt(wagons.item, LOCOMOTIVE_AT);
   const coupled = page.locator("section.play-panel li", { hasText: basename(MY_WAGONS) });
   await expect(coupled).toHaveCount(1);
-  await expect(coupled).toContainText("Locomotive (2004)");
+  await expect(coupled).toContainText("10020-1 Santa Fe Super Chief (2002)");
   await expect(coupled).toContainText(" + ");
   expect(await editor.trainsOnRails()).toBe(2);
   await editor.undo();
