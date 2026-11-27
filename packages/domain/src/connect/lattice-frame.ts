@@ -1,6 +1,6 @@
 import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { LatticePose } from "./candidate-poses.ts";
-import { AXIS_NEG_Y, AXIS_POS_Y, axisDimension, axisSign } from "./connector-table.ts";
+import { AXIS_NEG_Y, AXIS_POS_Y, NO_ROLL, axisDimension, axisSign } from "./connector-table.ts";
 
 export const QUARTER_TURNS = 4;
 export const STUD_SIXTEENTHS = STUD_LDU * SIXTEENTHS_PER_LDU;
@@ -49,8 +49,12 @@ export function studCell(centre16: number): number {
   return (centre16 - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
 }
 
-export function isLatticeStud(axis: number, x16: number, z16: number): boolean {
-  return verticalSign(axis) !== 0 && isStudCentre(x16, z16);
+export function latticeStudSign(axis: number, roll: number): number {
+  return roll === NO_ROLL ? verticalSign(axis) : 0;
+}
+
+export function isLatticeStud(axis: number, roll: number, x16: number, z16: number): boolean {
+  return latticeStudSign(axis, roll) !== 0 && isStudCentre(x16, z16);
 }
 
 function turnedAxis(code: number, rot: number): number {
@@ -73,4 +77,8 @@ const TURNED_AXES = Int8Array.from({ length: QUARTER_TURNS * AXIS_CODES }, (_, i
 
 export function rotatedAxis(code: number, rot: number): number {
   return TURNED_AXES[rot * AXIS_CODES + code] ?? code;
+}
+
+export function rotatedRoll(roll: number, rot: number): number {
+  return roll === NO_ROLL ? NO_ROLL : rotatedAxis(roll, rot);
 }

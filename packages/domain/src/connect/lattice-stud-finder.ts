@@ -1,14 +1,14 @@
 import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
-import { SOURCES, STATUSES, VECTOR_FLOATS } from "./connector-table.ts";
+import { NO_ROLL, SOURCES, STATUSES, VECTOR_FLOATS } from "./connector-table.ts";
 import {
   PLATE_SIXTEENTHS,
   QUARTER_TURNS,
   STUD_SIXTEENTHS,
   checkPose,
+  latticeStudSign,
   phaseOf,
   sixteenths,
-  verticalSign,
 } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
 import type { ProposalProgress } from "./proposal-progress.ts";
@@ -61,7 +61,7 @@ class PhaseGroups {
     const ownClass = classes.classesOf(model);
     let vertical = 0;
     for (let i = 0; i < n; i++) {
-      if (verticalSign(model.axis[i] ?? 0) !== 0) vertical++;
+      if (latticeStudSign(model.axis[i] ?? 0, model.roll[i] ?? NO_ROLL) !== 0) vertical++;
     }
     const total = vertical * QUARTER_TURNS;
     const entryTurn = new Int32Array(total);
@@ -78,7 +78,7 @@ class PhaseGroups {
       const cos = rot90Cos(rot);
       const sin = rot90Sin(rot);
       for (let i = 0; i < n; i++) {
-        const axis = verticalSign(model.axis[i] ?? 0);
+        const axis = latticeStudSign(model.axis[i] ?? 0, model.roll[i] ?? NO_ROLL);
         if (axis === 0) continue;
         const o = i * VECTOR_FLOATS;
         const mx = model.origin[o] ?? 0;

@@ -3,17 +3,26 @@ import type { ConnectorColumns } from "./connector-columns.ts";
 import {
   AXIS_FREE,
   AXIS_NEG_Y,
+  AXIS_POS_X,
   AXIS_POS_Y,
   ConnectorTable,
   connectorOriginLdu,
   GENDER_FEMALE,
   GENDER_MALE,
+  NO_ROLL,
   SOURCE_INFERRED,
   SOURCE_SHADOW,
   STATUS_UNVERIFIED,
   STATUS_VERIFIED,
 } from "./connector-table.ts";
-import { CAP_FAR, CAP_ROOT, SECTION_AXLE, SECTION_ROUND, SnapShapes } from "./snap-shapes.ts";
+import {
+  CAP_FAR,
+  CAP_ROOT,
+  SECTION_AXLE,
+  SECTION_BOX,
+  SECTION_ROUND,
+  SnapShapes,
+} from "./snap-shapes.ts";
 
 const PART = "custom-coupler.dat";
 const NON_DYADIC_SIZE = 1.8;
@@ -39,6 +48,7 @@ function customColumns(overrides: Partial<ConnectorColumns> = {}): ConnectorColu
     sectionSize: Float64Array.of(6, NON_DYADIC_SIZE, 4, 6),
     sectionLength: Float64Array.of(4, NON_DYADIC_LENGTH, 8, 4),
     piece: Uint16Array.of(0, 1, 1),
+    roll: Int8Array.of(NO_ROLL, NO_ROLL, NO_ROLL),
     freeFace: Uint32Array.of(1),
     freeOrigin: Float64Array.from(FREE_ORIGIN),
     freeAxis: Float64Array.from(FREE_AXIS),
@@ -140,6 +150,7 @@ describe("ConnectorTable.fromColumns", () => {
         sectionSize: new Float64Array(),
         sectionLength: new Float64Array(),
         piece: new Uint16Array(),
+        roll: new Int8Array(),
         freeFace: new Uint32Array(),
         freeOrigin: new Float64Array(),
         freeAxis: new Float64Array(),
@@ -149,6 +160,23 @@ describe("ConnectorTable.fromColumns", () => {
       PART,
     );
     expect([empty.count, empty.unreadable]).toEqual([0, ["closedAtBothEnds", "generic"]]);
+  });
+
+  it("keeps a box face's roll, and refuses a box face without one or a roll on any other face", () => {
+    const boxed = {
+      sectionCode: Uint8Array.of(SECTION_ROUND, SECTION_AXLE, SECTION_ROUND, SECTION_BOX),
+      roll: Int8Array.of(NO_ROLL, NO_ROLL, AXIS_POS_X),
+    };
+    const table = ConnectorTable.fromColumns(customColumns(boxed), new SnapShapes(), PART);
+    expect({
+      roll: Array.from(table.roll),
+      unrolledBox: refusal({ ...boxed, roll: Int8Array.of(NO_ROLL, NO_ROLL, NO_ROLL) }),
+      rolledRound: refusal({ ...boxed, roll: Int8Array.of(AXIS_POS_X, NO_ROLL, AXIS_POS_X) }),
+    }).toEqual({
+      roll: [NO_ROLL, NO_ROLL, AXIS_POS_X],
+      unrolledBox: `${PART}: box face 2 has no roll`,
+      rolledRound: `${PART}: face 0 has a roll but no box section`,
+    });
   });
 
   it("refuses data errors and names the part", () => {

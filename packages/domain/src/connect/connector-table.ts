@@ -1,6 +1,9 @@
 import { SIXTEENTHS_PER_LDU } from "@brr/math";
+import { NO_ROLL } from "@brr/schema/bundle";
 import type { ConnectorColumns } from "./connector-columns.ts";
-import { NO_GROUP, SECTION_FEMALE_FINGER, type SnapShapes } from "./snap-shapes.ts";
+import { NO_GROUP, SECTION_BOX, type SnapShapes } from "./snap-shapes.ts";
+
+export { NO_ROLL };
 
 export const GENDER_MALE = 0;
 export const GENDER_FEMALE = 1;
@@ -25,7 +28,7 @@ export const AXIS_NEG_Y = 3;
 export const AXIS_POS_Z = 4;
 export const AXIS_NEG_Z = 5;
 export const VECTOR_FLOATS = 3;
-const LAST_SECTION_CODE = SECTION_FEMALE_FINGER;
+const LAST_SECTION_CODE = SECTION_BOX;
 
 export function axisDimension(code: number): number {
   return code >> 1;
@@ -63,10 +66,12 @@ export class ConnectorTable {
     readonly piece: Uint16Array,
     readonly originFree: Float64Array,
     readonly unreadable: ReadonlyArray<string>,
+    readonly roll: Int8Array = new Int8Array(shape.length).fill(NO_ROLL),
   ) {
     const count = shape.length;
     if (
       gender.length !== count ||
+      roll.length !== count ||
       source.length !== count ||
       status.length !== count ||
       axis.length !== count ||
@@ -80,10 +85,12 @@ export class ConnectorTable {
     for (let i = 0; i < count; i++) {
       const gendered = gender[i] === GENDER_MALE || gender[i] === GENDER_FEMALE;
       const axisCode = axis[i] ?? AXIS_FREE;
+      const rollCode = roll[i] ?? NO_ROLL;
       const known = isSource(source[i]) && isStatus(status[i]);
-      if (!gendered || !known || axisCode < AXIS_FREE || axisCode > AXIS_NEG_Z) {
+      const coded = axisCode >= AXIS_FREE && axisCode <= AXIS_NEG_Z;
+      if (!gendered || !known || !coded || rollCode < NO_ROLL || rollCode > AXIS_NEG_Z) {
         throw new RangeError(
-          `connector ${i} has gender ${gender[i]}, source ${source[i]}, status ${status[i]} and axis ${axisCode}`,
+          `connector ${i} has gender ${gender[i]}, source ${source[i]}, status ${status[i]}, axis ${axisCode} and roll ${rollCode}`,
         );
       }
     }
@@ -125,6 +132,10 @@ export class ConnectorTable {
       for (const code of codes) {
         if (code > LAST_SECTION_CODE) refuse(`face ${i} has section code ${code}`);
       }
+      const rolled = columns.roll[i] !== NO_ROLL;
+      if (codes.includes(SECTION_BOX) !== rolled) {
+        refuse(rolled ? `face ${i} has a roll but no box section` : `box face ${i} has no roll`);
+      }
       shape[i] = shapes.intern(
         columns.caps[i] ?? 0,
         columns.slide[i] === 1,
@@ -145,6 +156,7 @@ export class ConnectorTable {
       columns.piece,
       originFree,
       columns.unreadable,
+      columns.roll,
     );
   }
 }

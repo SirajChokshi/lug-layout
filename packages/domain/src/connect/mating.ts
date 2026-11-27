@@ -13,6 +13,7 @@ import {
   CAP_ROOT,
   FINGER_RADIUS_UNSTATED,
   SECTION_AXLE,
+  SECTION_BOX,
   SECTION_FEMALE_FINGER,
   SECTION_MALE_FINGER,
   SECTION_ROUND,
@@ -184,9 +185,16 @@ export class SnapMating {
     let inserted = false;
     const offset = offsetSixteenths / SIXTEENTHS_PER_LDU;
     this.overlaps(maleShape, femaleShape, offset, (m, f, shared) => {
+      const maleCode = shapes.maleCode(m);
+      const femaleCode = shapes.femaleCode(f);
+      if (maleCode === SECTION_BOX && femaleCode === SECTION_BOX) {
+        locked = true;
+        inserted = true;
+        return true;
+      }
       if (shared === 0) return true;
       inserted = true;
-      locked ||= locksRotation(shapes.maleCode(m), shapes.femaleCode(f));
+      locked ||= locksRotation(maleCode, femaleCode);
       return true;
     });
     return { spins: !locked, axis: axisLine(maleAxis), freeAboutVertical: !inserted };
@@ -385,6 +393,9 @@ export class SnapMating {
     const femaleCode = shapes.femaleCode(f);
     const maleSize = shapes.maleSize(m);
     const femaleSize = shapes.femaleSize(f);
+    if (maleCode === SECTION_BOX || femaleCode === SECTION_BOX) {
+      return maleCode === femaleCode ? TOUCHING : MISFIT;
+    }
     if (interleaves(maleCode, femaleCode)) {
       const exact = shared === shapes.span(m) && shared === shapes.span(f);
       const radii = !comparesRadii || radiiAgree(maleSize, femaleSize);

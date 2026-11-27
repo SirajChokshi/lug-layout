@@ -14,6 +14,7 @@ export interface ConnectorColumns {
   readonly sectionSize: Float64Array;
   readonly sectionLength: Float64Array;
   readonly piece: Uint16Array;
+  readonly roll: Int8Array;
   readonly freeFace: Uint32Array;
   readonly freeOrigin: Float64Array;
   readonly freeAxis: Float64Array;

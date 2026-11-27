@@ -253,8 +253,32 @@
       "engaged": [[0, 0]]
     },
     {
+      "name": "box faces of one group engage only where their frames coincide",
+      "male": { "caps": 0, "slide": false, "group": "pane", "sections": [[7, 0, 0]] },
+      "female": { "caps": 0, "slide": false, "group": "pane", "sections": [[7, 0, 0]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "box faces of different groups never engage",
+      "male": { "caps": 0, "slide": false, "group": "pane", "sections": [[7, 0, 0]] },
+      "female": { "caps": 0, "slide": false, "group": "door", "sections": [[7, 0, 0]] },
+      "engaged": []
+    },
+    {
+      "name": "a box face never engages a zero-length round face of its group",
+      "male": { "caps": 0, "slide": false, "group": "pane", "sections": [[7, 0, 0]] },
+      "female": { "caps": 0, "slide": false, "group": "pane", "sections": [[0, 0, 0]] },
+      "engaged": []
+    },
+    {
+      "name": "a zero-length round face never engages a box face of its group",
+      "male": { "caps": 0, "slide": false, "group": "pane", "sections": [[0, 0, 0]] },
+      "female": { "caps": 0, "slide": false, "group": "pane", "sections": [[7, 0, 0]] },
+      "engaged": []
+    },
+    {
       "name": "an unmodelled section code never mates",
-      "male": { "caps": 1, "slide": false, "group": "", "sections": [[7, 6, 4]] },
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[8, 6, 4]] },
       "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 4]] },
       "engaged": []
     }

@@ -28,6 +28,7 @@ import {
   connectorOriginLdu,
   GENDER_FEMALE,
   GENDER_MALE,
+  NO_ROLL,
   SOURCE_INFERRED,
   SOURCE_PATCH,
   SOURCE_SHADOW,
@@ -58,6 +59,7 @@ import {
   CAP_ROOT,
   FINGER_RADIUS_UNSTATED,
   SECTION_AXLE,
+  SECTION_BOX,
   SECTION_ROUND,
   SECTION_SQUARE,
   SECTION_FLARE_JOINS_NEXT,
@@ -79,6 +81,7 @@ interface Spec {
   readonly origin: readonly [number, number, number];
   readonly axis: number;
   readonly piece?: number;
+  readonly roll?: number;
 }
 
 const shapes = new SnapShapes();
@@ -98,7 +101,7 @@ const STUD = shape(CAP_ROOT, false, [[SECTION_ROUND, 6, 4]]);
 const PLATE_RECEPTOR = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 4]]);
 const BRICK_RECEPTOR = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 20]]);
 const BRICK_LDU = 3 * PLATE_LDU;
-const UNMODELLED_SECTION = 7;
+const UNMODELLED_SECTION = 8;
 const HALF = STUD_LDU / 2;
 const PROPERTY_TIMEOUT_MS = 30_000;
 
@@ -116,6 +119,7 @@ function table(specs: ReadonlyArray<Spec>): ConnectorTable {
     Uint16Array.from(specs, (s) => s.piece ?? 0),
     Float64Array.from(specs.flatMap((s) => (s.axis === AXIS_FREE ? s.origin : [0, 0, 0]))),
     [],
+    Int8Array.from(specs, (s) => s.roll ?? NO_ROLL),
   );
 }
 
@@ -224,7 +228,69 @@ function window(at: LatticePose, cells: number, plates: number, turns = 1): Snap
   return { ...at, cells, plates, turns };
 }
 
+const PANE = shapes.intern(0, false, [SECTION_BOX], [0], [0], "winTrain");
+const PANE_SEAT = [4, -36, -30] as const;
+const RIGHT_DOOR_SEAT = [-4, -36, -30] as const;
+const RIGHT_DOOR_GLASS_POSE = pose(0, -60, 0, 2);
+const UNTURNED_ONTO_RIGHT_DOOR_POSE = pose(-8, 0, 0, 0);
+
+function pane(
+  gender: number,
+  origin: readonly [number, number, number],
+  roll: number,
+  unrelated = 0,
+): ConnectorTable {
+  return table([
+    { shape: PANE, gender, origin, axis: gender === GENDER_MALE ? AXIS_POS_Y : AXIS_NEG_Y, roll },
+    ...Array.from({ length: unrelated }, (_, k) => ({
+      shape: STUD,
+      gender: GENDER_MALE,
+      origin: [HALF + k * STUD_LDU, 40, HALF] as const,
+      axis: AXIS_POS_X,
+    })),
+  ]);
+}
+
+const glassPane = pane(GENDER_MALE, PANE_SEAT, AXIS_POS_X);
+const leftDoor = pane(GENDER_FEMALE, PANE_SEAT, AXIS_POS_X);
+const rightDoor = pane(GENDER_FEMALE, RIGHT_DOOR_SEAT, AXIS_NEG_X);
+
+function onto(seat: readonly [number, number, number], rot: QuarterTurn): LatticePose {
+  const x = rot90Cos(rot) * seat[0] + rot90Sin(rot) * seat[2];
+  const z = -rot90Sin(rot) * seat[0] + rot90Cos(rot) * seat[2];
+  return pose(seat[0] - x, seat[2] - z, 0, rot);
+}
+
+function turnedAboutSeat(rot: QuarterTurn): number[] {
+  const { x, z } = onto(PANE_SEAT, rot);
+  return quarterTurn(rot, x, 0, z);
+}
+
+function proposed(out: CandidatePoses): number[][] {
+  return Array.from({ length: out.count }, (_, i) => [
+    out.x[i] ?? 0,
+    out.z[i] ?? 0,
+    out.yPlates[i] ?? 0,
+    out.rot[i] ?? 0,
+  ]);
+}
+
 describe("ConnectionSolver with lattice studs", () => {
+  it("leaves a vertical box face at a stud centre to the sparse finder, which pairs it only at its roll", () => {
+    const centre = [HALF, 0, HALF] as const;
+    const door = single(pane(GENDER_FEMALE, centre, AXIS_NEG_X));
+    const glass = single(pane(GENDER_MALE, centre, AXIS_POS_X));
+    const both = allFamilies();
+    both.insert(door, pose(0, 0, 0), 1);
+    const studsOnly = latticeOnly();
+    studsOnly.insert(door, pose(0, 0, 0), 1);
+    const turns = [0, 1, 2, 3] as const;
+    expect({
+      allFamilies: turns.map((rot) => matesAt(both, glass, onto(centre, rot))),
+      latticeOnly: turns.map((rot) => matesAt(studsOnly, glass, onto(centre, rot))),
+    }).toEqual({ allFamilies: [0, 0, 1, 0], latticeOnly: [0, 0, 0, 0] });
+  });
+
   it("mates every receptor that lands on a baseplate stud, at every turn and offset", () => {
     const engine = latticeOnly();
     const width = 6;
@@ -883,6 +949,45 @@ function edgePins(): ConnectorTable {
 }
 
 describe("ConnectionSolver with sparse connectors", () => {
+  it("proposes a glass into its door only at the turn whose roll matches the seat's, for a ranking and for lattice proposals", () => {
+    const centred = [0, -36, 0] as const;
+    const solver = new ConnectionSolver([new SparseConnectorFinder(mating)]);
+    solver.insert(single(pane(GENDER_FEMALE, centred, AXIS_NEG_X)), pose(0, 0, 0), 1);
+    const glass = single(pane(GENDER_MALE, centred, AXIS_POS_X));
+    const ranked = new CandidatePoses();
+    solver.rank(glass, window(pose(0, 0, 0), 1, 0, 4), ranked);
+    const lattice = new CandidatePoses();
+    solver.proposeMates(glass, window(pose(0, 0, 0), 1, 0, 4), lattice);
+    expect({
+      ranked: proposed(ranked).toSorted((a, b) => (a[3] ?? 0) - (b[3] ?? 0)),
+      votes: Array.from(ranked.votes.subarray(0, ranked.count)),
+      lattice: proposed(lattice),
+    }).toEqual({
+      ranked: [
+        [0, 0, 0, 0],
+        [0, 0, 0, 2],
+      ],
+      votes: [1, 0],
+      lattice: [[0, 0, 0, 2]],
+    });
+  });
+
+  it("mates a glass with its door only at the turn whose roll matches, walking the model or the slots", () => {
+    const solver = allFamilies();
+    solver.insert(single(rightDoor), pose(0, 0, 0), 1);
+    const glassAlone = single(glassPane);
+    const withOthers = single(pane(GENDER_MALE, PANE_SEAT, AXIS_POS_X, 4));
+    expect(
+      [glassAlone, withOthers].map((glass) => [
+        matesAt(solver, glass, RIGHT_DOOR_GLASS_POSE),
+        matesAt(solver, glass, UNTURNED_ONTO_RIGHT_DOOR_POSE),
+      ]),
+    ).toEqual([
+      [1, 0],
+      [1, 0],
+    ]);
+  });
+
   it("snaps a model to the pose where its edge pins enter a neighbour's holes, not a stud away", () => {
     const solver = allFamilies();
     solver.insert(single(edgeHoles()), pose(0, 0, 0), 21);
@@ -1916,6 +2021,53 @@ function facePair(axis: number, x = FACE_X): ConnectorTable {
 }
 
 describe("zero-length grouped faces", () => {
+  it("leave a box mate no turn at all, about its axis or the vertical through it", () => {
+    expect(mating.freedom(PANE, PANE, 0, AXIS_POS_Y)).toEqual({
+      spins: false,
+      axis: AXIS_POS_Y,
+      freeAboutVertical: false,
+    });
+  });
+
+  it("mate a glass in its door only where the two frames coincide: the seat's origin, axis and roll", () => {
+    const inDoor = (door: ConnectorTable, glass: Matrix): number =>
+      model(
+        [door, glassPane],
+        [
+          [0, IDENTITY],
+          [1, glass],
+        ],
+      ).internalMates;
+    expect({
+      leftDoor: inDoor(leftDoor, IDENTITY),
+      quarterTurned: inDoor(leftDoor, turnedAboutSeat(1)),
+      sixteenthOff: inDoor(leftDoor, translation(1 / SIXTEENTHS_PER_LDU, 0, 0)),
+      rightDoorHalfTurned: inDoor(rightDoor, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -60]),
+      rightDoorUnturned: inDoor(rightDoor, translation(-8, 0, 0)),
+      mirroredOntoRightDoor: inDoor(rightDoor, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]),
+    }).toEqual({
+      leftDoor: 1,
+      quarterTurned: 0,
+      sixteenthOff: 0,
+      rightDoorHalfTurned: 1,
+      rightDoorUnturned: 0,
+      mirroredOntoRightDoor: 0,
+    });
+  });
+
+  it("mate a glass in its door inside a tilted sub-model, judged in the sub-model's frame", () => {
+    const tilted = oneSubmodel(tiltAboutX(0.3));
+    const placed = (glass: Matrix): Placed[] => [
+      { part: 0, submodel: 0, local: IDENTITY },
+      { part: 1, submodel: 0, local: glass },
+    ];
+    expect([
+      assembled([leftDoor, glassPane], tilted, placed(IDENTITY), true).internalMates,
+      assembled([leftDoor, glassPane], tilted, placed(turnedAboutSeat(1)), true).internalMates,
+      assembled([leftDoor, glassPane], tilted, placed(IDENTITY), false).internalMates,
+    ]).toEqual([1, 0, 0]);
+  });
+
   it("leave a face-contact mate free about its own axis and the vertical through the face, unlike an inserted one", () => {
     expect(mating.freedom(face(FACE_TOKEN), face(FACE_TOKEN), 0, AXIS_NEG_X)).toEqual({
       spins: true,
@@ -2291,7 +2443,7 @@ function engagedJoints(
 ): number {
   const joints = new Set<string>();
   for (const [own, engaged] of engagedPartners(held, at, world)) {
-    const anonymous = isLatticeStud(own.axis, own.at[0], own.at[2]);
+    const anonymous = isLatticeStud(own.axis, NO_ROLL, own.at[0], own.at[2]);
     const line = coaxialLine(own.axis & ~1, own.at);
     for (const other of engaged) {
       joints.add(

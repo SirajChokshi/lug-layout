@@ -2,6 +2,7 @@ import { CHUNK_LDU, SIXTEENTHS_PER_LDU } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
 import {
   GENDER_MALE,
+  NO_ROLL,
   VECTOR_FLOATS,
   axisDimension,
   axisSign,
@@ -14,10 +15,11 @@ import {
   STUD_SIXTEENTHS,
   checkPose,
   isLatticeStud,
+  latticeStudSign,
   phaseOf,
   rotatedAxis,
+  rotatedRoll,
   sixteenths,
-  verticalSign,
   turnCos,
   turnSin,
 } from "./lattice-frame.ts";
@@ -143,6 +145,7 @@ class TurnedModel {
   pairsWith = new Uint8Array(0);
   position = new Int32Array(0);
   axis = new Int8Array(0);
+  roll = new Int8Array(0);
   readonly box = new Int32Array(QUARTER_TURNS * BOX_INTS);
   exactLines = new IntKeyMap(MODEL_KEY_INTS);
   exactStart = new Int32Array(1);
@@ -173,6 +176,7 @@ export class SparseConnectorFinder implements MateFinder {
   private slotY = new Int32Array(INITIAL_SLOTS);
   private slotZ = new Int32Array(INITIAL_SLOTS);
   private slotAxis = new Int8Array(INITIAL_SLOTS);
+  private slotRoll = new Int8Array(INITIAL_SLOTS);
   private slotClass = new Int32Array(INITIAL_SLOTS);
   private slotSource = new Uint8Array(INITIAL_SLOTS);
   private slotStatus = new Uint8Array(INITIAL_SLOTS);
@@ -217,12 +221,14 @@ export class SparseConnectorFinder implements MateFinder {
       const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_SIXTEENTHS;
       const z = (turned.position[at + Z] ?? 0) + sixteenths(pose.z);
       const axis = turned.axis[pose.rot * model.count + i] ?? 0;
-      if (isLatticeStud(axis, x, z)) continue;
+      const roll = turned.roll[pose.rot * model.count + i] ?? NO_ROLL;
+      if (isLatticeStud(axis, roll, x, z)) continue;
       const slot = this.allocate();
       this.slotX[slot] = x;
       this.slotY[slot] = y;
       this.slotZ[slot] = z;
       this.slotAxis[slot] = axis;
+      this.slotRoll[slot] = roll;
       this.slotClass[slot] = turned.connectorClass[i] ?? UNCLASSED;
       this.slotSource[slot] = model.source[i] ?? 0;
       this.slotStatus[slot] = model.status[i] ?? 0;
@@ -252,7 +258,8 @@ export class SparseConnectorFinder implements MateFinder {
       const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_SIXTEENTHS;
       const z = (turned.position[at + Z] ?? 0) + sixteenths(pose.z);
       const axis = turned.axis[pose.rot * model.count + i] ?? 0;
-      if (isLatticeStud(axis, x, z)) continue;
+      const roll = turned.roll[pose.rot * model.count + i] ?? NO_ROLL;
+      if (isLatticeStud(axis, roll, x, z)) continue;
       const slot = this.unlinkCell(x, y, z, owner, i);
       this.unlinkRegion(slot);
       this.countChunk(x, y, z, -1);
@@ -614,7 +621,7 @@ export class SparseConnectorFinder implements MateFinder {
         slot !== NO_SLOT;
         slot = this.slotNext[slot] ?? NO_SLOT
       ) {
-        if (this.slotAxis[slot] !== partnerAxis) continue;
+        if (this.slotAxis[slot] !== partnerAxis || !this.rollsMatch(m, slot)) continue;
         const sx = (this.slotX[slot] ?? 0) - x;
         const sy = (this.slotY[slot] ?? 0) - y;
         const sz = (this.slotZ[slot] ?? 0) - z;
@@ -690,7 +697,7 @@ export class SparseConnectorFinder implements MateFinder {
       k++
     ) {
       const m = turned.exactOrder[k] ?? 0;
-      if (turned.axis[m] !== wanted) continue;
+      if (turned.axis[m] !== wanted || !this.rollsMatch(m, slot)) continue;
       const i = m - base;
       const d = Math.imul((turned.exactAlong[k] ?? 0) - along, sign);
       if (!classes.engagesAt(slotClass, turned.connectorClass[i] ?? UNCLASSED, d)) continue;
@@ -723,6 +730,10 @@ export class SparseConnectorFinder implements MateFinder {
       );
     }
     return n;
+  }
+
+  private rollsMatch(m: number, slot: number): boolean {
+    return this.turned.roll[m] === this.slotRoll[slot];
   }
 
   private sharesLine(i: number, slot: number): boolean {
@@ -827,8 +838,8 @@ export class SparseConnectorFinder implements MateFinder {
     block[4] = cellOf(sy + spanY + ay, CELL_SIXTEENTHS);
     block[5] = cellOf(sz + spanXZ + az, CELL_SIXTEENTHS);
     const found = latticeOnly
-      ? this.inBlockPairing(rot, wanted, block, slotClass)
-      : this.inBlock(rot, wanted, block);
+      ? this.inBlockPairing(rot, slot, block, slotClass)
+      : this.inBlock(rot, slot, block);
     for (let j = 0; j < found; j++) {
       const m = this.candidates[j] ?? 0;
       const i = m - rot * connectors;
@@ -879,8 +890,9 @@ export class SparseConnectorFinder implements MateFinder {
     }
   }
 
-  private inBlock(rot: number, wanted: number, block: Int32Array): number {
+  private inBlock(rot: number, slot: number, block: Int32Array): number {
     const turned = this.turned;
+    const wanted = oppositeAxis(this.slotAxis[slot] ?? 0);
     const dimension = axisDimension(wanted);
     const across = (dimension + 1) % VECTOR_FLOATS;
     const beyond = (dimension + 2) % VECTOR_FLOATS;
@@ -902,7 +914,7 @@ export class SparseConnectorFinder implements MateFinder {
           k++
         ) {
           const m = turned.columnOrder[k] ?? 0;
-          if (turned.axis[m] !== wanted) continue;
+          if (turned.axis[m] !== wanted || !this.rollsMatch(m, slot)) continue;
           let j = found++;
           while (j > 0 && this.scansBefore(m, this.candidates[j - 1] ?? 0)) {
             this.candidates[j] = this.candidates[j - 1] ?? 0;
@@ -915,13 +927,9 @@ export class SparseConnectorFinder implements MateFinder {
     return found;
   }
 
-  private inBlockPairing(
-    rot: number,
-    wanted: number,
-    block: Int32Array,
-    slotClass: number,
-  ): number {
+  private inBlockPairing(rot: number, slot: number, block: Int32Array, slotClass: number): number {
     const turned = this.turned;
+    const wanted = oppositeAxis(this.slotAxis[slot] ?? 0);
     const dimension = axisDimension(wanted);
     const across = (dimension + 1) % VECTOR_FLOATS;
     const beyond = (dimension + 2) % VECTOR_FLOATS;
@@ -945,7 +953,7 @@ export class SparseConnectorFinder implements MateFinder {
           k++
         ) {
           const m = turned.columnOrder[k] ?? 0;
-          if (turned.axis[m] !== wanted) continue;
+          if (turned.axis[m] !== wanted || !this.rollsMatch(m, slot)) continue;
           const own = turned.connectorClass[m - rot * connectors] ?? UNCLASSED;
           if (own < 0 || turned.pairsWith[own * classCount + slotClass] !== 1) continue;
           this.candidates[found++] = m;
@@ -989,6 +997,7 @@ export class SparseConnectorFinder implements MateFinder {
     turned.connectorClass = this.classes.classesOf(model);
     turned.position = new Int32Array(QUARTER_TURNS * n * VECTOR_FLOATS);
     turned.axis = new Int8Array(QUARTER_TURNS * n);
+    turned.roll = new Int8Array(QUARTER_TURNS * n);
     turned.classes = Int32Array.from(new Set(turned.connectorClass));
     turned.classCount = this.classes.count;
     turned.axisClasses = new Uint8Array(QUARTER_TURNS * AXIS_CODES * turned.classCount);
@@ -1010,6 +1019,7 @@ export class SparseConnectorFinder implements MateFinder {
         turned.position[m * VECTOR_FLOATS + Y] = y;
         turned.position[m * VECTOR_FLOATS + Z] = z;
         turned.axis[m] = rotatedAxis(model.axis[i] ?? 0, rot);
+        turned.roll[m] = rotatedRoll(model.roll[i] ?? NO_ROLL, rot);
         turned.axisClasses[
           (rot * AXIS_CODES + (turned.axis[m] ?? 0)) * turned.classCount +
             (turned.connectorClass[i] ?? 0)
@@ -1080,7 +1090,7 @@ export class SparseConnectorFinder implements MateFinder {
     for (let m = 0; m < QUARTER_TURNS * n; m++) {
       const at = m * VECTOR_FLOATS;
       keyOf[m] =
-        verticalSign(turned.axis[m] ?? 0) === 0
+        latticeStudSign(turned.axis[m] ?? 0, turned.roll[m] ?? NO_ROLL) === 0
           ? AXIAL_GROUP
           : phaseKey(turned.position[at + X] ?? 0, turned.position[at + Z] ?? 0);
     }
@@ -1172,6 +1182,7 @@ export class SparseConnectorFinder implements MateFinder {
     this.slotY = grown(this.slotY, new Int32Array(capacity));
     this.slotZ = grown(this.slotZ, new Int32Array(capacity));
     this.slotAxis = grown(this.slotAxis, new Int8Array(capacity));
+    this.slotRoll = grown(this.slotRoll, new Int8Array(capacity));
     this.slotClass = grown(this.slotClass, new Int32Array(capacity));
     this.slotSource = grown(this.slotSource, new Uint8Array(capacity));
     this.slotStatus = grown(this.slotStatus, new Uint8Array(capacity));

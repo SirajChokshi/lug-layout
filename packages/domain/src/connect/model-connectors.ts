@@ -3,6 +3,7 @@ import {
   AXIS_FREE,
   GENDER_FEMALE,
   GENDER_MALE,
+  NO_ROLL,
   VECTOR_FLOATS,
   axisDimension,
   axisSign,
@@ -49,6 +50,7 @@ interface Frames {
   readonly status: Uint8Array;
   readonly origin: Int32Array;
   readonly axis: Int8Array;
+  readonly roll: Int8Array;
   readonly instance: Uint32Array;
   readonly connector: Uint32Array;
   readonly piece: Uint16Array;
@@ -62,6 +64,7 @@ function allocateFrames(count: number): Frames {
     status: new Uint8Array(count),
     origin: new Int32Array(count * VECTOR_FLOATS),
     axis: new Int8Array(count),
+    roll: new Int8Array(count).fill(NO_ROLL),
     instance: new Uint32Array(count),
     connector: new Uint32Array(count),
     piece: new Uint16Array(count),
@@ -76,11 +79,24 @@ function axisVector(part: ConnectorTable, connector: number, out: Float64Array):
     }
     return;
   }
+  codeVector(code, out);
+}
+
+function codeVector(code: number, out: Float64Array): void {
   out.fill(0);
   out[axisDimension(code)] = axisSign(code);
 }
 
+function mirrors(t: Float64Array): boolean {
+  const determinant =
+    (t[0] ?? 0) * ((t[5] ?? 0) * (t[10] ?? 0) - (t[6] ?? 0) * (t[9] ?? 0)) -
+    (t[1] ?? 0) * ((t[4] ?? 0) * (t[10] ?? 0) - (t[6] ?? 0) * (t[8] ?? 0)) +
+    (t[2] ?? 0) * ((t[4] ?? 0) * (t[9] ?? 0) - (t[5] ?? 0) * (t[8] ?? 0));
+  return determinant < 0;
+}
+
 const direction = new Float64Array(VECTOR_FLOATS);
+const identifiedRoll = new Int8Array(1);
 
 function identifyConnector(
   transform: Float64Array,
@@ -88,6 +104,15 @@ function identifyConnector(
   connector: number,
   point: IdentifiedPoint,
 ): number {
+  identifiedRoll[0] = NO_ROLL;
+  const rollCode = part.roll[connector] ?? NO_ROLL;
+  let roll = NO_ROLL;
+  if (rollCode !== NO_ROLL) {
+    if (mirrors(transform)) return AXIS_FREE;
+    codeVector(rollCode, direction);
+    roll = identifyDirection(transform, direction[X] ?? 0, direction[Y] ?? 0, direction[Z] ?? 0);
+    if (roll === AXIS_FREE) return AXIS_FREE;
+  }
   axisVector(part, connector, direction);
   const axis = identifyDirection(
     transform,
@@ -104,7 +129,9 @@ function identifyConnector(
     ALL_COORDINATES,
     point,
   );
-  return identified ? axis : AXIS_FREE;
+  if (!identified) return AXIS_FREE;
+  identifiedRoll[0] = roll;
+  return axis;
 }
 
 interface TrackEnds {
@@ -272,6 +299,7 @@ class InternalMates {
   private readonly order: Uint32Array;
   private readonly connector: Uint32Array;
   private readonly axis: Int8Array;
+  private readonly roll: Int8Array;
   private size = 0;
   private pass: MatePass = MATE_PASS_MODEL;
   private pairFrame = MODEL_ROOT;
@@ -291,13 +319,14 @@ class InternalMates {
     this.order = new Uint32Array(capacity);
     this.connector = new Uint32Array(capacity);
     this.axis = new Int8Array(capacity);
+    this.roll = new Int8Array(capacity);
   }
 
   clear(): void {
     this.size = 0;
   }
 
-  add(connector: number, axis: number, origin: Int32Array): void {
+  add(connector: number, axis: number, roll: number, origin: Int32Array): void {
     const n = this.size++;
     const dimension = axisDimension(axis);
     const k = n * LINE_KEYS;
@@ -307,6 +336,7 @@ class InternalMates {
     this.keys[k + ALONG] = origin[dimension] ?? 0;
     this.connector[n] = connector;
     this.axis[n] = axis;
+    this.roll[n] = roll;
     this.order[n] = n;
   }
 
@@ -347,6 +377,7 @@ class InternalMates {
     if (frames.gender[femaleConnector] !== GENDER_FEMALE) return;
     const axis = this.axis[male] ?? 0;
     if (this.axis[female] !== oppositeAxis(axis)) return;
+    if (this.roll[female] !== this.roll[male]) return;
     if (!this.admits(maleConnector, femaleConnector)) return;
     const offset = (this.along(female) - this.along(male)) * axisSign(axis);
     const maleShape = frames.shape[maleConnector] ?? 0;
@@ -467,7 +498,8 @@ function mateInSubmodelFrames(
       const first = firstConnector[i] ?? 0;
       for (let c = 0; c < part.count; c++) {
         const axis = identifyConnector(transform, part, c, point);
-        if (axis !== AXIS_FREE) search.add(first + c, axis, point.sixteenths);
+        if (axis !== AXIS_FREE)
+          search.add(first + c, axis, identifiedRoll[0] ?? NO_ROLL, point.sixteenths);
       }
     }
     search.consume(MATE_PASS_SUBMODEL, n);
@@ -500,7 +532,8 @@ function mateInPartFrames(
     search.clear();
     for (let c = 0; c < part.count; c++) {
       const axis = identifyConnector(PART_FRAME, part, c, point);
-      if (axis !== AXIS_FREE) search.add(first + c, axis, point.sixteenths);
+      if (axis !== AXIS_FREE)
+        search.add(first + c, axis, identifiedRoll[0] ?? NO_ROLL, point.sixteenths);
     }
     search.consume(MATE_PASS_PART);
   }
@@ -515,6 +548,7 @@ export class ModelConnectors {
     readonly status: Uint8Array,
     readonly origin: Int32Array,
     readonly axis: Int8Array,
+    readonly roll: Int8Array,
     readonly instance: Uint32Array,
     readonly connector: Uint32Array,
     readonly mates: MatePairs,
@@ -574,8 +608,10 @@ export class ModelConnectors {
         const axis = identifyConnector(transform, part, c, point);
         frames.axis[g] = axis;
         if (axis === AXIS_FREE) continue;
+        const roll = identifiedRoll[0] ?? NO_ROLL;
+        frames.roll[g] = roll;
         frames.origin.set(point.sixteenths, g * VECTOR_FLOATS);
-        search.add(g, axis, point.sixteenths);
+        search.add(g, axis, roll, point.sixteenths);
       }
     }
     search.consume(MATE_PASS_MODEL);
@@ -647,6 +683,7 @@ export class ModelConnectors {
       exposed.status,
       exposed.origin,
       exposed.axis,
+      exposed.roll,
       exposed.instance,
       exposed.connector,
       search.records.pairs(frames, parts, instances),
@@ -802,6 +839,7 @@ function expose(
   exposed.source[n] = frames.source[k] ?? 0;
   exposed.status[n] = frames.status[k] ?? 0;
   exposed.axis[n] = frames.axis[k] ?? 0;
+  exposed.roll[n] = frames.roll[k] ?? NO_ROLL;
   exposed.instance[n] = frames.instance[k] ?? 0;
   exposed.connector[n] = frames.connector[k] ?? 0;
   for (let v = 0; v < VECTOR_FLOATS; v++) {

@@ -5,6 +5,7 @@ export const SECTION_FLARE_JOINS_PREVIOUS = 3;
 export const SECTION_FLARE_JOINS_NEXT = 4;
 export const SECTION_MALE_FINGER = 5;
 export const SECTION_FEMALE_FINGER = 6;
+export const SECTION_BOX = 7;
 export const FINGER_RADIUS_UNSTATED = 0;
 export const CAP_ROOT = 1;
 export const CAP_FAR = 2;

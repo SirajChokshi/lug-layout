@@ -374,6 +374,7 @@ export {
   SOURCE_SHADOW,
   axisDimension,
   axisSign,
+  NO_ROLL,
   oppositeAxis,
   STATUS_UNVERIFIED,
   STATUS_VERIFIED,
@@ -389,6 +390,7 @@ export {
   SECTION_FLARE_JOINS_PREVIOUS,
   SECTION_MALE_FINGER,
   SECTION_FEMALE_FINGER,
+  SECTION_BOX,
   NO_GROUP,
   SnapShapes,
 } from "./connect/snap-shapes.ts";
