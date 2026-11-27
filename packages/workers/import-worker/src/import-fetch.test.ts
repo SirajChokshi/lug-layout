@@ -21,12 +21,28 @@ function importFetch(): (url: string) => Promise<Response> {
   return container.get(IMPORT_FETCH);
 }
 
-function answering(statuses: ReadonlyArray<number | "network error">): { calls: () => number } {
+type Answer = number | "network error" | "cut body";
+
+function cutBody(): Response {
+  let pulls = 0;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) controller.enqueue(new TextEncoder().encode("answ"));
+        else controller.error(new TypeError("network error"));
+      },
+    }),
+  );
+}
+
+function answering(answers: ReadonlyArray<Answer>): { calls: () => number } {
   let calls = 0;
   vi.stubGlobal("fetch", async () => {
-    const answer = statuses[Math.min(calls, statuses.length - 1)] ?? "network error";
+    const answer = answers[Math.min(calls, answers.length - 1)] ?? "network error";
     calls += 1;
     if (answer === "network error") throw new TypeError("Failed to fetch");
+    if (answer === "cut body") return cutBody();
     return new Response(`answered ${answer}`, { status: answer });
   });
   return { calls: () => calls };
@@ -37,9 +53,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("reads a file again after a network error or a 429, as the page's bundle reads do, and hands back a 404 at once", async () => {
+it("reads a file again after a network error, a 429 or a body cut off mid-read, as the page's bundle reads do, and hands back a 404 at once", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-  for (const failure of ["network error", 429] as const) {
+  for (const failure of ["network error", 429, "cut body"] as const) {
     const network = answering([failure, 200]);
     const reading = importFetch()(RECORD_FILE);
     await vi.advanceTimersByTimeAsync(1_000);
