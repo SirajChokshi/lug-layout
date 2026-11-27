@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./asset-retry": "./src/asset-retry.ts",
     "./colors": "./src/colors.ts",
     "./connector-license": "./src/connector-license.ts",
     "./connector-records": "./src/connector-records.ts",

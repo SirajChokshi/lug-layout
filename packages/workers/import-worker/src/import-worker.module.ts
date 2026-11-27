@@ -1,3 +1,4 @@
+import { retryingFetch } from "@brr/catalog/asset-retry";
 import {
   LINK_PROGRESS,
   LINK_PROGRESS_SHARE,
@@ -29,7 +30,9 @@ function importWorkerModule(port: RpcPort): ContainerModule {
     bind(IMPORT_PORT).toConstantValue(port);
     bind(LINK_PROGRESS_SHARE).toDynamicValue(openLinkProgressBroadcast).inSingletonScope();
     bind(IMPORT_FETCH)
-      .toDynamicValue((context) => reportingFetch((url) => fetch(url), context.get(LINK_PROGRESS)))
+      .toDynamicValue((context) =>
+        retryingFetch(reportingFetch((url) => fetch(url), context.get(LINK_PROGRESS))),
+      )
       .inSingletonScope();
     bind(IMPORT_CLOCK).toConstantValue(() => performance.now());
     bind(COMPILER_LOADER).to(CompilerLoader).inSingletonScope();

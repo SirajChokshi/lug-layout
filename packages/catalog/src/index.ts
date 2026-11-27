@@ -27,6 +27,7 @@ export {
   INHERIT_COLOR,
 } from "./part-bundle.ts";
 export { PART_CELL_HEIGHT_INTS, PART_CELL_PLAN_INTS, modelPartCells } from "./model-part-cells.ts";
+export { RetryingAssetFetcher } from "./retrying-asset-fetcher.ts";
 export { undrawnPart } from "./undrawn-part.ts";
 export type {
   BricklinkPartCandidates,
@@ -75,4 +76,5 @@ export {
   LINK_SILENCE_LIMIT_MS,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
+  RETRIED_ASSET_FETCHER,
 } from "./tokens.ts";

@@ -1,5 +1,6 @@
 import { AssetResponseError } from "./asset-response-error.ts";
 import { AssetStalledError } from "./asset-stalled-error.ts";
+import { retryAfterMs } from "./asset-retry.ts";
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
@@ -201,7 +202,9 @@ async function download(
 ): Promise<ArrayBuffer> {
   const response = await fetch(url, { signal });
   link.markProgress();
-  if (!response.ok) throw new AssetResponseError(url, response.status);
+  if (!response.ok) {
+    throw new AssetResponseError(url, response.status, retryAfterMs(response.headers));
+  }
   if (response.body === null) return new ArrayBuffer(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];

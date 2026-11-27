@@ -8,6 +8,8 @@ import {
   DEFAULT_BUNDLE_MANIFEST_FILE,
   LINK_PROGRESS_SHARE,
   PART_BUNDLE_LOADER,
+  RETRIED_ASSET_FETCHER,
+  RetryingAssetFetcher,
 } from "@brr/catalog";
 import {
   ConnectionSolver,
@@ -144,7 +146,8 @@ function catalogSearch(context: ResolutionContext): CatalogSearch {
 }
 
 const clientModule = new ContainerModule(({ bind }) => {
-  bind(ASSET_FETCHER).to(CachingAssetFetcher).inSingletonScope();
+  bind(RETRIED_ASSET_FETCHER).to(CachingAssetFetcher).inSingletonScope();
+  bind(ASSET_FETCHER).to(RetryingAssetFetcher).inSingletonScope();
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
