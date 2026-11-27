@@ -30,6 +30,15 @@ export {
   type StudioPartOutcome,
 } from "./studio-mapping.ts";
 export {
+  BlueBrickPartMapper,
+  MirrorPartResolver,
+  type BlueBrickIdMapping,
+  type BlueBrickOutcome,
+  type BlueBrickPartVia,
+  type LdrawPartResolver,
+  type ResolvedPart,
+} from "./bluebrick-mapping.ts";
+export {
   importStudioFile,
   MirrorPartExists,
   prepareStudioImport,
