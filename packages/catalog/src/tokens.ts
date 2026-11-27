@@ -15,6 +15,9 @@ export const ASSET_FETCHER: ServiceIdentifier<IAssetFetcher> = Symbol.for(
 export const NETWORK_ASSET_FETCHER: ServiceIdentifier<IAssetFetcher> = Symbol.for(
   "brr.catalog.NetworkAssetFetcher",
 );
+export const RETRIED_ASSET_FETCHER: ServiceIdentifier<IAssetFetcher> = Symbol.for(
+  "brr.catalog.RetriedAssetFetcher",
+);
 export const PART_BUNDLE_LOADER: ServiceIdentifier<IPartBundleLoader> = Symbol.for(
   "brr.catalog.PartBundleLoader",
 );
