@@ -108,6 +108,7 @@ const EVENT = { ...Object(RICH_MANIFEST["event"]) };
 const TABLE_TYPES = rows(RICH_MANIFEST, "tableTypes");
 const FOOTPRINT: Json = { ...Object(PLANS[0]?.["footprint"]) };
 const TABLES = rows(FOOTPRINT, "tables");
+const UNDERLAY = { ...Object(RICH_MANIFEST["underlay"]) };
 
 function manifestWith(patch: Json): Json {
   return { ...RICH_MANIFEST, ...patch };
@@ -146,6 +147,10 @@ function worldHeaderFields(manifest: Json): Json {
 
 function eventWith(patch: Json): Json {
   return manifestWith({ event: { ...EVENT, ...patch } });
+}
+
+function underlayWith(patch: Json): Json {
+  return manifestWith({ underlay: { ...UNDERLAY, ...patch } });
 }
 
 function placementWith(patch: Json): Json {
@@ -302,6 +307,18 @@ describe("world schema v2", () => {
     ["an end date before the start date", eventWith({ endDate: "2027-03-11" }), "$.event.endDate"],
     ["the thirtieth of February", eventWith({ startDate: "2027-02-30" }), "$.event.startDate"],
     ["a blank event title", eventWith({ title: "   " }), "$.event.title"],
+    [
+      "an underlay whose two points are the same pixel",
+      underlayWith({ to: UNDERLAY["from"] }),
+      "$.underlay.to",
+    ],
+    ["an underlay distance of zero", underlayWith({ distanceMm: 0 }), "$.underlay.distanceMm"],
+    ["an underlay point between pixels", underlayWith({ from: [0.5, 0] }), "$.underlay.from.0"],
+    [
+      "an underlay image named by something other than its SHA-256",
+      underlayWith({ image: "floor-plan.png" }),
+      "$.underlay.image",
+    ],
     ["a note count that disagrees with its shards", manifestWith({ notes: 5 }), "$.notes"],
     [
       "note shards out of order",

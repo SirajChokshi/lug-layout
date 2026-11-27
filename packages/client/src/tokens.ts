@@ -37,6 +37,7 @@ import type { IWorldSession } from "./edit/world-session.ts";
 import type { IEventDetails } from "./event/event-details.ts";
 import type { ILayoutSize } from "./event/layout-size.ts";
 import type { ITableGround } from "./ground/table-ground.ts";
+import type { IUnderlayService } from "./underlay/underlay-service.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
@@ -172,6 +173,9 @@ export const SHEET_SETS: ServiceIdentifier<ISheetSets> = Symbol.for("brr.client.
 export const EVENT_DETAILS: ServiceIdentifier<IEventDetails> =
   Symbol.for("brr.client.EventDetails");
 export const LAYOUT_SIZE: ServiceIdentifier<ILayoutSize> = Symbol.for("brr.client.LayoutSize");
+export const UNDERLAY_SERVICE: ServiceIdentifier<IUnderlayService> = Symbol.for(
+  "brr.client.UnderlayService",
+);
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",
 );

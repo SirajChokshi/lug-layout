@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { Count, SafeInteger, nonBlankText, strictMessage } from "./fields.ts";
+import { Count, Ldu, SafeInteger, Sha256, nonBlankText, strictMessage } from "./fields.ts";
 import { PlanFootprintV1, PlanRecordV1, PlanTableV1 } from "./plan-region.ts";
 
 export const BASE_LAYER_ID = 0;
@@ -284,6 +284,43 @@ export const PlanListV2 = v.pipe(
   v.minLength(1, "is empty: leave it out instead"),
 );
 
+export const PixelPoint = v.strictTuple([Count, Count], "must be a pair [x, y] of image pixels");
+export type PixelPoint = v.InferOutput<typeof PixelPoint>;
+
+const PositiveMillimetres = v.config(
+  v.pipe(
+    v.number(),
+    v.finite("must be a finite number of mm"),
+    v.gtValue(0, "must be more than 0 mm"),
+  ),
+  { abortPipeEarly: true },
+);
+
+export const UnderlayRecordV2 = v.pipe(
+  v.strictObject(
+    {
+      image: Sha256,
+      from: PixelPoint,
+      to: PixelPoint,
+      distanceMm: PositiveMillimetres,
+      x: Ldu,
+      z: Ldu,
+      opacity: OpacityPercent,
+      locked: v.boolean(),
+    },
+    strictMessage,
+  ),
+  v.forward(
+    v.partialCheck(
+      [["from"], ["to"]],
+      ({ from, to }) => from[0] !== to[0] || from[1] !== to[1],
+      "is the same pixel as from: two points must differ to set a scale",
+    ),
+    ["to"],
+  ),
+);
+export type UnderlayRecordV2 = v.InferOutput<typeof UnderlayRecordV2>;
+
 export const WorldDocumentEntries = {
   layers: LayerTableV2,
   groups: v.exactOptional(GroupTableV2),
@@ -292,6 +329,7 @@ export const WorldDocumentEntries = {
   activePlan: v.exactOptional(Count),
   tableTypes: v.exactOptional(TableTypeTableV2),
   event: v.exactOptional(EventRecordV2),
+  underlay: v.exactOptional(UnderlayRecordV2),
 };
 
 export const WorldDocument = v.strictObject(WorldDocumentEntries, strictMessage);
@@ -308,6 +346,7 @@ export function worldDocument(source: WorldDocument): WorldDocument {
     ...(source.activePlan === undefined ? {} : { activePlan: source.activePlan }),
     ...(source.tableTypes ? { tableTypes: source.tableTypes } : {}),
     ...(source.event ? { event: source.event } : {}),
+    ...(source.underlay ? { underlay: source.underlay } : {}),
   };
 }
 

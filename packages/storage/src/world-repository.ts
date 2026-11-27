@@ -174,6 +174,7 @@ interface ArchiveTexts {
   readonly manifest: {
     readonly shards: ReadonlyArray<ShardEntryV1>;
     readonly consists?: ReadonlyArray<ConsistRecordV1>;
+    readonly underlay?: { readonly image: string };
   };
   readonly shards: ReadonlyArray<PlacedRefs>;
 }
@@ -491,6 +492,7 @@ export class IndexedDbWorldRepository implements IWorldRepository {
       archive.value.shards,
       archive.value.manifest.consists ?? [],
     );
+    const underlay = archive.value.manifest.underlay?.image;
     const carried = new Set(imports.map((file) => file.sha256));
     for (const sha256 of referenced) {
       if (!carried.has(sha256)) {
@@ -500,8 +502,14 @@ export class IndexedDbWorldRepository implements IWorldRepository {
         });
       }
     }
+    if (underlay !== undefined && !carried.has(underlay)) {
+      issues.push({
+        path: `${IMPORT_DIRECTORY}${underlay}`,
+        message: "is the floor-plan underlay but missing",
+      });
+    }
     for (const file of imports) {
-      if (!referenced.has(file.sha256)) {
+      if (!referenced.has(file.sha256) && file.sha256 !== underlay) {
         issues.push({ path: importPath(file), message: "is not used by any placement" });
       }
     }

@@ -7,6 +7,7 @@ import {
   cmText,
   lduFromMm,
   lowestFreeTableNumber,
+  mmFromLdu,
   placedTableCounts,
   studsText,
   tableName,
@@ -16,6 +17,7 @@ import {
   type IPlanService,
   type IPlanSheetService,
   type ISheetSets,
+  type IUnderlayService,
   type MmRect,
   type PlanIssue,
   type PlanRegion,
@@ -24,10 +26,21 @@ import {
   type TableTop,
   type TableType,
   type TableTypeInput,
+  type UnderlayPatch,
+  type UnderlayView,
 } from "@brr/client";
-import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import type { Issue } from "@brr/schema/decode";
+import {
+  useCallback,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import { downloadBlob } from "./download.ts";
 import { PrintSheets } from "./print-sheets.tsx";
+import { UnderlayCalibrator } from "./underlay-calibrator.tsx";
 import { usePlanVersion } from "./use-plan-version.ts";
 
 const DEFAULT_ROOM_MM = { width: 4000, depth: 3000 } as const;
@@ -980,6 +993,180 @@ function PlanFiles({
   );
 }
 
+interface PickedImage {
+  readonly imageUrl: string;
+  readonly file?: { readonly name: string; readonly bytes: Uint8Array };
+}
+
+function useUnderlayView(underlay: IUnderlayService): UnderlayView | null {
+  const subscribe = useCallback((listener: () => void) => underlay.subscribe(listener), [underlay]);
+  return useSyncExternalStore(subscribe, () => underlay.view());
+}
+
+function UnderlayFields({
+  view,
+  readOnly,
+  edit,
+}: {
+  readonly view: UnderlayView;
+  readonly readOnly: boolean;
+  readonly edit: (patch: UnderlayPatch) => void;
+}) {
+  const { record } = view;
+  return (
+    <fieldset className="underlay-fields" disabled={readOnly}>
+      <p className="plan-meta" data-underlay-mm-per-pixel={view.mmPerPixel}>
+        {view.name} · 1 px = {Number(view.mmPerPixel.toPrecision(3))} mm. The first point you picked
+        sits at the position below.
+      </p>
+      <fieldset className="underlay-position" disabled={record.locked}>
+        <StudCmFields
+          label="First point x"
+          name="underlay-x"
+          mm={mmFromLdu(record.x)}
+          onCommit={(mm) => edit({ x: Math.round(lduFromMm(mm)) })}
+        />
+        <StudCmFields
+          label="First point z"
+          name="underlay-z"
+          mm={mmFromLdu(record.z)}
+          onCommit={(mm) => edit({ z: Math.round(lduFromMm(mm)) })}
+        />
+      </fieldset>
+      <label className="underlay-opacity">
+        Opacity
+        <input
+          type="range"
+          name="underlay-opacity"
+          min="0"
+          max="100"
+          step="5"
+          value={record.opacity}
+          onChange={(event) => edit({ opacity: Number(event.target.value) })}
+        />
+        {record.opacity}%
+      </label>
+      <label className="underlay-lock">
+        <input
+          type="checkbox"
+          name="underlay-locked"
+          checked={record.locked}
+          onChange={(event) => edit({ locked: event.target.checked })}
+        />
+        Locked: it can't be moved, rescaled, replaced or removed
+      </label>
+    </fieldset>
+  );
+}
+
+function UnderlaySection({
+  underlay,
+  readOnly,
+}: {
+  readonly underlay: IUnderlayService;
+  readonly readOnly: boolean;
+}) {
+  const view = useUnderlayView(underlay);
+  const input = useRef<HTMLInputElement>(null);
+  const [picked, setPicked] = useState<PickedImage | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const report = (issues: ReadonlyArray<Issue>): void =>
+    setProblem(issues.length === 0 ? null : issues.map((issue) => issue.message).join("; "));
+  const edit = (patch: UnderlayPatch, file?: PickedImage["file"]): void => {
+    void underlay.edit(patch, file).then(report);
+  };
+  const close = (): void => {
+    if (picked) URL.revokeObjectURL(picked.imageUrl);
+    setPicked(null);
+  };
+  const onPick = (event: ChangeEvent<HTMLInputElement>): void => {
+    const field = event.currentTarget;
+    const file = field.files?.[0];
+    if (!file) return;
+    void file
+      .arrayBuffer()
+      .then((buffer) => {
+        const bytes = new Uint8Array(buffer);
+        setPicked({ imageUrl: URL.createObjectURL(file), file: { name: file.name, bytes } });
+      })
+      .finally(() => {
+        field.value = "";
+      });
+  };
+  const locked = readOnly || (view?.record.locked ?? false);
+  return (
+    <section
+      className="plan-section"
+      aria-label="Floor plan underlay"
+      data-underlay={view?.record.image ?? ""}
+    >
+      <h3>Floor plan underlay</h3>
+      {view ? (
+        <UnderlayFields view={view} readOnly={readOnly} edit={edit} />
+      ) : (
+        <p className="plan-meta">
+          Trace the hall from a PNG or JPEG floor plan: pick two points on it and type the distance
+          between them.
+        </p>
+      )}
+      <div className="plan-actions">
+        <button
+          type="button"
+          data-action="choose-underlay"
+          disabled={locked}
+          onClick={() => input.current?.click()}
+        >
+          {view ? "Replace image" : "Choose floor plan"}
+        </button>
+        {view && (
+          <button
+            type="button"
+            data-action="rescale-underlay"
+            disabled={locked}
+            onClick={() => setPicked({ imageUrl: URL.createObjectURL(view.image) })}
+          >
+            Rescale
+          </button>
+        )}
+        {view && (
+          <button
+            type="button"
+            data-action="remove-underlay"
+            disabled={locked}
+            onClick={() => void underlay.remove().then(report)}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      <input
+        ref={input}
+        className="world-import"
+        type="file"
+        accept="image/png,image/jpeg"
+        aria-label="Choose a PNG or JPEG floor plan"
+        onChange={onPick}
+      />
+      {problem && (
+        <p className="plan-errors" data-underlay-problem="">
+          {problem}
+        </p>
+      )}
+      {picked && (
+        <UnderlayCalibrator
+          imageUrl={picked.imageUrl}
+          initial={picked.file || !view ? null : view.record}
+          onApply={({ from, to, distanceMm }) => {
+            close();
+            edit({ from, to, distanceMm }, picked.file);
+          }}
+          onCancel={close}
+        />
+      )}
+    </section>
+  );
+}
+
 export function PlanPanel({
   camera,
   editor,
@@ -989,6 +1176,7 @@ export function PlanPanel({
   plans,
   sheets,
   sheetSets,
+  underlay,
   ready,
   readOnly,
   armedType,
@@ -1001,6 +1189,7 @@ export function PlanPanel({
   readonly plans: IPlanService;
   readonly sheets: IPlanSheetService;
   readonly sheetSets: ISheetSets;
+  readonly underlay: IUnderlayService;
   readonly ready: boolean;
   readonly readOnly: boolean;
   readonly armedType: number | null;
@@ -1067,6 +1256,7 @@ export function PlanPanel({
         </>
       )}
       <PlanFiles editor={editor} plan={active} ready={ready} readOnly={readOnly} />
+      <UnderlaySection underlay={underlay} readOnly={readOnly} />
       <PlanEdits readOnly={readOnly}>
         <NewPlanForm camera={camera} plans={plans} />
       </PlanEdits>

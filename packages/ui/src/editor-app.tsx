@@ -22,6 +22,7 @@ import {
   type IScaleBar,
   type IStarterWorlds,
   type ITrainPlay,
+  type IUnderlayService,
   tallyText,
   type SelectionView,
   type ShellCommandId,
@@ -73,6 +74,7 @@ interface EditorAppProps {
   readonly sheetSets: ISheetSets;
   readonly events: IEventDetails;
   readonly layoutSize: ILayoutSize;
+  readonly underlay: IUnderlayService;
   readonly bomService: IBomService;
   readonly ownedParts: IOwnedParts;
   readonly play: ITrainPlay;
@@ -170,6 +172,7 @@ export function EditorApp({
   sheetSets,
   events,
   layoutSize,
+  underlay,
   bomService,
   ownedParts,
   play,
@@ -305,6 +308,7 @@ export function EditorApp({
           plans={plans}
           sheets={sheets}
           sheetSets={sheetSets}
+          underlay={underlay}
           ready={snapshot.status === "ready"}
           readOnly={snapshot.readOnly}
           armedType={snapshot.armedTable?.typeId ?? null}

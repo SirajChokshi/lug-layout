@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { LINK_PROGRESS_SHARE } from "@brr/catalog";
 import { EditHistory, World, addShards, type AppliedEdit, type PlacementTarget } from "@brr/domain";
 import {
   SCENE_BACKEND,
   type BufferMemory,
+  type GroundSettings,
   type ISceneBackend,
   type RebaseEvent,
 } from "@brr/render";
@@ -39,9 +41,17 @@ import { Container } from "inversify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { eventDraft } from "../event/event-details.ts";
-import { EDITOR, EDITOR_CAMERA, EVENT_DETAILS, WORLD_SESSION } from "../tokens.ts";
+import {
+  EDITOR,
+  EDITOR_CAMERA,
+  EVENT_DETAILS,
+  TABLE_GROUND,
+  UNDERLAY_SERVICE,
+  WORLD_SESSION,
+} from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
+import type { UnderlayPatch } from "../underlay/underlay-service.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import type {
   IEditedWorld,
@@ -57,6 +67,7 @@ const BASEPLATE = "ldraw:3811";
 const BASEPLATE_LDU = 640;
 
 class StubSceneBackend implements ISceneBackend {
+  ground: GroundSettings | null = null;
   async init(): Promise<never> {
     throw new Error("not used");
   }
@@ -76,7 +87,9 @@ class StubSceneBackend implements ISceneBackend {
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
-  setGround(): void {}
+  setGround(ground: GroundSettings | null): void {
+    this.ground = ground;
+  }
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
@@ -422,14 +435,17 @@ async function sessionOnIndexedDb() {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
   container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
-  container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
+  const backend = new StubSceneBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
   container.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
   container.rebind(PERSISTENT_STORAGE).toConstantValue(null);
   const session = container.get(WORLD_SESSION);
   const repository = container.get(WORLD_REPOSITORY);
+  const underlay = container.get(UNDERLAY_SERVICE);
+  container.get(TABLE_GROUND).lay({ part: BASEPLATE, depthBelowTopLdu: 8 });
   const edited = new BaseplateWorld();
   await session.start(edited, "test");
-  return { session, repository, edited, container };
+  return { session, repository, edited, container, underlay, backend };
 }
 
 describe("schema v2 document data", () => {
@@ -540,5 +556,106 @@ describe("schema v2 document data", () => {
       "import failed: shard 0_0.placements.0: is on a layer, in a group or owned by a contributor, which this editor can't keep yet",
     );
     expect(await repository.list()).toEqual(before);
+  });
+});
+
+describe("floor-plan underlay", () => {
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const HALL = { name: "hall.png", bytes: new Uint8Array([...PNG, 1, 2, 3]) };
+  const ANNEX = { name: "annex.jpg", bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 4]) };
+  const HALL_SHA256 = createHash("sha256").update(HALL.bytes).digest("hex");
+  const SCALED = {
+    from: [100, 50],
+    to: [600, 50],
+    distanceMm: 4000,
+    x: 640,
+    z: 0,
+  } satisfies UnderlayPatch;
+  const RECORD = { ...SCALED, image: HALL_SHA256, opacity: 50, locked: false };
+  const LOCKED = "is locked: unlock it to move, rescale, replace or remove it";
+
+  function hallArchive(repository: IWorldRepository, imports: ReadonlyArray<ImportedFile>) {
+    const header: WorldHeader = {
+      name: "Hall",
+      bundleVersion: "test",
+      view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0, pitch: 0.75 },
+      disclaimer: "disclaimer",
+      ...DEFAULT_WORLD_DOCUMENT,
+      underlay: RECORD,
+    };
+    return repository.packArchive({
+      manifest: worldManifest(header, []),
+      shards: [],
+      notes: [],
+      credits: "credits",
+      imports,
+    });
+  }
+
+  it("keeps the image and its scale with the world through saves and reopening, and opens it from an archive", async () => {
+    const { session, repository, underlay, backend } = await sessionOnIndexedDb();
+    const id = session.view().world?.id ?? "";
+    expect(await underlay.edit(SCALED, HALL)).toEqual([]);
+    await session.retrySave();
+    const stored = await repository.read(id);
+    const drawn = backend.ground?.underlay;
+    expect({
+      manifest: stored.ok && stored.value.manifest.underlay,
+      file: (await repository.importedFile(HALL_SHA256))?.bytes,
+      drawn: drawn && { ...drawn, image: drawn.image.type },
+    }).toEqual({
+      manifest: RECORD,
+      file: HALL.bytes,
+      drawn: { image: "image/png", cornerX: -1360, cornerZ: -1000, lduPerPixel: 20, opacity: 0.5 },
+    });
+
+    expect(await session.newWorld("Other")).toBe(true);
+    expect({ view: underlay.view(), drawn: backend.ground?.underlay }).toEqual({
+      view: null,
+      drawn: null,
+    });
+    expect(await session.openWorld(id)).toBe(true);
+    expect({ name: underlay.view()?.name, record: underlay.view()?.record }).toEqual({
+      name: HALL.name,
+      record: RECORD,
+    });
+
+    const carried = { ...HALL, sha256: HALL_SHA256 };
+    expect(await session.importWorld(hallArchive(repository, [carried]))).toBe(true);
+    expect(session.view().world?.name).toBe("Hall");
+    expect(underlay.view()?.record).toEqual(RECORD);
+  });
+
+  it("refuses to move, rescale, replace or remove a locked underlay, but takes opacity and unlocking", async () => {
+    const { underlay } = await sessionOnIndexedDb();
+    await underlay.edit({ ...SCALED, locked: true }, HALL);
+    const refusals = [
+      await underlay.edit({ x: 1280 }),
+      await underlay.edit({ distanceMm: 8000 }),
+      await underlay.edit({}, ANNEX),
+      await underlay.remove(),
+    ];
+    expect(refusals).toEqual(refusals.map(() => [{ path: "underlay", message: LOCKED }]));
+    expect(await underlay.edit({ opacity: 80 })).toEqual([]);
+    expect(await underlay.edit({ locked: false })).toEqual([]);
+    expect(await underlay.edit({ x: 1280 }, ANNEX)).toEqual([]);
+    expect({ name: underlay.view()?.name, record: underlay.view()?.record }).toMatchObject({
+      name: ANNEX.name,
+      record: { x: 1280, opacity: 80, locked: false, distanceMm: 4000 },
+    });
+  });
+
+  it("refuses an image that isn't PNG or JPEG, and an archive whose underlay image is missing", async () => {
+    const { session, repository, underlay } = await sessionOnIndexedDb();
+    const gif = { name: "plan.gif", bytes: new TextEncoder().encode("GIF89a") };
+    expect(await underlay.edit(SCALED, gif)).toEqual([
+      { path: "underlay.image", message: "plan.gif is not a PNG or JPEG image" },
+    ]);
+    expect(underlay.view()).toBeNull();
+
+    expect(await session.importWorld(hallArchive(repository, []))).toBe(false);
+    expect(session.view().fileError).toBe(
+      `import failed: imports/${HALL_SHA256}: is the floor-plan underlay but missing`,
+    );
   });
 });

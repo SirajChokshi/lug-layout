@@ -5,6 +5,7 @@ import {
   IMPORT_DIRECTORY,
   IMPORT_REF_PREFIX,
   MANIFEST_FILE,
+  SHA256_HEX,
   canonicalJson,
   compareSuperChunks,
   decodeWorldSchemaVersion,
@@ -41,7 +42,6 @@ export type WorldArchive = WorldFiles & {
   readonly credits: string;
 };
 
-const SHA256_HEX = /^[0-9a-f]{64}$/u;
 const UNSAFE_FILE_NAME_CHARACTERS = /[^A-Za-z0-9._ -]/gu;
 const IMPORT_PATH = /^imports\/(?<sha256>[0-9a-f]{64})\/(?<name>[^/]+)$/u;
 const NOT_PART_OF_A_WORLD = "is not part of a world";
