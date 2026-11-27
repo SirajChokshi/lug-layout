@@ -4,6 +4,7 @@ import {
   mainThreadModules,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
+  SHEET_SETS,
 } from "@brr/client";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Container } from "inversify";
@@ -41,6 +42,7 @@ it("commits a typed table size on Enter or blur, keeps the typed text while the 
       fillGridStuds: 8,
       plans,
       sheets: container.get(PLAN_SHEET_SERVICE),
+      sheetSets: container.get(SHEET_SETS),
       ready: true,
       readOnly: false,
     }),

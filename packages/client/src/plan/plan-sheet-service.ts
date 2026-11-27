@@ -14,11 +14,16 @@ import type { IBomSource } from "../bom/bom-service.ts";
 import { ringsBounds } from "../sheets/plan-drawing.ts";
 import type { ISheetComposer } from "../sheets/sheet-composer.ts";
 import {
+  pageFilePrefix,
   sheetFileBase,
+  sheetSetFileBase,
   type ISheetWriter,
+  type SheetDocument,
   type SheetFile,
+  type SheetFormat,
   type SheetRequest,
 } from "../sheets/sheet-document.ts";
+import { WHOLE_PLAN_SELECTION } from "../sheets/sheet-sets.ts";
 import type { ISvgSheetWriter } from "../sheets/svg-sheet-writer.ts";
 import {
   PDF_SHEET_WRITER,
@@ -45,6 +50,12 @@ export interface IPlanSheetSource extends IBomSource {
 export interface IPlanSheetService {
   printable(source: IPlanSheetSource, planId: string): string;
   download(source: IPlanSheetSource, planId: string, request: SheetRequest): SheetFile;
+  downloadAll(
+    source: IPlanSheetSource,
+    planId: string,
+    requests: ReadonlyArray<SheetRequest>,
+    format: SheetFormat,
+  ): SheetFile;
 }
 
 function keyText(key: PlacementKey): string {
@@ -112,22 +123,45 @@ export class PlanSheetService implements IPlanSheetService {
 
   printable(source: IPlanSheetSource, planId: string): string {
     const sheet = this.sheetOf(source, planId);
-    const [page] = this.composer.compose(sheet, { kind: "whole" }).pages;
+    const [page] = this.composer.compose(sheet, { kind: "whole" }, WHOLE_PLAN_SELECTION).pages;
     if (!page) throw new Error("a whole sheet has one page");
     return this.svg.pageSvg(page, sheet.name);
   }
 
   download(source: IPlanSheetSource, planId: string, request: SheetRequest): SheetFile {
     const sheet = this.sheetOf(source, planId);
-    const document = this.composer.compose(sheet, request.layout);
-    const base = sheetFileBase(sheet.name, request.layout);
-    switch (request.format) {
+    const document = this.composer.compose(sheet, request.layout, request.selection);
+    const base = sheetFileBase(sheet.name, request.selection.name, request.layout);
+    return this.writer(request.format).write(document, base);
+  }
+
+  downloadAll(
+    source: IPlanSheetSource,
+    planId: string,
+    requests: ReadonlyArray<SheetRequest>,
+    format: SheetFormat,
+  ): SheetFile {
+    const sheet = this.sheetOf(source, planId);
+    const document: SheetDocument = {
+      title: sheet.name,
+      pages: requests.flatMap((request) =>
+        this.composer.compose(sheet, request.layout, request.selection).pages.map((page) => ({
+          ...page,
+          name: `${pageFilePrefix(request.selection.name)}-${page.name}`,
+        })),
+      ),
+    };
+    return this.writer(format).write(document, sheetSetFileBase(sheet.name));
+  }
+
+  private writer(format: SheetFormat): ISheetWriter {
+    switch (format) {
       case "svg":
-        return this.svg.write(document, base);
+        return this.svg;
       case "pdf":
-        return this.pdf.write(document, base);
+        return this.pdf;
       default: {
-        const unhandled: never = request.format;
+        const unhandled: never = format;
         throw new Error(`unhandled sheet format ${String(unhandled)}`);
       }
     }

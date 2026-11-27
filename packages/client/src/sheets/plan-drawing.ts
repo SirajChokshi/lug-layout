@@ -13,8 +13,9 @@ import {
   type Similarity,
   type TextStyle,
 } from "./draw-list.ts";
-import { PAINTS, SMALL_MM, textStyle } from "./sheet-paints.ts";
+import { PAINTS, SMALL_MM, TEXT_MM, textStyle } from "./sheet-paints.ts";
 import type { ISheetTypeface } from "./sheet-typeface.ts";
+import type { TableHeights } from "./table-heights.ts";
 
 export const SHEET_LAYER_IDS = [
   "room",
@@ -26,6 +27,7 @@ export const SHEET_LAYER_IDS = [
   "ramps",
   "dimensions",
   "numbers",
+  "table-numbers",
 ] as const;
 
 export type SheetLayerId = (typeof SHEET_LAYER_IDS)[number];
@@ -40,7 +42,9 @@ export const GEOMETRY_LAYERS: ReadonlySet<SheetLayerId> = new Set([
   "ramps",
 ]);
 
-export const ALL_LAYERS: ReadonlySet<SheetLayerId> = new Set(SHEET_LAYER_IDS);
+export const PLAN_LAYERS: ReadonlySet<SheetLayerId> = new Set(
+  SHEET_LAYER_IDS.filter((id) => id !== "table-numbers"),
+);
 
 export interface SheetLayer {
   readonly id: SheetLayerId;
@@ -54,7 +58,12 @@ export interface SheetDrawing {
 }
 
 export interface IPlanDrawing {
-  draw(sheet: PlanSheet, denominator: number, layers: ReadonlySet<SheetLayerId>): SheetDrawing;
+  draw(
+    sheet: PlanSheet,
+    denominator: number,
+    layers: ReadonlySet<SheetLayerId>,
+    heights?: TableHeights | null,
+  ): SheetDrawing;
   extent(sheet: PlanSheet, denominator: number, layers: ReadonlySet<SheetLayerId>): Box;
   layersOf(sheet: PlanSheet): ReadonlyArray<SheetLayerId>;
 }
@@ -72,6 +81,8 @@ const HATCH_SPACING_MM = 4;
 const SMALL_HALO = textStyle(SMALL_MM, { halo: true });
 const SMALL_MIDDLE_HALO = textStyle(SMALL_MM, { anchor: "middle", halo: true });
 const NUMBER_TEXT = textStyle(SMALL_MM, { anchor: "middle", bold: true });
+const TABLE_NUMBER_RADIUS_MM = 5;
+const TABLE_NUMBER_TEXT = textStyle(TEXT_MM, { anchor: "middle", bold: true });
 
 function isFiniteRect(rect: LduRect): boolean {
   return (
@@ -293,6 +304,19 @@ function placementPaint(placement: SheetPlacement): Paint {
   }
 }
 
+export function segmentLayer(segment: SheetPlacement["segment"]): SheetLayerId {
+  switch (segment) {
+    case "model":
+      return "models";
+    case "track":
+      return "track";
+    default: {
+      const unhandled: never = segment;
+      throw new Error(`unhandled plan segment ${String(unhandled)}`);
+    }
+  }
+}
+
 function placementRole(placement: SheetPlacement): string {
   return placement.flagged ? `${placement.segment} flagged` : placement.segment;
 }
@@ -320,16 +344,22 @@ export class PlanDrawing implements IPlanDrawing {
         sheet.tables.some((table) => isFiniteRect(table.surface)) ||
         sheet.obstacles.some((obstacle) => isFiniteRect(obstacle.rect)),
       numbers: placed.length > 0,
+      "table-numbers": sheet.tables.some((table) => isFiniteRect(table.surface)),
     };
     return SHEET_LAYER_IDS.filter((id) => present[id]);
   }
 
-  draw(sheet: PlanSheet, denominator: number, layers: ReadonlySet<SheetLayerId>): SheetDrawing {
+  draw(
+    sheet: PlanSheet,
+    denominator: number,
+    layers: ReadonlySet<SheetLayerId>,
+    heights: TableHeights | null = null,
+  ): SheetDrawing {
     const frame = new DrawingFrame(sheet, sheetBounds(sheet), denominator, bandFor(layers));
     const drawn: SheetLayer[] = [];
     for (const id of SHEET_LAYER_IDS) {
       if (!layers.has(id)) continue;
-      const items = this.layerItems(id, sheet, frame);
+      const items = this.layerItems(id, sheet, frame, heights, layers);
       if (items.length === 0) continue;
       drawn.push({
         id,
@@ -341,7 +371,13 @@ export class PlanDrawing implements IPlanDrawing {
     return { denominator, extent: frame.extent, layers: drawn };
   }
 
-  private layerItems(id: SheetLayerId, sheet: PlanSheet, frame: DrawingFrame): DrawItem[] {
+  private layerItems(
+    id: SheetLayerId,
+    sheet: PlanSheet,
+    frame: DrawingFrame,
+    heights: TableHeights | null,
+    layers: ReadonlySet<SheetLayerId>,
+  ): DrawItem[] {
     switch (id) {
       case "room":
         return isFiniteRect(sheet.room)
@@ -350,7 +386,13 @@ export class PlanDrawing implements IPlanDrawing {
       case "tables":
         return sheet.tables
           .filter((table) => isFiniteRect(table.surface))
-          .map((table) => rectItem("table", PAINTS.table, frame.localBox(table.surface)));
+          .map((table) =>
+            rectItem(
+              "table",
+              heights ? heights.paintOf(table.heightMm) : PAINTS.table,
+              frame.localBox(table.surface),
+            ),
+          );
       case "obstacles":
         return sheet.obstacles
           .filter((obstacle) => isFiniteRect(obstacle.rect))
@@ -379,7 +421,9 @@ export class PlanDrawing implements IPlanDrawing {
       case "dimensions":
         return this.dimensionItems(sheet, frame);
       case "numbers":
-        return this.numberItems(sheet, frame);
+        return this.numberItems(sheet, frame, layers);
+      case "table-numbers":
+        return this.tableNumberItems(sheet, frame);
       default: {
         const unhandled: never = id;
         throw new Error(`unhandled sheet layer ${String(unhandled)}`);
@@ -486,9 +530,41 @@ export class PlanDrawing implements IPlanDrawing {
     });
   }
 
-  private numberItems(sheet: PlanSheet, frame: DrawingFrame): DrawItem[] {
+  private tableNumberItems(sheet: PlanSheet, frame: DrawingFrame): DrawItem[] {
+    return sheet.tables.flatMap((table, i): DrawItem[] => {
+      if (!isFiniteRect(table.surface)) return [];
+      const cx = frame.x((table.surface.minX + table.surface.maxX) / 2);
+      const cz = frame.z((table.surface.minZ + table.surface.maxZ) / 2);
+      return [
+        {
+          kind: "circle",
+          role: "table-number",
+          paint: PAINTS.tableNumber,
+          center: [cx, cz],
+          radius: TABLE_NUMBER_RADIUS_MM,
+        },
+        {
+          kind: "text",
+          role: "table-number",
+          style: TABLE_NUMBER_TEXT,
+          at: [cx, cz + this.typeface.capHeightMm(TEXT_MM) / 2],
+          text: String(i + 1),
+          turn: "none",
+        },
+      ];
+    });
+  }
+
+  private numberItems(
+    sheet: PlanSheet,
+    frame: DrawingFrame,
+    layers: ReadonlySet<SheetLayerId>,
+  ): DrawItem[] {
     return sheet.placements
-      .filter((placement) => drawableRings(placement.rings))
+      .filter(
+        (placement) =>
+          layers.has(segmentLayer(placement.segment)) && drawableRings(placement.rings),
+      )
       .flatMap((placement): DrawItem[] => {
         const bounds = ringsBounds(placement.rings);
         const cx = frame.x((bounds.minX + bounds.maxX) / 2);

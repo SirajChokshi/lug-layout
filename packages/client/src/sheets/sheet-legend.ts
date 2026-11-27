@@ -1,7 +1,10 @@
 import type { Box, DrawItem, Paint, Point } from "./draw-list.ts";
 import type { SheetLayerId } from "./plan-drawing.ts";
 import type { LegendEntry } from "./sheet-blocks.ts";
+import { lduFromMm } from "@brr/math";
+import { cmText } from "../edit/size-labels.ts";
 import { PAINTS, SMALL_MM, textStyle } from "./sheet-paints.ts";
+import type { TableHeights } from "./table-heights.ts";
 
 export type LegendExtra = "issue" | "tile" | "registration" | "seam";
 
@@ -90,6 +93,29 @@ const LAYER_ENTRIES: Readonly<Record<SheetLayerId, LegendEntry>> = {
       },
     ],
   },
+  "table-numbers": {
+    label: "Table number (see schedule)",
+    swatch: (box) => {
+      const center: Point = [box.x + box.height / 2, box.y + box.height / 2];
+      return [
+        {
+          kind: "circle",
+          role: "swatch",
+          paint: PAINTS.tableNumber,
+          center,
+          radius: box.height / 2,
+        },
+        {
+          kind: "text",
+          role: "swatch",
+          style: textStyle(SMALL_MM * 0.8, { anchor: "middle", bold: true }),
+          at: [center[0], center[1] + SMALL_MM * 0.3],
+          text: "1",
+          turn: "none",
+        },
+      ];
+    },
+  },
   numbers: {
     label: "Placement number (see key)",
     swatch: (box) => {
@@ -119,6 +145,13 @@ const EXTRA_ENTRIES: Readonly<Record<LegendExtra, LegendEntry>> = {
   },
   seam: { label: "Seam: trim one page along it", swatch: (box) => [middleLine(box, PAINTS.seam)] },
 };
+
+export function heightEntries(heights: TableHeights): ReadonlyArray<LegendEntry> {
+  return heights.heightsMm.map((heightMm) => ({
+    label: `Table, ${cmText(lduFromMm(heightMm))} cm high`,
+    swatch: swatchRect(heights.paintOf(heightMm)),
+  }));
+}
 
 export function legendEntries(
   layers: ReadonlyArray<SheetLayerId>,

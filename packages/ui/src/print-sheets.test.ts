@@ -1,8 +1,11 @@
 import {
   EDITOR,
   mainThreadModules,
+  SHEET_SETS,
   type IPlanSheetService,
   type PlanRegion,
+  type SheetFile,
+  type SheetFormat,
   type SheetRequest,
 } from "@brr/client";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -26,7 +29,7 @@ const PLAN: PlanRegion = {
   maxReachMm: 700,
 };
 
-function select(name: string): HTMLSelectElement | HTMLInputElement {
+function field(name: string): HTMLSelectElement | HTMLInputElement {
   const element = document.querySelector(`[name="${name}"]`);
   if (!(element instanceof HTMLSelectElement || element instanceof HTMLInputElement)) {
     throw new Error(`no ${name} field`);
@@ -34,7 +37,17 @@ function select(name: string): HTMLSelectElement | HTMLInputElement {
   return element;
 }
 
-it("asks the sheets service for the layout and format the form describes, downloads the file it returns with its notes, and refuses an overlap the registration marks can't fit in", () => {
+function file(name: string, pages: number, format: SheetFormat): SheetFile {
+  return {
+    fileName: name,
+    mimeType: "application/octet-stream",
+    bytes: new Uint8Array(1),
+    pages,
+    notes: format === "pdf" ? ['1 character prints as "?": Ω.'] : [],
+  };
+}
+
+function setUp() {
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -43,18 +56,17 @@ it("asks the sheets service for the layout and format the form describes, downlo
       startSimWorker: () => new MessageChannel().port1,
     }),
   );
-  const requests: SheetRequest[] = [];
+  const single: SheetRequest[] = [];
+  const all: Array<{ requests: ReadonlyArray<SheetRequest>; format: SheetFormat }> = [];
   const sheets: IPlanSheetService = {
     printable: () => "",
-    download: (_source, planId, request) => {
-      requests.push(request);
-      return {
-        fileName: `${planId}.${request.layout.kind}.svg`,
-        mimeType: "image/svg+xml",
-        bytes: new TextEncoder().encode("<svg/>"),
-        pages: request.layout.kind === "tiled" ? 7 : 1,
-        notes: request.format === "pdf" ? ['1 character prints as "?": Ω.'] : [],
-      };
+    download: (_source, _planId, request) => {
+      single.push(request);
+      return file(`${request.selection.name}.${request.format}`, 3, request.format);
+    },
+    downloadAll: (_source, _planId, requests, format) => {
+      all.push({ requests, format });
+      return file(`all.${format}`, 9, format);
     },
   };
   const downloads: string[] = [];
@@ -65,37 +77,79 @@ it("asks the sheets service for the layout and format the form describes, downlo
   ) {
     downloads.push(this.download);
   });
-  render(createElement(PrintSheets, { editor: container.get(EDITOR), sheets, plan: PLAN }));
-  const button = screen.getByRole("button", { name: "Download sheets" });
+  const sheetSets = container.get(SHEET_SETS);
+  render(
+    createElement(PrintSheets, { editor: container.get(EDITOR), sheets, sheetSets, plan: PLAN }),
+  );
+  return { single, all, downloads, sheetSets };
+}
 
-  fireEvent.click(button);
-  const tiledSaved = screen.getByText(/^Saved /u).textContent;
-  const tiledNote = screen.getByText(/prints as "\?"/u).textContent;
-  fireEvent.change(select("sheet-format"), { target: { value: "svg" } });
-  fireEvent.change(select("sheet-layout"), { target: { value: "fit" } });
-  fireEvent.change(select("sheet-paper"), { target: { value: "a3" } });
-  fireEvent.change(select("sheet-orientation"), { target: { value: "landscape" } });
-  const fitControls = {
-    scale: select("sheet-scale").disabled,
-    overlap: select("sheet-overlap").disabled,
+it("downloads the sheet chosen with its saved layers, layout and format, remembers edits to it, and downloads every sheet in one file", () => {
+  const { single, all, downloads, sheetSets } = setUp();
+  const download = screen.getByRole("button", { name: "Download sheet" });
+
+  fireEvent.click(download);
+  const note = screen.getByText(/prints as "\?"/u).textContent;
+  fireEvent.change(field("sheet-set"), { target: { value: sheetSets.sets(PLAN.id)[1]?.id } });
+  const tablePlanForm = {
+    content: field("sheet-content").value,
+    layout: field("sheet-layout").value,
+    paper: field("sheet-paper").value,
+    scaleDisabled: field("sheet-scale").disabled,
   };
-  fireEvent.click(button);
-  fireEvent.change(select("sheet-layout"), { target: { value: "tiled" } });
-  fireEvent.change(select("sheet-scale"), { target: { value: "5" } });
-  fireEvent.change(select("sheet-overlap"), { target: { value: "2" } });
+  fireEvent.change(field("sheet-name"), { target: { value: "Setup crew" } });
+  fireEvent.click(field("sheet-layer-obstacles"));
+  fireEvent.change(field("sheet-format"), { target: { value: "svg" } });
+  fireEvent.click(download);
+  fireEvent.click(screen.getByRole("button", { name: "Download all sheets" }));
 
-  expect(requests).toEqual([
+  expect(single.map(({ selection, layout, format }) => ({ selection, layout, format }))).toEqual([
     {
-      format: "pdf",
+      selection: {
+        name: "Main plan",
+        content: "placements",
+        layers: sheetSets.sets(PLAN.id)[0]?.layers,
+      },
       layout: { kind: "tiled", paper: "a4", orientation: "auto", denominator: 1, overlapMm: 10 },
+      format: "pdf",
     },
-    { format: "svg", layout: { kind: "fit", paper: "a3", orientation: "landscape" } },
+    {
+      selection: {
+        name: "Setup crew",
+        content: "tables",
+        layers: ["room", "tables", "dimensions", "table-numbers"],
+      },
+      layout: { kind: "fit", paper: "a3", orientation: "auto" },
+      format: "svg",
+    },
   ]);
-  expect(downloads).toEqual(["plan-1.tiled.svg", "plan-1.fit.svg"]);
-  expect(tiledSaved).toBe("Saved 7 pages as plan-1.tiled.svg. Print at 100% (actual size).");
-  expect(tiledNote).toBe('1 character prints as "?": Ω.');
-  expect(screen.queryByText(/prints as "\?"/u)).toBeNull();
-  expect(fitControls).toEqual({ scale: true, overlap: true });
-  expect(screen.getByText(/registration marks fit inside it/u)).toBeDefined();
-  expect(button).toHaveProperty("disabled", true);
+  expect(note).toBe('1 character prints as "?": Ω.');
+  expect(tablePlanForm).toEqual({
+    content: "tables",
+    layout: "fit",
+    paper: "a3",
+    scaleDisabled: true,
+  });
+  expect(all).toEqual([{ requests: single, format: "svg" }]);
+  expect(downloads).toEqual(["Main plan.pdf", "Setup crew.svg", "all.svg"]);
+  expect(screen.getByText(/^Saved 9 pages as all\.svg/u)).toBeDefined();
+});
+
+it("adds and deletes sheets, and refuses to download a tiling whose overlap the registration marks can't fit in", () => {
+  const { sheetSets } = setUp();
+
+  fireEvent.click(screen.getByRole("button", { name: "Add sheet" }));
+  const added = { chosen: field("sheet-name").value, count: sheetSets.sets(PLAN.id).length };
+  fireEvent.change(field("sheet-overlap"), { target: { value: "2" } });
+  const refused = {
+    single: screen.getByRole("button", { name: "Download sheet" }).hasAttribute("disabled"),
+    all: screen.getByRole("button", { name: "Download all sheets" }).hasAttribute("disabled"),
+    message: screen.queryByText(/registration marks fit inside it/u) !== null,
+  };
+  fireEvent.click(screen.getByRole("button", { name: "Delete sheet" }));
+
+  expect(added).toEqual({ chosen: "Sheet 3", count: 3 });
+  expect(refused).toEqual({ single: true, all: true, message: true });
+  expect(sheetSets.sets(PLAN.id).map((set) => set.name)).toEqual(["Main plan", "Table plan"]);
+  expect(field("sheet-name").value).toBe("Main plan");
 });

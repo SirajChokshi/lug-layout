@@ -58,6 +58,7 @@ import { PlanSheetService } from "./plan/plan-sheet-service.ts";
 import { PdfSheetWriter } from "./sheets/pdf-sheet-writer.ts";
 import { PlanDrawing } from "./sheets/plan-drawing.ts";
 import { SheetComposer } from "./sheets/sheet-composer.ts";
+import { SheetSets } from "./sheets/sheet-sets.ts";
 import { CourierTypeface } from "./sheets/sheet-typeface.ts";
 import { SvgSheetWriter } from "./sheets/svg-sheet-writer.ts";
 import { SheetTiler } from "./sheets/tile-grid.ts";
@@ -136,6 +137,7 @@ import {
   SHEET_TYPEFACE,
   SVG_SHEET_WRITER,
   PDF_SHEET_WRITER,
+  SHEET_SETS,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
@@ -185,6 +187,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(SHEET_COMPOSER).to(SheetComposer).inSingletonScope();
   bind(SVG_SHEET_WRITER).to(SvgSheetWriter).inSingletonScope();
   bind(PDF_SHEET_WRITER).to(PdfSheetWriter).inSingletonScope();
+  bind(SHEET_SETS).to(SheetSets).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();

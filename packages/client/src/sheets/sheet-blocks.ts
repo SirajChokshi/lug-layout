@@ -1,6 +1,6 @@
 import { STUD_LDU } from "@brr/math";
 import { lengthText } from "../edit/size-labels.ts";
-import type { PlanSheet, SheetPlacement } from "../plan/plan-sheet.ts";
+import type { PlanSheet } from "../plan/plan-sheet.ts";
 import {
   group,
   translation,
@@ -12,7 +12,6 @@ import {
   type TextStyle,
 } from "./draw-list.ts";
 import { scaleText } from "./drawing-scale.ts";
-import { drawableRings } from "./plan-drawing.ts";
 import { PAINTS, SMALL_MM, TEXT_MM, TITLE_MM, textStyle } from "./sheet-paints.ts";
 import type { ISheetTypeface } from "./sheet-typeface.ts";
 
@@ -32,10 +31,6 @@ const CHECK_BAR_STUDS = 8;
 const TICK_MM = 2;
 const LINE_SPACING = 1.3;
 const TITLE_SPACING = 1.25;
-const ROW_MM = 5;
-const KEY_PARTS_MM = 30;
-const KEY_LABEL_MM = 36;
-const RULE_LIFT_MM = 3.5;
 const CHECK_LABEL_GAP_MM = 4;
 const LEGEND_SWATCH_MM = 8;
 const LEGEND_SWATCH_HEIGHT_MM = 4;
@@ -46,11 +41,6 @@ const TITLE_STYLE = textStyle(TITLE_MM, { bold: true });
 const TEXT = textStyle(TEXT_MM);
 const TEXT_BOLD = textStyle(TEXT_MM, { bold: true });
 const SMALL = textStyle(SMALL_MM);
-const SMALL_BOLD = textStyle(SMALL_MM, { bold: true });
-const SMALL_END = textStyle(SMALL_MM, { anchor: "end" });
-const SMALL_BOLD_END = textStyle(SMALL_MM, { anchor: "end", bold: true });
-const KEY_TITLE = "Key: numbers on the plan";
-const NOTE_INDENT = "  ";
 
 export function text(at: Point, content: string, style: TextStyle, role = "label"): DrawItem {
   return { kind: "text", role, style, at, text: content, turn: "none" };
@@ -98,26 +88,6 @@ export function partsListText({ partsList }: PlanSheet): string {
       : "";
   return `Parts list: ${partsList.parts.toLocaleString("en-US")} parts in ${plural(partsList.lines, "part and colour line", "part and colour lines")}, from ${plural(partsList.placements, "placement", "placements")}${uncounted}`;
 }
-
-function placementLine(placement: SheetPlacement): string {
-  const notes = [placement.label];
-  if (placement.flagged) notes.push("plan issue");
-  if (!drawableRings(placement.rings)) notes.push("not drawn: no finite footprint");
-  return notes.join(" · ");
-}
-
-function notCheckedLines(sheet: PlanSheet): ReadonlyArray<string> {
-  const { notChecked } = sheet.verdict;
-  return notChecked.length === 0 ? [] : ["Not checked yet:", ...notChecked.map((r) => `· ${r}`)];
-}
-
-export type KeyRow =
-  | { readonly kind: "title" }
-  | { readonly kind: "header" }
-  | { readonly kind: "placement"; readonly placement: SheetPlacement; readonly label: string }
-  | { readonly kind: "continuation"; readonly text: string }
-  | { readonly kind: "total" }
-  | { readonly kind: "note"; readonly text: string };
 
 export interface LegendEntry {
   readonly label: string;
@@ -201,102 +171,6 @@ export class SheetBlocks {
       height: TEXT_MM * LINE_SPACING + entries.length * LEGEND_ROW_MM + BLOCK_PADDING_MM,
       items,
     };
-  }
-
-  keyRows(sheet: PlanSheet, widthMm: number): ReadonlyArray<KeyRow> {
-    const rows: KeyRow[] = [{ kind: "title" }, { kind: "header" }];
-    for (const placement of sheet.placements) {
-      const [label = "", ...more] = this.typeface.wrapped(
-        placementLine(placement),
-        SMALL_MM,
-        widthMm - KEY_LABEL_MM,
-      );
-      rows.push(
-        { kind: "placement", placement, label },
-        ...more.map((line): KeyRow => ({ kind: "continuation", text: line })),
-      );
-    }
-    rows.push({ kind: "total" });
-    const notes = notCheckedLines(sheet);
-    if (notes.length > 0) rows.push({ kind: "note", text: "" });
-    const indentMm = this.typeface.widthMm(NOTE_INDENT, SMALL_MM);
-    for (const note of notes) {
-      const [first = "", ...more] = this.typeface.wrapped(note, SMALL_MM, widthMm - indentMm);
-      rows.push(
-        { kind: "note", text: first },
-        ...more.map((line): KeyRow => ({ kind: "note", text: `${NOTE_INDENT}${line}` })),
-      );
-    }
-    return rows;
-  }
-
-  keyWidth(sheet: PlanSheet, maxWidthMm: number): number {
-    let width = this.typeface.widthMm(KEY_TITLE, TEXT_MM);
-    for (const placement of sheet.placements) {
-      width = Math.max(
-        width,
-        KEY_LABEL_MM + this.typeface.widthMm(placementLine(placement), SMALL_MM),
-      );
-    }
-    return Math.min(width, maxWidthMm);
-  }
-
-  get keyRowMm(): number {
-    return ROW_MM;
-  }
-
-  keyColumn(sheet: PlanSheet, rows: ReadonlyArray<KeyRow>, widthMm: number): Block {
-    const items: DrawItem[] = [];
-    rows.forEach((row, i) => {
-      const y = (i + 1) * ROW_MM - 1;
-      items.push(...this.keyRow(sheet, row, y, widthMm));
-    });
-    return { width: widthMm, height: rows.length * ROW_MM, items };
-  }
-
-  private keyRow(sheet: PlanSheet, row: KeyRow, y: number, widthMm: number): DrawItem[] {
-    switch (row.kind) {
-      case "title":
-        return [text([0, y], KEY_TITLE, TEXT_BOLD)];
-      case "header":
-        return [
-          text([0, y], "No.", SMALL_BOLD),
-          text([KEY_PARTS_MM, y], "Parts", SMALL_BOLD_END),
-          text([KEY_LABEL_MM, y], "Placement", SMALL_BOLD),
-        ];
-      case "placement":
-        return [
-          text([0, y], String(row.placement.number), SMALL_BOLD),
-          text([KEY_PARTS_MM, y], row.placement.parts.toLocaleString("en-US"), SMALL_END),
-          text([KEY_LABEL_MM, y], row.label, SMALL),
-        ];
-      case "continuation":
-        return [text([KEY_LABEL_MM, y], row.text, SMALL)];
-      case "total":
-        return [
-          rule([0, y - RULE_LIFT_MM], [widthMm, y - RULE_LIFT_MM]),
-          text(
-            [KEY_PARTS_MM, y],
-            sheet.placements
-              .reduce((sum, placement) => sum + placement.parts, 0)
-              .toLocaleString("en-US"),
-            SMALL_BOLD_END,
-          ),
-          text(
-            [KEY_LABEL_MM, y],
-            `Total: ${plural(sheet.placements.length, "placement", "placements")}`,
-            SMALL_BOLD,
-          ),
-        ];
-      case "note":
-        return row.text === ""
-          ? []
-          : [text([0, y], this.typeface.fitted(row.text, SMALL_MM, widthMm), SMALL)];
-      default: {
-        const unhandled: never = row;
-        throw new Error(`unhandled key row ${String(unhandled)}`);
-      }
-    }
   }
 
   footerLines(lines: ReadonlyArray<string>, widthMm: number, style: TextStyle = SMALL): Block {

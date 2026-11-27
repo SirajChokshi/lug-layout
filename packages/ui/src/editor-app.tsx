@@ -14,6 +14,7 @@ import {
   type IPanelLayout,
   type IPlanService,
   type IPlanSheetService,
+  type ISheetSets,
   type IRunningGear,
   type IScaleBar,
   type IStarterWorlds,
@@ -62,6 +63,7 @@ interface EditorAppProps {
   readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
   readonly sheets: IPlanSheetService;
+  readonly sheetSets: ISheetSets;
   readonly bomService: IBomService;
   readonly ownedParts: IOwnedParts;
   readonly play: ITrainPlay;
@@ -145,6 +147,7 @@ export function EditorApp({
   scaleBar,
   plans,
   sheets,
+  sheetSets,
   bomService,
   ownedParts,
   play,
@@ -260,6 +263,7 @@ export function EditorApp({
           fillGridStuds={snapshot.fillGridStuds}
           plans={plans}
           sheets={sheets}
+          sheetSets={sheetSets}
           ready={snapshot.status === "ready"}
           readOnly={snapshot.readOnly}
         />
