@@ -116,8 +116,9 @@ import { OBSTACLE_RECT_FLOATS, cellKey, type StudSeats } from "./track-obstacles
 import type { TrackSupport } from "./track-support.ts";
 import { writeChunkSquares } from "./plan-reach.ts";
 import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from "./track-bands.ts";
-import { TrackPlacements, contentOf } from "./track-placements.ts";
+import { TrackPlacements, contentOf, type TrackPlacement } from "./track-placements.ts";
 import { PlacementEnds } from "./placement-ends.ts";
+import { PlacementBands, type PlacementBand } from "./placement-bands.ts";
 import { heightText, type LabelView } from "./size-labels.ts";
 import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
@@ -660,6 +661,7 @@ export class TrackDrawing implements ExtensionSite {
   private combined: TrackLayout;
   private readonly placements = new TrackPlacements();
   private readonly placementEnds: PlacementEnds;
+  private readonly placementBands = new PlacementBands((entry) => this.measureBand(entry));
   private heldStale = false;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
@@ -873,16 +875,18 @@ export class TrackDrawing implements ExtensionSite {
     );
   }
 
-  private measureSpan(placement: number): void {
-    const layout = this.combined;
-    const [bottom, top] = this.pieceRanges.get(layout.piece(placement)) ?? this.verticalRange();
-    const yPlates = layout.yPlates(placement);
-    const end = yPlates + layout.rise(placement);
-    const low = Math.min(yPlates, end) * PLATE_LDU;
-    const high = Math.max(yPlates, end) * PLATE_LDU;
-    this.spanBottom[placement] = bottom + low;
-    this.spanTop[placement] = top + high;
-    this.spanRailTop[placement] = this.railTopOf(layout.piece(placement)) + high;
+  private measureBand(entry: TrackPlacement): PlacementBand {
+    const outline = this.outlines.get(entry.piece);
+    const [bottom, top] = this.pieceRanges.get(entry.piece) ?? this.verticalRange();
+    const end = entry.yPlates + entry.rise;
+    const band = [Math.min(entry.yPlates, end), Math.max(entry.yPlates, end)] as const;
+    return {
+      framed: outline ? framedOutline(outline, entry.pose, entry.frame) : null,
+      band,
+      key: `${band[0]}:${band[1]}`,
+      bottomLdu: bottom + band[0] * PLATE_LDU,
+      topLdu: top + band[1] * PLATE_LDU,
+    };
   }
 
   get drawingPlates(): number {
@@ -2450,22 +2454,22 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   private indexBands(): void {
-    const layout = this.combined;
+    const count = this.combined.count;
     const framed: Array<Float64Array | null> = [];
     const bands = new Map<string, readonly [number, number]>();
     const raised: number[] = [];
-    this.spanBottom = new Float64Array(layout.count);
-    this.spanTop = new Float64Array(layout.count);
-    this.spanRailTop = new Float64Array(layout.count);
-    for (let p = 0; p < layout.count; p++) {
-      const outline = this.outlines.get(layout.piece(p));
-      framed.push(outline ? framedOutline(outline, layout.pose(p), layout.frame(p)) : null);
-      const yPlates = layout.yPlates(p);
-      const end = yPlates + layout.rise(p);
-      const band = [Math.min(yPlates, end), Math.max(yPlates, end)] as const;
-      bands.set(`${band[0]}:${band[1]}`, band);
+    this.spanBottom = new Float64Array(count);
+    this.spanTop = new Float64Array(count);
+    this.spanRailTop = new Float64Array(count);
+    for (let p = 0; p < count; p++) {
+      const entry = this.placements.at(p);
+      const { framed: outline, band, key, bottomLdu, topLdu } = this.placementBands.of(entry);
+      framed.push(outline);
+      bands.set(key, band);
       if (band[1] !== GROUND_PLATES) raised.push(p);
-      this.measureSpan(p);
+      this.spanBottom[p] = bottomLdu;
+      this.spanTop[p] = topLdu;
+      this.spanRailTop[p] = this.railTopOf(entry.piece) + band[1] * PLATE_LDU;
     }
     this.raisedAt = Int32Array.from(raised);
     this.framed = framed;
