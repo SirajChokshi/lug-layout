@@ -1495,6 +1495,10 @@ footer a {
   margin: 0;
 }
 
+.cloud-account .world-new input {
+  width: 0;
+}
+
 .cloud-status {
   display: flex;
   align-items: baseline;
