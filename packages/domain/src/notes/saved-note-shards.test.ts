@@ -1,10 +1,10 @@
-import { noteShards, shardName, type NoteRecordV2 } from "@brr/schema/world";
+import { noteShards, shardName, type TextNoteV2 } from "@brr/schema/world";
 import { describe, expect, it } from "vitest";
 import { SavedNoteShards } from "./saved-note-shards.ts";
 
 const FAR_LDU = 6_000;
 
-function text(index: number, x: number, words: string): NoteRecordV2 {
+function text(index: number, x: number, words: string): TextNoteV2 {
   return {
     kind: "text",
     index,

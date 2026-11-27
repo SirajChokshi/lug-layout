@@ -704,7 +704,9 @@ export class WorldSession implements IWorldSession {
   }
 
   private unsavedRefusal(action: string): string | null {
-    if (this.state.storageError !== null || !this.unsavedContent()) return null;
+    if (this.state.storageError !== null || (this.dirty.size === 0 && !this.notesDirty)) {
+      return null;
+    }
     const reason = this.lastSaveError === null ? "" : ` (saving failed: ${this.lastSaveError})`;
     return `${action} refused: "${this.current?.name ?? ""}" has unsaved edits${reason}. Retry the save, or export the world first.`;
   }
