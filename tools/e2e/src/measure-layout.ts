@@ -155,12 +155,13 @@ interface EditMeasurement {
 interface WorldMeasurement {
   readonly world: string;
   readonly archive: string;
-  readonly placements: number;
-  readonly open: OpenTimes;
-  readonly warmOpen: OpenTimes | null;
+  readonly placements: number | null;
+  readonly open: OpenTimes | null;
   readonly tiers: ReadonlyArray<TierMeasurement>;
-  readonly plan: PlanMeasurement;
+  readonly plan: PlanMeasurement | null;
   readonly edits: EditMeasurement | null;
+  readonly warmOpen: OpenTimes | null;
+  readonly failure: string | null;
 }
 
 function serve(root: string, port: number): Promise<Server> {
@@ -693,48 +694,63 @@ async function measureWorld(
   baseUrl: string,
   archive: string,
   outDir: string,
+  record: (row: WorldMeasurement) => void,
 ): Promise<WorldMeasurement> {
   const settleMs = Number(values["settle-ms"]);
   const gestureMs = Number(values["gesture-ms"]);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${baseUrl}?api=webgl2&tier=far`);
-  await page.waitForSelector('.editor[data-status="ready"]', {
-    state: "attached",
-    timeout: READY_TIMEOUT_MS,
-  });
-  const open = await openArchive(page, archive);
-  await view(page, "orbit");
-  await page.getByRole("button", { name: "Fit all" }).click({ timeout: READY_TIMEOUT_MS });
   const world = stemOf(archive);
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("HeapProfiler.enable");
-  const tiers: TierMeasurement[] = [];
-  for (const tier of (values.tiers ?? "").split(",").filter((name) => name !== "")) {
-    await forceTier(page, tier);
-    const reading = await settleAt(page, tier, settleMs);
-    if (errors.length > 0) throw new Error(errors.join("\n"));
-    tiers.push(await measureTier(page, cdp, world, tier, outDir, reading));
-  }
-  const plan = await measurePlan(browser, page, cdp, world, outDir, settleMs, gestureMs);
-  const script = editScript(archive);
-  const edits = script
-    ? await measureEdits(browser, page, script, Number(values.repeats), Number(values["hover-ms"]))
-    : null;
-  const placed = await placements(page);
-  await cdp.detach();
-  const warmOpen = await reopenWarm(page, baseUrl);
-  if (errors.length > 0) throw new Error(errors.join("\n"));
-  return {
+  let row: WorldMeasurement = {
     world,
     archive: basename(archive),
-    placements: placed,
-    open,
-    warmOpen,
-    tiers,
-    plan,
-    edits,
+    placements: null,
+    open: null,
+    tiers: [],
+    plan: null,
+    edits: null,
+    warmOpen: null,
+    failure: null,
   };
+  const update = (patch: Partial<WorldMeasurement>): void => {
+    row = { ...row, ...patch };
+    record(row);
+  };
+  const errors: string[] = [];
+  const pageErrors = (): void => {
+    if (errors.length > 0) throw new Error(errors.join("\n"));
+  };
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.setDefaultTimeout(READY_TIMEOUT_MS);
+  try {
+    await page.goto(`${baseUrl}?api=webgl2&tier=far`);
+    await page.waitForSelector('.editor[data-status="ready"]', { state: "attached" });
+    update({ open: await openArchive(page, archive), placements: await placements(page) });
+    await view(page, "orbit");
+    await page.getByRole("button", { name: "Fit all" }).click();
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("HeapProfiler.enable");
+    for (const tier of (values.tiers ?? "").split(",").filter((name) => name !== "")) {
+      await forceTier(page, tier);
+      const reading = await settleAt(page, tier, settleMs);
+      pageErrors();
+      update({ tiers: [...row.tiers, await measureTier(page, cdp, world, tier, outDir, reading)] });
+    }
+    update({ plan: await measurePlan(browser, page, cdp, world, outDir, settleMs, gestureMs) });
+    pageErrors();
+    const script = editScript(archive);
+    if (script) {
+      const repeats = Number(values.repeats);
+      update({
+        edits: await measureEdits(browser, page, script, repeats, Number(values["hover-ms"])),
+      });
+    }
+    pageErrors();
+    await cdp.detach();
+    update({ warmOpen: await reopenWarm(page, baseUrl) });
+    pageErrors();
+  } catch (error) {
+    update({ failure: error instanceof Error ? error.message : String(error) });
+  }
+  return row;
 }
 
 function ms(value: number): string {
@@ -745,37 +761,50 @@ function spread(d: Distribution): string {
   return `${ms(d.p50)} / ${ms(d.p95)} / ${ms(d.max)}`;
 }
 
+function openRow(label: string, open: OpenTimes): string {
+  const editor = open.worldOpenMs === null ? "–" : `${ms(open.worldOpenMs)} ms`;
+  return `| ${label} | ${open.placedMs} ms | ${open.settledMs} ms | ${editor} |`;
+}
+
+function viewRow(label: string, reading: TierMeasurement | PlanMeasurement): string {
+  return `| ${label} | ${reading.drawCalls.toLocaleString("en-US")} | ${reading.triangles.toLocaleString("en-US")} | ${reading.chunkTiers} | ${(reading.heapUsedBytes / MB).toFixed(0)} MB | ${(reading.backingStorageBytes / MB).toFixed(0)} MB |`;
+}
+
+function gestureRow(label: string, frames: FrameTimes): string {
+  return `| ${label} | ${frames.frames} | ${frames.fps.toFixed(1)} | ${spread(frames.intervalMs)} ms | ${spread(frames.mainThreadJsMs)} ms |`;
+}
+
 function report(rows: ReadonlyArray<WorldMeasurement>): string {
   const lines: string[] = [];
   for (const row of rows) {
+    const opens: Array<readonly [string, OpenTimes | null]> = [
+      ["cold, from the file", row.open],
+      ["warm, reload", row.warmOpen],
+    ];
     lines.push(
-      `### ${row.world} (${row.archive}, ${row.placements.toLocaleString("en-US")} placements)`,
+      `### ${row.world} (${row.archive}, ${row.placements?.toLocaleString("en-US") ?? "?"} placements)`,
       "",
       "| Open | Placements shown | Every wanted mesh settled | Editor's world open |",
       "|---|---:|---:|---:|",
-      `| cold, from the file | ${row.open.placedMs} ms | ${row.open.settledMs} ms | ${row.open.worldOpenMs === null ? "–" : `${ms(row.open.worldOpenMs)} ms`} |`,
-      ...(row.warmOpen
-        ? [
-            `| warm, reload | ${row.warmOpen.placedMs} ms | ${row.warmOpen.settledMs} ms | ${row.warmOpen.worldOpenMs === null ? "–" : `${ms(row.warmOpen.worldOpenMs)} ms`} |`,
-          ]
-        : []),
+      ...opens.flatMap(([label, open]) => (open ? [openRow(label, open)] : [])),
       "",
       "| View | Draw calls | Triangles | Chunks near/mid/far | Heap | ArrayBuffers |",
       "|---|---:|---:|---|---:|---:|",
-      ...row.tiers.map(
-        (tier) =>
-          `| 3D, ${tier.tier} tier | ${tier.drawCalls.toLocaleString("en-US")} | ${tier.triangles.toLocaleString("en-US")} | ${tier.chunkTiers} | ${(tier.heapUsedBytes / MB).toFixed(0)} MB | ${(tier.backingStorageBytes / MB).toFixed(0)} MB |`,
-      ),
-      `| 2D plan, auto tier | ${row.plan.drawCalls.toLocaleString("en-US")} | ${row.plan.triangles.toLocaleString("en-US")} | ${row.plan.chunkTiers} | ${(row.plan.heapUsedBytes / MB).toFixed(0)} MB | ${(row.plan.backingStorageBytes / MB).toFixed(0)} MB |`,
-      "",
-      `2D plan, GPU-synced frame (M): median ${ms(row.plan.gpuFrames.medianMs)} ms, p95 ${ms(row.plan.gpuFrames.p95Ms)} ms over ${row.plan.gpuFrames.frames} frames at rest.`,
-      "",
-      "| 2D plan gesture | Frames | fps | Frame interval p50 / p95 / max | Main-thread JS per frame p50 / p95 / max |",
-      "|---|---:|---:|---:|---:|",
-      `| pan (right-drag) | ${row.plan.pan.frames} | ${row.plan.pan.fps.toFixed(1)} | ${spread(row.plan.pan.intervalMs)} ms | ${spread(row.plan.pan.mainThreadJsMs)} ms |`,
-      `| zoom (wheel) | ${row.plan.zoom.frames} | ${row.plan.zoom.fps.toFixed(1)} | ${spread(row.plan.zoom.intervalMs)} ms | ${spread(row.plan.zoom.mainThreadJsMs)} ms |`,
+      ...row.tiers.map((tier) => viewRow(`3D, ${tier.tier} tier`, tier)),
+      ...(row.plan ? [viewRow("2D plan, auto tier", row.plan)] : []),
       "",
     );
+    if (row.plan) {
+      lines.push(
+        `2D plan, GPU-synced frame (M): median ${ms(row.plan.gpuFrames.medianMs)} ms, p95 ${ms(row.plan.gpuFrames.p95Ms)} ms over ${row.plan.gpuFrames.frames} frames at rest.`,
+        "",
+        "| 2D plan gesture | Frames | fps | Frame interval p50 / p95 / max | Main-thread JS per frame p50 / p95 / max |",
+        "|---|---:|---:|---:|---:|",
+        gestureRow("pan (right-drag)", row.plan.pan),
+        gestureRow("zoom (wheel)", row.plan.zoom),
+        "",
+      );
+    }
     if (row.edits) {
       lines.push(
         "| Edit in the 2D plan | Samples | Event to presented frame p50 / p95 / max | Event to submitted frame p50 / p95 / max | Rebuild p50 / p95 / max | GPU wait p50 / p95 / max |",
@@ -791,6 +820,7 @@ function report(rows: ReadonlyArray<WorldMeasurement>): string {
         "",
       );
     }
+    if (row.failure) lines.push(`Stopped: ${row.failure}`, "");
   }
   return lines.join("\n");
 }
@@ -816,6 +846,11 @@ async function main(): Promise<void> {
     ],
   });
   const rows: WorldMeasurement[] = [];
+  const flush = (current: WorldMeasurement): void => {
+    const all = [...rows, current];
+    writeFileSync(join(outDir, "measurements.json"), `${JSON.stringify(all, null, 2)}\n`);
+    writeFileSync(join(outDir, "measurements.md"), `${report(all)}\n`);
+  };
   try {
     for (const archive of archives) {
       const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
@@ -826,6 +861,7 @@ async function main(): Promise<void> {
         `http://127.0.0.1:${port}/`,
         archive,
         outDir,
+        flush,
       );
       await context.close();
       rows.push(measured);
@@ -835,8 +871,7 @@ async function main(): Promise<void> {
     await browser.close();
     server.close();
   }
-  writeFileSync(join(outDir, "measurements.json"), `${JSON.stringify(rows, null, 2)}\n`);
-  writeFileSync(join(outDir, "measurements.md"), `${report(rows)}\n`);
+  if (rows.some((row) => row.failure !== null)) process.exitCode = 1;
 }
 
 await main();
