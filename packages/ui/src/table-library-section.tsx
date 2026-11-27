@@ -66,7 +66,8 @@ function draftInput(draft: TypeDraft): TableTypeInput {
   };
 }
 
-function placedText({ placed, short, type }: TableTypeUsage): string {
+function placedText({ placed, short, type }: TableTypeUsage, planned: boolean): string {
+  if (!planned) return `${type.owned} owned`;
   if (short > 0) return `${placed} placed, ${short} more than the ${type.owned} owned`;
   return `${placed} of ${type.owned} owned placed in this plan`;
 }
@@ -137,12 +138,14 @@ function ColorField({
 
 function TableTypeRow({
   row,
+  planned,
   armed,
   editor,
   library,
   onIssues,
 }: {
   readonly row: TableTypeUsage;
+  readonly planned: boolean;
   readonly armed: boolean;
   readonly editor: IEditor;
   readonly library: ITableLibrary;
@@ -205,7 +208,7 @@ function TableTypeRow({
           data-placed={placed}
           data-short={short}
         >
-          {placedText(row)}
+          {placedText(row, planned)}
         </span>
         <button
           type="button"
@@ -290,6 +293,7 @@ export function TableLibrarySection({
             <TableTypeRow
               key={row.type.id}
               row={row}
+              planned={planId !== null}
               armed={armedType === row.type.id}
               editor={editor}
               library={library}

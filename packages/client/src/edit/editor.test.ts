@@ -5206,7 +5206,7 @@ it("draws and resizes a table on the 8-stud grid, checks a user's model against 
       placements: 1,
       tables: [table],
       issues: [],
-      labels: ["table: 48 studs · 38.4 cm", "table: 40 studs · 32 cm", "table: 1"],
+      labels: ["table: 1", "table: 48 studs · 38.4 cm", "table: 40 studs · 32 cm"],
     },
     resized: { placements: 1, tables: [narrowed], issues: ["fit"] },
     deletableOffCanvas: false,

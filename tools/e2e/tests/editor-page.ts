@@ -227,9 +227,11 @@ export interface PlanRegion {
     readonly roomDepthMm: number;
     readonly tables: ReadonlyArray<{
       readonly id: string;
+      readonly number: number;
       readonly name: string;
       readonly rect: PlanRect;
       readonly heightMm: number;
+      readonly typeId?: number;
     }>;
     readonly obstacles: ReadonlyArray<{
       readonly id: string;

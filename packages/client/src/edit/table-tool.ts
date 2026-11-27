@@ -345,12 +345,12 @@ export class TableTool {
 
   labels(): ReadonlyArray<LabelView> {
     const out: LabelView[] = [];
-    for (const { id, rect } of this.shown()) dimensionLabels(id, rect, this.y, out);
     const drag = this.drag;
     for (const top of this.tops()) {
       const dragged = drag?.rect && drag.handle?.tableId === top.id ? drag.rect : top.surface;
       out.push(numberLabel(top, dragged, this.y));
     }
+    for (const { id, rect } of this.shown()) dimensionLabels(id, rect, this.y, out);
     return out;
   }
 
