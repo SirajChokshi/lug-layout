@@ -34,7 +34,7 @@ function select(name: string): HTMLSelectElement | HTMLInputElement {
   return element;
 }
 
-it("asks the sheets service for the layout the form describes, downloads the file it returns, and refuses an overlap the registration marks can't fit in", () => {
+it("asks the sheets service for the layout and format the form describes, downloads the file it returns with its notes, and refuses an overlap the registration marks can't fit in", () => {
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -53,6 +53,7 @@ it("asks the sheets service for the layout the form describes, downloads the fil
         mimeType: "image/svg+xml",
         bytes: new TextEncoder().encode("<svg/>"),
         pages: request.layout.kind === "tiled" ? 7 : 1,
+        notes: request.format === "pdf" ? ['1 character prints as "?": Ω.'] : [],
       };
     },
   };
@@ -69,6 +70,8 @@ it("asks the sheets service for the layout the form describes, downloads the fil
 
   fireEvent.click(button);
   const tiledSaved = screen.getByText(/^Saved /u).textContent;
+  const tiledNote = screen.getByText(/prints as "\?"/u).textContent;
+  fireEvent.change(select("sheet-format"), { target: { value: "svg" } });
   fireEvent.change(select("sheet-layout"), { target: { value: "fit" } });
   fireEvent.change(select("sheet-paper"), { target: { value: "a3" } });
   fireEvent.change(select("sheet-orientation"), { target: { value: "landscape" } });
@@ -83,13 +86,15 @@ it("asks the sheets service for the layout the form describes, downloads the fil
 
   expect(requests).toEqual([
     {
-      format: "svg",
+      format: "pdf",
       layout: { kind: "tiled", paper: "a4", orientation: "auto", denominator: 1, overlapMm: 10 },
     },
     { format: "svg", layout: { kind: "fit", paper: "a3", orientation: "landscape" } },
   ]);
   expect(downloads).toEqual(["plan-1.tiled.svg", "plan-1.fit.svg"]);
   expect(tiledSaved).toBe("Saved 7 pages as plan-1.tiled.svg. Print at 100% (actual size).");
+  expect(tiledNote).toBe('1 character prints as "?": Ω.');
+  expect(screen.queryByText(/prints as "\?"/u)).toBeNull();
   expect(fitControls).toEqual({ scale: true, overlap: true });
   expect(screen.getByText(/registration marks fit inside it/u)).toBeDefined();
   expect(button).toHaveProperty("disabled", true);

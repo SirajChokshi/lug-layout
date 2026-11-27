@@ -11,20 +11,9 @@ import {
   type Similarity,
   type TextItem,
 } from "./draw-list.ts";
-import type { SheetDocument, SheetPage } from "./sheet-document.ts";
+import type { ISheetWriter, SheetDocument, SheetFile, SheetPage } from "./sheet-document.ts";
 import { PAPER } from "./sheet-paints.ts";
 import type { ISheetTypeface } from "./sheet-typeface.ts";
-
-export interface SheetFile {
-  readonly fileName: string;
-  readonly mimeType: string;
-  readonly bytes: Uint8Array;
-  readonly pages: number;
-}
-
-export interface ISheetWriter {
-  write(document: SheetDocument, baseName: string): SheetFile;
-}
 
 export interface ISvgSheetWriter extends ISheetWriter {
   pageSvg(page: SheetPage, title: string): string;
@@ -245,6 +234,7 @@ export class SvgSheetWriter implements ISvgSheetWriter {
         mimeType: "image/svg+xml",
         bytes: utf8.encode(this.pageSvg(only, document.title)),
         pages: 1,
+        notes: [],
       };
     }
     const entries = pages.map((page, i) => ({
@@ -256,6 +246,7 @@ export class SvgSheetWriter implements ISvgSheetWriter {
       mimeType: "application/zip",
       bytes: writeStoredZip(entries),
       pages: pages.length,
+      notes: [],
     };
   }
 }

@@ -182,6 +182,7 @@ export {
   MAX_OVERLAP_MM,
   MIN_OVERLAP_MM,
   sheetLayoutProblems,
+  type SheetFile,
   type SheetFormat,
   type SheetLayout,
   type SheetRequest,
@@ -193,7 +194,6 @@ export {
   type PaperId,
   type PaperSize,
 } from "./sheets/paper.ts";
-export type { SheetFile } from "./sheets/svg-sheet-writer.ts";
 export type {
   IssueSeverity,
   LduRect,

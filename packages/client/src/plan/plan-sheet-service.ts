@@ -13,9 +13,20 @@ import { inject, injectable } from "inversify";
 import type { IBomSource } from "../bom/bom-service.ts";
 import { ringsBounds } from "../sheets/plan-drawing.ts";
 import type { ISheetComposer } from "../sheets/sheet-composer.ts";
-import { sheetFileBase, type SheetRequest } from "../sheets/sheet-document.ts";
-import type { ISvgSheetWriter, SheetFile } from "../sheets/svg-sheet-writer.ts";
-import { PLAN_SERVICE, SHEET_COMPOSER, SVG_SHEET_WRITER, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import {
+  sheetFileBase,
+  type ISheetWriter,
+  type SheetFile,
+  type SheetRequest,
+} from "../sheets/sheet-document.ts";
+import type { ISvgSheetWriter } from "../sheets/svg-sheet-writer.ts";
+import {
+  PDF_SHEET_WRITER,
+  PLAN_SERVICE,
+  SHEET_COMPOSER,
+  SVG_SHEET_WRITER,
+  TRADEMARK_DISCLAIMER,
+} from "../tokens.ts";
 import type { PlanSheet, SheetPartsList, SheetPlacement, SheetVerdict } from "./plan-sheet.ts";
 import type { IPlanService, PlanPlacementsView, PlanRowSegment } from "./plan-service.ts";
 import { buildableAsPlanned, UNCHECKED_PLAN_RULES } from "./plan-verdict.ts";
@@ -96,6 +107,7 @@ export class PlanSheetService implements IPlanSheetService {
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
     @inject(SHEET_COMPOSER) private readonly composer: ISheetComposer,
     @inject(SVG_SHEET_WRITER) private readonly svg: ISvgSheetWriter,
+    @inject(PDF_SHEET_WRITER) private readonly pdf: ISheetWriter,
   ) {}
 
   printable(source: IPlanSheetSource, planId: string): string {
@@ -112,6 +124,8 @@ export class PlanSheetService implements IPlanSheetService {
     switch (request.format) {
       case "svg":
         return this.svg.write(document, base);
+      case "pdf":
+        return this.pdf.write(document, base);
       default: {
         const unhandled: never = request.format;
         throw new Error(`unhandled sheet format ${String(unhandled)}`);

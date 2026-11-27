@@ -40,6 +40,7 @@ import type { IPlanService } from "./plan/plan-service.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
 import type { IPlanDrawing } from "./sheets/plan-drawing.ts";
 import type { ISheetComposer } from "./sheets/sheet-composer.ts";
+import type { ISheetWriter } from "./sheets/sheet-document.ts";
 import type { ISheetTypeface } from "./sheets/sheet-typeface.ts";
 import type { ISvgSheetWriter } from "./sheets/svg-sheet-writer.ts";
 import type { ISheetTiler } from "./sheets/tile-grid.ts";
@@ -148,6 +149,9 @@ export const SHEET_COMPOSER: ServiceIdentifier<ISheetComposer> = Symbol.for(
 );
 export const SVG_SHEET_WRITER: ServiceIdentifier<ISvgSheetWriter> = Symbol.for(
   "brr.client.SvgSheetWriter",
+);
+export const PDF_SHEET_WRITER: ServiceIdentifier<ISheetWriter> = Symbol.for(
+  "brr.client.PdfSheetWriter",
 );
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",

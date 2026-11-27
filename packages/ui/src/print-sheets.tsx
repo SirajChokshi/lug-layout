@@ -32,6 +32,7 @@ const ORIENTATIONS: ReadonlyArray<{ readonly id: OrientationChoice; readonly lab
 ];
 
 const FORMATS: ReadonlyArray<{ readonly id: SheetFormat; readonly label: string }> = [
+  { id: "pdf", label: "PDF" },
   { id: "svg", label: "SVG" },
 ];
 
@@ -86,8 +87,8 @@ export function PrintSheets({
   const [orientation, setOrientation] = useState<OrientationChoice>("auto");
   const [denominator, setDenominator] = useState(1);
   const [overlapMm, setOverlapMm] = useState(DEFAULT_OVERLAP_MM);
-  const [format, setFormat] = useState<SheetFormat>("svg");
-  const [saved, setSaved] = useState<string | null>(null);
+  const [format, setFormat] = useState<SheetFormat>("pdf");
+  const [saved, setSaved] = useState<ReadonlyArray<string>>([]);
   const layout = layoutOf(mode, paper, orientation, denominator, overlapMm);
   const problems = sheetLayoutProblems(layout);
   const onPaper = mode !== "whole";
@@ -95,9 +96,10 @@ export function PrintSheets({
   const download = (): void => {
     const file = sheets.download(editor, plan.id, { layout, format });
     downloadBlob(file.fileName, new Blob([file.bytes.slice()], { type: file.mimeType }));
-    setSaved(
+    setSaved([
       `Saved ${file.pages === 1 ? "1 page" : `${file.pages} pages`} as ${file.fileName}. Print at 100% (actual size).`,
-    );
+      ...file.notes,
+    ]);
   };
   return (
     <section className="print-sheets" aria-label="Print sheets">
@@ -214,7 +216,11 @@ export function PrintSheets({
           Download sheets
         </button>
       </div>
-      {saved && <p className="plan-meta">{saved}</p>}
+      {saved.map((line) => (
+        <p key={line} className="plan-meta">
+          {line}
+        </p>
+      ))}
     </section>
   );
 }
