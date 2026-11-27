@@ -34,8 +34,8 @@ import type { PartRollingTable } from "./part-rolling.ts";
 import { NO_VEHICLE, ON_BODY, restingCredits, type Riders } from "./resting-ride.ts";
 import { shedding, type SheddingPoses } from "./shedding.ts";
 import { AxleHeights } from "./support-plane.ts";
-import { WrittenPoses } from "./written-pose.ts";
-import type { WrittenTransforms } from "./written-transforms.ts";
+import { AuthoredBoxes } from "./authored-boxes.ts";
+import type { AuthoredPoses } from "./authored-poses.ts";
 import type { DetectedWheelset, WheelsetDetector } from "./wheelset-detector.ts";
 
 const SIXTEENTHS_PER_LDU = 16;
@@ -60,7 +60,7 @@ export interface RunningGearInput {
   readonly connectors: ReadonlyArray<ConnectorTable | null>;
   readonly mates: MatePairs;
   readonly exposed: ExposedConnectors;
-  readonly written: WrittenTransforms | null;
+  readonly authored: AuthoredPoses | null;
 }
 
 export interface RunningGear {
@@ -277,39 +277,45 @@ export class RunningGearDetector {
       if (v !== NO_VEHICLE) ridingOf[v]?.push(instance);
     });
     const heights = new AxleHeights(frames);
-    const poses: SheddingPoses = {
-      identified: new ExactBoxes(frames, instances, extents),
-      written: new WrittenPoses(frames, instances, extents, input.written),
-      boxes: modelBoxes(instances, extents),
-    };
-    const standing = Array.from(riders.vehicleOf.keys()).filter(
-      (instance) => riders.vehicleOf[instance] === NO_VEHICLE,
-    );
-    candidates.forEach((gear, v) => {
+    const checks = candidates.map((gear, v) => {
       const own = this.ownWheelsets(gear, partition);
       const seated = own.filter((w) => partition.seated[w] === 1);
       const members = new Set(seated.flatMap((w) => [...(wheelsets[w]?.memberInstances ?? [])]));
       const riding = ridingOf[v] ?? [];
       const checked = riding.filter((instance) => !members.has(instance));
-      const failure =
-        clearance(
-          frames,
-          heights,
-          instances,
-          extents,
-          seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
-          checked,
-        ) ?? shedding(poses, checked, standing);
+      const refusal = clearance(
+        frames,
+        heights,
+        instances,
+        extents,
+        seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
+        checked,
+      );
+      return { own, riding, checked, refusal };
+    });
+    const poses: SheddingPoses = {
+      identified: new ExactBoxes(frames, instances, extents),
+      authored: new AuthoredBoxes(instances, extents, input.authored),
+      boxes: modelBoxes(instances, extents),
+    };
+    const outside = Array.from(riders.vehicleOf.keys()).filter((instance) => {
+      const v = riders.vehicleOf[instance] ?? NO_VEHICLE;
+      return v === NO_VEHICLE || checks[v]?.refusal;
+    });
+    candidates.forEach((gear, v) => {
+      const check = checks[v];
+      if (!check) return;
+      const failure = check.refusal ?? shedding(poses, check.checked, outside);
       if (!failure) return;
       unresolved.push({
         reason: failure.reason,
-        instances: [...failure.instances].toSorted((a, b) => a - b),
-        wheelsets: own.flatMap((w) => {
+        instances: [...failure.instances].toSorted((x, y) => x - y),
+        wheelsets: check.own.flatMap((w) => {
           const wheelset = wheelsets[w];
           return wheelset ? [this.wheelsetRecord(wheelset, partition.seated[w] === 1)] : [];
         }),
         mates: [],
-        unreadRows: unreadRowsOf(new Set(riding)),
+        unreadRows: unreadRowsOf(new Set(check.riding)),
       });
       excluded.add(gear.body);
     });

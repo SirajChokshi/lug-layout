@@ -9,7 +9,7 @@ import {
 import {
   SectionVocabularyFile,
   type AuthoredIdentification,
-  type WrittenTransforms,
+  type AuthoredPoses,
   type PrimitiveConnectorTable,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -198,7 +198,7 @@ interface ModelFile {
   };
   readonly partTransforms: ReadonlyArray<number>;
   readonly authoredIdentification?: AuthoredIdentification;
-  readonly writtenTransforms?: WrittenTransforms;
+  readonly authoredPoses?: AuthoredPoses;
 }
 
 function drawnAuthored(
@@ -345,17 +345,14 @@ for (const model of standardManifest.models) {
     baked = baker.bake(request, library);
   }
   const bakeMs = performance.now() - started;
-  const written = read.writtenTransforms;
-  const sameWritten = isDeepStrictEqual(
-    written && {
-      instance: kept.map((instance) => written.instance[instance]),
-      placement: written.placement,
-    },
-    bundled.writtenTransforms ?? null,
+  const authored = read.authoredPoses;
+  const sameAuthoredPoses = isDeepStrictEqual(
+    authored && kept.map((instance) => authored[instance]),
+    bundled.authoredPoses ?? null,
   );
   const mismatches: string[] = [
     ...(sameAuthored ? [] : ["authored identification"]),
-    ...(sameWritten ? [] : ["written transforms"]),
+    ...(sameAuthoredPoses ? [] : ["authored poses"]),
   ];
   if (baked.status !== "baked") {
     mismatches.push(`bake ${baked.status}: ${baked.message}`);

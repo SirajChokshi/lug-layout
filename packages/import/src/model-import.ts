@@ -48,7 +48,7 @@ import {
   type PrimitiveConnectorTable,
   type SectionVocabulary,
   type ShadowPatchManifest,
-  type WrittenTransforms,
+  type AuthoredPoses,
 } from "@brr/schema/bundle";
 import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
 import type { IPartRecords } from "./library-bake-store.ts";
@@ -243,7 +243,7 @@ export interface ImportResult {
   readonly matrices: Float32Array;
   readonly partTransforms: Float64Array;
   readonly submodels: ImportedSubmodels;
-  readonly writtenTransforms?: WrittenTransforms | null;
+  readonly authoredPoses?: AuthoredPoses | null;
   readonly compiled: ReadonlyArray<CompiledGlb>;
   readonly connectors: ReadonlyArray<PartConnectors | null>;
   readonly bake: ModelBake | null;
@@ -1354,21 +1354,18 @@ function assemble(
       matrices: matrices.slice(0, drawn * MATRIX_FLOATS),
       partTransforms: partTransforms.slice(0, drawn * MATRIX_FLOATS),
       submodels,
-      writtenTransforms: drawnWrittenTransforms(read.writtenTransforms, drawnMask),
+      authoredPoses: drawnAuthoredPoses(read.authoredPoses, drawnMask),
       compiled,
     },
   };
 }
 
-function drawnWrittenTransforms(
-  written: WrittenTransforms | null,
+function drawnAuthoredPoses(
+  poses: AuthoredPoses | null,
   drawnMask: Uint8Array,
-): WrittenTransforms | null {
-  if (written === null || written.instance.length !== drawnMask.length) return null;
-  return {
-    instance: written.instance.filter((_, line) => drawnMask[line] === 1),
-    placement: written.placement,
-  };
+): AuthoredPoses | null {
+  if (poses === null || poses.length !== drawnMask.length) return null;
+  return poses.filter((_, instance) => drawnMask[instance] === 1);
 }
 
 function compiledGlb(

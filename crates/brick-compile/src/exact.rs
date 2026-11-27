@@ -418,10 +418,12 @@ impl PartialEq for Exact {
 
 pub type ExactVec3 = [Exact; 3];
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ExactAffine {
     m: [Exact; 12],
 }
+
+const LDRAW_TO_Y_UP_DIAGONAL: [i64; 3] = [1, -1, -1];
 
 impl ExactAffine {
     pub fn identity() -> ExactAffine {
@@ -475,5 +477,37 @@ impl ExactAffine {
 
     pub fn translation(&self) -> ExactVec3 {
         self.column(3)
+    }
+
+    pub fn ldraw_to_y_up(&self) -> ExactAffine {
+        ExactAffine {
+            m: std::array::from_fn(|k| {
+                let (row, col) = (k / 4, k % 4);
+                let sign = LDRAW_TO_Y_UP_DIAGONAL[row]
+                    * if col == 3 {
+                        1
+                    } else {
+                        LDRAW_TO_Y_UP_DIAGONAL[col]
+                    };
+                if sign < 0 {
+                    self.m[k].neg()
+                } else {
+                    self.m[k].clone()
+                }
+            }),
+        }
+    }
+
+    pub fn determinant(&self) -> Exact {
+        let at = |row: usize, col: usize| &self.m[row * 4 + col];
+        let minor = |a: usize, b: usize| at(1, a).mul(at(2, b)).sub(&at(1, b).mul(at(2, a)));
+        at(0, 0)
+            .mul(&minor(1, 2))
+            .add(&at(0, 1).mul(&minor(2, 0)))
+            .add(&at(0, 2).mul(&minor(0, 1)))
+    }
+
+    pub fn canonical(&self) -> [String; 12] {
+        std::array::from_fn(|k| self.m[k].canonical())
     }
 }

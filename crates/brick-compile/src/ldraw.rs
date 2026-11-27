@@ -17,7 +17,6 @@ pub enum Line {
         color: u32,
         matrix: Affine,
         printed_translation: [Option<PrintedDecimal>; 3],
-        written: String,
         reference: String,
     },
     Edge {
@@ -285,7 +284,6 @@ fn parse_subfile(rest: &[&str]) -> Option<Line> {
         color,
         matrix: Affine::from_ldraw([numbers[0], numbers[1], numbers[2]], rotation),
         printed_translation: [rest[1], rest[2], rest[3]].map(PrintedDecimal::parse),
-        written: rest[1..=SUBFILE_NUMBER_COUNT].join(" "),
         reference: normalize_reference(&reference),
     })
 }
@@ -306,19 +304,6 @@ mod tests {
             ),
             other => panic!("expected one subfile line, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn a_subfile_line_keeps_its_twelve_numbers_as_written() {
-        let lines = parse("1 16 -12.345  +5. 1e-3 0.6 0 .8 0 1 0 -0.8 0 0.600 3001.dat").lines;
-        let written: Vec<&str> = lines
-            .iter()
-            .filter_map(|line| match line {
-                Line::Subfile { written, .. } => Some(written.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(written, ["-12.345 +5. 1e-3 0.6 0 .8 0 1 0 -0.8 0 0.600"]);
     }
 
     #[test]

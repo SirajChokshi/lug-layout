@@ -5,7 +5,7 @@ import type { PartInstances } from "../connect/submodel-frames.ts";
 import type { PartExtents } from "./part-extents.ts";
 import type { PartRollingTable } from "./part-rolling.ts";
 import type { ExposedConnectors, RunningGearInput } from "./running-gear-detector.ts";
-import type { WrittenTransforms } from "./written-transforms.ts";
+import type { AuthoredPoses } from "./authored-poses.ts";
 
 export function exposedConnectors(model: ModelConnectors, shapes: SnapShapes): ExposedConnectors {
   return {
@@ -25,7 +25,7 @@ export function runningGearInput(
   connectors: ReadonlyArray<ConnectorTable | null>,
   model: ModelConnectors,
   shapes: SnapShapes,
-  written: WrittenTransforms | null,
+  authored: AuthoredPoses | null,
 ): RunningGearInput {
   return {
     instances,
@@ -34,6 +34,6 @@ export function runningGearInput(
     connectors,
     mates: model.mates,
     exposed: exposedConnectors(model, shapes),
-    written,
+    authored,
   };
 }

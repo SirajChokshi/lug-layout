@@ -1463,16 +1463,16 @@ export const AuthoredIdentification = v.object({
 });
 export type AuthoredIdentification = v.InferOutput<typeof AuthoredIdentification>;
 
-export const WrittenTransforms = v.pipe(
-  v.object({
-    instance: v.array(v.string()),
-    placement: v.array(v.string()),
-  }),
+export const AuthoredPose = v.pipe(v.array(ExactDecimalText), v.length(MATRIX_FLOATS));
+export type AuthoredPose = v.InferOutput<typeof AuthoredPose>;
+
+export const AuthoredPoses = v.pipe(
+  v.array(v.nullable(AuthoredPose)),
   v.description(
-    "each type 1 line's twelve numbers exactly as the file writes them (x y z a b c d e f g h i, LDraw axes), one string per drawn instance line and per sub-model placement line, in the order of the instance and sub-model columns",
+    "each drawn instance's authored transform in the y-up model frame, in partTransforms' layout: its type 1 line and every sub-model placement above it, composed exactly from the decimals the file writes. null when a number on that chain isn't a decimal or a sub-model placement on it is singular",
   ),
 );
-export type WrittenTransforms = v.InferOutput<typeof WrittenTransforms>;
+export type AuthoredPoses = v.InferOutput<typeof AuthoredPoses>;
 
 export function authoredLinesFit(
   lines: AuthoredLines,
@@ -1555,7 +1555,7 @@ export const CompilerModelRead = v.object({
   ),
   instances: Count,
   authoredIdentification: v.optional(AuthoredIdentification),
-  writtenTransforms: v.optional(WrittenTransforms),
+  authoredPoses: v.optional(AuthoredPoses),
   blobs: CompilerBlobs,
 });
 export type CompilerModelRead = v.InferOutput<typeof CompilerModelRead>;
@@ -1801,7 +1801,7 @@ export const ModelFile = v.pipe(
     partTransforms: v.array(Finite),
     submodels: SubmodelTree,
     authoredIdentification: v.optional(AuthoredIdentification),
-    writtenTransforms: v.optional(WrittenTransforms),
+    authoredPoses: v.optional(AuthoredPoses),
   }),
   v.check(
     ({ parts, instances, partTransforms }) =>
@@ -1824,11 +1824,9 @@ export const ModelFile = v.pipe(
     "authored identification names an instance or placement the model doesn't have",
   ),
   v.check(
-    ({ instances, submodels, writtenTransforms }) =>
-      writtenTransforms === undefined ||
-      (writtenTransforms.instance.length === instances.part.length &&
-        writtenTransforms.placement.length === submodels.parent.length),
-    "written transforms don't follow the model's instances and sub-model placements",
+    ({ instances, authoredPoses }) =>
+      authoredPoses === undefined || authoredPoses.length === instances.part.length,
+    "authored poses don't follow the model's instances",
   ),
   v.check(
     ({ parts, shapes }) =>

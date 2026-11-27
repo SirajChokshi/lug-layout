@@ -34,7 +34,7 @@ import { measuredRail } from "./measured-rail.ts";
 import type { PartExtents } from "./part-extents.ts";
 import { PartRollingTable } from "./part-rolling.ts";
 import { RunningGearDetector, type ExposedConnectors } from "./running-gear-detector.ts";
-import type { WrittenTransforms } from "./written-transforms.ts";
+import type { AuthoredPoses } from "./authored-poses.ts";
 import { WheelsetDetector } from "./wheelset-detector.ts";
 
 const shapes = new SnapShapes();
@@ -125,6 +125,7 @@ interface Placement {
   readonly at: Vec;
   readonly submodel?: number;
   readonly rotation?: ReadonlyArray<number>;
+  readonly authored?: ReadonlyArray<string> | null;
 }
 
 const UPRIGHT = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -152,44 +153,13 @@ interface Scenario {
   readonly submodels?: ReadonlyArray<Vec>;
   readonly submodelParents?: ReadonlyArray<number>;
   readonly submodelRotations?: ReadonlyArray<ReadonlyArray<number>>;
-  readonly written?: WrittenTransforms | null;
+  readonly authored?: AuthoredPoses | null;
 }
 
-const LDRAW_SIGNS = [1, -1, -1] as const;
-
-function ldrawSign(row: number): number {
-  return LDRAW_SIGNS[row] ?? 1;
-}
-
-function writtenLine(rotation: ReadonlyArray<number>, at: Vec): string {
-  const sign = ldrawSign;
-  const translation = [0, 1, 2].map((r) => sign(r) * (at[r] ?? 0));
-  const entries = [0, 1, 2].flatMap((r) =>
-    [0, 1, 2].map((c) => sign(r) * sign(c) * (rotation[3 * r + c] ?? 0)),
+function latticePoses(matrices: Float64Array, count: number): string[][] {
+  return Array.from({ length: count }, (_, i) =>
+    Array.from(matrices.subarray(i * 12, (i + 1) * 12), (entry) => String(entry + 0)),
   );
-  return [...translation, ...entries].map((v) => String(v + 0)).join(" ");
-}
-
-function transposed(rotation: ReadonlyArray<number>): number[] {
-  return [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => rotation[3 * c + r] ?? 0));
-}
-
-function writtenScenario(scenario: Scenario): WrittenTransforms {
-  const frames = scenario.submodels ?? [];
-  const rotationOf = (s: number) => scenario.submodelRotations?.[s] ?? UPRIGHT;
-  return {
-    instance: scenario.placed.map((p) => writtenLine(p.rotation ?? UPRIGHT, p.at)),
-    placement: frames.map((at, s) => {
-      const parent = scenario.submodelParents?.[s] ?? MODEL_ROOT;
-      if (parent === MODEL_ROOT) return writtenLine(rotationOf(s), at);
-      const back = transposed(rotationOf(parent));
-      const offset = [0, 1, 2].map((d) => (at[d] ?? 0) - (frames[parent]?.[d] ?? 0));
-      return writtenLine(
-        composed(back, rotationOf(s)),
-        rotated(back, [offset[0] ?? 0, offset[1] ?? 0, offset[2] ?? 0]),
-      );
-    }),
-  };
 }
 
 function translated(offset: Vec, at: Vec): Vec {
@@ -291,7 +261,13 @@ function run(scenario: Scenario) {
     connectors: parts.map((part) => (part ? connectors(part.connectors) : null)),
     mates: graph,
     exposed,
-    written: scenario.written === undefined ? writtenScenario(scenario) : scenario.written,
+    authored:
+      scenario.authored === undefined
+        ? latticePoses(instances.matrices, instances.count).map((pose, i) => {
+            const own = scenario.placed[i]?.authored;
+            return own === undefined ? pose : own;
+          })
+        : scenario.authored,
   });
 }
 
@@ -994,6 +970,20 @@ function clearanceReports(reports: ReadonlyArray<UnresolvedRunningGear>) {
     instances: report.instances,
     wheelsets: report.wheelsets.map((w) => w.members[0]?.instance),
   }));
+}
+
+function reportsWithRows(gear: ReturnType<typeof run>) {
+  return gear.unresolvedRunningGear.map((report) => ({
+    ...clearanceReports([report])[0],
+    unreadRows: report.unreadRows,
+  }));
+}
+
+function wholeReport(reason: string, instances: ReadonlyArray<number>) {
+  return {
+    riding: [],
+    unresolved: [{ reason, instances, wheelsets: [1, 2], unreadRows: [0, 1] }],
+  };
 }
 
 const HALF_ROOT_TWO = Math.SQRT1_2;
@@ -2177,30 +2167,66 @@ describe("RunningGearDetector", () => {
       const BLOCK: Extents = { min: [0, 0, -10], max: [20, 4, 10] };
       const SLAB: Extents = { min: [-10, 0, -12], max: [10, 4, 12] };
       const THREE_FOUR_FIVE_TURN = [0.6, 0, 0.8, 0, 1, 0, -0.8, 0, 0.6];
+      const UNREAD_WHEELS: Part = {
+        connectors: [AXLE_MALE],
+        rolling: wheels(
+          [
+            [44, 54],
+            [-54, -44],
+          ],
+          [{ reason: "unoriented" }],
+        ),
+        extents: { min: [-7, -7, -54], max: [7, 7, 54] },
+      };
       const STANDING: Readonly<Record<string, Part>> = {
         lid: loose(LID),
         pole: loose(POLE),
         block: loose(BLOCK),
         slab: loose(SLAB),
         base: loose({ min: [-100, 0, -60], max: [100, 8, 60] }),
+        track: loose({ min: [-100, -8, -60], max: [100, 3, 60] }),
         bare: BARE,
-        wheels: {
-          connectors: [AXLE_MALE],
-          rolling: wheels(
-            [
-              [44, 54],
-              [-54, -44],
-            ],
-            [{ reason: "unoriented" }],
-          ),
-        },
+        wheels: UNREAD_WHEELS,
       };
       const standing = (loads: ReadonlyArray<Placement>) => run(loadedWagon(STANDING, loads));
-      const turnedSlab = (x: number) =>
-        refusals(standing([{ part: "slab", at: [x, 28, 0], rotation: THREE_FOUR_FIVE_TURN }]));
+      const turnedSlab = (at: Vec, authoredX: string | null) =>
+        refusals(
+          standing([
+            {
+              part: "slab",
+              at,
+              rotation: THREE_FOUR_FIVE_TURN,
+              ...(authoredX === null
+                ? {}
+                : {
+                    authored: [
+                      "0.6",
+                      "0",
+                      "0.8",
+                      authoredX,
+                      "0",
+                      "1",
+                      "0",
+                      "28",
+                      "-0.8",
+                      "0",
+                      "0.6",
+                      "0",
+                    ],
+                  }),
+            },
+          ]),
+        );
+
+      it("an identified part over a riding part sheds, with the whole report", () => {
+        const gear = standing([{ part: "lid", at: [0, WAGON_TOP + 8, 0] }]);
+
+        expect({ riding: riding(gear), unresolved: reportsWithRows(gear) }).toEqual(
+          wholeReport("shedsParts", [3]),
+        );
+      });
 
       it.each([
-        ["over the body sheds", { part: "lid", at: [0, WAGON_TOP + 8, 0] }, [["shedsParts", [3]]]],
         ["through the body sheds", { part: "pole", at: [0, 0, 0] }, [["shedsParts", [3]]]],
         [
           "wholly below the body, touching its bottom face, doesn't shed",
@@ -2219,12 +2245,13 @@ describe("RunningGearDetector", () => {
         ["over the body", { part: "lid", at: [0.0075, WAGON_TOP + 8, 0] }],
         ["into the body's end by its authored 0.0075 LDU", { part: "block", at: [49.9925, 28, 0] }],
       ] satisfies ReadonlyArray<[string, Placement]>)(
-        "an off-grid part %s sheds, decided on its authored pose",
+        "an off-grid part %s sheds on its authored pose, with the whole report",
         (_name, load) => {
-          expect(outcome(standing([load]))).toEqual({
-            riding: [],
-            refused: [["shedsParts", [3]]],
-          });
+          const gear = standing([load]);
+
+          expect({ riding: riding(gear), unresolved: reportsWithRows(gear) }).toEqual(
+            wholeReport("shedsParts", [3]),
+          );
         },
       );
 
@@ -2235,77 +2262,94 @@ describe("RunningGearDetector", () => {
         });
       });
 
-      it("an off-grid part touching a riding part only at a face doesn't shed", () => {
+      it("an off-grid part touching a riding part only at a plan face doesn't shed", () => {
         expect(refusals(standing([{ part: "block", at: [50, 28, 0.0075] }]))).toEqual([]);
       });
 
-      it.each([
-        ["no extents", loadedWagon(STANDING, [{ part: "bare", at: [200, 0, 0] }])],
-        [
-          "no written transforms",
-          {
-            ...loadedWagon(STANDING, [{ part: "pole", at: [200.0075, 0, 0] }]),
-            written: null,
-          },
-        ],
-        [
-          "a singular written sub-model placement",
-          (() => {
-            const scenario: Scenario = {
-              ...loadedWagon(STANDING, [{ part: "pole", at: [200.0075, 0, 0], submodel: 0 }]),
-              submodels: [[0, 0, 0]],
-            };
-            return {
-              ...scenario,
-              written: { ...writtenScenario(scenario), placement: ["0 0 0 0 0 0 0 0 0 0 0 0"] },
-            };
-          })(),
-        ],
-      ] satisfies ReadonlyArray<[string, Scenario]>)(
-        "a standing part with %s fails closed as sheddingUnidentified",
-        (_name, scenario) => {
-          const gear = run(scenario);
+      it("a turned part is bounded by the exact image of its eight corners", () => {
+        expect({
+          overlapping: turnedSlab([65.5999, 28, 0], null),
+          clearByAHairAuthored: turnedSlab([65.6, 28, 0], "65.600000000000001"),
+        }).toEqual({ overlapping: [["shedsParts", [3]]], clearByAHairAuthored: [] });
+      });
 
-          expect({
-            riding: riding(gear),
-            unresolved: gear.unresolvedRunningGear.map((report) => ({
-              ...clearanceReports([report])[0],
-              unreadRows: report.unreadRows,
-            })),
-          }).toEqual({
-            riding: [],
-            unresolved: [
-              {
-                reason: "sheddingUnidentified",
-                instances: [3],
-                wheelsets: [1, 2],
-                unreadRows: [0, 1],
-              },
-            ],
-          });
+      it.each([
+        ["no extents", { part: "bare", at: [200, 0, 0] }],
+        ["no composable authored pose", { part: "pole", at: [200.0075, 0, 0], authored: null }],
+      ] satisfies ReadonlyArray<[string, Placement]>)(
+        "a part outside every vehicle with %s refuses it as sheddingUnidentified, with the whole report",
+        (_name, load) => {
+          const gear = standing([load]);
+
+          expect({ riding: riding(gear), unresolved: reportsWithRows(gear) }).toEqual(
+            wholeReport("sheddingUnidentified", [3]),
+          );
         },
       );
 
-      it("a pair in a sub-model tilted off the model's up is decided in the model frame", () => {
-        const scenario = tiltedPlateWagon();
-        const clear: Scenario = {
-          ...scenario,
-          placed: scenario.placed.map((placement, i) =>
-            i === 4 ? { ...placement, at: [200, 4, 0] } : placement,
+      it("a shedding pair outranks an undecidable one", () => {
+        expect(
+          refusals(
+            standing([
+              { part: "lid", at: [0, WAGON_TOP + 8, 0] },
+              { part: "bare", at: [200, 0, 0] },
+            ]),
           ),
-        };
-
-        expect(outcome(run(clear))).toEqual({
-          riding: [{ body: [...WAGON_INSTANCES, 3], bogies: [] }],
-          refused: [],
-        });
+        ).toEqual([["shedsParts", [3]]]);
       });
 
-      it("a rotated off-grid part is bounded by the exact image of its box, not a float box", () => {
-        expect({ touching: turnedSlab(65.6), overlapping: turnedSlab(65.5999) }).toEqual({
-          touching: [],
-          overlapping: [["shedsParts", [3]]],
+      it("a part far more than a plate above the body still sheds", () => {
+        expect(refusals(standing([{ part: "lid", at: [0, WAGON_TOP + 100, 0] }]))).toEqual([
+          ["shedsParts", [3]],
+        ]);
+      });
+
+      it("an identified pair with an unreadable authored pose is decided as identified", () => {
+        const unreadable = Array.from({ length: 12 }, () => "not a decimal");
+
+        expect(
+          refusals(standing([{ part: "pole", at: [200, 0, 0], authored: unreadable }])),
+        ).toEqual([]);
+      });
+
+      it("a part overlapping only the seated wheels, wholly below the body, doesn't shed", () => {
+        expect(refusals(standing([{ part: "track", at: [0, 0, 0] }]))).toEqual([]);
+      });
+
+      it("a vehicle refused by clearance that would also shed keeps its clearance report", () => {
+        const gear = run(
+          loadedWagon(
+            {
+              ...STANDING,
+              hanger: loose({ min: [-5, -40, -5], max: [5, 0, 5] }, [AXLE_SOCKET]),
+              wagon: { ...WAGON_ON_RAILS, connectors: [...WAGON.connectors, AXLE_PEG] },
+            },
+            [
+              { part: "hanger", at: [0, 30, 50] },
+              { part: "lid", at: [0, WAGON_TOP + 8, 0] },
+            ],
+            [{ male: [0, 4], female: [3, 0] }],
+          ),
+        );
+
+        expect(refusals(gear)).toEqual([["belowRailTop", [3]]]);
+      });
+
+      it("a riding part of a vehicle refused by clearance is outside every vehicle", () => {
+        const scenario = plankOnRefusedAndSoundWagons();
+        const arm = loose({ min: [-5, -40, -5], max: [5, 0, 15] }, [AXLE_SOCKET]);
+        const gear = run({
+          ...scenario,
+          parts: { ...scenario.parts, skirt: arm },
+          placed: scenario.placed.map((placement, i) =>
+            i === 7 ? { ...placement, at: [140, 30, 40] } : placement,
+          ),
         });
+
+        expect(refusals(gear)).toEqual([
+          ["belowRailTop", [7]],
+          ["shedsParts", [6, 7]],
+        ]);
       });
     });
 

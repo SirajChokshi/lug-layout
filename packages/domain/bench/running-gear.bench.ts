@@ -398,7 +398,7 @@ const resolved = gear.detect({
   connectors: connectorTables,
   mates: graph,
   exposed,
-  written: null,
+  authored: null,
 });
 const baseline = await time(() => wheelsets.detect(instances, onRails));
 const largerGroups = await time(() => wheelsets.detect(instances, moreHubs));
@@ -410,7 +410,7 @@ const whole = await time(() =>
     connectors: connectorTables,
     mates: graph,
     exposed,
-    written: null,
+    authored: null,
   }),
 );
 const hangingInput = {
@@ -420,7 +420,7 @@ const hangingInput = {
   connectors: connectorTables,
   mates: hangingGraph,
   exposed,
-  written: null,
+  authored: null,
 };
 const hangingResolved = gear.detect(hangingInput);
 const hangingBogies = hangingResolved.vehicles.flatMap((vehicle) => vehicle.bogies);
@@ -444,7 +444,7 @@ const clearanceInput = {
   connectors: connectorTables,
   mates: matePairs(clearanceModel),
   exposed: { ...exposed, count: 0 },
-  written: null,
+  authored: null,
 };
 const clearanceResolved = gear.detect(clearanceInput);
 const clearanceSeated = clearanceResolved.vehicles.flatMap((vehicle) =>

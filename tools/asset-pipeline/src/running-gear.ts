@@ -18,8 +18,8 @@ import {
   BundleIndexFields,
   BundleModelEntry,
   PartShape,
+  AuthoredPoses,
   SubmodelTree,
-  WrittenTransforms,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile, writeFile } from "node:fs/promises";
@@ -38,7 +38,7 @@ const RunningGearModel = v.object({
   instances: v.object({ part: v.array(v.number()) }),
   partTransforms: v.array(v.number()),
   submodels: SubmodelTree,
-  writtenTransforms: v.optional(WrittenTransforms),
+  authoredPoses: v.optional(AuthoredPoses),
 });
 type RunningGearModel = v.InferOutput<typeof RunningGearModel>;
 
@@ -127,7 +127,7 @@ export async function attachRunningGear(directory: string): Promise<void> {
         connectors,
         connected,
         shapes,
-        model.writtenTransforms ?? null,
+        model.authoredPoses ?? null,
       ),
     );
     await writeFile(path, JSON.stringify({ ...raw, ...runningGearFields(gear) }));

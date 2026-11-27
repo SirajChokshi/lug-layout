@@ -242,10 +242,7 @@ type PlacedSource = Pick<
 >;
 
 type DetectionSource = Omit<PlacementModel, "runningGear">;
-type ImportedParts = Pick<
-  ImportResult,
-  "partIds" | "compiled" | "connectors" | "writtenTransforms"
->;
+type ImportedParts = Pick<ImportResult, "partIds" | "compiled" | "connectors" | "authoredPoses">;
 
 function placedModel(placed: PlacedSource): DetectionSource {
   return {
@@ -878,7 +875,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
         connectors,
         ModelConnectors.fromParts(connectors, instances, mating),
         shapes,
-        imported.writtenTransforms ?? null,
+        imported.authoredPoses ?? null,
       ),
     );
     return decodedOrThrow(decode(ModelRunningGear, gear), fileName);

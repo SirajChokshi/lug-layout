@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::affine::Affine;
 use crate::authored::{identify_authored, is_signed_permutation, Authored, Rational};
+use crate::exact::ExactAffine;
 use crate::flatten::INHERIT_COLOR;
-use crate::ldraw::{self, Header, Line, PrintedDecimal};
+use crate::ldraw::{self, ExactNumbers, Header, Line, PrintedDecimal};
 
 const MAX_SUBMODEL_DEPTH: usize = 32;
 pub const MODEL_ROOT: i64 = -1;
@@ -162,12 +163,6 @@ pub struct SubmodelInstance {
     pub matrix: Affine,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct WrittenTransforms {
-    pub instances: Vec<String>,
-    pub placements: Vec<String>,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct BakedModel {
     pub sections: Vec<Header>,
@@ -176,7 +171,7 @@ pub struct BakedModel {
     pub inline_parts: Vec<InlinePart>,
     pub loose_geometry: Vec<LooseGeometry>,
     pub authored_identification: Option<AuthoredIdentification>,
-    pub written_transforms: WrittenTransforms,
+    pub authored_poses: Vec<Option<[String; 12]>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -229,6 +224,7 @@ struct Section {
     name: String,
     header: Header,
     lines: Vec<Line>,
+    exact: Vec<ExactNumbers>,
 }
 
 impl Section {
@@ -327,11 +323,12 @@ pub fn bake_model_with(source: &str, options: BakeOptions) -> Result<BakedModel,
         .iter()
         .zip(&bodies)
         .map(|(name, body)| {
-            let file = ldraw::parse(body);
+            let file = ldraw::parse_exact(body);
             Section {
                 name: name.clone(),
                 header: file.header,
                 lines: file.lines,
+                exact: file.exact,
             }
         })
         .collect();
@@ -353,7 +350,10 @@ pub fn bake_model_with(source: &str, options: BakeOptions) -> Result<BakedModel,
             names: &names,
         },
         0,
-        &Affine::IDENTITY,
+        SectionFrame {
+            matrix: &Affine::IDENTITY,
+            authored: Some(&ExactAffine::identity()),
+        },
         INHERIT_COLOR,
         None,
         0,
@@ -366,7 +366,7 @@ pub fn bake_model_with(source: &str, options: BakeOptions) -> Result<BakedModel,
         reached,
         loose,
         authored,
-        written,
+        authored_poses,
     } = out;
     for instance in &mut instances {
         instance.matrix = y_up(&instance.matrix);
@@ -400,7 +400,10 @@ pub fn bake_model_with(source: &str, options: BakeOptions) -> Result<BakedModel,
             })
             .collect(),
         authored_identification: authored,
-        written_transforms: written,
+        authored_poses: authored_poses
+            .iter()
+            .map(|pose| pose.as_ref().map(|pose| pose.ldraw_to_y_up().canonical()))
+            .collect(),
     })
 }
 
@@ -418,7 +421,7 @@ struct WalkOutput {
     reached: BTreeSet<usize>,
     loose: BTreeMap<usize, usize>,
     authored: Option<AuthoredIdentification>,
-    written: WrittenTransforms,
+    authored_poses: Vec<Option<ExactAffine>>,
 }
 
 impl WalkOutput {
@@ -460,6 +463,12 @@ impl WalkOutput {
     }
 }
 
+#[derive(Clone, Copy)]
+struct SectionFrame<'a> {
+    matrix: &'a Affine,
+    authored: Option<&'a ExactAffine>,
+}
+
 struct Walk<'a> {
     sections: &'a [Section],
     index: &'a HashMap<&'a str, usize>,
@@ -469,7 +478,7 @@ struct Walk<'a> {
 fn walk(
     model: &Walk,
     section: usize,
-    matrix: &Affine,
+    frame: SectionFrame,
     color: u32,
     holder: Option<usize>,
     depth: usize,
@@ -487,17 +496,24 @@ fn walk(
             name: current.header.name.clone(),
         });
     }
-    for line in &current.lines {
+    for (line, exact) in current.lines.iter().zip(&current.exact) {
         let Line::Subfile {
             color: line_color,
             matrix: line_matrix,
             printed_translation,
-            written,
             reference,
         } = line
         else {
             continue;
         };
+        let authored_line = match exact {
+            ExactNumbers::Matrix(numbers) => Some(ExactAffine::from_ldraw(numbers)),
+            _ => None,
+        };
+        let authored_pose = frame
+            .authored
+            .zip(authored_line.as_ref())
+            .map(|(chain, line)| chain.then(line));
         let child_color = if *line_color == INHERIT_COLOR {
             color
         } else {
@@ -513,13 +529,13 @@ fn walk(
             (AuthoredLineKind::Instance, out.instances.len())
         };
         let line_matrix = out.identified_line(line_matrix, printed_translation, kind, line_index);
-        let child_matrix = matrix.then(&line_matrix);
+        let child_matrix = frame.matrix.then(&line_matrix);
         match model.index.get(reference.as_str()) {
             Some(&child) if model.sections[child].is_part() => {
                 let official = official_reference(&model.names[child]);
                 out.inline_parts
                     .insert(model.names[child].clone(), official.clone());
-                out.written.instances.push(written.clone());
+                out.authored_poses.push(authored_pose);
                 out.instances.push(ModelInstance {
                     part: official,
                     inline: Some(model.names[child].clone()),
@@ -529,7 +545,10 @@ fn walk(
                 });
             }
             Some(&child) => {
-                out.written.placements.push(written.clone());
+                let invertible = authored_line
+                    .as_ref()
+                    .is_some_and(|line| !line.determinant().is_zero());
+                let child_chain = authored_pose.filter(|_| invertible);
                 out.submodels.push(SubmodelInstance {
                     parent: holder,
                     matrix: child_matrix,
@@ -538,7 +557,10 @@ fn walk(
                 walk(
                     model,
                     child,
-                    &child_matrix,
+                    SectionFrame {
+                        matrix: &child_matrix,
+                        authored: child_chain.as_ref(),
+                    },
                     child_color,
                     instance,
                     depth + 1,
@@ -546,7 +568,7 @@ fn walk(
                 )?;
             }
             None => {
-                out.written.instances.push(written.clone());
+                out.authored_poses.push(authored_pose);
                 out.instances.push(ModelInstance {
                     part: reference.clone(),
                     inline: None,
@@ -748,24 +770,32 @@ mod tests {
     }
 
     #[test]
-    fn written_transforms_keep_every_type_1_line_as_written_in_instance_and_placement_order() {
+    fn authored_poses_compose_the_written_decimals_exactly_in_y_up_through_the_sub_model_chain() {
         let source = "0 FILE main.ldr\n0 !LDRAW_ORG Model\n\
             1 16 40.02 -8 0 0.6 0 0.8 0 1 0 -0.8 0 0.6 sub.ldr\n\
             1 16 10.02 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n\
+            1 16 0 0 0 1 0 0 0 1 0 0 0 1 flat.ldr\n\
             0 FILE sub.ldr\n\
-            1 16 .5 +5. 1e-3 1 0 0 0 1 0 0 0 1 3001.dat\n";
-        let expected = WrittenTransforms {
-            instances: vec![
-                ".5 +5. 1e-3 1 0 0 0 1 0 0 0 1".to_string(),
-                "10.02 0 0 1 0 0 0 1 0 0 0 1".to_string(),
-            ],
-            placements: vec!["40.02 -8 0 0.6 0 0.8 0 1 0 -0.8 0 0.6".to_string()],
-        };
+            1 16 .5 +5. 1e-3 1 0 0 0 1 0 0 0 1 3001.dat\n\
+            0 FILE flat.ldr\n\
+            1 16 0 0 0 0 0 0 0 0 0 0 0 0 nested.ldr\n\
+            0 FILE nested.ldr\n\
+            1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n";
+        let pose = |entries: [&str; 12]| Some(entries.map(String::from));
+        let expected = vec![
+            pose([
+                "0.6", "0", "-0.8", "40.3208", "0", "1", "0", "3", "0.8", "0", "0.6", "0.3994",
+            ]),
+            pose([
+                "1", "0", "0", "10.02", "0", "1", "0", "0", "0", "0", "1", "0",
+            ]),
+            None,
+        ];
         let plain = bake_model(source).unwrap_or_else(|e| panic!("bakes: {e}"));
         let identified = bake_model_with(source, OMR).unwrap_or_else(|e| panic!("bakes: {e}"));
         assert_eq!(identified.instances[1].matrix.m[3], 10.0);
-        assert_eq!(plain.written_transforms, expected);
-        assert_eq!(identified.written_transforms, expected);
+        assert_eq!(plain.authored_poses, expected);
+        assert_eq!(identified.authored_poses, expected);
     }
 
     #[test]

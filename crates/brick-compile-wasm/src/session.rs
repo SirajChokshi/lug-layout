@@ -30,7 +30,7 @@ use crate::frame::{respond, split, Body, Request};
 use crate::receptors::DrawnReceptors;
 use crate::reply::{
     AuthoredIdentification, BakePhases, Cover, Failure, InlineOutcome, InlinePair, Lattice,
-    LooseGeometry, PartOutcome, Reply, Section, WrittenTransforms,
+    LooseGeometry, PartOutcome, Reply, Section,
 };
 use crate::request::{InlineCheck, Operation};
 use crate::tracking::TrackingLibrary;
@@ -341,10 +341,7 @@ fn read_model(source: &str, options: BakeOptions, body: &mut Body) -> Result<Rep
             .authored_identification
             .as_ref()
             .map(|authored| AuthoredIdentification::from(authored.columns(Some))),
-        written_transforms: WrittenTransforms {
-            instance: model.written_transforms.instances,
-            placement: model.written_transforms.placements,
-        },
+        authored_poses: model.authored_poses,
         blobs: body.take_blobs(),
     })
 }

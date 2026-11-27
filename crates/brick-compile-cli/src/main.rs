@@ -896,16 +896,12 @@ fn run(args: &Args) -> Result<(), String> {
                 "matrices": baked.submodel_matrices(),
                 "ofPart": of_part,
             },
-            "writtenTransforms": {
-                "instance": baked
-                    .written_transforms
-                    .instances
-                    .iter()
-                    .zip(&drawn_index)
-                    .filter_map(|(written, drawn)| drawn.map(|_| written))
-                    .collect::<Vec<_>>(),
-                "placement": baked.written_transforms.placements,
-            },
+            "authoredPoses": baked
+                .authored_poses
+                .iter()
+                .zip(&drawn_index)
+                .filter_map(|(pose, drawn)| drawn.map(|_| pose))
+                .collect::<Vec<_>>(),
         });
         if !not_drawn.is_empty() {
             model["notDrawn"] = json!(not_drawn);
