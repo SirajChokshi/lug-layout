@@ -174,13 +174,6 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "dimension distance measure saved attach note",
   },
   {
-    id: "close-zone",
-    title: "Close the zone being drawn",
-    group: "Edit",
-    keys: [{ key: "Enter" }],
-    keywords: "finish polygon complete corners",
-  },
-  {
     id: "cycle-fill-grid",
     title: "Fill grid: 8, 16 or 32 studs, for dragging an area or filling the tables",
     group: "Edit",
@@ -242,6 +235,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "Enter" }],
     keywords: "append extend again repeat close loop join complete",
+  },
+  {
+    id: "close-zone",
+    title: "Close the zone being drawn",
+    group: "Edit",
+    keys: [{ key: "Enter" }],
+    keywords: "finish polygon complete corners",
   },
   {
     id: "next-track-choice",

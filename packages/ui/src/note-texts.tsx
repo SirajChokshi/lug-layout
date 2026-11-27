@@ -171,7 +171,7 @@ export function NoteTexts({ notes }: { readonly notes: INoteEditSession }) {
     if (!layer || views.length === 0) return;
     fitLegendBoxes(layer);
     const points = new Float64Array(views.length * TEXT_PROJECTION_FLOATS);
-    const matrix = new DOMMatrix();
+    const matrix = layer.createSVGMatrix();
     let frame = 0;
     const tick = (): void => {
       placeTexts(notes, layer, views, points, matrix);

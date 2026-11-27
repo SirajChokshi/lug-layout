@@ -110,6 +110,7 @@ import {
   type CommandId,
 } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
+import { DEFAULT_NOTE_STYLE } from "../notes/note-edit-session.ts";
 import type {
   ImportResult,
   LayoutPart,
@@ -121,6 +122,7 @@ import {
   ANNOTATION_SERVICE,
   BOM_SERVICE,
   CONNECTION_SOLVER,
+  NOTE_EDIT_SESSION,
   CONNECTOR_TABLES,
   EDITOR,
   EDITOR_CAMERA,
@@ -1383,6 +1385,256 @@ describe("notes", () => {
     ]);
     expect(stray.reopened).toBe(false);
     expect(stray.editor.snapshot().fileError).toBe(`import failed: note 0.from: ${unplaced}`);
+  }, 240_000);
+});
+
+const NOTE_VIEW_HALF_WIDTH_LDU = 400;
+
+function notePress(editor: IEditor, backend: AimedBackend, [x, z]: Ground): boolean {
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  return editor.dragStart(0, 0);
+}
+
+function noteClick(editor: IEditor, backend: AimedBackend, at: Ground): void {
+  expect(notePress(editor, backend, at)).toBe(true);
+  editor.dragEnd(0, 0, 0);
+}
+
+function noteDrag(editor: IEditor, backend: AimedBackend, from: Ground, to: Ground): void {
+  expect(notePress(editor, backend, from)).toBe(true);
+  backend.aim(...to);
+  editor.pointerMove(0, 0);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+}
+
+async function noteToolEditor() {
+  const started = await editorWithNotesLayer();
+  started.backend.viewHalfWidthLdu = NOTE_VIEW_HALF_WIDTH_LDU;
+  return { ...started, notes: started.container.get(NOTE_EDIT_SESSION) };
+}
+
+function zones(annotations: IAnnotationService) {
+  return annotations
+    .records()
+    .flatMap((note) =>
+      note.kind === "zone" ? [{ name: note.name, layer: note.layer, outline: note.outline }] : [],
+    );
+}
+
+function rulerSpans(annotations: IAnnotationService) {
+  return annotations.notes().flatMap(({ id, note }) => {
+    if (note.kind !== "ruler") return [];
+    const span = annotations.rulerSpan(id);
+    return [{ from: note.from.on, to: note.to.on, span }];
+  });
+}
+
+describe("note tools", () => {
+  it("draw rulers whose ends snap to a user's own imported model and attach to it, so they follow it and undo with it", async () => {
+    const { editor, backend, annotations, placed } = await noteToolEditor();
+    selectAt(editor, backend, placed.x, placed.z);
+    const box = selectedBox(editor);
+    const depth = editor.snapshot().history.undoDepth;
+    editor.setNoteTool("ruler");
+
+    noteDrag(editor, backend, [box.maxX + 3, box.minZ - 4], [box.maxX + 413, box.minZ + 7]);
+    const studInside: Ground = [placed.x - 20, placed.z - 10];
+    noteDrag(editor, backend, studInside, [placed.x - 20, placed.z + 611]);
+    noteClick(editor, backend, [placed.x - 20, placed.z + 300]);
+    const picked = editor.snapshot().noteTool?.selected?.note.kind;
+    noteDrag(editor, backend, [placed.x - 20, placed.z + 610], [placed.x + 377, placed.z + 600]);
+    const drawn = rulerSpans(annotations);
+    const steps = editor.snapshot().history.undoDepth - depth;
+
+    editor.setNoteTool(null);
+    selectAt(editor, backend, placed.x, placed.z);
+    editor.moveSelectionBy(200, 0, 0);
+    const followed = rulerSpans(annotations);
+    editor.undo(0);
+
+    expect({ drawn, steps, picked }).toEqual({
+      drawn: [
+        {
+          from: "model",
+          to: "point",
+          span: { ax: box.maxX, az: box.minZ, bx: box.maxX + 420, bz: box.minZ },
+        },
+        {
+          from: "model",
+          to: "point",
+          span: { ax: placed.x - 20, az: placed.z, bx: placed.x + 380, bz: placed.z + 600 },
+        },
+      ],
+      steps: 3,
+      picked: "ruler",
+    });
+    expect(followed.map(({ span }) => [span?.ax, span?.bx])).toEqual([
+      [box.maxX + 200, box.maxX + 420],
+      [placed.x + 180, placed.x + 380],
+    ]);
+    expect(rulerSpans(annotations)).toEqual(drawn);
+  }, 240_000);
+
+  it("draw zones on whole studs as rectangles and polygons, then move, reshape and delete them, one undo step each", async () => {
+    const { editor, backend, annotations } = await noteToolEditor();
+    const depth = editor.snapshot().history.undoDepth;
+    editor.setNoteTool("zone");
+
+    noteDrag(editor, backend, [1013, 1007], [1295, 1161]);
+    editor.cancelGesture();
+    for (const corner of [
+      [2000, 2000],
+      [2400, 2000],
+      [2400, 2200],
+      [2200, 2400],
+      [2005, 1995],
+    ] as const) {
+      noteClick(editor, backend, corner);
+    }
+    editor.cancelGesture();
+    for (const corner of [
+      [3000, 0],
+      [3200, 0],
+      [3200, 200],
+    ] as const) {
+      noteClick(editor, backend, corner);
+    }
+    const closable = commandEnabled("close-zone", editor.snapshot());
+    editor.finishNote();
+    editor.cancelGesture();
+    noteClick(editor, backend, [3100, 300]);
+    noteClick(editor, backend, [3100, 500]);
+    editor.cancelGesture();
+    const drawn = zones(annotations);
+    noteDrag(editor, backend, [1160, 1080], [1373, 1039]);
+    noteDrag(editor, backend, [1243, 963], [1180, 900]);
+    const reshaped = zones(annotations)[0];
+    editor.deleteSelection(0);
+    const kept = zones(annotations).map((zone) => zone.name);
+    const steps = editor.snapshot().history.undoDepth - depth;
+    for (let step = 0; step < steps; step++) editor.undo(0);
+
+    expect({ closable, drawn, reshaped, kept, steps }).toEqual({
+      closable: true,
+      drawn: [
+        {
+          name: "Zone 1",
+          layer: NOTES_LAYER.id,
+          outline: [
+            [1020, 1000],
+            [1300, 1000],
+            [1300, 1160],
+            [1020, 1160],
+          ],
+        },
+        {
+          name: "Zone 2",
+          layer: NOTES_LAYER.id,
+          outline: [
+            [2000, 2000],
+            [2400, 2000],
+            [2400, 2200],
+            [2200, 2400],
+          ],
+        },
+        {
+          name: "Zone 3",
+          layer: NOTES_LAYER.id,
+          outline: [
+            [3000, 0],
+            [3200, 0],
+            [3200, 200],
+          ],
+        },
+      ],
+      reshaped: {
+        name: "Zone 1",
+        layer: NOTES_LAYER.id,
+        outline: [
+          [1180, 900],
+          [1520, 960],
+          [1520, 1120],
+          [1240, 1120],
+        ],
+      },
+      kept: ["Zone 2", "Zone 3"],
+      steps: 6,
+    });
+    expect(annotations.notes()).toEqual([]);
+  }, 240_000);
+
+  it("place labels on whole studs, edit, turn and move them, and pick one back by clicking its text", async () => {
+    const { editor, backend, annotations, notes } = await noteToolEditor();
+    const depth = editor.snapshot().history.undoDepth;
+    editor.setNoteTool("text");
+
+    noteClick(editor, backend, [413, -207]);
+    const placedLabel = editor.snapshot().noteTool?.selected ?? null;
+    const note = placedLabel?.note;
+    if (note?.kind !== "text") throw new Error("no label was placed");
+    const { index: _index, ...body } = note;
+    notes.updateSelected({ ...body, text: "Ada's cottage" });
+    editor.rotate(0, 1);
+    noteClick(editor, backend, [2000, 2000]);
+    const deselected = editor.snapshot().noteTool?.selected ?? null;
+    noteClick(editor, backend, [420, -300]);
+    const repicked = editor.snapshot().noteTool?.selected?.id;
+    noteDrag(editor, backend, [420, -200], [481, -82]);
+    const moved = annotations.records();
+    editor.deleteSelection(0);
+    const steps = editor.snapshot().history.undoDepth - depth;
+
+    expect({ fresh: placedLabel?.fresh, note, deselected, repicked, moved, steps }).toEqual({
+      fresh: true,
+      note: {
+        kind: "text",
+        index: 0,
+        layer: NOTES_LAYER.id,
+        text: "Label",
+        x: 420,
+        z: -200,
+        rot: 0,
+        heightStuds: DEFAULT_NOTE_STYLE.textHeightStuds,
+        color: DEFAULT_NOTE_STYLE.textColor,
+      },
+      deselected: null,
+      repicked: placedLabel?.id,
+      moved: [
+        {
+          ...note,
+          text: "Ada's cottage",
+          rot: 1,
+          x: 480,
+          z: -80,
+        },
+      ],
+      steps: 5,
+    });
+    expect(annotations.notes()).toEqual([]);
+  }, 240_000);
+
+  it("refuses to draw a note in a world without a notes layer, saying why and changing nothing", async () => {
+    const { editor, backend, container } = await startEditor();
+    const annotations = container.get(ANNOTATION_SERVICE);
+    const depth = editor.snapshot().history.undoDepth;
+    editor.setNoteTool("zone");
+
+    noteDrag(editor, backend, [0, 0], [200, 200]);
+
+    expect({
+      notes: annotations.notes(),
+      steps: editor.snapshot().history.undoDepth - depth,
+      refusal: editor.snapshot().noteTool?.refusal,
+      tone: toolHints(editor.snapshot()).tone,
+    }).toEqual({
+      notes: [],
+      steps: 0,
+      refusal:
+        "This world has no notes layer, so there's nowhere to put a note. Notes go on a notes layer.",
+      tone: "warn",
+    });
   }, 240_000);
 });
 
