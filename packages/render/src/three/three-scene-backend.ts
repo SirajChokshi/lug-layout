@@ -3,7 +3,6 @@ import {
   BoxGeometry,
   BufferGeometry as LineGeometry,
   Color,
-  ConeGeometry,
   DataTexture,
   Float32BufferAttribute,
   FloatType,
@@ -69,7 +68,6 @@ import {
   type RebaseEvent,
   type SceneBackendConfig,
   type IThumbnailRenderer,
-  type TrackEndKind,
   type TrackEndMarker,
   type ThumbnailRequest,
   type WorldBox,
@@ -107,6 +105,7 @@ import {
 } from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
 import { KeyOrderedChildren, opaqueSort, transparentSort } from "./tie-order.ts";
+import { TrackEndArrows } from "./track-end-arrows.ts";
 import { GHOST_EDGE_SLOT, chunkEdgeSlot, vehicleEdgeSlot, writeEdgeId } from "./edge-ids.ts";
 import {
   MESH_KIND_BODY,
@@ -204,17 +203,6 @@ const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
   open: 0xffb000,
   mismatch: 0xe0202a,
 };
-const TRACK_END_COLORS: Readonly<Record<TrackEndKind, number>> = {
-  open: 0xffb000,
-  gap: 0xe0202a,
-  target: 0x1fbf4a,
-};
-const TRACK_END_ARROW_RADIUS_LDU = 16;
-const TRACK_END_ARROW_LENGTH_LDU = 30;
-const TRACK_END_ARROW_LIFT_LDU = 44;
-const TRACK_END_ARROW_SEGMENTS = 12;
-const TRACK_END_POST_WIDTH_LDU = 8;
-const TRACK_END_POST_HEIGHT_LDU = 96;
 const FLOOR_COLOR = 0xd8d2c8;
 const INACTIVE_FLOOR_COLOR = 0xe6e2dc;
 const ROOM_OUTLINE_COLOR = 0x3a3a3a;
@@ -230,27 +218,6 @@ interface Anchored {
   readonly object: Group | LineSegments | Mesh;
   readonly x: number;
   readonly z: number;
-}
-
-function trackEndArrowGeometry(): ConeGeometry {
-  const cone = new ConeGeometry(
-    TRACK_END_ARROW_RADIUS_LDU,
-    TRACK_END_ARROW_LENGTH_LDU,
-    TRACK_END_ARROW_SEGMENTS,
-  );
-  cone.rotateZ(-Math.PI / 2);
-  cone.translate(TRACK_END_ARROW_LENGTH_LDU / 2, TRACK_END_ARROW_LIFT_LDU, 0);
-  return cone;
-}
-
-function trackEndPostGeometry(): BoxGeometry {
-  const post = new BoxGeometry(
-    TRACK_END_POST_WIDTH_LDU,
-    TRACK_END_POST_HEIGHT_LDU,
-    TRACK_END_POST_WIDTH_LDU,
-  );
-  post.translate(0, TRACK_END_POST_HEIGHT_LDU / 2, 0);
-  return post;
 }
 
 function lineSegments(positions: number[], color: number): LineSegments {
@@ -771,14 +738,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   };
   private readonly markerGroup = new Group();
   private markers: ReadonlyArray<EdgeMarker> = [];
-  private readonly trackEndArrow = trackEndArrowGeometry();
-  private readonly trackEndPost = trackEndPostGeometry();
-  private readonly trackEndMaterials: Readonly<Record<TrackEndKind, MeshBasicNodeMaterial>> = {
-    open: new MeshBasicNodeMaterial({ color: TRACK_END_COLORS.open, depthTest: false }),
-    gap: new MeshBasicNodeMaterial({ color: TRACK_END_COLORS.gap, depthTest: false }),
-    target: new MeshBasicNodeMaterial({ color: TRACK_END_COLORS.target, depthTest: false }),
-  };
-  private readonly trackEndGroup = new Group();
+  private readonly trackEndArrows = new TrackEndArrows();
   private trackEnds: ReadonlyArray<TrackEndMarker> = [];
   private planObjects: Anchored[] = [];
   private issueObjects: Anchored[] = [];
@@ -835,7 +795,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly rebases: RebaseEvent[] = [];
   private rebaseCount = 0;
   private eyeMovedAt = 0;
-  private settledEyeTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
   private failure: string | undefined;
@@ -883,8 +842,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.scene.add(this.ghostHit);
     this.markerGroup.matrixAutoUpdate = false;
     this.scene.add(this.markerGroup);
-    this.trackEndGroup.matrixAutoUpdate = false;
-    this.scene.add(this.trackEndGroup);
+    this.scene.add(this.trackEndArrows.group);
     this.scene.add(this.guides.lines);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
@@ -1550,38 +1508,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
     if (markers === this.trackEnds) return;
     this.changed = true;
-    this.trackEndGroup.clear();
     this.trackEnds = markers;
-    for (const marker of markers) {
-      const material = this.trackEndMaterials[marker.kind];
-      const arrow = new Group();
-      arrow.matrixAutoUpdate = false;
-      arrow.renderOrder = 3;
-      const head = new Mesh(this.trackEndArrow, material);
-      const post = new Mesh(this.trackEndPost, material);
-      head.renderOrder = 3;
-      post.renderOrder = 3;
-      arrow.add(head, post);
-      this.trackEndGroup.add(arrow);
-    }
-    this.positionTrackEnds();
-  }
-
-  private positionTrackEnds(): void {
-    const arrows = this.trackEndGroup.children;
-    for (let i = 0; i < arrows.length; i++) {
-      const arrow = arrows[i];
-      const marker = this.trackEnds[i];
-      if (!arrow || !marker) continue;
-      arrow.position.set(
-        marker.xLdu - this.renderOriginX,
-        marker.yLdu,
-        marker.zLdu - this.renderOriginZ,
-      );
-      arrow.rotation.set(0, -marker.headingRadians, 0);
-      arrow.updateMatrix();
-    }
-    this.trackEndGroup.updateMatrixWorld(true);
+    this.trackEndArrows.set(markers);
+    this.trackEndArrows.place(this.renderOriginX, this.renderOriginZ);
   }
 
   setGround(ground: GroundSettings | null): void {
@@ -2264,17 +2193,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const chunkZ = chunkOf(this.eyeZ);
     const originChunkX = this.renderOriginX / CHUNK_LDU;
     const originChunkZ = this.renderOriginZ / CHUNK_LDU;
-    const atEye = chunkX === originChunkX && chunkZ === originChunkZ;
     const far =
       Math.abs(chunkX - originChunkX) > REBASE_DISTANCE_CHUNKS ||
       Math.abs(chunkZ - originChunkZ) > REBASE_DISTANCE_CHUNKS;
-    if (this.rebaseCount > 0 && !far) {
-      if (atEye) return;
-      if (performance.now() - this.eyeMovedAt < SETTLED_EYE_MS) {
-        this.scheduleSettledEye();
-        return;
-      }
-    }
+    if (this.rebaseCount > 0 && !far && !this.settleDue()) return;
     const started = performance.now();
     this.renderOriginX = chunkX * CHUNK_LDU;
     this.renderOriginZ = chunkZ * CHUNK_LDU;
@@ -2307,7 +2229,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.positionAnchored(this.ghostHitAnchor);
     for (const record of this.vehicles.values()) this.placeVehicle(record);
     this.positionMarkers();
-    this.positionTrackEnds();
+    this.trackEndArrows.place(this.renderOriginX, this.renderOriginZ);
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
     this.guides.place(this.renderOriginX, this.renderOriginZ);
@@ -2322,29 +2244,24 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     });
   }
 
-  private scheduleSettledEye(): void {
-    if (this.settledEyeTimer !== null) return;
-    this.settledEyeTimer = setTimeout(
-      this.followSettledEye,
-      this.eyeMovedAt + SETTLED_EYE_MS - performance.now(),
+  private eyeInOriginChunk(): boolean {
+    return (
+      chunkOf(this.eyeX) === this.renderOriginX / CHUNK_LDU &&
+      chunkOf(this.eyeZ) === this.renderOriginZ / CHUNK_LDU
     );
   }
 
-  private readonly followSettledEye = (): void => {
-    this.settledEyeTimer = null;
-    const remainingMs = this.eyeMovedAt + SETTLED_EYE_MS - performance.now();
-    if (remainingMs > 0) {
-      this.settledEyeTimer = setTimeout(this.followSettledEye, remainingMs);
-      return;
-    }
-    const rebases = this.rebaseCount;
+  private settleDue(): boolean {
+    return !this.eyeInOriginChunk() && performance.now() - this.eyeMovedAt >= SETTLED_EYE_MS;
+  }
+
+  private settleIfDue(): void {
+    if (!this.settleDue()) return;
     this.followEye();
-    if (this.rebaseCount === rebases) return;
     this.aim(this.perspective, this.eyeX, this.eyeY, this.eyeZ, this.atX, this.atY, this.atZ);
     this.aim(this.orthographic, this.eyeX, this.eyeY, this.eyeZ, this.atX, this.atY, this.atZ);
     this.aimGround();
-    this.changed = true;
-  };
+  }
 
   rebaseLog(): ReadonlyArray<RebaseEvent> {
     return this.rebases;
@@ -2553,6 +2470,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const renderer = this.renderer;
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
     this.throwIfFailed();
+    this.settleIfDue();
     this.fitShadowRange();
     this.readTierStats(out);
     this.showFarModels();
@@ -2569,7 +2487,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   needsFrame(): boolean {
-    return this.changed;
+    return this.changed || this.settleDue();
   }
 
   async waitForGpu(): Promise<void> {

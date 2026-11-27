@@ -358,16 +358,23 @@ export class EditorPage {
   }
 
   async steadyTriangles(): Promise<number> {
-    let previous = -1;
     for (;;) {
-      await this.page.waitForTimeout(STATS_SETTLE_MS);
-      const triangles = Number((await this.hud("Drawn triangles")).replaceAll(",", ""));
-      if (triangles > 0 && triangles === previous) return triangles;
-      previous = triangles;
+      const triangles = Number((await this.steadyHud("Drawn triangles")).replaceAll(",", ""));
+      if (triangles > 0) return triangles;
     }
   }
 
-  private async canvasCentre(): Promise<ScreenPoint> {
+  async steadyHud(label: string): Promise<string> {
+    let previous = "";
+    for (;;) {
+      await this.page.waitForTimeout(STATS_SETTLE_MS);
+      const value = await this.hud(label);
+      if (value !== "" && value === previous) return value;
+      previous = value;
+    }
+  }
+
+  async canvasCentre(): Promise<ScreenPoint> {
     const box = await this.canvas.boundingBox();
     if (!box) throw new Error("the editor canvas is not laid out");
     return { sx: box.x + box.width / 2, sy: box.y + box.height / 2 };

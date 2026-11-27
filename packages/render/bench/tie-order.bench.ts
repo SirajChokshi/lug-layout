@@ -4,6 +4,7 @@ import { opaqueSort, transparentSort, type RenderSortKey } from "../src/three/ti
 
 const ITEMS = 15_000;
 const ITEMS_PER_DEPTH = 24;
+const DEPTH_STEP = 0.37;
 const RENDER_ORDERS = 3;
 const SORTS = 1_000;
 const WARMUP_SORTS = 100;
@@ -44,7 +45,7 @@ function shuffledRenderItems(): Item[] {
       id: i,
       groupOrder: 0,
       renderOrder: i % RENDER_ORDERS === 0 ? 1 : 0,
-      z: Math.floor(i / ITEMS_PER_DEPTH),
+      z: Math.floor(i / ITEMS_PER_DEPTH) * DEPTH_STEP,
     });
   }
   let state = SHUFFLE_SEED;

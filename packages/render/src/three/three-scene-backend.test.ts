@@ -6,6 +6,7 @@ import {
 } from "@brr/catalog";
 import { CHUNK_LDU } from "@brr/math";
 import {
+  InstancedBufferGeometry,
   InstancedMesh,
   Matrix3,
   Matrix4,
@@ -276,8 +277,8 @@ function frameDrawn(backend: ThreeSceneBackend): void {
   backend["changed"] = false;
 }
 
-function trackEnd(xLdu: number): TrackEndMarker {
-  return { xLdu, yLdu: 0, zLdu: 0, headingRadians: 0, kind: "open" };
+function trackEnd(xLdu: number, zLdu = 0): TrackEndMarker {
+  return { xLdu, yLdu: 0, zLdu, headingRadians: 0, kind: "open" };
 }
 
 function edgeMarker(minX: number): EdgeMarker {
@@ -291,12 +292,6 @@ it.each([
       backend.setGhost({ ...chunkOf(0), originX: x }),
     resend: (backend: ThreeSceneBackend) => backend.setGhost(backend["ghostModel"]),
     shown: (backend: ThreeSceneBackend): unknown => backend["ghost"],
-  },
-  {
-    payload: "track end markers",
-    show: (backend: ThreeSceneBackend, x: number) => backend.setTrackEnds([trackEnd(x)]),
-    resend: (backend: ThreeSceneBackend) => backend.setTrackEnds(backend["trackEnds"]),
-    shown: (backend: ThreeSceneBackend): unknown => backend["trackEndGroup"].children[0],
   },
   {
     payload: "edge markers",
@@ -323,6 +318,79 @@ it.each([
     expect(backend.needsFrame()).toBe(true);
   },
 );
+
+function drawnTrackEnds(backend: ThreeSceneBackend): string[] {
+  const arrows = backend["trackEndArrows"];
+  const mesh = arrows.group.children[0];
+  const camera = backend["perspective"];
+  if (
+    !(mesh instanceof Mesh) ||
+    !(mesh.geometry instanceof InstancedBufferGeometry) ||
+    Array.isArray(mesh.material)
+  ) {
+    throw new Error("no track-end arrow mesh");
+  }
+  camera.updateMatrixWorld();
+  mesh.onBeforeRender(
+    null as unknown as Parameters<Mesh["onBeforeRender"]>[0],
+    backend["scene"],
+    camera,
+    mesh.geometry,
+    mesh.material,
+    arrows.group,
+  );
+  const translation = mesh.geometry.getAttribute("slotWorld3");
+  return Array.from(
+    { length: mesh.geometry.instanceCount },
+    (_, slot) => `at x ${translation.getX(slot)}, z ${translation.getZ(slot)}`,
+  );
+}
+
+function viewDownOn(backend: ThreeSceneBackend, x: number): void {
+  backend.setView(x, VIEW_EYE_HEIGHT_LDU, 0, x, 0, 1);
+}
+
+it("draws the same track-end arrows, asking for no frame, when sent the same markers again, and the new ones for others", () => {
+  const { backend } = tieredBackend();
+  viewDownOn(backend, 0);
+  const markers = [trackEnd(0)];
+  backend.setTrackEnds(markers);
+  const before = drawnTrackEnds(backend);
+  frameDrawn(backend);
+
+  backend.setTrackEnds(markers);
+  const resent = { frame: backend.needsFrame(), drawn: drawnTrackEnds(backend) };
+  backend.setTrackEnds([trackEnd(40)]);
+
+  expect({
+    before,
+    resent,
+    other: { frame: backend.needsFrame(), drawn: drawnTrackEnds(backend) },
+  }).toEqual({
+    before: ["at x 0, z 0", "at x 0, z 0"],
+    resent: { frame: false, drawn: ["at x 0, z 0", "at x 0, z 0"] },
+    other: { frame: true, drawn: ["at x 40, z 0", "at x 40, z 0"] },
+  });
+});
+
+it("draws the track-end arrows from the render origin, moving them when the eye rebases it and placing new ones from it", () => {
+  const { backend } = tieredBackend();
+  const chunkX = 20;
+  const chunkZ = -13;
+  const originX = chunkX * CHUNK_LDU;
+  const originZ = chunkZ * CHUNK_LDU;
+  backend.setView(0, VIEW_EYE_HEIGHT_LDU, 0, 0, 0, 1);
+  backend.setTrackEnds([trackEnd(originX + 10, originZ + 30)]);
+
+  backend.setView(originX + 10, VIEW_EYE_HEIGHT_LDU, originZ + 30, originX + 10, 0, originZ + 31);
+  const rebased = drawnTrackEnds(backend);
+  backend.setTrackEnds([trackEnd(originX + 50, originZ + 70)]);
+
+  expect({ rebased, placedAfter: drawnTrackEnds(backend) }).toEqual({
+    rebased: ["at x 10, z 30", "at x 10, z 30"],
+    placedAfter: ["at x 50, z 70", "at x 50, z 70"],
+  });
+});
 
 it("leaves a placed ghost where it is, asking for no frame, when placed at the same pose, and moves it for another", () => {
   const { backend } = tieredBackend();
@@ -684,36 +752,54 @@ it("keeps every holder under its own container, and the scene's direct children 
   ]);
 });
 
+function settlingBackend() {
+  vi.useFakeTimers({ toFake: ["performance"] });
+  const backend = new ThreeSceneBackend();
+  backend.resize(640, 480);
+  const z = CHUNK_LDU / 2;
+  const viewFrom = (x: number): void => backend.setView(x, VIEW_EYE_HEIGHT_LDU, z, x, 0, z + 1);
+  const rebasedChunks = (): ReadonlyArray<readonly [number, number]> =>
+    backend.rebaseLog().map(({ chunkX, chunkZ }) => [chunkX, chunkZ] as const);
+  return { backend, viewFrom, rebasedChunks };
+}
+
 describe("the render origin", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("rebases to the eye's chunk once the eye has been still for the settle time, without another setView", () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-    const backend = new ThreeSceneBackend();
-    backend.resize(640, 480);
-    const z = CHUNK_LDU / 2;
-    const firstX = CHUNK_LDU / 2;
-    const nextChunkX = CHUNK_LDU + CHUNK_LDU / 2;
-    const rebasedChunks = (): ReadonlyArray<readonly [number, number]> =>
-      backend.rebaseLog().map(({ chunkX, chunkZ }) => [chunkX, chunkZ] as const);
+  it("asks for no frame while the eye has just moved, then for one once it has been still for the settle time in another chunk, leaving the move of the origin to that frame", () => {
+    const { backend, viewFrom, rebasedChunks } = settlingBackend();
+    viewFrom(CHUNK_LDU / 2);
+    viewFrom(CHUNK_LDU + CHUNK_LDU / 2);
+    frameDrawn(backend);
+    const frameWhileMoving = backend.needsFrame();
 
-    backend.setView(firstX, VIEW_EYE_HEIGHT_LDU, z, firstX, 0, z + 1);
-    backend.setView(nextChunkX, VIEW_EYE_HEIGHT_LDU, z, nextChunkX, 0, z + 1);
-    const whileMoving = rebasedChunks();
     vi.advanceTimersByTime(WELL_PAST_SETTLE_MS);
-    const ray = new Float64Array(6);
-    backend.rayThrough(0, 0, ray);
 
-    expect({ whileMoving, settled: rebasedChunks(), eyeX: ray[0], eyeZ: ray[2] }).toEqual({
-      whileMoving: [[0, 0]],
-      settled: [
-        [0, 0],
-        [1, 0],
-      ],
-      eyeX: nextChunkX,
-      eyeZ: z,
+    expect({
+      frameWhileMoving,
+      frameOnceStill: backend.needsFrame(),
+      rebased: rebasedChunks(),
+    }).toEqual({
+      frameWhileMoving: false,
+      frameOnceStill: true,
+      rebased: [[0, 0]],
+    });
+  });
+
+  it("asks for no frame when the eye is back in the origin's chunk by the settle time", () => {
+    const { backend, viewFrom, rebasedChunks } = settlingBackend();
+    viewFrom(CHUNK_LDU / 2);
+    viewFrom(CHUNK_LDU + CHUNK_LDU / 2);
+    viewFrom(CHUNK_LDU / 4);
+    frameDrawn(backend);
+
+    vi.advanceTimersByTime(WELL_PAST_SETTLE_MS);
+
+    expect({ frame: backend.needsFrame(), rebased: rebasedChunks() }).toEqual({
+      frame: false,
+      rebased: [[0, 0]],
     });
   });
 });

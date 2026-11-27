@@ -37,16 +37,55 @@ it("sorts by group order, then render order, then depth: nearest first when opaq
   ]);
 });
 
-it("compares items with equal group order, render order and depth as equal in both sorts", () => {
-  const a = item(1, 2, 0.25);
-  const b = item(1, 2, 0.25);
+const SORT_KEY_VALUES: ReadonlyArray<number | null> = [
+  null,
+  Number.NaN,
+  Number.NEGATIVE_INFINITY,
+  -1,
+  -0,
+  0,
+  Number.MIN_VALUE,
+  0.5,
+  1,
+  Number.POSITIVE_INFINITY,
+];
 
-  expect([
-    opaqueSort(a, b),
-    opaqueSort(b, a),
-    transparentSort(a, b),
-    transparentSort(b, a),
-  ]).toEqual([0, 0, 0, 0]);
+function signOfSubtraction(a: number | null, b: number | null): number {
+  return Math.sign((a ?? 0) - (b ?? 0)) || 0;
+}
+
+function subtractionOrder(a: RenderSortKey, b: RenderSortKey, depthAscending: boolean): number {
+  if (a.groupOrder !== b.groupOrder) return signOfSubtraction(a.groupOrder, b.groupOrder);
+  if (a.renderOrder !== b.renderOrder) return signOfSubtraction(a.renderOrder, b.renderOrder);
+  if (a.z === b.z) return 0;
+  return depthAscending ? signOfSubtraction(a.z, b.z) : signOfSubtraction(b.z, a.z);
+}
+
+it("answers only -1, 0 or 1, with the sign of the keys' subtraction, for every key the sort can see, NaN, ±0, ±Infinity and null included", () => {
+  const keys: RenderSortKey[] = [];
+  for (const groupOrder of SORT_KEY_VALUES) {
+    for (const renderOrder of SORT_KEY_VALUES) {
+      for (const z of SORT_KEY_VALUES) keys.push({ groupOrder, renderOrder, z });
+    }
+  }
+  const mismatches: string[] = [];
+  for (const a of keys) {
+    for (const b of keys) {
+      const opaque = opaqueSort(a, b);
+      const transparent = transparentSort(a, b);
+      if (
+        !Object.is(opaque, subtractionOrder(a, b, true)) ||
+        !Object.is(transparent, subtractionOrder(a, b, false))
+      ) {
+        mismatches.push(JSON.stringify([a, b, opaque, transparent]));
+      }
+    }
+  }
+
+  expect({ pairs: keys.length ** 2, mismatches: mismatches.slice(0, 5) }).toEqual({
+    pairs: 1_000_000,
+    mismatches: [],
+  });
 });
 
 it("keeps children in key order whatever order they are added in", () => {
