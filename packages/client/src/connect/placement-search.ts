@@ -655,6 +655,7 @@ function quarterTurnsBetween(a: number, b: number): number {
 export class PlacementSearch implements IPlacementSearch {
   private readonly volumes = new VolumeIndex();
   private readonly placed = new Map<number, Placed>();
+  private readonly records: Array<Placed | undefined> = [];
   private readonly report = new MateReport();
   private readonly tieReport = new MateReport();
   private keys = new Float64Array(INITIAL_KEYS);
@@ -730,7 +731,7 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly collectBlocker = (owner: number, cellX: number, cellZ: number): boolean => {
     const leader = this.leader;
     if (leader === null || owner === this.hit.owner || owner === this.moving) return true;
-    const placed = this.placed.get(owner);
+    const placed = this.records[owner];
     if (
       placed !== undefined &&
       placementBefore(placed.pose, placed.item, leader.pose, leader.item) &&
@@ -772,7 +773,7 @@ export class PlacementSearch implements IPlacementSearch {
     this.edits++;
     this.solver.insert(model, at, placement);
     const vertical = this.verticalBox.measure(model, at);
-    this.placed.set(placement, {
+    const placed: Placed = {
       item,
       model,
       volumes,
@@ -785,7 +786,10 @@ export class PlacementSearch implements IPlacementSearch {
       verticalZ0: vertical.z0,
       verticalX1: vertical.x1,
       verticalZ1: vertical.z1,
-    });
+    };
+    this.placed.set(placement, placed);
+    while (this.records.length < placement) this.records.push(undefined);
+    this.records[placement] = placed;
   }
 
   awaitTables(placement: number, volumes: CellVolumes, pose: LatticePose): void {
@@ -892,10 +896,12 @@ export class PlacementSearch implements IPlacementSearch {
     this.release(placed);
     this.solver.remove(placed.model, placed.pose, placement);
     this.placed.delete(placement);
+    this.records[placement] = undefined;
   }
 
   clear(): void {
     for (const placement of this.placed.keys()) this.remove(placement);
+    this.records.length = 0;
     if (this.awaitedCount > 0) this.edits++;
     this.awaitedCount = 0;
   }
@@ -1377,7 +1383,7 @@ export class PlacementSearch implements IPlacementSearch {
 
   private sortByPlacement(owners: number[]): void {
     const order = this.restingPlaced;
-    for (let i = 0; i < owners.length; i++) order[i] = this.placed.get(owners[i] ?? NO_PLACEMENT);
+    for (let i = 0; i < owners.length; i++) order[i] = this.records[owners[i] ?? NO_PLACEMENT];
     for (let i = 1; i < owners.length; i++) {
       const owner = owners[i] ?? NO_PLACEMENT;
       const resting = order[i];
@@ -1438,7 +1444,7 @@ export class PlacementSearch implements IPlacementSearch {
     let strandedPlaced: Placed | undefined;
     for (let c = 0; c < candidates; c++) {
       const other = this.strandCandidates[c] ?? NO_PLACEMENT;
-      const placed = this.placed.get(other);
+      const placed = this.records[other];
       if (!placed) continue;
       if (strandedPlaced !== undefined && !this.restsBefore(placed, strandedPlaced)) continue;
       this.solver.evaluate(placed.model, placed.pose, this.report);
@@ -1544,7 +1550,7 @@ export class PlacementSearch implements IPlacementSearch {
   }
 
   private placedAt(placement: number): Placed {
-    const placed = this.placed.get(placement);
+    const placed = this.records[placement];
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
     return placed;
   }
