@@ -59,6 +59,7 @@ import { WithFixtureModels } from "../edit/fixture-model.test-support.ts";
 import { EDITOR, STARTER_FILES, STARTER_WORLDS } from "../tokens.ts";
 import type { IStarterFiles } from "./starter-files.ts";
 import { sourceInstances, type SourceInstance } from "./source-orientation.test-support.ts";
+import { MemoryKits } from "../edit/memory-kits.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const shippedStartersRoot = new URL("../../../../apps/web/starters/", import.meta.url);
@@ -194,11 +195,13 @@ interface MemoryWorld {
   readonly notes: Map<string, NoteShardV2>;
 }
 
-class MemoryRepository implements IWorldRepository {
+class MemoryRepository extends MemoryKits implements IWorldRepository {
   private readonly worlds = new Map<string, MemoryWorld>();
   private nextId = 1;
 
-  constructor(private readonly archives: IWorldRepository) {}
+  constructor(private readonly archives: IWorldRepository) {
+    super();
+  }
 
   private entry(id: string, world: MemoryWorld): WorldIndexEntry {
     const manifest = worldManifest(world.header, [...world.shards.values()].map(shardEntry));

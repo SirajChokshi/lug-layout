@@ -1,10 +1,11 @@
-import { LINK_PROGRESS_SHARE } from "@brr/catalog";
+import { ASSET_FETCHER, LINK_PROGRESS_SHARE } from "@brr/catalog";
 import {
   EditHistory,
   GroupTable,
   World,
   addShards,
   ungroupingChange,
+  worldPlacements,
   type AppliedEdit,
   type AppliedGroupChange,
   type PlacementRef,
@@ -56,12 +57,15 @@ import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import type {
   IEditedWorld,
   IWorldSession,
+  MemberRecords,
   ModelFileOutcome,
   PlanContents,
   StoredContents,
   WorldContents,
 } from "./world-session.ts";
 import { silentPeers } from "../catalog/silent-peers.test-support.ts";
+import { fixtureBundleFetcher } from "./fixture-model.test-support.ts";
+import { MemoryKits } from "./memory-kits.test-support.ts";
 
 const BASEPLATE = "ldraw:3811";
 const BASEPLATE_LDU = 640;
@@ -121,6 +125,7 @@ class BaseplateWorld implements IEditedWorld {
   private history = new EditHistory(this.world);
   private placed: PlacementRef[] = [];
   groups = GroupTable.empty;
+  readonly heldKits: Array<{ name: string; shards: ReadonlyArray<WorldShardV2> }> = [];
 
   get placements(): number {
     return this.world.size;
@@ -201,6 +206,16 @@ class BaseplateWorld implements IEditedWorld {
     return [{ path: "plan", message: "is not opened in this test" }];
   }
 
+  selectionContents(): Decoded<MemberRecords> {
+    const placements = worldPlacements(this.world, [BASEPLATE]);
+    return { ok: true, value: { placements, track: [], placed: [] } };
+  }
+
+  async holdKit(name: string, shards: ReadonlyArray<WorldShardV2>): Promise<ReadonlyArray<Issue>> {
+    this.heldKits.push({ name, shards });
+    return [];
+  }
+
   bomInput(): BomInput {
     throw new Error("this test counts no parts");
   }
@@ -216,7 +231,7 @@ interface MemoryWorld {
   readonly notes: Map<string, NoteShardV2>;
 }
 
-class FailingSaveRepository implements IWorldRepository {
+class FailingSaveRepository extends MemoryKits implements IWorldRepository {
   failSaves = false;
   private readonly worlds = new Map<string, MemoryWorld>();
   private readonly imports = new Map<string, ImportedFile>();
@@ -474,6 +489,7 @@ async function sessionOnIndexedDb() {
   container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
   container.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
   container.rebind(PERSISTENT_STORAGE).toConstantValue(null);
+  container.rebind(ASSET_FETCHER).toConstantValue(fixtureBundleFetcher());
   const session = container.get(WORLD_SESSION);
   const repository = container.get(WORLD_REPOSITORY);
   const layers = container.get(LAYER_SERVICE);
@@ -482,47 +498,47 @@ async function sessionOnIndexedDb() {
   return { session, repository, layers, edited, container };
 }
 
+const SHOW: WorldHeader = {
+  name: "Show",
+  bundleVersion: "test",
+  view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0, pitch: 0.75 },
+  disclaimer: "disclaimer",
+  layers: [
+    { id: 1, name: "Labels", kind: "notes", visible: true, locked: false, opacity: 80 },
+    { ...BASE_LAYER, name: "Plates", locked: true },
+    { id: 2, name: "Scenery", kind: "parts", visible: false, locked: false, opacity: 60 },
+  ],
+  contributors: [{ id: 3, name: "Ada", color: "#1f77b4" }],
+  event: { title: "Show layout", startDate: "2027-03-12", endDate: "2027-03-14" },
+};
+const LABELS = noteShards([
+  {
+    kind: "text",
+    index: 0,
+    layer: 1,
+    owner: 3,
+    text: "Station",
+    x: 0,
+    z: 0,
+    rot: 0,
+    heightStuds: 4,
+    color: "#000000",
+  },
+]);
+const PLATE: PlacementRecordV2 = { ref: BASEPLATE, color: 2, x: 0, z: 0, yPlates: 0, rot: 0 };
+
+function showArchive(repository: IWorldRepository, placements: ReadonlyArray<PlacementRecordV2>) {
+  const shards = worldShards(placements, []);
+  return repository.packArchive({
+    manifest: worldManifest(SHOW, shards.map(shardEntry), LABELS.map(noteShardEntry)),
+    shards,
+    notes: LABELS,
+    credits: "credits",
+    imports: [],
+  });
+}
+
 describe("schema v2 document data", () => {
-  const SHOW: WorldHeader = {
-    name: "Show",
-    bundleVersion: "test",
-    view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0, pitch: 0.75 },
-    disclaimer: "disclaimer",
-    layers: [
-      { id: 1, name: "Labels", kind: "notes", visible: true, locked: false, opacity: 80 },
-      { ...BASE_LAYER, name: "Plates", locked: true },
-      { id: 2, name: "Scenery", kind: "parts", visible: false, locked: false, opacity: 60 },
-    ],
-    contributors: [{ id: 3, name: "Ada", color: "#1f77b4" }],
-    event: { title: "Show layout", startDate: "2027-03-12", endDate: "2027-03-14" },
-  };
-  const LABELS = noteShards([
-    {
-      kind: "text",
-      index: 0,
-      layer: 1,
-      owner: 3,
-      text: "Station",
-      x: 0,
-      z: 0,
-      rot: 0,
-      heightStuds: 4,
-      color: "#000000",
-    },
-  ]);
-  const PLATE: PlacementRecordV2 = { ref: BASEPLATE, color: 2, x: 0, z: 0, yPlates: 0, rot: 0 };
-
-  function showArchive(repository: IWorldRepository, placements: ReadonlyArray<PlacementRecordV2>) {
-    const shards = worldShards(placements, []);
-    return repository.packArchive({
-      manifest: worldManifest(SHOW, shards.map(shardEntry), LABELS.map(noteShardEntry)),
-      shards,
-      notes: LABELS,
-      credits: "credits",
-      imports: [],
-    });
-  }
-
   it("keeps an imported world's layers, roster, event and notes through the saves of its edits", async () => {
     const { session, repository, edited } = await sessionOnIndexedDb();
     expect(await session.importWorld(showArchive(repository, [PLATE]))).toBe(true);
@@ -737,5 +753,73 @@ describe("schema v2 document data", () => {
       "import failed: shard 0_0.placements.0: is owned by a contributor, which this editor can't keep yet",
     );
     expect(await repository.list()).toEqual(before);
+  });
+});
+
+function placementXs(shards: ReadonlyArray<WorldShardV2>): ReadonlyArray<number> {
+  return shards.flatMap((shard) => shard.placements.map(({ x }) => x));
+}
+
+describe("kits", () => {
+  it("saves the selected parts as a world archive in the personal or club library, places a kit from its stored archive, takes a kit file into the club library and drops a removed kit", async () => {
+    const { session, repository, edited } = await sessionOnIndexedDb();
+    edited.place(0);
+    edited.place(1);
+    const blank = await session.saveKit("  ", "personal");
+    const blankError = session.view().fileError;
+    const pair = await session.saveKit(" Two plates ", "personal");
+    edited.place(2);
+    const row = await session.saveKit("Three plates", "club");
+    const saved = session.view().kits;
+    const rowKit = saved.find((kit) => kit.library === "club");
+    if (!pair || !row || !rowKit) throw new Error("the kits weren't saved");
+    const opened = await repository.readArchive(row.bytes);
+    expect(await session.placeKit(rowKit.id)).toBe(true);
+    const downloaded = await session.exportKit(rowKit.id);
+    const shards = worldShards([PLATE], []);
+    const plain = repository.packArchive({
+      manifest: worldManifest(SHOW, shards.map(shardEntry)),
+      shards,
+      notes: [],
+      credits: "credits",
+      imports: [],
+    });
+    const withNotes = await session.addKitFile(showArchive(repository, [PLATE]));
+    const notesError = session.view().fileError;
+    expect(await session.addKitFile(plain)).toBe(true);
+    const added = session.view().kits;
+    expect(await session.removeKit(rowKit.id)).toBe(true);
+
+    expect({ blank, blankError, files: [pair.fileName, row.fileName] }).toEqual({
+      blank: null,
+      blankError: "saving the kit failed: kit name: must be 1 to 200 characters, not all spaces",
+      files: ["Two-plates.brr.zip", "Three-plates.brr.zip"],
+    });
+    expect(
+      saved.map(({ name, library, placements, track }) => [name, library, placements, track]),
+    ).toEqual([
+      ["Three plates", "club", 3, 0],
+      ["Two plates", "personal", 2, 0],
+    ]);
+    expect(opened.ok && [opened.value.manifest.name, placementXs(opened.value.shards)]).toEqual([
+      "Three plates",
+      [0, BASEPLATE_LDU, BASEPLATE_LDU * 2],
+    ]);
+    expect(edited.heldKits.map(({ name, shards: held }) => [name, placementXs(held)])).toEqual([
+      ["Three plates", [0, BASEPLATE_LDU, BASEPLATE_LDU * 2]],
+    ]);
+    expect(downloaded).toEqual(row);
+    expect({ withNotes, notesError }).toEqual({
+      withNotes: false,
+      notesError:
+        "adding the kit failed: a kit holds parts and track only, and the file also holds trains or notes",
+    });
+    expect(added.map(({ name, library }) => [name, library])).toEqual([
+      ["Show", "club"],
+      ["Three plates", "club"],
+      ["Two plates", "personal"],
+    ]);
+    expect(session.view().kits.map(({ name }) => name)).toEqual(["Show", "Two plates"]);
+    expect((await repository.kits()).map(({ name }) => name)).toEqual(["Show", "Two plates"]);
   });
 });

@@ -32,6 +32,7 @@ import {
   tableTypeSize,
   layOnLayer,
   type GroupAction as GroupingAction,
+  type GroupTableChange,
   type LayerAction,
   type LayerChange,
   type LayerLocks,
@@ -98,7 +99,7 @@ import {
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
-import type { Decoded, Issue } from "@brr/schema/decode";
+import { issueText, type Decoded, type Issue } from "@brr/schema/decode";
 import type { ImportReport, LayoutPart, StudioReport } from "@brr/import";
 import {
   BASE_LAYER_ID,
@@ -109,8 +110,10 @@ import {
   type ConsistRecordV1,
   type GroupRecordV2,
   type ImportedFile,
+  type KitLibrary,
   type TrackRecordV1,
   type TrackRecordV2,
+  type WorldShardV2,
 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import {
@@ -328,6 +331,7 @@ import type {
   IEditedWorld,
   IWorldFiles,
   IWorldSession,
+  MemberRecords,
   ModelFileInput,
   ModelFileOutcome,
   ModelImportNotice,
@@ -822,6 +826,10 @@ function standsOnTable(model: PlacedModel): boolean {
   return model.handle.yPlates <= RESTS_ON_TABLE_Y_PLATES;
 }
 
+function placeablesOf(models: ReadonlyArray<PlacedModel>): Placeable[] {
+  return [...new Map(models.map(({ placeable }) => [placeable.id, placeable])).values()];
+}
+
 function boxesTouch(a: WorldBox, b: WorldBox): boolean {
   return (
     a.minX <= b.maxX &&
@@ -993,6 +1001,7 @@ interface HeldGroup extends GroupEdit {
   readonly grabX: number;
   readonly grabZ: number;
   readonly placement: GroupPlacement | null;
+  readonly kitName: string | null;
 }
 
 interface Copied {
@@ -1102,6 +1111,10 @@ const NO_LIFTED: ReadonlyArray<PlacedModel> = [];
 const NOTHING_DRAWN = "nothing in the file is drawn";
 const WORLD_FRAME: PlacementPose = { refId: -1, colorId: -1, x: 0, z: 0, yPlates: 0, rot: 0 };
 const PASTE_REFUSED = "Can't paste here.";
+const KIT_REFUSED = "Can't place the kit here.";
+const KIT_SELECTION_REFUSED = "holds no parts or track to save as a kit";
+const KIT_UNHELD =
+  "isn't joined to the kit's other models and doesn't stand on the table, so placing the kit couldn't check what holds it up. Take in what it rests on, or save it as a kit of its own";
 const GROUPING_REFUSED: Readonly<Record<GroupingAction, string>> = {
   group: "Select two or more parts or groups to group them.",
   ungroup: "Nothing selected is in a group.",
@@ -1477,6 +1490,7 @@ export class Editor implements IEditor, IEditedWorld {
     bundleVersion: null,
     world: null,
     worlds: [],
+    kits: [],
     fileError: null,
     storageError: null,
     readOnly: false,
@@ -3872,13 +3886,14 @@ export class Editor implements IEditor, IEditedWorld {
     if (gesture?.kind === "paste") {
       if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
+      const refused = gesture.kitName === null ? PASTE_REFUSED : KIT_REFUSED;
       const placement = this.aimHeld(gesture);
       if (placement.refusal) {
-        this.refuse(placement.refusal, `${PASTE_REFUSED} ${placement.refusal.reason}`);
+        this.refuse(placement.refusal, `${refused} ${placement.refusal.reason}`);
         return;
       }
       this.endGesture();
-      this.commitGroup("place", gesture, placement, eventTimeMs, PASTE_REFUSED, null);
+      this.commitGroup("place", gesture, placement, eventTimeMs, refused, null, gesture.kitName);
       return;
     }
     const picked = this.pickAt(ndcX, ndcY);
@@ -5454,8 +5469,23 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   pasteClipboard(): void {
-    const copied = this.copied;
-    if (!copied || this.state.readOnly || this.state.mode !== "select" || this.gesture) return;
+    if (this.copied) this.holdCopied(this.copied, null);
+  }
+
+  async holdKit(name: string, shards: ReadonlyArray<WorldShardV2>): Promise<ReadonlyArray<Issue>> {
+    const stored = await this.storedMembers(shards);
+    if (!stored.ok) return stored.issues;
+    const { models, pieces } = stored.value;
+    if (models.length + pieces.length === 0) {
+      return [{ path: name, message: "holds no parts or track" }];
+    }
+    this.chooseItem(null);
+    this.holdCopied(stored.value, name);
+    return [];
+  }
+
+  private holdCopied(copied: Copied, kitName: string | null): void {
+    if (this.state.readOnly || this.state.mode !== "select" || this.gesture) return;
     this.holdGroup({
       kind: "paste",
       ...this.pasteEdit(copied.models, copied.pieces),
@@ -5464,6 +5494,7 @@ export class Editor implements IEditor, IEditedWorld {
       grabX: copied.pivot.x,
       grabZ: copied.pivot.z,
       placement: null,
+      kitName,
     });
   }
 
@@ -5514,6 +5545,7 @@ export class Editor implements IEditor, IEditedWorld {
         grabX: this.hitX,
         grabZ: this.hitZ,
         placement: null,
+        kitName: null,
       });
       return "move";
     }
@@ -5631,12 +5663,15 @@ export class Editor implements IEditor, IEditedWorld {
       const y = target.yPlates * PLATE_LDU;
       this.backend.placeGhost(target.x, y, target.z, target.rot);
     }
-    this.backend.setSelectionBoxes(this.placedBoxes(held, placement));
+    this.backend.setSelectionBoxes(this.placedBoxes(held.pieces, placement));
     this.update({ gesture: this.heldGroupView(held, placement, { dx, dz }) });
     return placement;
   }
 
-  private placedBoxes(held: HeldGroup, placement: GroupTargets): ReadonlyArray<WorldBox> {
+  private placedBoxes(
+    pieces: ReadonlyArray<PieceMember>,
+    placement: GroupTargets,
+  ): ReadonlyArray<WorldBox> {
     const track = this.trackWorld.drawing();
     const boxes = placement.modelPoses.map((pose) =>
       posedBox(
@@ -5648,7 +5683,7 @@ export class Editor implements IEditor, IEditedWorld {
       ),
     );
     if (!track) return boxes;
-    held.pieces.forEach(({ piece }, index) => {
+    pieces.forEach(({ piece }, index) => {
       const pose = placement.piecePoses[index];
       if (pose) boxes.push(track.pieceBox(piece, pose));
     });
@@ -5812,6 +5847,7 @@ export class Editor implements IEditor, IEditedWorld {
   private trackChange(
     pieces: ReadonlyArray<PieceMember>,
     targets: ReadonlyArray<Pose16> | null,
+    newGroup: number | null = null,
   ): TrackChange {
     const track = this.trackWorld.drawing();
     if (!track || pieces.length === 0) return NO_TRACK_CHANGE;
@@ -5823,7 +5859,7 @@ export class Editor implements IEditor, IEditedWorld {
       if (index !== null) lift.push(track.laidPiece(index));
       const pose = targets?.[member];
       if (!pose) return;
-      const tags = index === null ? { layer: active, group: null } : { layer, group };
+      const tags = index === null ? { layer: active, group: newGroup } : { layer, group };
       lay.push({ index: index ?? appended++, piece, pose, yPlates, rise, ...tags });
     });
     return { lift: lift.toSorted(byIndex), lay: lay.toSorted(byIndex) };
@@ -5881,8 +5917,8 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
-  private asNewPlacement(pose: PlacementPose): TaggedPose {
-    return { ...pose, layer: this.layers.activeLayer(), group: null };
+  private asNewPlacement(pose: PlacementPose, group: number | null = null): TaggedPose {
+    return { ...pose, layer: this.layers.activeLayer(), group };
   }
 
   private newMembersRefusal(edit: GroupEdit): RefusedClick | null {
@@ -6168,22 +6204,35 @@ export class Editor implements IEditor, IEditedWorld {
     eventTimeMs: number,
     refused: string,
     pivot: LatticePoint | null,
+    kitName: string | null = null,
   ): void {
     if (placement.refusal) {
       this.showSelection();
       this.refuse(placement.refusal, `${refused} ${placement.refusal.reason}`);
       return;
     }
+    const grouping = kitName === null ? null : this.newGroup(kitName);
+    const group = grouping?.groups[0] ?? null;
     const requests: PlacementRequest[] = edit.models.map((member, index) => {
       const to = placement.modelPoses[index];
       if (!to) throw new Error(`the placement has no pose for member ${index}`);
       return member.model
         ? { placement: member.model.placement, to }
-        : { placement: null, to: this.asNewPlacement(to) };
+        : { placement: null, to: this.asNewPlacement(to, group) };
     });
-    const change = this.trackChange(edit.pieces, placement.piecePoses);
-    const view = this.show(this.history.commit(kind, requests, change), eventTimeMs);
+    const change = this.trackChange(edit.pieces, placement.piecePoses, group);
+    const view = this.show(
+      this.history.commit(kind, requests, change, null, grouping),
+      eventTimeMs,
+    );
     this.select(restoredMembers(view.added, change), pivot);
+  }
+
+  private newGroup(name: string): GroupTableChange {
+    const created = this.groupTable.created([], () => name);
+    if (!created.ok) throw new Error(`group "${name}" can't be made: ${issueText(created.issues)}`);
+    const { table, id } = created.value;
+    return { action: "group", groups: [id], before: this.groupTable, after: table };
   }
 
   undo(eventTimeMs: number): void {
@@ -6231,24 +6280,9 @@ export class Editor implements IEditor, IEditedWorld {
     const { models, pieces } = this.planMembers(planId);
     const unheld = this.unheldInPlan(region.name, models);
     if (unheld) return { ok: false, issues: [unheld] };
-    const refs = this.catalog.refs();
-    const placements = models.map(({ handle }) => {
-      const ref = refs[handle.refId];
-      if (ref === undefined) throw new Error(`placement refId ${handle.refId} has no catalog id`);
-      const { colorId, x, z, yPlates, rot } = handle;
-      return { ref, color: colorId, x, z, yPlates, rot };
-    });
-    const laid = this.trackWorld.records();
-    const track = pieces.map((piece, index): TrackRecordV1 => {
-      const record = laid[piece];
-      if (!record) throw new Error(`plan row for track piece ${piece} has no laid piece`);
-      const { ref, heading, position, yPlates, rise } = record;
-      return { index, ref, heading, position, yPlates, ...(rise === undefined ? {} : { rise }) };
-    });
-    const placeables = new Map(models.map(({ placeable }) => [placeable.id, placeable]));
     const imported: PlanImport[] = [];
     const issues: Issue[] = [];
-    for (const placeable of placeables.values()) {
+    for (const placeable of placeablesOf(models)) {
       const sha256 = importedSha256(placeable.id);
       if (sha256 === null) continue;
       const customParts = this.catalog.customParts(placeable);
@@ -6262,18 +6296,64 @@ export class Editor implements IEditor, IEditedWorld {
       imported.push({ sha256, credit: placeable.credit, customParts });
     }
     if (issues.length > 0) return { ok: false, issues };
-    const placed = [...placeables.values()].flatMap(({ credit }) => (credit ? [credit] : []));
-    return { ok: true, value: { region, placements, track, placed, imported } };
+    return { ok: true, value: { region, ...this.memberRecords(models, pieces), imported } };
+  }
+
+  selectionContents(): Decoded<MemberRecords> {
+    if (!this.selection.movable) {
+      return { ok: false, issues: [{ path: "selection", message: KIT_SELECTION_REFUSED }] };
+    }
+    const { models, pieces } = this.selection;
+    const unheld = this.readingConnectors(models, "kit") ?? this.unheldInKit(models);
+    if (unheld) return { ok: false, issues: [unheld] };
+    return { ok: true, value: this.memberRecords(models, pieces) };
+  }
+
+  private unheldInKit(models: ReadonlyArray<PlacedModel>): Issue | null {
+    const components = this.joinedComponents(models);
+    if (new Set(components).size < 2) return null;
+    const standing = new Set(
+      models.flatMap((model, i) => (standsOnTable(model) ? [components[i]] : [])),
+    );
+    const loose = models.find((_, i) => !standing.has(components[i]));
+    return loose ? { path: loose.placeable.label, message: KIT_UNHELD } : null;
+  }
+
+  private memberRecords(
+    models: ReadonlyArray<PlacedModel>,
+    pieces: ReadonlyArray<number>,
+  ): MemberRecords {
+    const refs = this.catalog.refs();
+    const placements = models.map(({ handle }) => {
+      const ref = refs[handle.refId];
+      if (ref === undefined) throw new Error(`placement refId ${handle.refId} has no catalog id`);
+      const { colorId, x, z, yPlates, rot } = handle;
+      return { ref, color: colorId, x, z, yPlates, rot };
+    });
+    const laid = this.trackWorld.records();
+    const track = pieces.map((piece, index): TrackRecordV1 => {
+      const record = laid[piece];
+      if (!record) throw new Error(`track piece ${piece} has no laid record`);
+      const { ref, heading, position, yPlates, rise } = record;
+      return { index, ref, heading, position, yPlates, ...(rise === undefined ? {} : { rise }) };
+    });
+    const placed = placeablesOf(models).flatMap(({ credit }) => (credit ? [credit] : []));
+    return { placements, track, placed };
+  }
+
+  private readingConnectors(models: ReadonlyArray<PlacedModel>, saved: string): Issue | null {
+    const reading = models.find((model) => !this.connectorTables.loaded(model.placeable));
+    return reading
+      ? {
+          path: reading.placeable.label,
+          message: `is still reading its connectors; save the ${saved} once it has`,
+        }
+      : null;
   }
 
   private unheldInPlan(planName: string, members: ReadonlyArray<PlacedModel>): Issue | null {
-    const reading = members.find((model) => !this.connectorTables.loaded(model.placeable));
-    if (reading) {
-      return {
-        path: reading.placeable.label,
-        message: "is still reading its connectors; save the plan once it has",
-      };
-    }
+    const reading = this.readingConnectors(members, "plan");
+    if (reading) return reading;
     const around = boxAround(members.map((model) => model.box));
     if (around === null) return null;
     const inside = new Set(members);
@@ -6331,17 +6411,22 @@ export class Editor implements IEditor, IEditedWorld {
     return { models, pieces };
   }
 
-  async addPlan({ plan, shards }: StoredPlan): Promise<ReadonlyArray<Issue>> {
+  private async storedMembers(shards: ReadonlyArray<WorldShardV2>): Promise<Decoded<Copied>> {
     await this.ensureStoredPlaceables({ shards, consists: [] });
     const poses = shardPoses(shards, (ref, color) => this.catalog.resolveRef(ref, color));
-    if (!poses.ok) return poses.issues;
+    if (!poses.ok) return poses;
     const records = worldTrack(shards);
     const track = this.trackWorld.drawing();
     if (records.length > 0 && !track) {
-      return [{ path: "track", message: "can't be laid: this app's bundle has no track pieces" }];
+      return {
+        ok: false,
+        issues: [
+          { path: "track", message: "can't be laid: this app's bundle has no track pieces" },
+        ],
+      };
     }
     const laid = track?.laidPieces(records) ?? { ok: true, value: [] };
-    if (!laid.ok) return laid.issues;
+    if (!laid.ok) return laid;
     const models = poses.value.map((pose) => ({
       model: null,
       placeable: this.placeableAt(pose.refId),
@@ -6358,10 +6443,20 @@ export class Editor implements IEditor, IEditedWorld {
       group,
     }));
     const targets = { modelPoses: poses.value, piecePoses: pieces.map((piece) => piece.pose) };
+    const pivot = latticeCentre(unionBox(this.placedBoxes(pieces, targets)));
+    return { ok: true, value: { models, pieces, pivot } };
+  }
+
+  async addPlan({ plan, shards }: StoredPlan): Promise<ReadonlyArray<Issue>> {
+    const stored = await this.storedMembers(shards);
+    if (!stored.ok) return stored.issues;
+    const { models, pieces } = stored.value;
+    const modelPoses = models.map((member) => member.pose);
+    const targets = { modelPoses, piecePoses: pieces.map((piece) => piece.pose) };
     const refusal = this.groupRefusal(this.pasteEdit(models, pieces), targets);
     if (refusal) return [{ path: plan.name, message: refusal.reason }];
     const change = this.plans.addition(plan);
-    const requests = poses.value.map((to) => ({ placement: null, to: this.asNewPlacement(to) }));
+    const requests = modelPoses.map((to) => ({ placement: null, to: this.asNewPlacement(to) }));
     const opened = this.history.commit(
       "open-plan",
       requests,
@@ -6824,6 +6919,26 @@ export class Editor implements IEditor, IEditedWorld {
 
   openPlan(bytes: Uint8Array): Promise<boolean> {
     return this.session.openPlan(bytes);
+  }
+
+  saveKit(name: string, library: KitLibrary): Promise<ExportedWorld | null> {
+    return this.session.saveKit(name, library);
+  }
+
+  placeKit(id: string): Promise<boolean> {
+    return this.session.placeKit(id);
+  }
+
+  addKitFile(bytes: Uint8Array): Promise<boolean> {
+    return this.session.addKitFile(bytes);
+  }
+
+  exportKit(id: string): Promise<ExportedWorld | null> {
+    return this.session.exportKit(id);
+  }
+
+  removeKit(id: string): Promise<boolean> {
+    return this.session.removeKit(id);
   }
 
   trackRoutes(): ReadonlyArray<TrackRouteView> {

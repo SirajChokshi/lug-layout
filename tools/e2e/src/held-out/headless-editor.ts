@@ -42,6 +42,7 @@ import {
   type ImportedFile,
   type NoteShardV2,
   type WorldArchive,
+  type KitIndexEntry,
   type WorldFiles,
   type WorldHeader,
   type WorldIndexEntry,
@@ -270,6 +271,20 @@ class MemoryWorldRepository implements IWorldRepository {
   async importedFile(sha256: string): Promise<ImportedFile | undefined> {
     return this.files.get(sha256);
   }
+
+  async kits(): Promise<ReadonlyArray<KitIndexEntry>> {
+    return [];
+  }
+
+  async kitArchive(): Promise<undefined> {
+    return undefined;
+  }
+
+  async putKit(): Promise<void> {
+    throw new Error("the held-out harness stores no kits");
+  }
+
+  async removeKit(): Promise<void> {}
 }
 
 class InProcessImportPool implements IImportWorkerPool {

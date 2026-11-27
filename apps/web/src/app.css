@@ -861,6 +861,28 @@ button.plan-issue:hover {
   margin-left: auto;
 }
 
+.selection-kit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.selection-kit input,
+.selection-kit select {
+  box-sizing: border-box;
+  min-width: 0;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel-solid);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.selection-kit input {
+  grid-column: 1 / -1;
+}
+
 .rolling-diagnostics-load,
 .rolling-diagnostics-part {
   margin-top: var(--space-4);

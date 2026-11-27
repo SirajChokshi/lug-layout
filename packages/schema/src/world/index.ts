@@ -181,4 +181,4 @@ export {
   type WorldArchive,
   type WorldFiles,
 } from "./archive.ts";
-export { WorldIndexEntry } from "./world-index.ts";
+export { KIT_LIBRARIES, KitIndexEntry, WorldIndexEntry, type KitLibrary } from "./world-index.ts";
