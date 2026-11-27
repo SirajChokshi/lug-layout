@@ -160,6 +160,8 @@ const PIN_HOLE = noun("pin hole");
 const AXLE = noun("axle");
 const AXLE_HOLE = noun("axle hole");
 const HINGE_FINGER = noun("hinge finger");
+const BOX_PLUG = noun("box plug");
+const BOX_SEAT = noun("box seat");
 const SQUARE_PEG = noun("square peg");
 const SQUARE_SOCKET = noun("square socket");
 const ROUND_PEG = noun("round peg");
@@ -186,6 +188,7 @@ function connectorNoun(kind: ConnectorKindView): ConnectorNoun {
   const male = kind.gender === "male";
   if (hasProfile(kind, "axle")) return male ? AXLE : AXLE_HOLE;
   if (hasProfile(kind, "finger")) return HINGE_FINGER;
+  if (hasProfile(kind, "box")) return male ? BOX_PLUG : BOX_SEAT;
   if (male && hasProfile(kind, "flare")) return PIN;
   const allRound = kind.sections.every((section) => section.profile === "round");
   if (!male && kind.slides && allRound && counterbored(kind.sections)) return PIN_HOLE;

@@ -73,6 +73,14 @@ const PLATE_SOCKET: ConnectorKindView = {
   sections: [{ profile: "round", sizeLdu: 6, lengthLdu: 4 }],
 };
 
+const GLASS_PANE: ConnectorKindView = {
+  gender: "male",
+  slides: false,
+  stud: false,
+  sections: [{ profile: "box", sizeLdu: 0, lengthLdu: 0 }],
+};
+const GLASS_SEAT: ConnectorKindView = { ...GLASS_PANE, gender: "female" };
+
 function model(label: string, x: number): PlacedModelView {
   return { item: `custom:${label}`, label, pose: { x, z: 0, yPlates: 0, rot: 0 } };
 }
@@ -256,6 +264,12 @@ it.each([
       "Snapped 2 by 1 studs and 3 plates up to mate",
       "1 round socket takes connectors from custom-modular-holes",
     ],
+  },
+  {
+    name: "a glass seated in a door's box seat",
+    placement: { mates: [mate(GLASS_SEAT, [GLASS_PANE], 1, [HOLED])] },
+    tone: "mates",
+    lines: ["1 box seat takes 1 box plug from custom-modular-holes"],
   },
   {
     name: "a settled verdict whose turn probe hasn't settled, which says nothing about turning",

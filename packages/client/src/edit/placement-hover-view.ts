@@ -3,6 +3,7 @@ import {
   NO_PARTNER,
   NO_SHAPE,
   SECTION_AXLE,
+  SECTION_BOX,
   SECTION_FEMALE_FINGER,
   SECTION_FLARE_JOINS_NEXT,
   SECTION_FLARE_JOINS_PREVIOUS,
@@ -37,6 +38,8 @@ function sectionProfile(code: number): SectionProfile {
     case SECTION_MALE_FINGER:
     case SECTION_FEMALE_FINGER:
       return "finger";
+    case SECTION_BOX:
+      return "box";
     default:
       throw new RangeError(`snap section code ${code} has no profile`);
   }

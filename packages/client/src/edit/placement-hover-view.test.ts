@@ -2,6 +2,7 @@ import {
   CAP_ROOT,
   GENDER_FEMALE,
   GENDER_MALE,
+  SECTION_BOX,
   SECTION_FLARE_JOINS_PREVIOUS,
   SECTION_ROUND,
   SnapShapes,
@@ -10,6 +11,17 @@ import { describe, expect, it } from "vitest";
 import { connectorKind } from "./placement-hover-view.ts";
 
 describe("connectorKind", () => {
+  it("reports a box generic's face as one zero-length box section", () => {
+    const shapes = new SnapShapes();
+    const pane = shapes.intern(0, false, [SECTION_BOX], [0], [0], "winTrain");
+    expect(connectorKind(shapes, pane, GENDER_FEMALE, new Set())).toEqual({
+      gender: "female",
+      slides: false,
+      stud: false,
+      sections: [{ profile: "box", sizeLdu: 0, lengthLdu: 0 }],
+    });
+  });
+
   it("reports a friction pin's flare at its own size, the section that tells a pin from a plain round peg", () => {
     const shapes = new SnapShapes();
     const pin = shapes.intern(

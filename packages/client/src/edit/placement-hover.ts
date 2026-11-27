@@ -2,7 +2,7 @@ import type { LatticePose } from "@brr/domain";
 
 export type ConnectorGender = "male" | "female";
 
-export type SectionProfile = "round" | "axle" | "square" | "flare" | "finger";
+export type SectionProfile = "round" | "axle" | "square" | "flare" | "finger" | "box";
 
 export interface ConnectorSectionView {
   readonly profile: SectionProfile;
