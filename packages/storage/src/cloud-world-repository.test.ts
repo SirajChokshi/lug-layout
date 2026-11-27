@@ -163,6 +163,7 @@ describe("CloudWorldRepository against the layout API Worker", () => {
     const idb = new IDBFactory();
     const beforeSignIn = await pageLoad(idb, "");
     const id = await createWorld(beforeSignIn, [baseplateAt(0), signalBoxOnFarTable]);
+    const blank = (await beforeSignIn.create({ ...header, name: "World 1" }, [])).id;
     expect(beforeSignIn.view()).toMatchObject({ signIn: "signed-out", waiting: 0 });
 
     const firstSync = requestsDuring();
@@ -175,6 +176,8 @@ describe("CloudWorldRepository against the layout API Worker", () => {
     expect(await cloud.versions(id)).toEqual([
       expect.objectContaining({ version: 1, placements: 2, track: 0, onThisDevice: true }),
     ]);
+    expect(await cloud.versions(blank)).toEqual([]);
+    expect(firstSync().filter((request) => request === "POST /v1/worlds")).toHaveLength(1);
 
     const moved = requestsDuring();
     await edit(cloud, id, [baseplateAt(640), signalBoxOnFarTable]);

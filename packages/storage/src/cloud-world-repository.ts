@@ -308,7 +308,7 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
     if (!stored.ok) return;
     const files = await this.snapshotFiles(stored.value);
     const link = await this.link(id, accountId);
-    if (link?.content === files.content) return;
+    if (link === null ? stored.value.shards.length === 0 : link.content === files.content) return;
     const world =
       link?.world ?? (await this.createAccountWorld(id, accountId, stored.value.manifest.name));
     const parent = link?.version ?? null;
