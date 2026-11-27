@@ -184,8 +184,8 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
   syncNow(): Promise<void> {
     return this.track(async (accountId) => {
       for (const entry of await this.list()) this.waiting.add(entry.id);
-      await this.refreshAccountWorlds(accountId);
       await this.pushWaiting(accountId);
+      await this.refreshAccountWorlds(accountId);
     });
   }
 
@@ -289,17 +289,18 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
   }
 
   private async pushWaiting(accountId: string): Promise<void> {
+    const failures: unknown[] = [];
     for (const id of Array.from(this.waiting)) {
       this.waiting.delete(id);
       try {
         await this.push(id, accountId);
       } catch (error) {
         this.waiting.add(id);
-        throw error;
-      } finally {
-        this.update({});
+        failures.push(error);
       }
+      this.update({});
     }
+    if (failures.length > 0) throw failures[0];
   }
 
   private async push(id: string, accountId: string): Promise<void> {

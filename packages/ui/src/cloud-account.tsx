@@ -9,8 +9,17 @@ import type {
 import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const savedAt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" });
+const savedAt = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
 const NO_SUBSCRIPTION = (): (() => void) => () => undefined;
+
+function pieces(count: number): string {
+  return `${integer.format(count)} ${count === 1 ? "piece" : "pieces"}`;
+}
 
 export function useCloudView(cloud: ICloudWorlds | null): CloudView | null {
   return useSyncExternalStore(
@@ -146,13 +155,16 @@ function VersionList({
       {versions !== null && versions.length > 0 && (
         <ul className="world-list">
           {versions.map((version) => (
-            <li className="world-row" key={version.version} data-version={version.version}>
+            <li
+              className={version.onThisDevice ? "world-row current" : "world-row"}
+              key={version.version}
+              data-version={version.version}
+              title={version.onThisDevice ? "This device's copy started from this version" : ""}
+            >
               <span className="world-row-name">
                 v{version.version}{" "}
                 <span>
-                  {savedAt.format(version.savedAt)} ·{" "}
-                  {integer.format(version.placements + version.track)} pieces
-                  {version.onThisDevice ? " · this device" : ""}
+                  {savedAt.format(version.savedAt)} · {pieces(version.placements + version.track)}
                 </span>
               </span>
               <button type="button" disabled={disabled} onClick={() => onRestore(version)}>

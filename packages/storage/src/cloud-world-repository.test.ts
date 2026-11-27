@@ -231,6 +231,7 @@ describe("CloudWorldRepository against the layout API Worker", () => {
   it("keeps edits on the device while the API can't be reached and syncs them once it can", async () => {
     const cloud = await signedInDevice("offline@example.test");
     const id = await createWorld(cloud, [baseplateAt(0), signalBoxOnFarTable]);
+    await createWorld(cloud, [baseplateAt(0), signalBoxOnFarTable]);
     await cloud.syncNow();
 
     reachable = false;
