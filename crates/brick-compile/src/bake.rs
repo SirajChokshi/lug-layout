@@ -18,9 +18,6 @@ use crate::model::ModelInstance;
 use crate::record::{BakeRecord, RecordError};
 use crate::stud_fit::{ReceptorSeats, StudFit};
 use crate::technic::TechnicPrimitives;
-use crate::vehicle::{
-    detect_vehicles_with_bounds, RailHeadBand, Vehicle, VehicleError, VehicleSignatures,
-};
 use crate::voxel::{voxelize, VoxelError, VoxelGrid, VoxelPart};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -504,23 +501,6 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             x: PartSpan::of(drawn, x),
             z: PartSpan::of(drawn, z),
         })
-    }
-
-    pub fn vehicles(
-        &self,
-        drawn: &[ModelInstance],
-        signatures: &VehicleSignatures,
-        rails: &[RailHeadBand],
-    ) -> Result<Vec<Vehicle>, VehicleError> {
-        let recorded = self
-            .index
-            .iter()
-            .filter_map(|(reference, &slot)| match &self.sources[slot] {
-                PartSource::Recorded(record) => Some((reference.clone(), record.whole_bounds)),
-                PartSource::Compiled(_) => None,
-            })
-            .collect();
-        detect_vehicles_with_bounds(self.library, drawn, signatures, rails, recorded)
     }
 
     pub fn voxels(

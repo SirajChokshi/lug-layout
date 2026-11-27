@@ -1,12 +1,13 @@
 import {
-  BundleIndex,
+  BundleIndexFields,
   BundleLod,
-  BundleManifest,
   LevelCrossingFacts,
   SectionVocabularyFile,
   TablePlane,
   TrackCatalog,
   type PlanOutline,
+  BundleManifestFields,
+  type BundleIndex,
   type CatalogSourceUse,
   type CrosswalkFile,
   type Palette,
@@ -97,6 +98,7 @@ import {
   publishBundle,
 } from "./publish.ts";
 import { attachRecords } from "./records.ts";
+import { attachRunningGear } from "./running-gear.ts";
 import {
   extractShadowArchive,
   pinnedShadowArchive,
@@ -512,9 +514,10 @@ async function addVerifiedFacts(directory: string): Promise<void> {
   const catalogPath = join(repoRoot, BUNDLE_DATA_FILES.trackCatalog);
   const catalog: Record<string, unknown> = JSON.parse(await readFile(catalogPath, "utf8"));
   const bundled = new Set(
-    decodedOrThrow(decode(v.pick(BundleManifest, ["parts"]), manifest), manifestPath).parts.map(
-      (part) => part.id,
-    ),
+    decodedOrThrow(
+      decode(v.pick(BundleManifestFields, ["parts"]), manifest),
+      manifestPath,
+    ).parts.map((part) => part.id),
   );
   const missing = decodedOrThrow(decode(TrackCatalog, catalog), catalogPath)
     .pieces.filter((piece) => !bundled.has(piece.id))
@@ -591,7 +594,7 @@ async function reportReusedBundle(buildKey: BundleBuildKey): Promise<void> {
     const manifestPath = join(bundleRoot, lod, MANIFEST_FILE);
     const { bundleVersion } = decodedOrThrow(
       decode(
-        v.pick(BundleIndex, ["bundleVersion"]),
+        v.pick(BundleIndexFields, ["bundleVersion"]),
         JSON.parse(await readFile(manifestPath, "utf8")),
       ),
       manifestPath,
@@ -674,6 +677,7 @@ async function compileLod(
   await attachLibraryConnectors(out, join(repoRoot, BUNDLE_DATA_FILES.libraryConnectorsPin));
   await attachShadowLibrary(out, join(repoRoot, BUNDLE_DATA_FILES.shadowLibraryPin));
   await attachRollingDiagnostics(out);
+  await attachRunningGear(out);
   const started = performance.now();
   reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
   const inputs = { ...shared.inputs, paletteSha256: await fileSha256(palette) };

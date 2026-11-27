@@ -1,4 +1,5 @@
-import type { PartModel, PartShapeAsset, PartVehicle, StudPrimitiveAsset } from "@brr/catalog";
+import type { PartModel, PartShapeAsset, StudPrimitiveAsset } from "@brr/catalog";
+import type { ModelVehicle } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import { BOX_FLOATS } from "../edit/local-box.ts";
 
@@ -95,7 +96,7 @@ export function instanceBoxes(
   return out;
 }
 
-export function vehicleTop(boxes: Float64Array, vehicle: PartVehicle): number {
+export function vehicleTop(boxes: Float64Array, vehicle: ModelVehicle): number {
   let top = Number.NEGATIVE_INFINITY;
   const reach = (instance: number): void => {
     top = Math.max(top, boxes[instance * BOX_FLOATS + TOP] ?? Number.NEGATIVE_INFINITY);

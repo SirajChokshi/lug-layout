@@ -6,8 +6,7 @@ use std::process::ExitCode;
 
 use brick_compile::compile::{rolling_mode_from_studs, stud_primitives_from_table};
 use brick_compile::cover::PartSolid;
-use brick_compile::record::BakeRecord;
-use brick_compile::vehicle::part_bounds;
+use brick_compile::record::{whole_bounds, BakeRecord};
 use brick_compile::{compile_part, CompileOptions, Library, Lod, TechnicPrimitives};
 use serde_json::{json, Value};
 
@@ -148,7 +147,7 @@ fn bake_part(
     stem: &str,
 ) -> Result<Value, String> {
     let baked = compile_part(library, reference, options).and_then(|compiled| {
-        let bounds = part_bounds(library, reference)?;
+        let bounds = whole_bounds(library, reference)?;
         Ok((compiled, bounds))
     });
     let (compiled, bounds) = match baked {

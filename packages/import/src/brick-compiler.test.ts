@@ -203,7 +203,6 @@ it(
       unofficialAllowlist: [],
       translucentColors: [],
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-      vehicles: null,
     };
     const request: PlacementBakeRequest = {
       ...inputs,
@@ -254,7 +253,6 @@ it(
       unofficialAllowlist: [],
       translucentColors: [],
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-      vehicles: null,
     };
     const fromAnEarlierApp: Omit<PlacementBakeRequest, "receptors"> = inputs;
     const withoutReceptors: PlacementBakeRequest = {
@@ -310,7 +308,6 @@ it(
       unofficialAllowlist: [],
       translucentColors: [],
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-      vehicles: null,
     };
 
     const bakes: BakedModel[] = [];

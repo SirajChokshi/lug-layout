@@ -58,7 +58,6 @@ function compiledManifest() {
         inlinePartsResolvedToOfficial: [],
         instances: 0,
         lattice: null,
-        vehicles: 0,
         sha256: SHA256_ZERO,
         cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, cells: null },
       },
@@ -70,7 +69,12 @@ function compiledManifest() {
     trackShapes: [],
     tablePlane: { part: "3811", depthBelowTopLdu: 4 },
     levelCrossing: { systems: [], ramps: [] },
-    compiler: null as { file: string; unofficialAllowlist: string[]; cavityProbe: string } | null,
+    compiler: null as {
+      file: string;
+      unofficialAllowlist: string[];
+      rails: unknown[];
+      cavityProbe: string;
+    } | null,
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },
     creditTable: { file: "credits.json" },
@@ -185,6 +189,7 @@ function studGltf() {
       sources: [],
       studs: [],
       bounds: origin,
+      extents: null,
     },
   };
 }
@@ -202,6 +207,9 @@ function modelFile() {
     shapes: [] as unknown[],
     lattice: null,
     vehicles: [],
+    vehicleCouplings: [],
+    unresolvedRunningGear: [],
+    unreadRollingBands: { instance: [], band: [], reason: [] },
     cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, visibleBits: [], cells: null },
     instances: { part: [], color: [], matrix: [] },
     partTransforms: [],
@@ -301,6 +309,7 @@ function withCompiler(bundle: CompiledBundle): ReturnType<typeof sectionVocabula
   bundle.manifest.compiler = {
     file: COMPILER_FILE,
     unofficialAllowlist: [],
+    rails: [],
     cavityProbe: "p/stud.dat",
   };
   bundle.files.set(COMPILER_FILE, Buffer.from("compiler bytes"));
@@ -495,7 +504,7 @@ describe("publishBundle", () => {
       bundle.parts.push(part);
       bundle.files.set(part.file, glb(studGltf()));
       bundle.model.parts.push(part.id);
-      bundle.model.shapes.push({ ...shape, bounds: origin, studs: [] });
+      bundle.model.shapes.push({ ...shape, bounds: origin, extents: null, studs: [] });
     });
     const names = await readdir(directory);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));

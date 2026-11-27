@@ -12,14 +12,14 @@ import {
   type BundleModelEntry,
   type CatalogPart,
   type BundleSource,
-  type CompilerVehicles,
   type LibraryBakeIndexRef,
   type LibraryConnectorsIndexRef,
   type LibraryPartsFile,
   type ShadowLibraryIndexRef,
   type ManifestPart,
+  type ModelRunningGear,
   type ModelSection,
-  type ModelVehicle,
+  type PartExtents,
   type PartRole,
   type PartRolling,
   type PartTechnic,
@@ -61,6 +61,7 @@ export interface PartShapeAsset {
   readonly role: PartRole;
   readonly boundsMin: Vec3;
   readonly boundsMax: Vec3;
+  readonly extents: PartExtents | null;
   readonly producedColor: number | undefined;
   readonly producedColors: ProducedColors | undefined;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
@@ -160,15 +161,8 @@ export interface PartModel {
   readonly matrices: Float32Array;
   readonly partTransforms: Float64Array;
   readonly submodels: PartModelSubmodels;
-  readonly vehicles: ReadonlyArray<PartVehicle>;
+  readonly runningGear: ModelRunningGear;
 }
-
-export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {
-  readonly body: Uint32Array;
-  readonly bogies: ReadonlyArray<
-    Omit<ModelVehicle["bogies"][number], "instances"> & { readonly instances: Uint32Array }
-  >;
-};
 
 export type PartBundle = Pick<
   BundleManifest,
@@ -208,7 +202,6 @@ export interface ImportContext {
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
-  readonly vehicles: CompilerVehicles | null;
   readonly libraryBake: LibraryBakeIndexRef | null;
   readonly libraryConnectors: LibraryConnectorsIndexRef | null;
   readonly shadowLibrary: ShadowLibraryIndexRef | null;

@@ -13,6 +13,7 @@ import {
   type ExactDecimal,
   type ExactRational,
 } from "@brr/math";
+import type { RailHeadBands, RailHeadInterval } from "@brr/schema/bundle";
 import { exactPolygons, type ExactPlacement } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 
@@ -50,10 +51,7 @@ interface FlatPolygon {
   readonly outline: ReadonlyArray<ExactPlanPoint>;
 }
 
-interface Interval {
-  readonly from: ExactRational;
-  readonly to: ExactRational;
-}
+type Interval = RailHeadInterval;
 
 const ZERO = exactRational(0n, 1n);
 const ONE = exactRational(1n, 1n);
@@ -316,6 +314,30 @@ function railSectionFromIntervals(intervals: ReadonlyArray<Interval>): RailSecti
     railHalfSpacingLdu: divideExactRational(subtractExactRational(farCentre, nearCentre), TWO),
     railCentreOffsetLdu: divideExactRational(addExactRational(farCentre, nearCentre), TWO),
   };
+}
+
+export interface EndFace {
+  readonly origin: PlanPoint;
+  readonly direction: PlanPoint;
+  readonly endSleeper: ExactPlacement;
+}
+
+export function railHeadBandsOnFace(heads: RailHeads, face: EndFace): RailHeadBands | null {
+  const direction = exactPlanPoint(face.direction);
+  const normal = { x: subtractExactRational(ZERO, direction.z), z: direction.x };
+  const centre = exactPlanPoint(face.origin);
+  const span: { from?: ExactRational; to?: ExactRational } = {};
+  face.endSleeper.visitVertices(([x, , z]) => {
+    const point = { x: exactRationalFromDecimal(x), z: exactRationalFromDecimal(z) };
+    const across = offsetAcross(point, centre, normal, direction);
+    span.from = span.from === undefined ? across : lesser(span.from, across);
+    span.to = span.to === undefined ? across : greater(span.to, across);
+  });
+  const { from, to } = span;
+  if (from === undefined || to === undefined) return null;
+  return railPairIntervals(
+    scanIntervals(heads.polygons, { centre, normal, endSleeperSpan: { from, to } }),
+  );
 }
 
 export function railSection(heads: RailHeads, end: ScanEnd): RailSection | null {

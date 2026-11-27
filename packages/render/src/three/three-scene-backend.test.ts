@@ -61,6 +61,7 @@ function part(id: string, size: number): PartAsset {
     title: id,
     role: "detail",
     boundsMin: [0, 0, 0],
+    extents: null,
     boundsMax: [size, size, 0],
     producedColor: undefined,
     producedColors: undefined,

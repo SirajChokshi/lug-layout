@@ -27,6 +27,7 @@ import {
   WIDE,
   axles,
   bogieWithAxles,
+  TWO_AXLE_BOGIE,
   single,
   wheelFor,
 } from "./train-recipes.ts";
@@ -41,6 +42,42 @@ interface Wagon {
   readonly axles: ReadonlyArray<HungAxle>;
 }
 
+interface WagonBody {
+  readonly car: Carrier;
+  readonly unit: string;
+  readonly ranges: ReadonlyArray<readonly [number, number]>;
+}
+
+function wagonBody(
+  context: RecipeContext,
+  startX: number,
+  minLength: number,
+  unit: string,
+  clearFront: number,
+  clearRear: number,
+  split: number | null = null,
+): WagonBody | null {
+  const car = carBody(context.model, context.pools, context.random, 0, minLength, unit, startX);
+  if (!car) return null;
+  const low = car.x0 + clearRear * STUD_LDU;
+  const high = car.x1 - clearFront * STUD_LDU;
+  const middle = split ?? (low + high) / 2;
+  if (middle <= low || middle >= high) return null;
+  return {
+    car,
+    unit,
+    ranges: [
+      [low, middle],
+      [middle, high],
+    ],
+  };
+}
+
+function wagonAxles(context: RecipeContext, wheel: WheelPart, body: WagonBody): Wagon | null {
+  const hung = axles(context, body.car, body.car.bottom, body.ranges, body.unit, [], wheel);
+  return hung ? { car: body.car, axles: hung } : null;
+}
+
 function wagon(
   context: RecipeContext,
   wheel: WheelPart,
@@ -51,25 +88,22 @@ function wagon(
   clearRear: number,
   split: number | null = null,
 ): Wagon | null {
-  const car = carBody(context.model, context.pools, context.random, 0, minLength, unit, startX);
-  if (!car) return null;
-  const low = car.x0 + clearRear * STUD_LDU;
-  const high = car.x1 - clearFront * STUD_LDU;
-  const middle = split ?? (low + high) / 2;
-  if (middle <= low || middle >= high) return null;
-  const hung = axles(
-    context,
-    car,
-    car.bottom,
-    [
-      [low, middle],
-      [middle, high],
-    ],
-    unit,
-    [],
-    wheel,
-  );
-  return hung ? { car, axles: hung } : null;
+  const body = wagonBody(context, startX, minLength, unit, clearFront, clearRear, split);
+  return body ? wagonAxles(context, wheel, body) : null;
+}
+
+function wagonsAfter(
+  context: RecipeContext,
+  wheel: WheelPart,
+  bodies: ReadonlyArray<WagonBody>,
+): ReadonlyArray<Wagon> | null {
+  const wagons: Wagon[] = [];
+  for (const body of bodies) {
+    const hung = wagonAxles(context, wheel, body);
+    if (!hung) return null;
+    wagons.push(hung);
+  }
+  return wagons;
 }
 
 function lowestWheel(wagons: ReadonlyArray<Wagon>): number {
@@ -212,21 +246,28 @@ function pinBoth(
 function stackedDrawbars(sharedBogie: boolean): Recipe {
   return (context) => {
     const { model, pools, random } = context;
-    const wheel = wheelFor(context);
+    const wheel = wheelFor(context, sharedBogie ? TWO_AXLE_BOGIE : null);
     if (!wheel) return null;
     const clear = sharedBogie
       ? Math.ceil((2 * wheel.radius) / STUD_LDU) + FACING_CLEAR_STUDS
       : FACING_CLEAR_STUDS;
-    const a = wagon(context, wheel, -12 * STUD_LDU, clear + 8, "car A", clear, 0);
-    if (!a) return null;
+    const bodyA = wagonBody(context, -12 * STUD_LDU, clear + 8, "car A", clear, 0);
+    const early = !sharedBogie;
+    const hungA = bodyA && early ? wagonAxles(context, wheel, bodyA) : null;
+    if (!bodyA || (early && !hungA)) return null;
+    const a = bodyA;
     const gap = 2 + random.int(2);
-    const b = wagon(context, wheel, a.car.x1 + gap * STUD_LDU, clear + 8, "car B", 0, clear);
-    if (!b) return null;
+    const bodyB = wagonBody(context, a.car.x1 + gap * STUD_LDU, clear + 8, "car B", 0, clear);
+    const hungB = bodyB && early ? wagonAxles(context, wheel, bodyB) : null;
+    if (!bodyB || (early && !hungB)) return null;
+    const b = bodyB;
     const stacks = sharedBogie ? 3 : 2;
     const linkPlatesOf = (each: number): number => linkPlateCount(each) - (stacks - 2);
     const length = random.choice(
       linkLengths(pools).filter(
-        (each) => linkPlatesOf(each) >= stacks && (sharedBogie || -each > lowestWheel([a, b])),
+        (each) =>
+          linkPlatesOf(each) >= stacks &&
+          (hungA === null || hungB === null || -each > lowestWheel([hungA, hungB])),
       ),
     );
     if (length === null) return null;
@@ -308,7 +349,9 @@ function stackedDrawbars(sharedBogie: boolean): Recipe {
       `drawbar${PIVOT_PART_SUFFIX}`,
     );
     if (link === null || model.collidesSince(0)) return null;
-    const wheelsets = [...a.axles, ...b.axles, ...(bogie?.axles ?? [])].map(
+    const cars = early && hungA && hungB ? [hungA, hungB] : wagonsAfter(context, wheel, [a, b]);
+    if (!cars || model.collidesSince(0)) return null;
+    const wheelsets = [...cars.flatMap((car) => car.axles), ...(bogie?.axles ?? [])].map(
       (axle) => axle.wheelset,
     );
     if (!bogie) {
@@ -477,13 +520,13 @@ const jacobsTwoAxis: Recipe = (context) => {
   const clearance = Math.ceil(
     (pair.option.box.max[0] - pair.option.box.min[0] + 2 * wheel.radius) / STUD_LDU,
   );
-  const a = wagon(context, wheel, -24 * STUD_LDU, clearance + 10, "car A", clearance, 0);
+  const a = wagonBody(context, -24 * STUD_LDU, clearance + 10, "car A", clearance, 0);
   if (!a) return null;
   const pivots = [
     [a.car.x1 - STUD_LDU, 0],
     [a.car.x1 - STUD_LDU + pair.spread, 0],
   ] as const;
-  const b = wagon(context, wheel, a.car.x1, clearance + 10, "car B", 0, clearance);
+  const b = wagonBody(context, a.car.x1, clearance + 10, "car B", 0, clearance);
   if (!b) return null;
   const length = random.choice(linkLengths(pools).filter((each) => linkPlateCount(each) >= 2));
   if (length === null) return null;
@@ -537,17 +580,20 @@ const jacobsTwoAxis: Recipe = (context) => {
   ] as const;
   if (!truckAxles || !pinBoth(context, pivots, -length, 0, members, "shared bogie")) return null;
   if (model.collidesSince(0)) return null;
+  const cars = wagonsAfter(context, wheel, [a, b]);
+  if (!cars || model.collidesSince(0)) return null;
   const other = independentCar(context, b.car.x1 + FAR_CAR_GAP_STUDS * STUD_LDU);
   if (!other) return null;
   return {
-    wheelsets: [...a.axles, ...b.axles, ...truckAxles]
+    wheelsets: [...cars.flatMap((car) => car.axles), ...truckAxles]
       .map((axle) => axle.wheelset)
       .concat(other.wheelsets),
     vehicles: other.vehicles,
     attachments: [],
     couplingsInModel: [],
     unresolvedRunningGear: [
-      { units: ["car A", "car B", "shared bogie"], reason: LINK_INSIDE_SUPPORT_SPAN },
+      { units: ["car A", "shared bogie"], reason: LINK_INSIDE_SUPPORT_SPAN },
+      { units: ["car B", "shared bogie"], reason: LINK_INSIDE_SUPPORT_SPAN },
     ],
   };
 };
@@ -599,38 +645,33 @@ const spanBolster: Recipe = (context) => {
   if (!other) return null;
   return {
     wheelsets: [...a.axles, ...b.axles].map((axle) => axle.wheelset).concat(other.wheelsets),
-    vehicles: other.vehicles,
+    vehicles: [
+      {
+        body: ["bolster"],
+        bogies: [
+          { unit: "car A", pivot: pivots[0] },
+          { unit: "car B", pivot: pivots[1] },
+        ],
+        front: "unasserted",
+        rear: "unasserted",
+      },
+      ...other.vehicles,
+    ],
     attachments: [],
     couplingsInModel: [],
-    unresolvedRunningGear: [
-      { units: ["car A", "car B", "bolster"], reason: LINK_INSIDE_SUPPORT_SPAN },
-    ],
+    unresolvedRunningGear: [],
   };
 };
 
 const pivotOutsideWheelbase: Recipe = (context) => {
-  const wheel = wheelFor(context);
-  const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
+  const car = carBody(context.model, context.pools, context.random, 0, 32, "car");
   if (!wheel || !car) return null;
   const middle = (car.x0 + car.x1) / 2;
-  const fixed = axles(
-    context,
-    car,
-    car.bottom,
-    [
-      [middle, (middle + car.x1) / 2],
-      [(middle + car.x1) / 2, car.x1],
-    ],
-    "car",
-    [],
-    wheel,
-  );
-  if (!fixed) return null;
-  const rearAxle = Math.min(...fixed.map((axle) => axle.occupied[0]));
   const truck = bogieWithAxles(
     context,
     car,
-    [car.x0 + 4 * STUD_LDU, Math.min(middle, rearAxle)],
+    [car.x0 + 4 * STUD_LDU, middle],
     2,
     "car",
     "trailing truck",
@@ -639,6 +680,20 @@ const pivotOutsideWheelbase: Recipe = (context) => {
     "behind",
   );
   if (!truck) return null;
+  const truckEnd = Math.max(middle, truck.hung.bogie.x1);
+  const fixed = axles(
+    context,
+    car,
+    car.bottom,
+    [
+      [truckEnd, (truckEnd + car.x1) / 2],
+      [(truckEnd + car.x1) / 2, car.x1],
+    ],
+    "car",
+    [],
+    wheel,
+  );
+  if (!fixed) return null;
   return {
     wheelsets: [...fixed, ...truck.axles].map((axle) => axle.wheelset),
     vehicles: [

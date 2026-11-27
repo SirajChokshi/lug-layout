@@ -42,7 +42,6 @@ import {
   CONNECTOR_SOURCE,
   CONNECTOR_STATUS,
   submodelTreeFits,
-  type CompilerVehicles,
   type InferredConnectorRecords,
   type LibraryBakePart,
   type MalformedFinding,
@@ -73,7 +72,6 @@ export interface ImportJob {
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentColors: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
-  readonly vehicles: CompilerVehicles | null;
 }
 
 interface Counted {
@@ -341,8 +339,6 @@ function placementBake(baked: BakedModel): PlacementBake {
     lattice: baked.lattice,
     latticeIssue: baked.latticeIssue,
     cells: baked.cells,
-    vehicles: baked.vehicles,
-    vehicleIssue: baked.vehicleIssue,
   };
 }
 
@@ -894,7 +890,6 @@ export class ModelImportEngine {
       unofficialAllowlist,
       translucentColors: job.translucentColors,
       tableDepthLdu: job.tableDepthLdu,
-      vehicles: job.vehicles,
     };
     const of = HELPER_SLICES * this.helpers.length + PRIMARY_SLICES;
     const visibility = (from: number, slices: number): VisibilityBakeRequest => ({

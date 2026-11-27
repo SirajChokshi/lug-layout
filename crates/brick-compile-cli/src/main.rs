@@ -22,7 +22,6 @@ use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{
     bake_model_with, submodel_index, AuthoredColumns, BakeOptions, ModelInstance, RationalText,
 };
-use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
 use brick_compile_cli::errata::{apply_omr_errata, parse_omr_errata, OmrErratum, PinnedModel};
@@ -301,41 +300,7 @@ fn acknowledged_not_drawn(entry: &Value, file: &str) -> Result<BTreeMap<String, 
     Ok(acknowledged)
 }
 
-fn string_list(value: &Value, label: &str) -> Result<Vec<String>, String> {
-    value
-        .as_array()
-        .ok_or(format!("{label} must be an array"))?
-        .iter()
-        .map(|v| {
-            v.as_str()
-                .map(str::to_string)
-                .ok_or(format!("{label} must hold strings"))
-        })
-        .collect()
-}
-
-fn vehicle_signatures(palette: &Value) -> Result<VehicleSignatures, String> {
-    let parts = &palette["vehicleParts"];
-    Ok(VehicleSignatures {
-        bogie_pivots: string_list(&parts["bogiePivots"], "vehicleParts.bogiePivots")?,
-        pivot_pins: string_list(&parts["pivotPins"], "vehicleParts.pivotPins")?,
-        wheelsets: string_list(&parts["wheelsets"], "vehicleParts.wheelsets")?,
-        wheels: string_list(&parts["wheels"], "vehicleParts.wheels")?,
-        couplers: string_list(&parts["couplers"], "vehicleParts.couplers")?,
-    })
-}
-
-fn is_positive_decimal(text: &str) -> bool {
-    !text.starts_with('-') && text.bytes().any(|digit| (b'1'..=b'9').contains(&digit))
-}
-
-struct RailHeadText {
-    rail_part: String,
-    inner: String,
-    outer: String,
-}
-
-fn rail_head_texts(geometry: &Value) -> Result<Vec<RailHeadText>, String> {
+fn bundle_rails(geometry: &Value) -> Result<Vec<Value>, String> {
     geometry["rails"]
         .as_array()
         .ok_or("geometry.rails must be an array")?
@@ -346,44 +311,22 @@ fn rail_head_texts(geometry: &Value) -> Result<Vec<RailHeadText>, String> {
                 .ok_or("rails[].part must be a string")?;
             let heads = rail["railHeads"]
                 .as_array()
-                .ok_or("rails[].railHeads must be an array")?;
-            let text = |head: &Value, end: &str| {
-                head[end].as_str().map(str::to_string).ok_or(format!(
-                    "rail {part}: railHeads[].{end} must be a decimal string"
-                ))
-            };
-            let outward = heads
+                .filter(|heads| heads.len() == 2)
+                .ok_or(format!("rail {part}: railHeads must hold two head bands"))?;
+            let rail_heads = heads
                 .iter()
-                .find(|head| head["from"].as_str().is_some_and(is_positive_decimal))
-                .ok_or(format!("rail {part} has no rail head on the +z side"))?;
-            Ok(RailHeadText {
-                rail_part: format!("ldraw:{}", stem(part)),
-                inner: text(outward, "from")?,
-                outer: text(outward, "to")?,
-            })
+                .map(|head| {
+                    let end = |name: &str| {
+                        head[name].as_str().map(str::to_string).ok_or(format!(
+                            "rail {part}: railHeads[].{name} must be a decimal string"
+                        ))
+                    };
+                    Ok(json!({ "from": end("from")?, "to": end("to")? }))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(json!({ "railPart": format!("ldraw:{}", stem(part)), "railHeads": rail_heads }))
         })
         .collect()
-}
-
-fn vehicle_json(vehicle: &Vehicle) -> Value {
-    let coupler = |c: &Option<brick_compile::vehicle::Coupler>| {
-        c.as_ref()
-            .map(|c| json!({ "instance": c.instance, "face": c.face, "bogie": c.bogie, "obsoleteSources": c.obsolete_sources }))
-            .unwrap_or(Value::Null)
-    };
-    json!({
-        "origin": vehicle.origin,
-        "yaw": vehicle.yaw,
-        "guideKind": match vehicle.guide_kind { GuideKind::BogiePivot => "bogiePivot", GuideKind::FixedAxle => "fixedAxle" },
-        "guides": vehicle.guides,
-        "body": vehicle.body,
-        "bogies": vehicle.bogies.iter().map(|b| json!({ "instances": b.instances, "pivot": b.pivot, "axles": b.axles })).collect::<Vec<_>>(),
-        "fixedAxles": vehicle.fixed_axles,
-        "wheelsets": vehicle.wheelsets.iter().map(|w| json!({ "instance": w.instance, "centre": w.centre })).collect::<Vec<_>>(),
-        "frontCoupler": coupler(&vehicle.front_coupler),
-        "rearCoupler": coupler(&vehicle.rear_coupler),
-        "railContacts": vehicle.rail_contacts.iter().map(|r| json!({ "railPart": r.rail_part, "railTopY": r.rail_top_y, "spreadLdu": r.spread })).collect::<Vec<_>>(),
-    })
 }
 
 const OPAQUE_ALPHA: u8 = 255;
@@ -711,24 +654,9 @@ fn run(args: &Args) -> Result<(), String> {
         }
     }
 
-    let signatures = vehicle_signatures(&palette)?;
-    let rail_texts = rail_head_texts(&geometry)?;
-    let rails = rail_texts
-        .iter()
-        .map(|rail| RailHeadBand::from_decimals(&rail.rail_part, &rail.inner, &rail.outer))
-        .collect::<Result<Vec<_>, _>>()?;
     let mut compiler = compiler;
     if let Some(entry) = compiler.as_object_mut() {
-        entry.insert(
-            "vehicles".into(),
-            json!({
-                "parts": palette["vehicleParts"],
-                "railHeads": rail_texts
-                    .iter()
-                    .map(|rail| json!({ "railPart": rail.rail_part, "inner": rail.inner, "outer": rail.outer }))
-                    .collect::<Vec<_>>(),
-            }),
-        );
+        entry.insert("rails".into(), json!(bundle_rails(&geometry)?));
     }
     let ldconfig_colours = library
         .source(LDCONFIG)
@@ -841,12 +769,6 @@ fn run(args: &Args) -> Result<(), String> {
                     next_drawn - 1
                 })
             })
-            .collect();
-        let vehicles: Vec<Value> = baker
-            .vehicles(&drawn, &signatures, &rails)
-            .map_err(|e| format!("{file}: {e}"))?
-            .iter()
-            .map(vehicle_json)
             .collect();
         let mut model_parts: Vec<Value> = Vec::new();
         let mut model_part_index: HashMap<usize, usize> = HashMap::new();
@@ -974,7 +896,6 @@ fn run(args: &Args) -> Result<(), String> {
                 "matrices": baked.submodel_matrices(),
                 "ofPart": of_part,
             },
-            "vehicles": vehicles,
         });
         if !not_drawn.is_empty() {
             model["notDrawn"] = json!(not_drawn);
@@ -1002,7 +923,6 @@ fn run(args: &Args) -> Result<(), String> {
             "inlinePartsResolvedToOfficial": inline_parts,
             "instances": drawn.len(),
             "lattice": lattice_json,
-            "vehicles": vehicles.len(),
             "sha256": entry["sha256"],
             "cover": cover_manifest,
         });
@@ -1126,7 +1046,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::rail_head_texts;
+    use super::bundle_rails;
     use serde_json::json;
 
     fn rail(heads: serde_json::Value) -> serde_json::Value {
@@ -1134,38 +1054,27 @@ mod tests {
     }
 
     #[test]
-    fn a_rail_is_read_from_its_head_whose_from_is_a_positive_decimal() {
-        let geometry = rail(json!([
+    fn a_rail_keeps_both_head_bands_as_authored_decimals() {
+        let tiny = format!("0.{}1", "0".repeat(399));
+        let heads = json!([
             { "from": "-53.1", "to": "-46.9" },
-            { "from": "46.9", "to": "53.1" }
-        ]));
-        let rails = rail_head_texts(&geometry).expect("the rail has a positive head");
-        let head = &rails[0];
+            { "from": tiny, "to": "53.1" }
+        ]);
+        let rails = bundle_rails(&rail(heads.clone())).expect("the rail has two head bands");
         assert_eq!(
-            (
-                head.rail_part.as_str(),
-                head.inner.as_str(),
-                head.outer.as_str()
-            ),
-            ("ldraw:custom-rail", "46.9", "53.1")
+            rails,
+            vec![json!({ "railPart": "ldraw:custom-rail", "railHeads": heads })]
         );
     }
 
     #[test]
-    fn a_head_above_zero_is_positive_however_small_its_float_would_be() {
-        let tiny = format!("0.{}1", "0".repeat(399));
-        let geometry = rail(json!([{ "from": tiny, "to": "6.2" }]));
-        let rails = rail_head_texts(&geometry).expect("a head above zero is positive");
-        assert_eq!(rails[0].inner, tiny);
-    }
-
-    #[test]
-    fn a_rail_whose_heads_start_at_zero_or_below_is_refused() {
-        let geometry = rail(json!([
+    fn a_rail_without_exactly_two_decimal_head_bands_is_refused() {
+        let one = rail(json!([{ "from": "46.9", "to": "53.1" }]));
+        let numeric = rail(json!([
             { "from": "-53.1", "to": "-46.9" },
-            { "from": "0", "to": "6.2" },
-            { "from": "0.000", "to": "6.2" }
+            { "from": 46.9, "to": "53.1" }
         ]));
-        assert!(rail_head_texts(&geometry).is_err());
+        assert!(bundle_rails(&one).is_err());
+        assert!(bundle_rails(&numeric).is_err());
     }
 }

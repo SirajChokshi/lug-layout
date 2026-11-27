@@ -151,7 +151,6 @@ export async function openBundle(
         .filter((color) => color.alpha < OPAQUE_ALPHA)
         .map((color) => color.code),
       tableDepthLdu: index.tablePlane.depthBelowTopLdu,
-      vehicles: index.compiler.vehicles ?? null,
     },
   };
 }

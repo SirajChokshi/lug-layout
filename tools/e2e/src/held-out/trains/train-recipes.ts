@@ -1,13 +1,25 @@
-import { type AxleMode, type HungAxle, hangAxle, hangSplitAxle, positiveSeats } from "./axles.ts";
+import {
+  carriedByABearing,
+  leavesBearingRoom,
+  type AxleMode,
+  type HungAxle,
+  type RailTop,
+  hangAxle,
+  hangSplitAxle,
+  positiveSeats,
+} from "./axles.ts";
 import { type HungBogie, hangBogie } from "./bogies.ts";
 import { carBody } from "./car-bodies.ts";
 import { type EndVariant, buildEnd } from "./end-features.ts";
+import { hangHinge } from "./hinges.ts";
 import { VERTICAL } from "./part-geometry.ts";
-import { pivotOptions, pivotPartAxles, stackAt } from "./pivot-stacks.ts";
+import { pivotOptions, pivotPartAxles, stackAt, verticalLink } from "./pivot-stacks.ts";
 import {
   type Carrier,
   PIVOT_PART_SUFFIX,
   type RailHeadBands,
+  footprint,
+  onLattice,
   pickColor,
   placeAlong,
   pointOnLine,
@@ -26,6 +38,7 @@ export interface RecipeContext {
   readonly rails: ReadonlyArray<RailHeadBands>;
   readonly rail: RailHeadBands;
   readonly seats: Map<string, number>;
+  readonly railTop: RailTop;
 }
 
 export type Recipe = (context: RecipeContext) => TrainPlan | null;
@@ -40,15 +53,56 @@ const END_VARIANTS: ReadonlyArray<EndVariant | "plain"> = [
 export const WIDE = 1e9;
 const TURNTABLE_TRIES = 6;
 
-export function wheelFor(context: RecipeContext): WheelPart | null {
+export const TWO_AXLE_BOGIE = 0;
+
+export function bogieStuds(wheel: WheelPart, roomFor: 1 | 2, extraStuds: number): number {
+  return (roomFor === 2 ? Math.ceil((4 * wheel.radius) / STUD_LDU) + 1 : 2) + extraStuds;
+}
+
+function longestPivotStuds(pools: TrainPools): number {
+  return Math.max(
+    0,
+    ...pivotOptions(pools).map((option) => footprint(option.block, option.turns)[0]),
+  );
+}
+
+function adoptRailTop(context: RecipeContext, wheelsets: ReadonlyArray<PlannedWheelset>): void {
+  if (context.railTop.value !== null) return;
+  for (const wheelset of wheelsets) {
+    if (wheelset.contactRadius === null) continue;
+    context.railTop.value = wheelset.y - wheelset.contactRadius;
+    return;
+  }
+}
+
+export function wheelFor(
+  context: RecipeContext,
+  bogieRoomStuds: number | null = null,
+  bearingWindow: readonly [number, number] | null = null,
+): WheelPart | null {
+  const longest = bogieRoomStuds === null ? Infinity : longestPivotStuds(context.pools);
+  const fitsBogie = (wheel: WheelPart): boolean =>
+    bogieRoomStuds === null || bogieStuds(wheel, 2, bogieRoomStuds) <= longest;
+  const fitsWindow = (wheel: WheelPart): boolean =>
+    bearingWindow === null ||
+    positiveSeats(wheel, context.rail, context.rails).some((seat) =>
+      leavesBearingRoom(context.pools, wheel, seat, bearingWindow),
+    );
   for (const wheel of context.random.shuffled(context.pools.wheels)) {
     const key = `${wheel.reading.reference} ${context.rail.part}`;
     let seats = context.seats.get(key);
     if (seats === undefined) {
-      seats = positiveSeats(wheel, context.rail).length;
+      seats = positiveSeats(wheel, context.rail, context.rails).length;
       context.seats.set(key, seats);
     }
-    if (seats > 0) return wheel;
+    if (
+      seats > 0 &&
+      carriedByABearing(context.pools, wheel) &&
+      fitsBogie(wheel) &&
+      fitsWindow(wheel)
+    ) {
+      return wheel;
+    }
   }
   return null;
 }
@@ -78,6 +132,7 @@ export function axles(
       sides: mode === "one head band" ? [1] : [1, -1],
       lateralRange: [carrier.z0, carrier.z1],
       unit,
+      railTop: context.railTop,
     });
     if (!hung) return null;
     out.push(hung);
@@ -94,12 +149,24 @@ export function bogieWithAxles(
   unitBogie: string,
   join: "pivot" | "rigid" | "two pivots",
   wheel: WheelPart,
-  axleSide: "around" | "behind" = "around",
+  axleSide: "around" | "behind" | "ahead" = "around",
   cap = false,
   pivotZ = 0,
   roomFor: 1 | 2 = count,
+  extraStuds = 0,
 ): { readonly hung: HungBogie; readonly axles: ReadonlyArray<HungAxle> } | null {
-  const lengthStuds = roomFor === 2 ? Math.ceil((4 * wheel.radius) / STUD_LDU) + 1 : 2;
+  const lengthStuds = bogieStuds(wheel, roomFor, extraStuds);
+  const railTop = context.railTop.value;
+  const axleHeights =
+    railTop === null
+      ? []
+      : [
+          ...new Set(
+            positiveSeats(wheel, context.rail, context.rails).flatMap((seat) =>
+              seat.contact === undefined ? [] : [railTop + seat.contact],
+            ),
+          ),
+        ];
   const hung = hangBogie(context.model, context.pools, context.random, {
     body: carrier,
     pivotRange,
@@ -109,6 +176,11 @@ export function bogieWithAxles(
     lengthStuds,
     cap,
     pivotZ,
+    axleHeights,
+    sideRoom:
+      count === 2 && axleSide === "around"
+        ? [2 * wheel.radius, 2 * wheel.radius + extraStuds * STUD_LDU]
+        : null,
   });
   if (!hung) return null;
   const firstPivot = Math.min(...hung.pivots.map((pivot) => pivot[0]));
@@ -116,7 +188,7 @@ export function bogieWithAxles(
   const behindMiddle = (hung.bogie.x0 + firstPivot) / 2;
   const ranges: ReadonlyArray<readonly [number, number]> =
     count === 1
-      ? [[-WIDE, WIDE]]
+      ? [[axleSide === "ahead" ? lastPivot : -WIDE, WIDE]]
       : axleSide === "behind"
         ? [
             [-WIDE, behindMiddle],
@@ -192,7 +264,7 @@ export function single(wheelsets: ReadonlyArray<PlannedWheelset>, vehicle: Vehic
 
 function bogieCar(axlesPerBogie: 1 | 2, capFront: boolean): Recipe {
   return (context) => {
-    const wheel = wheelFor(context);
+    const wheel = wheelFor(context, axlesPerBogie === 2 ? TWO_AXLE_BOGIE : null);
     const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
     if (!wheel || !car) return null;
     const front = bogieWithAxles(
@@ -235,9 +307,99 @@ function bogieCar(axlesPerBogie: 1 | 2, capFront: boolean): Recipe {
   };
 }
 
+const COUPLER_GAP_PLATES = [1, 2, 3, 4] as const;
+const COUPLER_ROOM_STUDS = 2;
+
+function hangCoupler(
+  context: RecipeContext,
+  bogie: { readonly hung: HungBogie; readonly axles: ReadonlyArray<HungAxle> },
+  unit: string,
+): boolean {
+  const { model, pools, random } = context;
+  const frame = bogie.hung.bogie;
+  const outerAxle = Math.max(...bogie.axles.map((axle) => axle.wheelset.x));
+  const holes = random.shuffled(bogie.hung.holes.filter(([x]) => x > outerAxle));
+  const holders = random.shuffled(pivotOptions(pools).filter((option) => option.holes.length > 0));
+  const lowestWheel = Math.min(...bogie.axles.map((axle) => axle.wheelset.y - axle.radius));
+  for (const [x, z] of holes) {
+    for (const holder of holders) {
+      const [hole] = holder.holes;
+      if (!hole) continue;
+      const corner = [x - hole[0], z - hole[1]] as const;
+      if (!onLattice(corner[0], frame.x0) || !onLattice(corner[1], frame.z0)) continue;
+      for (const gap of COUPLER_GAP_PLATES) {
+        const checkpoint = model.checkpoint();
+        const top = frame.bottom - gap * PLATE_LDU;
+        if (top - PLATE_LDU < lowestWheel) continue;
+        const placed = stackAt(
+          model,
+          pools,
+          holder,
+          corner,
+          top,
+          1,
+          pickColor(random, pools),
+          unit,
+          null,
+        );
+        const link = verticalLink(
+          model,
+          pools,
+          random,
+          [x, z],
+          top - PLATE_LDU,
+          frame.top,
+          [...placed, ...bogie.hung.bogieIndices],
+          unit,
+        );
+        if (link !== null && !model.collidesSince(checkpoint)) return true;
+        model.rollback(checkpoint);
+      }
+    }
+  }
+  return false;
+}
+
+const truckMountedCoupler: Recipe = (context) => {
+  const wheel = wheelFor(context, COUPLER_ROOM_STUDS);
+  const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
+  if (!wheel || !car) return null;
+  const front = bogieWithAxles(
+    context,
+    car,
+    third(car, 2),
+    2,
+    "car",
+    "front bogie",
+    "pivot",
+    wheel,
+    "around",
+    false,
+    0,
+    2,
+    COUPLER_ROOM_STUDS,
+  );
+  const rear = front
+    ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
+    : null;
+  if (!front || !rear || !hangCoupler(context, front, "front bogie")) return null;
+  return single(
+    [...front.axles, ...rear.axles].map((axle) => axle.wheelset),
+    {
+      body: ["car"],
+      bogies: [
+        { unit: "front bogie", pivot: front.hung.pivots[0] ?? [0, 0] },
+        { unit: "rear bogie", pivot: rear.hung.pivots[0] ?? [0, 0] },
+      ],
+      front: "unasserted",
+      rear: "unasserted",
+    },
+  );
+};
+
 function locomotive(bogies: 1 | 2, ponyTruck: boolean): Recipe {
   return (context) => {
-    const wheel = wheelFor(context);
+    const wheel = wheelFor(context, bogies === 2 || !ponyTruck ? TWO_AXLE_BOGIE : null);
     const car = carBody(
       context.model,
       context.pools,
@@ -313,6 +475,7 @@ function runningGearCar(explode: boolean): Recipe {
       "car",
     );
     if (!first) return null;
+    adoptRailTop(context, first.wheelsets);
     const second = mountRunningGear(
       context.model,
       context.pools,
@@ -339,7 +502,7 @@ const motorBogieCar: Recipe = (context) => {
     (part) => part.pivotPin !== null && part.axes.length >= 2,
   );
   const motor = context.random.choice(motors);
-  const wheel = wheelFor(context);
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
   const car = carBody(context.model, context.pools, context.random, 0, 16, "car");
   if (!motor || !wheel || !car) return null;
   const front = mountPinBogie(
@@ -354,6 +517,7 @@ const motorBogieCar: Recipe = (context) => {
     "motor bogie",
   );
   if (!front?.pivot) return null;
+  adoptRailTop(context, front.wheelsets);
   const rear = bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel);
   if (!rear) return null;
   return single([...front.wheelsets, ...rear.axles.map((axle) => axle.wheelset)], {
@@ -368,17 +532,17 @@ const motorBogieCar: Recipe = (context) => {
 };
 
 const singleBogieBody: Recipe = (context) => {
-  const wheel = wheelFor(context);
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
   const car = carBody(context.model, context.pools, context.random, 0, 10, "car");
   if (!wheel || !car) return null;
   const bogie = bogieWithAxles(context, car, half(car, 1), 2, "car", "bogie", "pivot", wheel);
   if (!bogie) return null;
   return {
     wheelsets: bogie.axles.map((axle) => axle.wheelset),
-    vehicles: [],
-    attachments: [],
+    vehicles: [{ body: ["bogie"], bogies: [], front: "unasserted", rear: "unasserted" }],
+    attachments: ["car"],
     couplingsInModel: [],
-    unresolvedRunningGear: [{ units: ["car", "bogie"], reason: "fewer than two guides" }],
+    unresolvedRunningGear: [],
   };
 };
 
@@ -405,13 +569,17 @@ function negativeAxleCar(modes: ReadonlyArray<AxleMode>): Recipe {
 
 function lockedTruck(join: "rigid" | "two pivots"): Recipe {
   return (context) => {
-    const wheel = wheelFor(context);
+    const wheel = wheelFor(context, TWO_AXLE_BOGIE);
     const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
     if (!wheel || !car) return null;
-    const truck = bogieWithAxles(context, car, third(car, 2), 2, "car", "truck", join, wheel);
-    const rear = truck
-      ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
-      : null;
+    const hangTruck = () =>
+      bogieWithAxles(context, car, third(car, 2), 2, "car", "truck", join, wheel);
+    const hangRear = () =>
+      bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel);
+    const rearFirst = join === "rigid";
+    const first = rearFirst ? hangRear() : hangTruck();
+    const second = first ? (rearFirst ? hangTruck() : hangRear()) : null;
+    const [truck, rear] = rearFirst ? [second, first] : [first, second];
     if (!truck || !rear) return null;
     return single(
       [...truck.axles, ...rear.axles].map((axle) => axle.wheelset),
@@ -424,6 +592,41 @@ function lockedTruck(join: "rigid" | "two pivots"): Recipe {
     );
   };
 }
+
+const hingedBogieCar: Recipe = (context) => {
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
+  const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
+  if (!wheel || !car) return null;
+  const front = bogieWithAxles(
+    context,
+    car,
+    third(car, 2),
+    2,
+    "car",
+    "front bogie",
+    "pivot",
+    wheel,
+  );
+  const hinged =
+    front !== null &&
+    hangHinge(context.model, context.pools, context.random, front.hung.bogie, car.bottom);
+  const rear = hinged
+    ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
+    : null;
+  if (!front || !rear) return null;
+  return single(
+    [...front.axles, ...rear.axles].map((axle) => axle.wheelset),
+    {
+      body: ["car"],
+      bogies: [
+        { unit: "front bogie", pivot: front.hung.pivots[0] ?? [0, 0] },
+        { unit: "rear bogie", pivot: rear.hung.pivots[0] ?? [0, 0] },
+      ],
+      front: "plain",
+      rear: "plain",
+    },
+  );
+};
 
 const roofTurntable: Recipe = (context) => {
   const base = axleCar(context);
@@ -493,8 +696,10 @@ const roofTurntable: Recipe = (context) => {
   return null;
 };
 
+const SPLIT_BOGIE_WINDOW: readonly [number, number] = [-2 * STUD_LDU, 0];
+
 const splitAcrossPivot: Recipe = (context) => {
-  const wheel = wheelFor(context);
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE, SPLIT_BOGIE_WINDOW);
   const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
   if (!wheel || !car) return null;
   const front = bogieWithAxles(
@@ -506,7 +711,7 @@ const splitAcrossPivot: Recipe = (context) => {
     "front bogie",
     "pivot",
     wheel,
-    "around",
+    "ahead",
     false,
     -STUD_LDU,
     2,
@@ -522,6 +727,7 @@ const splitAcrossPivot: Recipe = (context) => {
     xRange: [-WIDE, Math.min(pivotX, normal.occupied[0])],
     wheel,
     rail: context.rail,
+    rails: context.rails,
   });
   const rear = split
     ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
@@ -553,7 +759,9 @@ export const CAR_RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
   ["motor bogie, two axles in one part", motorBogieCar],
   ["car on a single bogie", singleBogieBody],
   ["roof turntable", roofTurntable],
+  ["horizontal hinge on a bogie", hingedBogieCar],
   ["bush capping a pivot", bogieCar(2, true)],
+  ["truck-mounted coupler", truckMountedCoupler],
   ["co-linear wheels split across a pivot", splitAcrossPivot],
   ["gauge miss", negativeAxleCar(["gauge miss", "gauge miss"])],
   ["one head band", negativeAxleCar(["positive", "one head band", "positive"])],

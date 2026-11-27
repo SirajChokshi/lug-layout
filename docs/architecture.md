@@ -704,7 +704,7 @@ L0  math
 | `rpc` | schema, inversify |
 | `sim` | math, schema, domain (graph types) |
 | `import` | math, schema, domain, catalog, compile-wasm |
-| `client` | math, schema (`@brr/schema/decode`, bundle wire types and running-gear overrides, world files), domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) |
+| `client` | math, schema (`@brr/schema/decode`, bundle wire types, world files), domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) |
 | `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify. `workers/import-worker` also depends on `storage`, whose IndexedDB asset cache (`brr-assets`) holds the precompiled library-bake and connector records it reads; persistence runs in the main thread and the worker (§4). |
 | `ui` | client (service interfaces, tokens, view models), schema types |
 | `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries), and *types only* from schema (owner ruling, 2026-11-17: no re-export layers, so `apps/web` names wire types where they are defined) |

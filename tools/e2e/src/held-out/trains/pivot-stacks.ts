@@ -78,7 +78,13 @@ export function pivotPartAxles(pools: TrainPools): ReadonlyArray<AxlePart> {
     const plain =
       max[axle.span.axis] - axle.span.to <= PLAIN_AXLE_LDU &&
       axle.span.from - min[axle.span.axis] <= PLAIN_AXLE_LDU;
-    return plain && Number.isInteger(plates) && plates >= 2 && plates <= MAX_PIVOT_PLATES;
+    return (
+      plain &&
+      axle.stops.length === 0 &&
+      Number.isInteger(plates) &&
+      plates >= 2 &&
+      plates <= MAX_PIVOT_PLATES
+    );
   });
 }
 

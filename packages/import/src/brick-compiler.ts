@@ -1,4 +1,4 @@
-import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
+import type { ModelCells, ModelStudCover, PartModelLattice } from "@brr/catalog";
 import { modelPartCells } from "@brr/catalog/model-part-cells";
 import type { BakeReceptors } from "./bake-receptors.ts";
 import {
@@ -18,8 +18,6 @@ import {
   type CompilerLibraryDelta,
   type CompilerRecordDelta,
   type CompilerRequest,
-  type CompilerVehicle,
-  type CompilerVehicles,
   type ModelSection,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -111,7 +109,6 @@ export interface BakeInputs {
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly translucentColors: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
-  readonly vehicles: CompilerVehicles | null;
   readonly keepParts?: boolean;
   readonly omrAuthoringIdentification?: boolean;
 }
@@ -139,8 +136,6 @@ export interface BakedModel {
   readonly latticeIssue: string | null;
   readonly studCover: ModelStudCover;
   readonly cells: ModelCells | null;
-  readonly vehicles: ReadonlyArray<PartVehicle>;
-  readonly vehicleIssue: string | null;
 }
 
 export interface BakeFailure {
@@ -150,7 +145,7 @@ export interface BakeFailure {
 
 export type BakeOutcome = BakedModel | Need | BakeFailure;
 
-export type BakeNeedsRequest = Pick<BakeInputs, "source" | "drawn" | "studPrimitives" | "vehicles">;
+export type BakeNeedsRequest = Pick<BakeInputs, "source" | "drawn" | "studPrimitives">;
 
 export type BakeNeeds = { readonly status: "complete" } | Need;
 
@@ -218,33 +213,6 @@ function bytesOf(body: Uint8Array, blobs: CompilerBlobs, name: string): ArrayBuf
   return body.slice(offset, offset + length).buffer;
 }
 
-function indices(all: Uint32Array, [start, count]: Range): Uint32Array {
-  return all.slice(start, start + count);
-}
-
-function vehicleOf(
-  vehicle: CompilerVehicle,
-  body: Uint32Array,
-  bogieInstances: Uint32Array,
-): PartVehicle {
-  return {
-    ...vehicle,
-    body: indices(body, vehicle.body),
-    bogies: vehicle.bogies.map((bogie) => ({
-      ...bogie,
-      instances: indices(bogieInstances, bogie.instances),
-    })),
-  };
-}
-
-function bakedVehicles(header: CompilerBaked, body: Uint8Array): ReadonlyArray<PartVehicle> {
-  const { vehicles, blobs } = header;
-  if (vehicles === undefined) return [];
-  const vehicleBody = new Uint32Array(bytesOf(body, blobs, "vehicleBody"));
-  const bogieInstances = new Uint32Array(bytesOf(body, blobs, "bogieInstances"));
-  return vehicles.map((vehicle) => vehicleOf(vehicle, vehicleBody, bogieInstances));
-}
-
 function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
   const { blobs, cover, lattice } = header;
   const cells = cover.cells;
@@ -293,8 +261,6 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
               "the imported model",
             ),
           },
-    vehicles: bakedVehicles(header, body),
-    vehicleIssue: header.vehicleIssue ?? null,
   };
 }
 
@@ -448,7 +414,7 @@ export class BrickCompiler {
     records: RecordFiles | null = null,
   ): BakeNeeds {
     const { header } = this.call(
-      { op: "bakeNeeds", studPrimitives: request.studPrimitives, vehicles: request.vehicles },
+      { op: "bakeNeeds", studPrimitives: request.studPrimitives },
       { source: utf8.encode(request.source), drawn: request.drawn },
       library,
       records,

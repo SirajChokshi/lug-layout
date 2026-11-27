@@ -10,7 +10,9 @@ import {
 import {
   type Carrier,
   PIVOT_PART_SUFFIX,
+  LATERAL,
   UP,
+  bearingOptions,
   footprint,
   onLattice,
   pickColor,
@@ -28,14 +30,48 @@ export interface BogieRequest {
   readonly lengthStuds: number;
   readonly cap: boolean;
   readonly pivotZ: number;
+  readonly axleHeights?: ReadonlyArray<number>;
+  readonly sideRoom?: readonly [number, number] | null;
 }
 
 export interface HungBogie {
   readonly bogie: Carrier;
   readonly pivots: ReadonlyArray<readonly [number, number]>;
+  readonly holes: ReadonlyArray<readonly [number, number]>;
   readonly bodyIndices: ReadonlyArray<number>;
   readonly bogieIndices: ReadonlyArray<number>;
   readonly pivotParts: ReadonlyArray<number>;
+}
+
+function leavesSideRoom(
+  option: PivotOption,
+  hole: readonly [number, number],
+  room: readonly [number, number] | null | undefined,
+): boolean {
+  if (!room) return true;
+  const [length] = footprint(option.block, option.turns);
+  return hole[0] >= room[0] && length * STUD_LDU - hole[0] >= room[1];
+}
+
+function reachingLengths(
+  pools: TrainPools,
+  body: Carrier,
+  lengths: ReadonlyArray<number>,
+  axleHeights: ReadonlyArray<number>,
+): ReadonlyArray<number> {
+  if (axleHeights.length === 0) return lengths;
+  const holeDepths = [
+    ...new Set(bearingOptions(pools, LATERAL, false).map((option) => option.holeDepth)),
+  ];
+  const reaching = lengths.filter((length) =>
+    axleHeights.some((height) =>
+      holeDepths.some((depth) => {
+        const plates = (body.bottom - length - depth - height) / PLATE_LDU;
+        return Number.isInteger(plates) && plates >= 0;
+      }),
+    ),
+  );
+  return reaching.length > 0 ? reaching : lengths;
 }
 
 export function hangBogie(
@@ -61,7 +97,13 @@ export function hangBogie(
     const holes =
       request.join === "two pivots"
         ? pickTwo(random, bogieOption.holes)
-        : [random.choice(bogieOption.holes)];
+        : [
+            random.choice(
+              bogieOption.holes.filter((hole) =>
+                leavesSideRoom(bogieOption, hole, request.sideRoom),
+              ),
+            ),
+          ];
     if (holes.some((hole) => hole === null)) continue;
     const firstHole = holes[0];
     if (!firstHole) continue;
@@ -122,7 +164,9 @@ export function hangBogie(
       model.rollback(checkpoint);
       continue;
     }
-    const total = random.choice(axleLengths);
+    const total = random.choice(
+      reachingLengths(pools, body, axleLengths, request.axleHeights ?? []),
+    );
     const axle = pivotPartAxles(pools).find(
       (candidate) => candidate.span.to - candidate.span.from === total,
     );
@@ -268,6 +312,7 @@ function finishBogie(
       z1: zCorner + width * STUD_LDU,
     },
     pivots,
+    holes: option.holes.map(([x, z]) => [xCorner + x, zCorner + z] as const),
     bodyIndices,
     bogieIndices,
     pivotParts,

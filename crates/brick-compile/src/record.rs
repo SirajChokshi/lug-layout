@@ -1,7 +1,7 @@
 use crate::affine::{Affine, Vec3};
-use crate::compile::CompiledPart;
+use crate::compile::{CompileError, CompiledPart};
 use crate::cover::tree_order;
-use crate::flatten::StudReference;
+use crate::flatten::{FlattenError, Flattener, Library, Lod, StudReference};
 use crate::mesh::{ColorGroup, Mesh};
 
 pub const RECORD_MAGIC: &[u8; 8] = b"BRRBAKE1";
@@ -10,6 +10,36 @@ const MATRIX_VALUES: usize = 12;
 const BOUNDS_VALUES: usize = 6;
 const GROUP_HEADER_BYTES: usize = 8;
 const STUD_FIXED_BYTES: usize = 4 + 2 + MATRIX_VALUES * 8;
+
+pub fn whole_bounds<L: Library>(library: &L, part: &str) -> Result<[Vec3; 2], CompileError> {
+    let path = Flattener::new(library, Lod::Standard, &[])
+        .resolve(part)
+        .ok_or_else(|| {
+            CompileError::Flatten(FlattenError::Unresolved {
+                reference: part.to_string(),
+                from: String::new(),
+            })
+        })?;
+    let mut flattener = Flattener::new(library, Lod::Standard, &[]);
+    let flattened = flattener.flatten(&path).map_err(CompileError::Flatten)?;
+    if !flattener.malformed().is_empty() {
+        return Err(CompileError::Malformed {
+            findings: flattener.malformed().to_vec(),
+        });
+    }
+    let mut min = [f64::INFINITY; 3];
+    let mut max = [f64::NEG_INFINITY; 3];
+    for triangle in &flattened.triangles {
+        for point in triangle.points {
+            let p = Affine::LDRAW_TO_Y_UP.apply(point);
+            for axis in 0..3 {
+                min[axis] = min[axis].min(p[axis]);
+                max[axis] = max[axis].max(p[axis]);
+            }
+        }
+    }
+    Ok([min, max].map(|corner| corner.map(|v| v + 0.0)))
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BakeRecord {

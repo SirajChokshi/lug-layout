@@ -5,6 +5,7 @@ use crate::cover::{part_cover_fits, CellsTooLarge};
 use crate::flatten::{
     ExactTriangle, FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle,
 };
+use crate::extents::{part_extents, PartExtents};
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
 use crate::mesh::{self, Mesh};
@@ -122,6 +123,7 @@ pub struct CompiledPart {
     pub technic: Option<TechnicPart>,
     pub rolling: Option<PartRolling>,
     pub top_surface: Option<TopSurface>,
+    pub extents: Option<PartExtents>,
 }
 
 fn to_y_up(p: Vec3) -> Vec3 {
@@ -257,6 +259,7 @@ pub fn compile_part<L: Library>(
     let mut flattened = flattener.flatten(&path).map_err(CompileError::Flatten)?;
     unofficial_gate(&flattened, &options.unofficial_allowlist)?;
     refuse_malformed(flattener.malformed())?;
+    let extents = part_extents(library, &path).map_err(CompileError::Flatten)?;
     let roundness = match options.rolling_mode {
         RollingMode::Skip => None,
         RollingMode::ReadBy(roundness) => Some(roundness),
@@ -320,6 +323,7 @@ pub fn compile_part<L: Library>(
         technic,
         rolling,
         top_surface,
+        extents,
     })
 }
 
@@ -387,6 +391,7 @@ impl CompiledPart {
             "sources": sources,
             "studs": studs,
             "bounds": { "min": min, "max": max },
+            "extents": self.extents.as_ref().map(PartExtents::to_json),
         });
         if let Some(technic) = &self.technic {
             extras["technic"] = technic.to_json();

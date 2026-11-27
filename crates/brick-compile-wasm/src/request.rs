@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use brick_compile::cover::CoverShard;
-use brick_compile::vehicle::{RailHeadBand, VehicleSignatures};
 use brick_compile::Lod;
 use serde::Deserialize;
 
@@ -73,15 +72,12 @@ pub enum Operation {
     },
     BakeNeeds {
         stud_primitives: Vec<String>,
-        #[serde(default)]
-        vehicles: Option<VehicleInputs>,
     },
     Bake {
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
         translucent_colors: Vec<u32>,
         table_depth_ldu: f64,
-        vehicles: Option<VehicleInputs>,
         shard: Option<Shard>,
         #[serde(default)]
         keep_parts: bool,
@@ -144,48 +140,4 @@ impl From<LodName> for Lod {
 pub struct InlineCheck {
     pub inline: String,
     pub official: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct VehicleInputs {
-    parts: VehicleParts,
-    rail_heads: Vec<RailHead>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct VehicleParts {
-    bogie_pivots: Vec<String>,
-    pivot_pins: Vec<String>,
-    wheelsets: Vec<String>,
-    wheels: Vec<String>,
-    couplers: Vec<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct RailHead {
-    rail_part: String,
-    inner: String,
-    outer: String,
-}
-
-impl VehicleInputs {
-    pub fn signatures(&self) -> VehicleSignatures {
-        VehicleSignatures {
-            bogie_pivots: self.parts.bogie_pivots.clone(),
-            pivot_pins: self.parts.pivot_pins.clone(),
-            wheelsets: self.parts.wheelsets.clone(),
-            wheels: self.parts.wheels.clone(),
-            couplers: self.parts.couplers.clone(),
-        }
-    }
-
-    pub fn rails(&self) -> Result<Vec<RailHeadBand>, String> {
-        self.rail_heads
-            .iter()
-            .map(|rail| RailHeadBand::from_decimals(&rail.rail_part, &rail.inner, &rail.outer))
-            .collect()
-    }
 }

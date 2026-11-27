@@ -327,6 +327,25 @@ impl Exact {
         (self.coefficient.big(), self.places)
     }
 
+    pub fn reduced_fraction(&self) -> (BigInt, BigInt) {
+        let mut numerator = self.coefficient.big();
+        let zero = BigInt::from(0u32);
+        if numerator == zero {
+            return (numerator, BigInt::from(1u32));
+        }
+        let mut twos = self.places;
+        let mut fives = self.places;
+        for (factor, left) in [(2u32, &mut twos), (5u32, &mut fives)] {
+            let factor = BigInt::from(factor);
+            while *left > 0 && &numerator % &factor == zero {
+                numerator /= &factor;
+                *left -= 1;
+            }
+        }
+        let denominator = BigInt::from(2u32).pow(twos) * BigInt::from(5u32).pow(fives);
+        (numerator, denominator)
+    }
+
     pub fn small_decimal(&self) -> Option<(i128, u32)> {
         match self.coefficient {
             Coefficient::Small(units) => Some((units, self.places)),

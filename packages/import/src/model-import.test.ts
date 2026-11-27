@@ -11,7 +11,6 @@ import {
   SectionVocabularyFile,
   ShadowLibraryPin,
   isCustomPartId,
-  type CompilerVehicles,
   type LibraryBakePart,
   type UnreadBandDiagnostic,
 } from "@brr/schema/bundle";
@@ -114,7 +113,6 @@ interface Manifest {
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
   readonly compiler: {
     readonly file: string;
-    readonly vehicles?: CompilerVehicles;
     readonly primitives?: CompileRequest["connectors"]["primitives"];
     readonly sectionVocabulary: { readonly file: string; readonly sha256: string };
     readonly cavityProbe: string;
@@ -282,7 +280,6 @@ async function importWith(
       .filter((color) => color.alpha < OPAQUE_ALPHA)
       .map((color) => color.code),
     tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-    vehicles: manifest.compiler.vehicles ?? null,
   };
   return engine.importText(job, undefined, customFiles);
 }
@@ -460,7 +457,6 @@ async function importOutsideTheBundle(
         .filter((color) => color.alpha < OPAQUE_ALPHA)
         .map((color) => color.code),
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-      vehicles: manifest.compiler.vehicles ?? null,
     },
     onPlaced,
   );
@@ -526,7 +522,6 @@ it(
     );
 
     expect(compiled.compiled.length).toBeGreaterThan(0);
-    expect(compiled.bake?.vehicles.length).toBeGreaterThan(0);
     expect(recorded.report.records?.bakedFromRecords).toBeGreaterThan(0);
     expect(new Set(compiled.compiled.map((part) => part.source))).toEqual(new Set(["import"]));
     expect(recorded.compiled.some((part) => part.source === "library-bake")).toBe(true);

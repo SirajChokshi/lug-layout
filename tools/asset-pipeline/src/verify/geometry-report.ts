@@ -12,6 +12,7 @@ import {
   measureRails,
   measureStudZones,
   reportTrackEnds,
+  type RailMeasurement,
   type TrackEndReport,
 } from "./geometry.ts";
 
@@ -64,6 +65,13 @@ function turningEnd(report: TrackEndReport | undefined): TrackEnd {
   return end;
 }
 
+export function measuredRails(library: LdrawLibrary): ReadonlyArray<RailMeasurement> {
+  return [
+    measureRails(library, "74746", RAIL_SECTION_X),
+    measureRails(library, "53401", RAIL_SECTION_X),
+  ];
+}
+
 export function buildGeometryReport(
   libraries: GeometryLibraries,
   topStudPrimitives: ReadonlyArray<string>,
@@ -89,10 +97,7 @@ export function buildGeometryReport(
       composeSwitchWithCurve(official.get("75541-f1"), official.get("74747")),
       composeSwitchWithCurve(official.get("75542-f1"), official.get("74747")),
     ],
-    rails: [
-      measureRails(libraries.official, "74746", RAIL_SECTION_X),
-      measureRails(libraries.official, "53401", RAIL_SECTION_X),
-    ],
+    rails: measuredRails(libraries.official),
     baseplates,
     tablePlane: { part: reference.part, depthBelowTopLdu: reference.thicknessLdu },
     roadStudZones: ROAD_STUD_ZONES.map((part) =>

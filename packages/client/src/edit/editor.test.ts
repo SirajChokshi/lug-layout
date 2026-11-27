@@ -116,15 +116,12 @@ import {
   PLAN_SHEET_SERVICE,
   RAIL_YARD,
   RUNNING_GEAR,
-  RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
   SNAP_SHAPES,
   SPARSE_CONNECTOR_FINDER,
   TRAIN_PLAY,
   WORLD_SESSION,
 } from "../tokens.ts";
-import { MemoryOverrideStore } from "../running-gear/memory-override-store.test-support.ts";
-import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
 import {
   InThreadModelImporter,
   pinnedOmrModel,
@@ -153,6 +150,10 @@ import type { PlaySnapshot } from "../play/train-play.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const testData = new URL("../../test-data/", import.meta.url);
+const CUSTOM_BOGIE_WAGON = "custom-bogie-wagon.mpd";
+const CUSTOM_TWO_AXLE_WAGON = "custom-two-axle-wagon.ldr";
+const TECHNIC_BUILDING = "technic-building.ldr";
 const PLACEABLE_SET = "7936-1";
 const PLAIN_MODULE_MODEL = "mils-plain";
 const OPEN_TABLE_X = 2_560;
@@ -545,6 +546,17 @@ async function startEditor(
   };
 }
 
+async function importTestModel(editor: IEditor, name: string): Promise<string> {
+  const imported = await editor.importModelFile({
+    name,
+    bytes: new Uint8Array(await readFile(new URL(name, testData))),
+  });
+  const item = editor.snapshot().activeItem;
+  if (!imported || item === null)
+    throw new Error(`${name} did not import: ${JSON.stringify(editor.snapshot().modelImport)}`);
+  return item;
+}
+
 function farTierSettled(editor: IEditor): Promise<EditorSnapshot> {
   return new Promise((resolve) => {
     const check = (): void => {
@@ -663,7 +675,6 @@ const DRAG_STEPS = 8;
 const TRAIN_SPEED_LDU_PER_S = 200;
 const RUN_TICKS = 180;
 const SAME_POSE_LDU = 1e-9;
-const PIVOT_SHIFT_LDU = 8;
 
 function onLattice(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU;
@@ -1000,18 +1011,8 @@ it("couples a user's own caboose behind a set's locomotive and a user's two wago
   expect(labels()).toEqual([whole]);
 }, 240_000);
 
-async function saveShiftedPivot(gear: IRunningGear, model: string): Promise<string | null> {
-  gear.select(model, 0);
-  const pivot = gear.snapshot().view?.pivots[0];
-  if (!pivot) throw new Error(`${model} has no bogie pivot`);
-  gear.setPivot(0, pivot[0] + PIVOT_SHIFT_LDU, pivot[2]);
-  await gear.save();
-  return gear.snapshot().error;
-}
-
-it("runs every train on the rails, imported ones included, from exactly where each stands on its saved running gear, two cars of one file as one coupled consist, and stands them back there when Play stops", async () => {
+it("runs every train on the rails, imported ones included, from exactly where each stands on its detected running gear, two cars of one file as one coupled consist, and stands them back there when Play stops", async () => {
   const sim = new InThreadSim();
-  const overrides = new MemoryOverrideStore();
   const { editor, backend, container, catalog } = await startEditor(
     [LOCOMOTIVE.slice(4)],
     new BundleDirectoryFetcher(),
@@ -1021,7 +1022,6 @@ it("runs every train on the rails, imported ones included, from exactly where ea
         .rebind(MODEL_IMPORTER)
         .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
       bound.rebind(SIM_CLIENT).toConstantValue(sim);
-      bound.rebind(RUNNING_GEAR_OVERRIDES).toConstantValue(overrides);
     },
   );
   drawOval(editor, backend);
@@ -1047,9 +1047,6 @@ it("runs every train on the rails, imported ones included, from exactly where ea
   editor.chooseItem(null);
   const gear = container.get(RUNNING_GEAR);
   await vi.waitFor(() => expect(gear.snapshot().models).toHaveLength(3));
-  const detected = standingPoses(backend);
-  const saveError = await saveShiftedPivot(gear, LOCOMOTIVE.slice(4));
-  await vi.waitFor(() => expect(sameStanding(standingPoses(backend), detected)).toBe(false));
   const parked = standingPoses(backend);
   const play = container.get(TRAIN_PLAY);
 
@@ -1071,7 +1068,6 @@ it("runs every train on the rails, imported ones included, from exactly where ea
   const after = trainAt();
   play.stop();
 
-  expect(saveError).toBeNull();
   expect([imported, importedWagons]).toEqual([true, true]);
   expect([custom, wagons]).toEqual([
     expect.stringMatching(/^import:/u),
@@ -1090,6 +1086,90 @@ it("runs every train on the rails, imported ones included, from exactly where ea
     true,
   );
   expect(sameStanding(standingPoses(backend), parked)).toBe(true);
+}, 240_000);
+
+const BUILDING = "10190-1";
+const UNRESOLVED_TRAIN = "10205-1";
+
+function inThreadImports(bound: Container): void {
+  bound
+    .rebind(MODEL_IMPORTER)
+    .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+}
+
+it("offers exactly the placed models whose running gear resolves as trains, imported ones included, after every place, delete and undo", async () => {
+  const { editor, backend } = await startEditor(
+    [BUILDING, UNRESOLVED_TRAIN],
+    new BundleDirectoryFetcher(),
+    [],
+    inThreadImports,
+  );
+  const place = placer(editor, backend);
+  const trains = () => editor.snapshot().trains.map((train) => train.item);
+  const nothingPlaced = trains();
+  const bogieWagon = await importTestModel(editor, CUSTOM_BOGIE_WAGON);
+  const twoAxleWagon = await importTestModel(editor, CUSTOM_TWO_AXLE_WAGON);
+  await place(`omr:${BUILDING}`, 0, 0);
+  await place(`omr:${UNRESOLVED_TRAIN}`, 3200, 0);
+  const notTrainsPlaced = trains();
+  await place(bogieWagon, 0, 3200);
+  const bogieWagonPlaced = trains();
+  await place(twoAxleWagon, 3200, 3200);
+  const allPlaced = trains();
+  selectAt(editor, backend, 0, 3200);
+  editor.deleteSelection(0);
+  const bogieWagonDeleted = trains();
+  editor.undo(0);
+  const deleteUndone = trains();
+
+  expect({
+    nothingPlaced,
+    notTrainsPlaced,
+    bogieWagonPlaced,
+    allPlaced,
+    bogieWagonDeleted,
+    deleteUndone,
+  }).toEqual({
+    nothingPlaced: [],
+    notTrainsPlaced: [],
+    bogieWagonPlaced: [bogieWagon],
+    allPlaced: [bogieWagon, twoAxleWagon],
+    bogieWagonDeleted: [twoAxleWagon],
+    deleteUndone: [bogieWagon, twoAxleWagon],
+  });
+}, 240_000);
+
+it("shows a custom Technic building with no wheelset as no train, counting its unread bands by reason and listing none of their rows", async () => {
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    inThreadImports,
+  );
+  const building = await importTestModel(editor, TECHNIC_BUILDING);
+  await placer(editor, backend)(building, 0, 0);
+  const models = container.get(RUNNING_GEAR).snapshot().models;
+  const [model] = models;
+  const counted = model?.unread.counts ?? [];
+  expect({
+    models: models.length,
+    vehicles: model?.vehicles,
+    playable: model?.playable,
+    unresolved: model?.unresolved,
+    trains: editor.snapshot().trains,
+    countsShown: counted.length > 0 && counted.every((count) => count.rows > 0),
+    listed: Array.from(model?.unread.listed ?? []),
+    everyRowUnlisted: model?.unread.others.length === model?.unreadRollingBands.instance.length,
+  }).toEqual({
+    models: 1,
+    vehicles: 0,
+    playable: false,
+    unresolved: [],
+    trains: [],
+    countsShown: true,
+    listed: [],
+    everyRowUnlisted: true,
+  });
 }, 240_000);
 
 const CC_BY_4 = "Licensed under CC BY 4.0 : see CAreadme.txt";
@@ -3665,8 +3745,6 @@ function importedRecord(
       latticeIssue: null,
       studCover: model.studCover,
       cells: model.cells,
-      vehicles: model.vehicles,
-      vehicleIssue: null,
     },
   };
 }
@@ -4160,8 +4238,6 @@ class BakedRecordImporter implements IModelImporter {
         latticeIssue: null,
         studCover: model.studCover,
         cells: model.cells,
-        vehicles: model.vehicles,
-        vehicleIssue: null,
       },
     };
   }

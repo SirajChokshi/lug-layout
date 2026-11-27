@@ -1,13 +1,19 @@
 import {
+  closedHalfLap,
   decodeZeta16,
   encodeZeta16,
+  exactRailHeads,
+  identifyRail,
+  type MeasuredRailHeads,
   type PieceKind,
   type PoseStatus,
   type TrackEnd,
   type TrackPathSegment,
   type TrackCatalog,
   type TrackPiece,
+  type RailIdentification,
   type TrackSystem,
+  type UnidentifiedRailReason,
 } from "@brr/schema/bundle";
 import type * as v from "valibot";
 import {
@@ -40,9 +46,11 @@ import type { LdrawLibrary } from "../ldraw/library.ts";
 import { metaValues } from "../ldraw/parse.ts";
 import {
   flatPolygons,
+  railHeadBandsOnFace,
   railHeadsAtEnd,
   railSection,
   scanEndAt,
+  type EndFace,
   type PlanPoint,
   type ScanEnd,
 } from "./rail-heads.ts";
@@ -84,6 +92,7 @@ export interface ConnectorCheck {
   readonly markerResidualLdu: number;
   readonly railCentreOffsetLdu: ExactRationalText | null;
   readonly railHalfSpacingLdu: ExactRationalText | null;
+  readonly rail: RailIdentification["outcome"];
 }
 
 export interface RouteCheck {
@@ -106,6 +115,19 @@ export interface TrackCatalogReport {
   readonly n: v.InferInput<typeof TrackCatalog>["n"];
   readonly pieces: v.InferInput<typeof TrackCatalog>["pieces"];
   readonly checks: ReadonlyArray<PieceChecks>;
+  readonly connectorsWithoutRail: ReadonlyArray<{
+    readonly connector: string;
+    readonly reason: UnidentifiedRailReason;
+  }>;
+}
+
+function connectorRail(identification: RailIdentification | undefined): {
+  readonly rail: number | null;
+  readonly railResidualLdu: number | null;
+} {
+  return identification?.outcome === "identified"
+    ? { rail: identification.rail, railResidualLdu: identification.railResidualLdu }
+    : { rail: null, railResidualLdu: null };
 }
 
 const BUNDLE_PART_PREFIX = "ldraw:";
@@ -348,6 +370,30 @@ function endInPart(
   return scanEndAt(origin, heading, nearestEndSleeper(endSleepers, origin));
 }
 
+function halfStepsOf(value: number): number {
+  return ((value % HALF_STEPS_PER_TURN) + HALF_STEPS_PER_TURN) % HALF_STEPS_PER_TURN;
+}
+
+function endFace(
+  frame: EntryFrame,
+  end: ExactEnd,
+  endSleepers: ReadonlyArray<ExactPlacement>,
+): EndFace {
+  const inward = Math.round(frame.inward / PART_FRAME_HEADING_GRID);
+  const turn = halfStepRotation(halfStepsOf(inward));
+  const pose = poseInEntryFrame(end);
+  const origin = {
+    x: frame.origin.x + pose.x * turn.cos - pose.z * turn.sin,
+    z: frame.origin.z + pose.x * turn.sin + pose.z * turn.cos,
+  };
+  const facing = halfStepRotation(halfStepsOf(2 * end.heading + HALF_STEPS_PER_TURN / 2 + inward));
+  return {
+    origin,
+    direction: { x: facing.cos, z: facing.sin },
+    endSleeper: nearestEndSleeper(endSleepers, origin),
+  };
+}
+
 function exactRationalText(value: ExactRational | undefined): ExactRationalText | null {
   return value === undefined ? null : formatExactRational(value);
 }
@@ -356,6 +402,7 @@ export function buildTrackPiece(
   library: LdrawLibrary,
   part: string,
   markers: ReadonlyArray<TrackEndMarker>,
+  rails: ReadonlyArray<MeasuredRailHeads>,
 ): { readonly piece: v.InferInput<typeof TrackPiece>; readonly checks: PieceChecks } {
   const ends = findTrackEnds(library, part, markers);
   const relative = relativeToEntry(ends);
@@ -405,6 +452,14 @@ export function buildTrackPiece(
   )
     ? "certified"
     : "unverified";
+  const exactRails = exactRailHeads(rails);
+  const identifications = ordered.map((end, index) =>
+    identifyRail(
+      { status: index === 0 ? status : end.status, residualLdu: end.residualLdu },
+      closedHalfLap(railHeadBandsOnFace(heads, endFace(frame, end, endSleepers))),
+      exactRails,
+    ),
+  );
   const piece: v.InferInput<typeof TrackPiece> = {
     id: bundlePartId(part),
     part: bundlePartId(part),
@@ -418,6 +473,7 @@ export function buildTrackPiece(
       heading: normalizeHeading16(-end.heading),
       status: index === 0 ? status : end.status,
       residualLdu: end.residualLdu,
+      ...connectorRail(identifications[index]),
     })),
     routes: fitted.map(({ from, to, path }) => ({
       from,
@@ -437,6 +493,7 @@ export function buildTrackPiece(
       markerResidualLdu: ordered[connector]?.residualLdu ?? Number.NaN,
       railCentreOffsetLdu: exactRationalText(sections[connector]?.railCentreOffsetLdu),
       railHalfSpacingLdu: exactRationalText(sections[connector]?.railHalfSpacingLdu),
+      rail: identifications[connector]?.outcome ?? "no matching rail",
     })),
     routes: fitted.map(({ from, to, path }) => ({
       from,
@@ -453,12 +510,20 @@ export function buildTrackCatalog(
   library: LdrawLibrary,
   parts: ReadonlyArray<string>,
   markers: ReadonlyArray<TrackEndMarker>,
+  rails: ReadonlyArray<MeasuredRailHeads>,
 ): TrackCatalogReport {
-  const built = parts.map((part) => buildTrackPiece(library, part, markers));
+  const built = parts.map((part) => buildTrackPiece(library, part, markers, rails));
   return {
     frame: "bundle +Y up (z = −z_LDraw); x → Re, z → Im; connector 0 at the origin facing −x",
     n: ZETA16_ORDER,
     pieces: built.map(({ piece }) => piece),
     checks: built.map(({ checks }) => checks),
+    connectorsWithoutRail: built.flatMap(({ checks }) =>
+      checks.connectors.flatMap(({ connector, rail }) =>
+        rail === "identified"
+          ? []
+          : [{ connector: `${checks.id} connector ${connector}`, reason: rail }],
+      ),
+    ),
   };
 }

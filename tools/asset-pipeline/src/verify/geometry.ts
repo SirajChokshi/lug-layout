@@ -86,12 +86,12 @@ interface ExactInterval {
   readonly to: ExactDecimal;
 }
 
-interface WrittenInterval {
+export interface WrittenInterval {
   readonly from: string;
   readonly to: string;
 }
 
-interface RailMeasurement {
+export interface RailMeasurement {
   readonly part: string;
   readonly sectionX: number;
   readonly railTopY: string;

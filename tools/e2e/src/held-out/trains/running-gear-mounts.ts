@@ -1,7 +1,7 @@
 import { type SeededRandom } from "../generator.ts";
 import { type Vec3 } from "../assembly.ts";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import { meetsHeadBand } from "./head-band-contact.ts";
+import { headBandReading, meetsHeadBand } from "./head-band-contact.ts";
 import { VERTICAL } from "./part-geometry.ts";
 import { pivotOptions, stackAt } from "./pivot-stacks.ts";
 import {
@@ -96,8 +96,10 @@ function plannedWheelsets(
           return instance === undefined ? [] : [{ instance, headBand: headBandSpan(rail, side) }];
         })
       : [];
+    const reading = rail ? headBandReading(model, wheelLine, rail) : null;
     return {
       ...wheelLine,
+      contactRadius: reading ? (reading.contactRadii[0] + reading.contactRadii[1]) / 2 : null,
       unit,
       instances: indices,
       rail: rail ? rail.part : null,

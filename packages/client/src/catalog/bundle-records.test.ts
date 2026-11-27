@@ -173,6 +173,7 @@ async function shapeInBundle(
     role: part.role,
     file: part.file,
     bounds: glb.document.extras.bounds,
+    extents: glb.document.extras.extents,
     studs: glb.document.extras.studs,
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),

@@ -11,9 +11,8 @@ use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model_with, submodel_index, BakeOptions, ModelInstance};
-use brick_compile::record::BakeRecord;
+use brick_compile::record::{whole_bounds, BakeRecord};
 use brick_compile::studio::read_io;
-use brick_compile::vehicle::{part_bounds, Vehicle};
 use brick_compile::{
     compile_part, CompileError, CompileOptions, CompiledPart, Lod, TechnicPrimitives,
 };
@@ -30,10 +29,10 @@ use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
 use crate::receptors::DrawnReceptors;
 use crate::reply::{
-    AuthoredIdentification, BakePhases, BogieHeader, Cover, Failure, InlineOutcome, InlinePair,
-    Lattice, LooseGeometry, PartOutcome, Reply, Section, VehicleHeader,
+    AuthoredIdentification, BakePhases, Cover, Failure, InlineOutcome, InlinePair,
+    Lattice, LooseGeometry, PartOutcome, Reply, Section,
 };
-use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
+use crate::request::{InlineCheck, Operation};
 use crate::tracking::TrackingLibrary;
 
 #[derive(Default)]
@@ -74,7 +73,6 @@ struct BakeInputs<'a> {
     unofficial_allowlist: &'a [String],
     translucent: HashSet<u32>,
     table_depth: f64,
-    vehicles: Option<&'a VehicleInputs>,
     shard: CoverShard,
     receptors: Option<DrawnReceptors>,
 }
@@ -146,10 +144,7 @@ impl Session {
                     body,
                 )
             }
-            Operation::BakeNeeds {
-                stud_primitives,
-                vehicles,
-            } => {
+            Operation::BakeNeeds { stud_primitives } => {
                 let drawn = drawn_instances(
                     &request.text("source")?,
                     request.segment("drawn")?,
@@ -158,7 +153,6 @@ impl Session {
                 let closure = BakeClosure {
                     stud_primitives,
                     records: self.offered(),
-                    vehicles: vehicles.as_ref(),
                 };
                 let paths = missing_bake_files(&self.library, &drawn, &closure);
                 Ok(if paths.is_empty() {
@@ -172,7 +166,6 @@ impl Session {
                 unofficial_allowlist,
                 translucent_colors,
                 table_depth_ldu,
-                vehicles,
                 shard,
                 keep_parts,
                 omr_authoring_identification,
@@ -195,7 +188,6 @@ impl Session {
                     unofficial_allowlist,
                     translucent: translucent_colors.iter().copied().collect(),
                     table_depth: *table_depth_ldu,
-                    vehicles: vehicles.as_ref(),
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
                     receptors,
                 };
@@ -371,7 +363,7 @@ fn compiled_part(
     if !records {
         return Ok((compiled, None));
     }
-    let bounds = part_bounds(library, reference)?;
+    let bounds = whole_bounds(library, reference)?;
     let record = BakeRecord::of(&compiled, bounds);
     Ok((compiled, Some(record)))
 }
@@ -487,16 +479,6 @@ fn drawn_instances(
 struct BakeClosure<'a> {
     stud_primitives: &'a [String],
     records: &'a RecordShelf,
-    vehicles: Option<&'a VehicleInputs>,
-}
-
-impl BakeClosure<'_> {
-    fn reads_library(&self, reference: &str, signatures: &[&[String]]) -> bool {
-        !self.records.contains_key(reference)
-            || signatures
-                .iter()
-                .any(|names| names.iter().any(|name| name == reference))
-    }
 }
 
 fn missing_bake_files(
@@ -504,20 +486,12 @@ fn missing_bake_files(
     drawn: &[ModelInstance],
     closure: &BakeClosure,
 ) -> Vec<String> {
-    let signatures = closure.vehicles.map(VehicleInputs::signatures);
-    let analysed: Vec<&[String]> = signatures.as_ref().map_or_else(Vec::new, |s| {
-        vec![
-            s.wheelsets.as_slice(),
-            s.bogie_pivots.as_slice(),
-            s.couplers.as_slice(),
-        ]
-    });
     let mut scan = Flattener::new(library, Lod::Standard, &[]);
     let mut scanned: HashSet<&str> = HashSet::new();
     for reference in drawn
         .iter()
         .map(|instance| instance.part.as_str())
-        .filter(|reference| closure.reads_library(reference, &analysed))
+        .filter(|reference| !closure.records.contains_key(*reference))
         .chain(closure.stud_primitives.iter().map(String::as_str))
     {
         if scanned.insert(reference) {
@@ -539,7 +513,6 @@ fn bake(
     let closure = BakeClosure {
         stud_primitives: inputs.stud_primitives,
         records,
-        vehicles: inputs.vehicles,
     };
     let requested = missing_bake_files(library, drawn, &closure);
     if !requested.is_empty() {
@@ -631,8 +604,6 @@ fn bake_drawn(
             lattice: None,
             lattice_issue: None,
             cover: Cover::from(&cover),
-            vehicles: None,
-            vehicle_issue: None,
             phases,
             blobs: body.take_blobs(),
         };
@@ -650,15 +621,6 @@ fn bake_drawn(
         .map_err(|e| e.to_string())?;
     phases.cover_ms = ms(covering.elapsed());
     put_cover(body, &cover)?;
-    let detecting = Instant::now();
-    let (vehicles, vehicle_issue) = match inputs.vehicles {
-        None => (None, None),
-        Some(vehicles) => match baker.vehicles(drawn, &vehicles.signatures(), &vehicles.rails()?) {
-            Ok(detected) => (Some(vehicle_headers(body, &detected)?), None),
-            Err(error) => (None, Some(error.to_string())),
-        },
-    };
-    phases.vehicles_ms = ms(detecting.elapsed());
     let reply = Reply::Baked {
         instances: drawn.len(),
         recorded_parts: baker.recorded_parts(),
@@ -666,44 +628,10 @@ fn bake_drawn(
         lattice: lattice.as_ref().map(Lattice::from),
         lattice_issue,
         cover: Cover::from(&cover),
-        vehicles,
-        vehicle_issue,
         phases,
         blobs: body.take_blobs(),
     };
     Ok((reply, baker.keep()))
-}
-
-fn index_range(indices: &[usize], out: &mut Vec<u32>) -> Result<Range, String> {
-    let start = out.len();
-    for &index in indices {
-        out.push(u32::try_from(index).map_err(|e| e.to_string())?);
-    }
-    Ok((start, indices.len()))
-}
-
-fn vehicle_headers(body: &mut Body, vehicles: &[Vehicle]) -> Result<Vec<VehicleHeader>, String> {
-    let mut members = Vec::new();
-    let mut bogie_instances = Vec::new();
-    let mut headers = Vec::with_capacity(vehicles.len());
-    for vehicle in vehicles {
-        let members_range = index_range(&vehicle.body, &mut members)?;
-        let bogies = vehicle
-            .bogies
-            .iter()
-            .map(|bogie| {
-                Ok(BogieHeader {
-                    instances: index_range(&bogie.instances, &mut bogie_instances)?,
-                    pivot: bogie.pivot,
-                    axles: bogie.axles.clone(),
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        headers.push(VehicleHeader::new(vehicle, members_range, bogies));
-    }
-    body.blob("vehicleBody", &members);
-    body.blob("bogieInstances", &bogie_instances);
-    Ok(headers)
 }
 
 fn plates(columns: &[i32]) -> Result<Vec<i16>, String> {

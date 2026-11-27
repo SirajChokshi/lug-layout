@@ -20,7 +20,6 @@ import {
   type ConsistAnchor,
   type ConsistHandle,
 } from "@brr/domain";
-import type { PartVehicle } from "@brr/catalog";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
@@ -36,8 +35,7 @@ import {
   type ConsistVehicle,
   type StandingRemainder,
 } from "../sim/consist.ts";
-import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
-import { PLACEABLE_CATALOG, RUNNING_GEAR, VEHICLE_IDS } from "../tokens.ts";
+import { PLACEABLE_CATALOG, VEHICLE_IDS } from "../tokens.ts";
 import {
   ConsistBodies,
   StandingRemainderBody,
@@ -208,9 +206,9 @@ function joinedBoxes(parts: ReadonlyArray<Float64Array>): Float64Array {
 
 function vehicleBoxes(model: PlayModel, vehicles: ReadonlyArray<ConsistVehicle>): Float64Array {
   const boxes = new Float64Array(vehicles.length * BOX_FLOATS);
-  const source = model.gear.instanceBoxes;
+  const source = model.instanceBoxes;
   vehicles.forEach((consistVehicle, v) => {
-    const vehicle = model.model.vehicles[consistVehicle.vehicle];
+    const vehicle = model.model.runningGear.vehicles[consistVehicle.vehicle];
     const o = v * BOX_FLOATS;
     boxes.fill(Number.POSITIVE_INFINITY, o, o + 3);
     boxes.fill(Number.NEGATIVE_INFINITY, o + 3, o + BOX_FLOATS);
@@ -289,41 +287,17 @@ export class RailYard implements IRailYard {
   private nextModelKey = 0;
   private readonly parked: Parked[] = [];
   private hidden = false;
-  private gearModels = "";
   private watched: ObstacleModels | null = null;
 
   constructor(
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(VEHICLE_IDS) private readonly vehicleIds: IVehicleIds,
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
-    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
-  ) {
-    runningGear.subscribe(() => this.restandAll());
-  }
+  ) {}
 
   private restandAll(): void {
     this.prepared.clear();
     for (const parked of this.parked) this.restand(parked);
-  }
-
-  private registerGear(): void {
-    const models = [
-      ...new Set(this.parked.flatMap((parked) => parked.members.map((member) => member.model))),
-    ];
-    const names = models
-      .map((model) => model.name)
-      .toSorted()
-      .join("\n");
-    if (names === this.gearModels) return;
-    this.gearModels = names;
-    void this.runningGear.setModels(models.map((model) => model.gear));
-  }
-
-  private gearOf(model: PlayModel): ReadonlyArray<PartVehicle> {
-    const registered = this.parked.some(({ members }) =>
-      members.some((member) => member.model === model),
-    );
-    return registered ? this.runningGear.effectiveVehicles(model.name) : model.model.vehicles;
   }
 
   setTrack(track: PlayTrack | null, carriers: ReadonlyArray<RailCarrier>): void {
@@ -482,7 +456,6 @@ export class RailYard implements IRailYard {
   add(handle: ConsistHandle, members: ReadonlyArray<TrainMember>): void {
     const parked: Parked = { handle, members, seat: null, bodies: null, remainders: [] };
     this.parked.push(parked);
-    this.registerGear();
     this.restand(parked);
   }
 
@@ -493,7 +466,6 @@ export class RailYard implements IRailYard {
     parked.bodies?.dispose();
     for (const remainder of parked.remainders) remainder.dispose();
     this.parked.splice(index, 1);
-    this.registerGear();
   }
 
   clear(): void {
@@ -502,7 +474,6 @@ export class RailYard implements IRailYard {
       for (const remainder of parked.remainders) remainder.dispose();
     }
     this.parked.length = 0;
-    this.registerGear();
   }
 
   pick(ray: Float64Array): RailPick | null {
@@ -707,8 +678,13 @@ export class RailYard implements IRailYard {
       const tops: number[] = [];
       const remainders: StandingRemainder[] = [];
       for (const { model, reversed } of members) {
-        const gear = this.gearOf(model);
-        const own = consistVehicles(model.model, model.name, reversed, rails.railPart, gear);
+        const own = consistVehicles(
+          model.model,
+          model.name,
+          reversed,
+          rails.rail,
+          model.instanceBoxes,
+        );
         const first = vehicles.length;
         for (const vehicle of own) {
           vehicles.push(vehicle);
@@ -716,7 +692,7 @@ export class RailYard implements IRailYard {
           tops.push(model.vehicleTops[vehicle.vehicle] ?? Number.NEGATIVE_INFINITY);
         }
         boxes.push(vehicleBoxes(model, own));
-        const remainder = standingRemainder(model.model, own, gear, model.gear.instanceBoxes);
+        const remainder = standingRemainder(model.model, own, model.instanceBoxes);
         if (remainder) remainders.push({ ...remainder, vehicle: first + remainder.vehicle });
       }
       const geometry = new Float64Array(vehicles.length * GEOMETRY_FIELDS);

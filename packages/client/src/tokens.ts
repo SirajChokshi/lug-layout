@@ -40,8 +40,7 @@ import type { IPlanService } from "./plan/plan-service.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
 import type { IOwnedParts } from "./bom/owned-parts-service.ts";
-import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
-import type { IRunningGear } from "./running-gear/running-gear-editor.ts";
+import type { IRunningGear } from "./running-gear/running-gear-inspector.ts";
 import type { IImportScene } from "./scene/import-scene.ts";
 import type { IModelScene } from "./scene/model-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
@@ -132,9 +131,6 @@ export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.clien
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
 export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
   "brr.client.PlanSheetService",
-);
-export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
-  "brr.client.RunningGearOverrides",
 );
 export const RUNNING_GEAR: ServiceIdentifier<IRunningGear> = Symbol.for("brr.client.RunningGear");
 export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(

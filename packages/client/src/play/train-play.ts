@@ -3,13 +3,12 @@ import { STUD_LDU } from "@brr/math";
 import { RAY_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import type { SimFrameLayout, SimTrainLoad, TrainSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
-import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
 import type { PlayModel } from "./play-models.ts";
 import { consistVehicles, type ConsistVehicle } from "../sim/consist.ts";
 import type { ISimClient } from "../sim/sim-client.ts";
 import { routeLifts, routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
-import { PLACEABLE_CATALOG, RAIL_YARD, RUNNING_GEAR, SIM_CLIENT, VEHICLE_IDS } from "../tokens.ts";
+import { PLACEABLE_CATALOG, RAIL_YARD, SIM_CLIENT, VEHICLE_IDS } from "../tokens.ts";
 import { playObstacles } from "./play-obstacles.ts";
 import { ConsistBodies } from "../trains/consist-bodies.ts";
 import { trainLabel, type IRailYard } from "../trains/rail-yard.ts";
@@ -144,7 +143,6 @@ export class TrainPlay implements ITrainPlay {
   constructor(
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(SIM_CLIENT) private readonly sim: ISimClient,
-    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
     @inject(RAIL_YARD) private readonly yard: IRailYard,
     @inject(VEHICLE_IDS) private readonly vehicleIds: IVehicleIds,
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
@@ -192,19 +190,16 @@ export class TrainPlay implements ITrainPlay {
     const placed = this.yard.trains();
     if (!rails) throw new Error(NO_TRACK_LAID);
     if (placed.length === 0) throw new Error(NO_TRAIN_PLACED);
-    const models = new Set(placed.flatMap((train) => train.members.map(({ model }) => model)));
-    await this.runningGear.setModels([...models].map((model) => model.gear));
     const consists = placed.map((train) => {
       const vehicles: ConsistVehicle[] = [];
       const vehicleModels: PlayModel[] = [];
       for (const { model, reversed } of train.members) {
-        const gear = this.runningGear.effectiveVehicles(model.name);
         for (const vehicle of consistVehicles(
           model.model,
           model.name,
           reversed,
-          rails.railPart,
-          gear,
+          rails.rail,
+          model.instanceBoxes,
         )) {
           vehicles.push(vehicle);
           vehicleModels.push(model);

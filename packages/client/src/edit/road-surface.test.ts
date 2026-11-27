@@ -43,6 +43,7 @@ function part(id: string, spec: PartSpec, role: "ground" | "road" = "ground"): P
     studMatrices,
     technic: null,
     rolling: null,
+    extents: null,
     topSurface: spec.cells === null ? null : topSurface(spec.min, spec.max, spec.cells),
     outline: null,
   };

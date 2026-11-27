@@ -11,7 +11,21 @@ import {
   type PartShapeAsset,
   type PartShapeRecord,
 } from "@brr/catalog";
-import type { PlacementTarget } from "@brr/domain";
+import {
+  BogieDetector,
+  ConnectorTable,
+  measuredRail,
+  ModelConnectors,
+  PartRollingTable,
+  partExtents,
+  RunningGearDetector,
+  runningGearInput,
+  SnapMating,
+  SnapShapes,
+  WheelsetDetector,
+  type PartInstances,
+  type PlacementTarget,
+} from "@brr/domain";
 import type {
   CompiledSource,
   ImportReport,
@@ -24,13 +38,16 @@ import type {
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
 import {
+  ModelRunningGear,
   isCustomPartId,
   type BundleColor,
   type BundleIndex,
   type BundleLod,
   type BundleModelEntry,
+  type BundleRail,
   type NotDrawnSection,
 } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { importRef, type ImportedFile } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import { MergedParts } from "../edit/merged-parts.ts";
@@ -51,6 +68,8 @@ import {
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { studPrimitiveBoxes } from "../running-gear/instance-boxes.ts";
+import { gearModelSource, type GearModelSource } from "../running-gear/running-gear-inspector.ts";
+import { isPlayable } from "../running-gear/running-gear-summary.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { customPartCredits } from "./custom-part-credits.ts";
@@ -157,6 +176,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
   playModel(placeable: Placeable): PlayModel | null;
   rollingStock(): Promise<ReadonlyArray<PlayModel>>;
+  gearModel(placeable: Placeable): GearModelSource | null;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
@@ -176,6 +196,23 @@ interface CatalogSlot {
 
 interface SkippedModel extends SkippedCatalogModel {
   readonly credit: ModelCredit;
+}
+
+interface RunningGearDetection {
+  readonly shapes: SnapShapes;
+  readonly mating: SnapMating;
+  readonly detector: RunningGearDetector;
+}
+
+function runningGearDetection(rails: ReadonlyArray<BundleRail>): RunningGearDetection | null {
+  if (rails.length === 0) return null;
+  const shapes = new SnapShapes();
+  const mating = new SnapMating(shapes);
+  const detector = new RunningGearDetector(
+    new WheelsetDetector(rails.map((rail) => measuredRail(rail.railHeads))),
+    new BogieDetector(mating),
+  );
+  return { shapes, mating, detector };
 }
 
 const FAR_LOD: BundleLod = "far";
@@ -204,7 +241,10 @@ type PlacedSource = Pick<
   | "submodels"
 >;
 
-function placedModel(placed: PlacedSource): PlacementModel {
+type DetectionSource = Omit<PlacementModel, "runningGear">;
+type ImportedParts = Pick<ImportResult, "partIds" | "compiled" | "connectors">;
+
+function placedModel(placed: PlacedSource): DetectionSource {
   return {
     sections: placed.sections,
     lattice: placed.bake.lattice,
@@ -216,7 +256,6 @@ function placedModel(placed: PlacedSource): PlacementModel {
     matrices: placed.matrices,
     partTransforms: placed.partTransforms,
     submodels: placed.submodels,
-    vehicles: placed.bake.vehicles,
   };
 }
 
@@ -323,6 +362,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
 export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly listeners = new Set<() => void>();
   private lod: BundleLod = "standard";
+  private runningGear: RunningGearDetection | null = null;
   private bundleColors: ReadonlyArray<BundleColor> = [];
   private palette: MergedParts | null = null;
   private colorTable: ColorTable | null = null;
@@ -347,6 +387,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly bakes = new Map<string, Pick<PartModel, "lattice" | "cells">>();
   private readonly requests = new RequestOrder();
   private readonly compiledSources = new Map<string, CompiledSource>();
+  private readonly gearModels = new Map<string, GearModelSource>();
   private readonly farModelIndex = new Map<string, number>();
   private readonly importRecords = new Map<string, ReadonlyMap<string, PartConnectorRecord>>();
   private readonly broughtRecords = new Map<string, PartConnectors>();
@@ -361,6 +402,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   async start(index: BundleIndex): Promise<StartedCatalog> {
     this.lod = index.lod;
+    this.runningGear = runningGearDetection(index.compiler?.rails ?? []);
     this.bundleColors = index.colors;
     const colorSource = { colors: index.colors, parts: [] };
     const colors = new ColorTable(colorSource);
@@ -549,7 +591,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       colors,
       null,
     );
-    if (model.vehicles.length > 0) {
+    this.gearModels.set(placeable.id, gearModelSource(entry.name, entry.sha256, model, { parts }));
+    if (isPlayable(model.runningGear)) {
       const identity = { name: entry.name, label: modelLabel(entry), sha256: entry.sha256 };
       this.playModels.set(
         placeable.id,
@@ -660,7 +703,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       return { ...reports, kind: "refused", refusal };
     }
     const placed = { ...result, sections: result.report.sections, bake };
-    const model: PartModel = { ...placedModel(placed), studCover: bake.studCover };
+    const model: DetectionSource = { ...placedModel(placed), studCover: bake.studCover };
     const added = await this.addPlaceable(file, model, result);
     this.customPartsById.set(added.placeable.id, customPartCredits(result.report));
     return { ...reports, kind: "placeable", item: added.slot.view, credit: added.credit };
@@ -668,8 +711,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   private addPlaceable(
     file: ImportedFile,
-    model: PlacementModel,
-    parts: Pick<ImportResult, "partIds" | "compiled">,
+    model: DetectionSource,
+    parts: ImportedParts,
   ): Promise<AddedPlaceable> {
     return this.requests.adopt(
       this.loader.loadPartSet(this.lod, parts.partIds, parts.compiled),
@@ -679,11 +722,15 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   private adoptPlaceable(
     file: ImportedFile,
-    model: PlacementModel,
-    parts: Pick<ImportResult, "partIds" | "compiled">,
+    detection: DetectionSource,
+    parts: ImportedParts,
     set: PartBundle,
   ): AddedPlaceable {
     for (const { partId, source } of parts.compiled) this.compiledSources.set(partId, source);
+    const model: PlacementModel = {
+      ...detection,
+      runningGear: this.importedRunningGear(file.name, detection, parts, set.parts),
+    };
     const palette = this.requirePalette();
     const before = palette.parts.length;
     const remapped = palette.remap(model, set.parts);
@@ -694,7 +741,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     };
     for (let index = before; index < palette.parts.length; index++) this.meshes?.provide(index);
     const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
-    if (model.vehicles.length > 0) {
+    this.gearModels.set(placeable.id, gearModelSource(file.name, file.sha256, model, set));
+    if (isPlayable(model.runningGear)) {
       const identity = { name: file.name, label: file.name, sha256: file.sha256 };
       this.playModels.set(
         placeable.id,
@@ -786,6 +834,38 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     }
   }
 
+  private importedRunningGear(
+    fileName: string,
+    model: DetectionSource,
+    imported: ImportedParts,
+    parts: ReadonlyArray<PartAsset>,
+  ): ModelRunningGear {
+    if (!this.runningGear) throw new Error("the bundle names no measured rail for running gear");
+    const { shapes, mating, detector } = this.runningGear;
+    const connectors = imported.connectors.map((columns, p) =>
+      columns === null
+        ? null
+        : ConnectorTable.fromColumns(columns, shapes, imported.partIds[p] ?? `part ${p}`),
+    );
+    const instances: PartInstances = {
+      count: model.instanceCount,
+      partIndex: model.partIndex,
+      matrices: model.partTransforms,
+      submodels: model.submodels,
+    };
+    const gear = detector.detect(
+      runningGearInput(
+        instances,
+        parts.map((part) => (part.rolling ? PartRollingTable.fromRolling(part.rolling) : null)),
+        parts.map((part) => partExtents(part.extents)),
+        connectors,
+        ModelConnectors.fromParts(connectors, instances, mating),
+        shapes,
+      ),
+    );
+    return decodedOrThrow(decode(ModelRunningGear, gear), fileName);
+  }
+
   playModel(placeable: Placeable): PlayModel | null {
     return this.playModels.get(placeable.id) ?? null;
   }
@@ -802,6 +882,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   async rollingStock(): Promise<ReadonlyArray<PlayModel>> {
     await Promise.all(this.trainRefIds.map((refId) => this.load(refId)));
     return [...this.playModels.values()];
+  }
+
+  gearModel(placeable: Placeable): GearModelSource | null {
+    return this.gearModels.get(placeable.id) ?? null;
   }
 
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection> {

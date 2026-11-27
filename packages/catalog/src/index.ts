@@ -59,7 +59,6 @@ export type {
   PartFilter,
   PartMesh,
   PartModel,
-  PartVehicle,
   PinnedSectionVocabulary,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";

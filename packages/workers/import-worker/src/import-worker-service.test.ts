@@ -26,7 +26,7 @@ import { decode, decodedOrThrow } from "@brr/schema/decode";
 import type { FetchFunction, ImportWorkerRequest } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
 import { INDEXED_DB } from "@brr/storage";
-import type { CompilerVehicles, PrimitiveConnectorTable } from "@brr/schema/bundle";
+import type { PrimitiveConnectorTable } from "@brr/schema/bundle";
 import { IDBFactory } from "fake-indexeddb";
 import { Container } from "inversify";
 import { execFile } from "node:child_process";
@@ -270,7 +270,6 @@ it("gives a bundle part the same connector table from the catalog loader as when
         ldconfigCodes: context.ldconfigCodes,
         translucentColors: context.translucentCodes,
         tableDepthLdu: context.tableDepthLdu,
-        vehicles: context.vehicles,
       },
     },
   });
@@ -359,7 +358,6 @@ it("gives a part the bundle's connector packages don't list the record a pinned 
           ldconfigCodes: context.ldconfigCodes,
           translucentColors: context.translucentCodes,
           tableDepthLdu: context.tableDepthLdu,
-          vehicles: context.vehicles,
         },
       },
     });
@@ -536,7 +534,6 @@ it("refuses, and reports, a bundle part whose connector record was inferred with
           ldconfigCodes: context.ldconfigCodes,
           translucentColors: context.translucentCodes,
           tableDepthLdu: context.tableDepthLdu,
-          vehicles: context.vehicles,
         },
       },
     });
@@ -673,7 +670,6 @@ it("reads a custom part's shadow files through the shadow library the request na
         ldconfigCodes: context.ldconfigCodes,
         translucentColors: context.translucentCodes,
         tableDepthLdu: context.tableDepthLdu,
-        vehicles: context.vehicles,
       },
     },
   };
@@ -711,7 +707,6 @@ interface Manifest {
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
   readonly compiler: {
     readonly file: string;
-    readonly vehicles?: CompilerVehicles;
     readonly primitives?: PrimitiveConnectorTable;
     readonly sectionVocabulary: { readonly file: string; readonly sha256: string };
     readonly cavityProbe: string;
@@ -796,7 +791,6 @@ it("imports with the compiler and LDraw library the request names and the worker
         translucentColors: manifest.colors
           .filter((color) => color.alpha < OPAQUE_ALPHA)
           .map((color) => color.code),
-        vehicles: manifest.compiler.vehicles ?? null,
         tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
         primitives: manifest.compiler.primitives ?? null,
         sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },

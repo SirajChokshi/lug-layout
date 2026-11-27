@@ -1,7 +1,6 @@
 import type { PartAsset, PartModel } from "@brr/catalog";
 import type { MergedParts } from "../edit/merged-parts.ts";
 import { instanceBoxes, vehicleTop } from "../running-gear/instance-boxes.ts";
-import type { GearModelSource } from "../running-gear/running-gear-editor.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 
 export type RollingStockModel = Omit<PartModel, "studCover">;
@@ -11,7 +10,7 @@ export interface PlayModel {
   readonly label: string;
   readonly model: RollingStockModel;
   readonly colorIndex: Uint16Array;
-  readonly gear: GearModelSource;
+  readonly instanceBoxes: Float64Array;
   readonly vehicleTops: Float64Array;
 }
 
@@ -40,12 +39,9 @@ export function playModel(
     label: identity.label,
     model: remapped,
     colorIndex,
-    vehicleTops: Float64Array.from(model.vehicles, (vehicle) => vehicleTop(studded, vehicle)),
-    gear: {
-      name: identity.name,
-      sha256: identity.sha256,
-      vehicles: model.vehicles,
-      instanceBoxes: instanceBoxes(model, modelBundle),
-    },
+    vehicleTops: Float64Array.from(model.runningGear.vehicles, (vehicle) =>
+      vehicleTop(studded, vehicle),
+    ),
+    instanceBoxes: instanceBoxes(model, modelBundle),
   };
 }

@@ -10,15 +10,20 @@ import {
   type VehicleSpec,
 } from "@brr/sim";
 import { Container } from "inversify";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { vehicleSpec } from "../sim/consist.ts";
+import { InThreadModelImporter } from "../import/in-thread-importer.test-support.ts";
+import { plannedConsist } from "../sim/consist.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { buildTrackPlan } from "./track-plan.ts";
 import { TRACK_PARTS } from "./track-scene.ts";
+import { MODEL_IMPORTER, PLACEABLE_CATALOG } from "../tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const CUSTOM_BOGIE_WAGON = "custom-bogie-wagon.mpd";
+const testData = new URL("../../test-data/", import.meta.url);
 const AUTOPILOT_TIMEOUT_MS = 60_000;
 
 class BundleDirectoryFetcher implements IAssetFetcher {
@@ -52,25 +57,32 @@ const TWO_SIDINGS = [
 const SWITCHLESS_OVAL = "ldraw:74746*4, ldraw:74747*8, ldraw:74746*4, ldraw:74747*8";
 const OPEN_LINE = "ldraw:74746*6, ldraw:74747*4";
 const OPEN_LINE_SPEED_LDU_PER_S = 400;
-const LOCOMOTIVE_MODEL = "10133-1";
 const AUTOPILOT_MINUTES = 20;
 const MIN_ARRIVALS_PER_TRAIN = 20;
 const OVAL_MINUTES = 2;
 const OVAL_SPEED_LDU_PER_S = 150;
 
 let catalog: TrackCatalog;
-let locomotive: VehicleSpec;
+let wagon: VehicleSpec;
 
 beforeAll(async () => {
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  container.load(...mainThreadModules({ bundleBaseUrl: bundleRoot.href, disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const loader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(MODEL_IMPORTER).toConstantValue(new InThreadModelImporter(loader));
   catalog = (await loader.load("standard", TRACK_PARTS)).trackCatalog;
-  const model = await loader.loadModel("standard", LOCOMOTIVE_MODEL);
-  const vehicle = model.model.vehicles[0];
-  if (!vehicle) throw new Error(`${LOCOMOTIVE_MODEL} has no baked vehicle`);
-  locomotive = vehicleSpec(vehicle, false);
+  const placeables = container.get(PLACEABLE_CATALOG);
+  await placeables.start(await loader.loadIndex("standard"));
+  const bytes = new Uint8Array(await readFile(new URL(CUSTOM_BOGIE_WAGON, testData)));
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const imported = await placeables.addImported({ name: CUSTOM_BOGIE_WAGON, bytes, sha256 });
+  const placeable = placeables.placeables().at(-1);
+  const added = imported.kind === "placeable" || imported.kind === "checking";
+  const gear = added && placeable ? placeables.gearModel(placeable) : null;
+  const planned = gear ? plannedConsist(gear.runningGear, gear.instanceBoxes, false)[0] : undefined;
+  if (!planned) throw new Error(`${CUSTOM_BOGIE_WAGON} has no vehicle`);
+  wagon = planned.spec;
 });
 
 function session(
@@ -84,7 +96,7 @@ function session(
   const topology = simTopology(graph);
   const { track } = simTrackFromGraph(topology, routeSegments(graph, layout, catalogPieces));
   const spec = {
-    vehicles: [locomotive],
+    vehicles: [wagon],
     maxSpeedLduPerS: 400,
     accelerationLduPerS2: 150,
     brakingLduPerS2: 300,
@@ -146,8 +158,7 @@ it("runs two manual trains on a switchless oval and stops the follower behind a 
   expect(sim.separationCounters[0]).toBe(0);
   expect(sim.trainSpeed[0]).toBe(0);
   expect(sim.trainEdge[0]).not.toBe(fronts[0][0]);
-  const couplersTouchingBogieDistance =
-    locomotive.frontBogieLdu + locomotive.lengthLdu - locomotive.rearBogieLdu;
+  const couplersTouchingBogieDistance = wagon.frontBogieLdu + wagon.lengthLdu - wagon.rearBogieLdu;
   expect(sim.separationCounters[1]).toBeGreaterThan(couplersTouchingBogieDistance);
 });
 
@@ -177,10 +188,10 @@ it("stops a reserved train short of an open end under the brake rule and runs it
   expect(sim.derailed(0)).toBe(true);
   expect(sim.trainDerailSpeed[0]).toBe(OPEN_LINE_SPEED_LDU_PER_S);
   expect(sim.trainEdge[0]).toBe(stoppedEdge);
-  const geometry = locomotive.geometry;
-  if (!geometry) throw new Error(`${LOCOMOTIVE_MODEL} has no imported running gear geometry`);
+  const geometry = wagon.geometry;
+  if (!geometry) throw new Error(`${CUSTOM_BOGIE_WAGON} has no imported running gear geometry`);
   const leadAxle = geometry.frontCoupler.xLdu - geometry.front.leadAxleXLdu;
-  expect(leadAxle).toBeLessThan(locomotive.frontBogieLdu);
+  expect(leadAxle).toBeLessThan(wagon.frontBogieLdu);
   expect(sim.overrunLdu(0)).toBeGreaterThanOrEqual(leadAxle);
   expect(sim.overrunLdu(0)).toBeLessThan(leadAxle + OPEN_LINE_SPEED_LDU_PER_S / SIM_TICK_HZ);
   run(derailing, 1);

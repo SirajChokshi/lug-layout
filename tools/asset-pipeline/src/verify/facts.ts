@@ -8,7 +8,7 @@ import { buildTrackCatalog, type TrackCatalogReport } from "../track/track-catal
 import { LEVEL_CROSSING_FILE, levelCrossingData } from "../crossing/level-crossing.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { measureBaseplate } from "./geometry.ts";
-import { buildGeometryReport } from "./geometry-report.ts";
+import { buildGeometryReport, measuredRails } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
 import { measureMagnetSeat, type MagnetModel } from "./magnet-seat.ts";
 import { milsModules } from "../mils/mils-modules.ts";
@@ -188,7 +188,7 @@ export const TRACK_CATALOG_FILE = "track-catalog.json";
 
 export function paletteTrackCatalog(library: LdrawLibrary, palette: Palette): TrackCatalogReport {
   const trackParts = palette.parts.filter((part) => part.role === "track").map((part) => part.id);
-  return buildTrackCatalog(library, trackParts, loadTrackEndMarkers());
+  return buildTrackCatalog(library, trackParts, loadTrackEndMarkers(), measuredRails(library));
 }
 
 export function trackCatalogReports(

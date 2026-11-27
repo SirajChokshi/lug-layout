@@ -1,6 +1,7 @@
 import { inject, injectable } from "inversify";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { PlayModel } from "../play/play-models.ts";
+import { railTopOn } from "../sim/consist.ts";
 import { PLACEABLE_CATALOG } from "../tokens.ts";
 
 export interface TallestTrain {
@@ -8,17 +9,14 @@ export interface TallestTrain {
   readonly model: string;
 }
 
-export function tallestTrain(
-  models: ReadonlyArray<PlayModel>,
-  railPart: string,
-): TallestTrain | null {
+export function tallestTrain(models: ReadonlyArray<PlayModel>, rail: number): TallestTrain | null {
   let tallest: TallestTrain | null = null;
   for (const { name, model, vehicleTops } of models) {
-    model.vehicles.forEach((vehicle, v) => {
-      const contact = vehicle.railContacts.find((c) => c.railPart === railPart);
+    model.runningGear.vehicles.forEach((vehicle, v) => {
+      const railTop = railTopOn(vehicle, rail);
       const top = vehicleTops[v] ?? Number.NEGATIVE_INFINITY;
-      if (!contact || !Number.isFinite(top)) return;
-      const heightLdu = top - contact.railTopY;
+      if (railTop === null || !Number.isFinite(top)) return;
+      const heightLdu = top - railTop;
       if (!tallest || heightLdu > tallest.heightLdu) tallest = { heightLdu, model: name };
     });
   }
@@ -27,7 +25,7 @@ export function tallestTrain(
 
 export interface ITallestTrain {
   current(): TallestTrain | null;
-  measure(railPart: string): Promise<TallestTrain | null>;
+  measure(rail: number): Promise<TallestTrain | null>;
   invalidate(): void;
 }
 
@@ -43,8 +41,8 @@ export class TallestTrainMeter implements ITallestTrain {
     return this.measured;
   }
 
-  measure(railPart: string): Promise<TallestTrain | null> {
-    this.measuring ??= this.measureAll(railPart, this.generation);
+  measure(rail: number): Promise<TallestTrain | null> {
+    this.measuring ??= this.measureAll(rail, this.generation);
     return this.measuring;
   }
 
@@ -53,10 +51,10 @@ export class TallestTrainMeter implements ITallestTrain {
     this.measuring = null;
   }
 
-  private async measureAll(railPart: string, generation: number): Promise<TallestTrain | null> {
+  private async measureAll(rail: number, generation: number): Promise<TallestTrain | null> {
     try {
       const models = await this.catalog.rollingStock();
-      if (generation === this.generation) this.measured = tallestTrain(models, railPart);
+      if (generation === this.generation) this.measured = tallestTrain(models, rail);
       return this.measured;
     } catch (error) {
       if (generation === this.generation) this.measuring = null;

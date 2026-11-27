@@ -11,6 +11,7 @@ pub mod connect;
 pub mod cover;
 pub mod ends;
 pub mod exact;
+pub mod extents;
 pub mod flatten;
 pub mod glb;
 pub mod homogeneous;
@@ -30,7 +31,6 @@ pub mod surface;
 pub mod technic;
 pub mod top_surface;
 pub mod trig;
-pub mod vehicle;
 pub mod voxel;
 pub mod zip;
 

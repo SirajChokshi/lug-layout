@@ -1272,13 +1272,6 @@
       "retrieved": "2026-11-17"
     }
   ],
-  "vehicleParts": {
-    "bogiePivots": ["4092a.dat", "4092b.dat"],
-    "pivotPins": ["connect4.dat"],
-    "wheelsets": ["2878c01.dat"],
-    "wheels": ["2879.dat"],
-    "couplers": ["73092.dat", "2959c01.dat"]
-  },
   "audit": [
     {
       "group": "track-9v",

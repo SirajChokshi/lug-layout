@@ -88,10 +88,6 @@ export function bakeTransferables(bake: ModelBake): Transferable[] {
             : []),
         ]
       : []),
-    ...bake.vehicles.flatMap((vehicle) => [
-      vehicle.body.buffer,
-      ...vehicle.bogies.map((bogie) => bogie.instances.buffer),
-    ]),
   ];
 }
 

@@ -1,7 +1,14 @@
 import { type SeededRandom } from "../generator.ts";
 import { type Vec3 } from "../assembly.ts";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import { type Block, type Sign, VERTICAL, rollingContact, roundProfile } from "./part-geometry.ts";
+import {
+  type Block,
+  type RoundProfile,
+  type Sign,
+  VERTICAL,
+  rollingContact,
+  roundProfile,
+} from "./part-geometry.ts";
 import {
   BEARING_CLEARANCE_LDU,
   type BearingOption,
@@ -27,6 +34,7 @@ import type { AxlePart, TrainPools, WheelPart } from "./train-pools.ts";
 interface WheelSeat {
   readonly sign: Sign;
   readonly centre: number;
+  readonly contact?: number;
 }
 
 function lateralExtent(wheel: WheelPart, seat: WheelSeat): readonly [number, number] {
@@ -80,10 +88,10 @@ function seatCandidate(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): 
   return true;
 }
 
-function seatContacts(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): boolean {
+function seatProfile(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): RoundProfile | null {
   const a = seat.sign * (rail.inner - seat.centre);
   const b = seat.sign * (rail.outer - seat.centre);
-  const contact = rollingContact(
+  return rollingContact(
     wheel.reading.triangles,
     wheel.hole,
     Math.min(a, b),
@@ -92,15 +100,81 @@ function seatContacts(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): b
     null,
     CONTACT_FRACTION * wheel.radius,
   );
-  return contact !== null;
 }
 
-export function positiveSeats(wheel: WheelPart, rail: RailHeadBands): ReadonlyArray<WheelSeat> {
+function treadIsOutermost(wheel: WheelPart, profile: RoundProfile, contact: number): boolean {
+  const step = 1 / (wheel.reading.rolling?.stepsPerLdu ?? 1);
+  return profile.radius <= contact + step;
+}
+
+function treadRadius(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): number | null {
+  const rolling = wheel.reading.rolling;
+  if (!rolling) return null;
+  const a = seat.sign * (rail.inner - seat.centre);
+  const b = seat.sign * (rail.outer - seat.centre);
+  const low = Math.min(a, b) * rolling.stepsPerLdu;
+  const high = Math.max(a, b) * rolling.stepsPerLdu;
+  const onLine = rolling.surfaces.filter(
+    (surface) =>
+      surface.axis === wheel.hole.axis &&
+      surface.at[0] === Math.round(wheel.hole.at[0] * rolling.stepsPerLdu) &&
+      surface.at[1] === Math.round(wheel.hole.at[1] * rolling.stepsPerLdu),
+  );
+  const meeting = onLine.filter(
+    (surface) => Math.max(surface.from, low) < Math.min(surface.to, high),
+  );
+  const [tread] = meeting;
+  if (meeting.length !== 1 || !tread) return null;
+  if (tread.from > low || tread.to < high || tread.radii[0] !== tread.radii[1]) return null;
+  return tread.radii[0] / rolling.stepsPerLdu;
+}
+
+function clearsBelow(wheel: WheelPart, option: BearingOption): boolean {
+  const bearingHeight = option.box.max[VERTICAL] - option.box.min[VERTICAL];
+  return wheel.radius > bearingHeight - option.holeDepth + MARGIN_LDU;
+}
+
+function narrowestBearing(pools: TrainPools): number {
+  return Math.min(
+    ...bearingOptions(pools, LATERAL, false).map(
+      (option) => footprint(option.block, option.turns)[1] * STUD_LDU,
+    ),
+  );
+}
+
+export function leavesBearingRoom(
+  pools: TrainPools,
+  wheel: WheelPart,
+  seat: WheelSeat,
+  lateralRange: readonly [number, number],
+): boolean {
+  const [innerEdge] = lateralExtent(wheel, seat);
+  const low = Math.max(lateralRange[0], -innerEdge + BEARING_CLEARANCE_LDU);
+  const high = Math.min(lateralRange[1], innerEdge - BEARING_CLEARANCE_LDU);
+  return high - low >= narrowestBearing(pools);
+}
+
+export function carriedByABearing(pools: TrainPools, wheel: WheelPart): boolean {
+  return bearingOptions(pools, LATERAL, false).some((option) => clearsBelow(wheel, option));
+}
+
+export function positiveSeats(
+  wheel: WheelPart,
+  rail: RailHeadBands,
+  rails: ReadonlyArray<RailHeadBands> = [rail],
+): ReadonlyArray<WheelSeat> {
   const seats: WheelSeat[] = [];
   for (const sign of [1, -1] as const) {
     for (let centre = 0; centre <= LATERAL_SEARCH_LDU; centre++) {
       const seat = { sign, centre };
-      if (seatCandidate(wheel, seat, rail) && seatContacts(wheel, seat, rail)) seats.push(seat);
+      const profile = seatCandidate(wheel, seat, rail) ? seatProfile(wheel, seat, rail) : null;
+      if (!profile) continue;
+      const treads = [rail, ...rails].map((measured) => treadRadius(wheel, seat, measured));
+      const [contact] = treads;
+      if (contact === null || contact === undefined) continue;
+      if (treads.some((tread) => tread !== contact)) continue;
+      if (!treadIsOutermost(wheel, profile, contact)) continue;
+      seats.push({ ...seat, contact });
     }
   }
   return seats;
@@ -121,12 +195,39 @@ function inboardSeats(
   return seats;
 }
 
-function axleCovering(pools: TrainPools, half: number, maxHalf: number): AxlePart | null {
+function stopFree(axle: AxlePart): boolean {
+  return axle.stops.length === 0;
+}
+
+function stopsClear(bores: ReadonlyArray<readonly [number, number]>): (axle: AxlePart) => boolean {
+  return (axle) => {
+    const centre = (axle.span.from + axle.span.to) / 2;
+    return axle.stops.every(([from, to]) =>
+      bores.every(([low, high]) => Math.max(from - centre, low) >= Math.min(to - centre, high)),
+    );
+  };
+}
+
+function holeSpans(
+  wheel: WheelPart,
+  seat: WheelSeat,
+  sides: ReadonlyArray<Sign>,
+): ReadonlyArray<readonly [number, number]> {
+  const [near, far] = lateralExtent({ ...wheel, lateral: [wheel.hole.from, wheel.hole.to] }, seat);
+  return sides.map((side) => (side > 0 ? ([near, far] as const) : ([-far, -near] as const)));
+}
+
+function axleCovering(
+  pools: TrainPools,
+  half: number,
+  maxHalf: number,
+  fits: (axle: AxlePart) => boolean,
+): AxlePart | null {
   return (
     pools.axles
       .filter((axle) => {
         const length = axle.span.to - axle.span.from;
-        return length / 2 >= half && length / 2 <= maxHalf;
+        return length / 2 >= half && length / 2 <= maxHalf && fits(axle);
       })
       .toSorted((a, b) => a.span.to - a.span.from - (b.span.to - b.span.from))[0] ?? null
   );
@@ -140,6 +241,10 @@ export interface HungAxle {
   readonly occupied: readonly [number, number];
 }
 
+export interface RailTop {
+  value: number | null;
+}
+
 export interface AxleRequest {
   readonly carrier: Carrier;
   readonly bodyBottom: number;
@@ -151,6 +256,7 @@ export interface AxleRequest {
   readonly sides: ReadonlyArray<Sign>;
   readonly lateralRange: readonly [number, number];
   readonly unit: string;
+  readonly railTop?: RailTop;
 }
 
 export interface SplitRequest {
@@ -159,6 +265,7 @@ export interface SplitRequest {
   readonly xRange: readonly [number, number];
   readonly wheel: WheelPart;
   readonly rail: RailHeadBands;
+  readonly rails: ReadonlyArray<RailHeadBands>;
 }
 
 function hangBearing(
@@ -236,7 +343,9 @@ export function hangSplitAxle(
   request: SplitRequest,
 ): HungAxle | null {
   const { bogie, body: car, wheel, rail } = request;
-  for (const seat of random.shuffled(positiveSeats(wheel, rail)).slice(0, SEAT_TRIES)) {
+  for (const seat of random
+    .shuffled(positiveSeats(wheel, rail, request.rails))
+    .slice(0, SEAT_TRIES)) {
     const [innerEdge] = lateralExtent(wheel, seat);
     const reach = holeReach(wheel, seat);
     for (const option of random.shuffled(bearingOptions(pools, LATERAL, false))) {
@@ -270,8 +379,8 @@ export function hangSplitAxle(
       const leftStack = spacerStack(pools, width, depth, leftPlates);
       const rightStack = spacerStack(pools, width, depth, rightPlates);
       const leftInner = leftZ + zSize;
-      const leftShaft = axleCovering(pools, (leftInner + reach) / 2, Infinity);
-      const rightShaft = axleCovering(pools, (reach - rightZ) / 2, Infinity);
+      const leftShaft = axleCovering(pools, (leftInner + reach) / 2, Infinity, stopFree);
+      const rightShaft = axleCovering(pools, (reach - rightZ) / 2, Infinity, stopFree);
       if (!leftStack || !rightStack || !leftShaft || !rightShaft) continue;
       const checkpoint = model.checkpoint();
       const color = pickColor(random, pools);
@@ -325,6 +434,7 @@ export function hangSplitAxle(
         wheelset: {
           x: holeX,
           y: axleY,
+          contactRadius: seat.contact ?? null,
           unit: bogie.unit,
           instances: wheels,
           rail: rail.part,
@@ -349,13 +459,27 @@ export function hangAxle(
   request: AxleRequest,
 ): HungAxle | null {
   const { wheel, mode } = request;
-  const seats =
-    mode === "gauge miss" ? inboardSeats(wheel, request.rails) : positiveSeats(wheel, request.rail);
+  const seats = (
+    mode === "gauge miss"
+      ? inboardSeats(wheel, request.rails)
+      : positiveSeats(wheel, request.rail, request.rails)
+  ).filter((seat) => leavesBearingRoom(pools, wheel, seat, request.lateralRange));
   for (const seat of random.shuffled(seats).slice(0, SEAT_TRIES)) {
     for (const option of random.shuffled(bearingOptions(pools, LATERAL, false))) {
       const checkpoint = model.checkpoint();
       const hung = hangAxleAt(model, pools, random, request, seat, option);
-      if (hung && !model.collidesSince(checkpoint)) return hung;
+      if (hung && !model.collidesSince(checkpoint)) {
+        const { railTop } = request;
+        if (
+          railTop &&
+          railTop.value === null &&
+          mode === "positive" &&
+          seat.contact !== undefined
+        ) {
+          railTop.value = hung.wheelset.y - seat.contact;
+        }
+        return hung;
+      }
       model.rollback(checkpoint);
     }
   }
@@ -373,8 +497,7 @@ function hangAxleAt(
   const { carrier, wheel, rail, mode } = request;
   const [innerEdge, outerEdge] = lateralExtent(wheel, seat);
   const [width, depth] = footprint(option.block, option.turns);
-  const bearingHeight = option.box.max[VERTICAL] - option.box.min[VERTICAL];
-  if (wheel.radius <= bearingHeight - option.holeDepth + MARGIN_LDU) return null;
+  if (!clearsBelow(wheel, option)) return null;
   const zSize = depth * STUD_LDU;
   const lowZ = Math.max(request.lateralRange[0], -innerEdge + BEARING_CLEARANCE_LDU);
   const highZ = Math.min(request.lateralRange[1], innerEdge - BEARING_CLEARANCE_LDU);
@@ -395,7 +518,17 @@ function hangAxleAt(
   const lateralUnderCarrier = outerEdge > carrier.z0 && innerEdge < carrier.z1;
   const ceiling = lateralUnderCarrier ? carrier.bottom : request.bodyBottom;
   const clearance = carrier.bottom - option.holeDepth + wheel.radius + MARGIN_LDU - ceiling;
-  const spacerPlates = Math.max(0, Math.ceil(clearance / PLATE_LDU));
+  const fewestPlates = Math.max(0, Math.ceil(clearance / PLATE_LDU));
+  const target =
+    mode === "positive" &&
+    seat.contact !== undefined &&
+    request.railTop !== undefined &&
+    request.railTop.value !== null
+      ? request.railTop.value + seat.contact
+      : null;
+  const spacerPlates =
+    target === null ? fewestPlates : (carrier.bottom - option.holeDepth - target) / PLATE_LDU;
+  if (!Number.isInteger(spacerPlates) || spacerPlates < fewestPlates) return null;
   const stack = spacerStack(pools, width, depth, spacerPlates);
   if (!stack) return null;
   const axleY = carrier.bottom - spacerPlates * PLATE_LDU - option.holeDepth;
@@ -403,6 +536,7 @@ function hangAxleAt(
     pools,
     Math.max(holeReach(wheel, seat), Math.abs(zCorner), Math.abs(zCorner + zSize)),
     outerEdge + STUD_LDU * 2,
+    stopsClear([[zCorner, zCorner + zSize], ...holeSpans(wheel, seat, request.sides)]),
   );
   if (!shaft) return null;
   const color = pickColor(random, pools);
@@ -433,6 +567,7 @@ function hangAxleAt(
     wheelset: {
       x,
       y: axleY,
+      contactRadius: mode === "positive" ? (seat.contact ?? null) : null,
       unit: request.unit,
       instances,
       rail: mode === "positive" ? rail.part : null,

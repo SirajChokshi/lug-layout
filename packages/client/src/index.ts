@@ -141,15 +141,16 @@ export type {
   StudioReport,
 } from "@brr/import";
 export type {
+  AxisLine,
   GearBox,
-  GearCoupler,
+  GearModelSource,
   GearModelView,
+  GearSelection,
   GearSnapshot,
   GearView,
   IRunningGear,
-  RunningGearSource,
-} from "./running-gear/running-gear-editor.ts";
-export { exactLduText } from "./running-gear/running-gear-editor.ts";
+} from "./running-gear/running-gear-inspector.ts";
+export type { UnreadReasonCount, UnreadSummary } from "./running-gear/running-gear-summary.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";

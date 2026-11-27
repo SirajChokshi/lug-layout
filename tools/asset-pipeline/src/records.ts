@@ -53,7 +53,8 @@ function partShape(
     technic,
     rolling,
     topSurface,
-  }: Pick<PartExtras, "studs" | "technic" | "rolling" | "topSurface">,
+    extents,
+  }: Pick<PartExtras, "studs" | "technic" | "rolling" | "topSurface" | "extents">,
   outline: PlanOutline | undefined,
 ): PartShape {
   return {
@@ -62,6 +63,7 @@ function partShape(
     role: part.role,
     file: part.file,
     bounds: part.bounds,
+    extents,
     studs,
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),

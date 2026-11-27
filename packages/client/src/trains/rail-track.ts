@@ -111,6 +111,16 @@ export class RailTrack {
     return this.play.railPart;
   }
 
+  get rail(): number {
+    const { rail, railPart } = this.play;
+    if (rail === null) {
+      throw new Error(
+        `The rails of ${railPart} aren't identified with a measured rail, so no train can stand on them.`,
+      );
+    }
+    return rail;
+  }
+
   placementOf(edge: number): number {
     return this.graph.edgePlacement[edge] ?? -1;
   }

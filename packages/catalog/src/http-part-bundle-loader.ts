@@ -538,7 +538,6 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         .filter((color) => color.alpha < ALPHA_OPAQUE)
         .map((color) => color.code),
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-      vehicles: manifest.compiler.vehicles ?? null,
       libraryBake: manifest.compiler.libraryBake ?? null,
       libraryConnectors: manifest.compiler.libraryConnectors ?? null,
       shadowLibrary: manifest.compiler.shadowLibrary ?? null,
@@ -795,6 +794,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     role: shape.role,
     boundsMin: shape.bounds.min,
     boundsMax: shape.bounds.max,
+    extents: shape.extents,
     producedColor: shape.displayColor?.ldraw,
     producedColors: shape.producedColors,
     trackEnds: shape.trackEnds,
@@ -829,14 +829,12 @@ function partModel(file: ModelFile): PartModel {
       matrices: Float64Array.from(file.submodels.matrices),
       ofPart: Int32Array.from(file.submodels.ofPart),
     },
-    vehicles: file.vehicles.map((vehicle) => ({
-      ...vehicle,
-      body: Uint32Array.from(vehicle.body),
-      bogies: vehicle.bogies.map((bogie) => ({
-        ...bogie,
-        instances: Uint32Array.from(bogie.instances),
-      })),
-    })),
+    runningGear: {
+      vehicles: file.vehicles,
+      vehicleCouplings: file.vehicleCouplings,
+      unresolvedRunningGear: file.unresolvedRunningGear,
+      unreadRollingBands: file.unreadRollingBands,
+    },
   };
 }
 
@@ -858,6 +856,7 @@ function toPartAsset(
     producedColors: part.producedColors,
     trackEnds: part.trackEnds,
     boundsMax: part.bounds.max,
+    extents: glb.document.extras.extents,
     mesh: readPartMesh(glb, part.id),
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,

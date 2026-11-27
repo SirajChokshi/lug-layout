@@ -12,7 +12,8 @@ export const PRIMITIVE_FAMILIES = {
   round: /^(48\/)?4-4(cyli|cylo|cylc|con\d+|ring\d+|disc)\.dat$/u,
   axleEnd: /^(axleend\d*|axl\dend)\.dat$/u,
   crossHole: /^(?!axleend)(axl\w*hol\w*|axl\w*ho\d+)\.dat$/u,
-  roundHole: /^(peghole\d*|connhol\w*|beamhol\w*|npeghol\w*|wpinhol\w*)\.dat$/u,
+  roundHole: /^(peghole\d*|connhol\w*|beamhol\w*|npeghol\w*)\.dat$/u,
+  notchedHole: /^wpinhol\w*\.dat$/u,
   pinHalf: /^(connect\d*|confric\d*)\.dat$/u,
 } as const;
 
@@ -190,6 +191,15 @@ export function studsOf(reading: PartReading): ReadonlyArray<Stud> {
   return out;
 }
 
+export function axleStops(
+  reading: PartReading,
+  line: AxisLine,
+): ReadonlyArray<readonly [number, number]> {
+  return roundFeatures(reading.frames)
+    .filter((feature) => sameLine(feature, line))
+    .map((feature) => [feature.from, feature.to] as const);
+}
+
 export function axleSpan(reading: PartReading): Span | null {
   if (reading.studs.length > 0) return null;
   const ends = framesOf(reading.frames, "axleEnd");
@@ -268,6 +278,33 @@ function verticalThroughHoles(reading: PartReading, fit: readonly [number, numbe
     }
   }
   return holes;
+}
+
+export function receivesStudsBelow(block: Block, reading: PartReading): boolean {
+  const { min } = block.bounds;
+  const t = reading.triangles;
+  const flat: Array<readonly [number, number]> = [];
+  for (let k = 0; k + 8 < t.length; k += 9) {
+    const ys = [t[k + 1] ?? 0, t[k + 4] ?? 0, t[k + 7] ?? 0];
+    if (ys.every((y) => Math.abs(y - min[1]) < SAME)) {
+      for (const v of [0, 3, 6]) flat.push([t[k + v] ?? 0, t[k + v + 2] ?? 0]);
+    }
+  }
+  for (let i = 0; i < block.width; i++) {
+    for (let j = 0; j < block.depth; j++) {
+      const x0 = min[0] + i * STUD_LDU;
+      const z0 = min[2] + j * STUD_LDU;
+      const inCell = flat.some(
+        ([x, z]) =>
+          x >= x0 - SAME &&
+          x <= x0 + STUD_LDU + SAME &&
+          z >= z0 - SAME &&
+          z <= z0 + STUD_LDU + SAME,
+      );
+      if (!inCell) return false;
+    }
+  }
+  return true;
 }
 
 export function blockOf(reading: PartReading, holeFit: readonly [number, number]): Block | null {

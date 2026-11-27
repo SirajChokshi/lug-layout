@@ -10,7 +10,9 @@ import {
   across,
   axisOf,
   axleSpan,
+  axleStops,
   blockOf,
+  receivesStudsBelow,
   framesOf,
   holeLines,
   pinSpan,
@@ -29,6 +31,7 @@ import {
 import { CONTACT_FRACTION, type RailHeadBands } from "./placement.ts";
 import type { Vec3 } from "../assembly.ts";
 import type { Bundle } from "../bundle.ts";
+import type { ConnectorRecords } from "@brr/catalog/connector-records";
 import { producedColors } from "../generator.ts";
 
 export type Mat3 = readonly [
@@ -53,6 +56,7 @@ export interface WheelPart {
 export interface AxlePart {
   readonly reading: PartReading;
   readonly span: Span;
+  readonly stops: ReadonlyArray<readonly [number, number]>;
 }
 
 export interface PinPart {
@@ -105,6 +109,7 @@ export interface TrainPools {
   readonly colors: ReadonlyArray<number>;
 }
 
+const RIGID_BEARING_STUDS = 2;
 const LIBRARY_PART_PREFIX = /^parts\//u;
 const ROUND_OUTLINE_TOLERANCE = 0.02;
 const OUTER_PRIMITIVE_FRACTION = 0.9;
@@ -160,8 +165,17 @@ function wheelOf(reading: PartReading): WheelPart | null {
   const outer = roundFeatures(reading.frames).some(
     (feature) => sameLine(feature, hole) && feature.radius >= OUTER_PRIMITIVE_FRACTION * radius,
   );
-  if (!outer) return null;
+  if (!outer || !readsRollingOn(reading, hole)) return null;
   return { reading, hole, lateral: [min[hole.axis], max[hole.axis]], radius };
+}
+
+function readsRollingOn(reading: PartReading, hole: AxisLine): boolean {
+  const rolling = reading.rolling;
+  if (!rolling) return false;
+  const at = hole.at.map((coordinate) => Math.round(coordinate * rolling.stepsPerLdu));
+  return rolling.surfaces.some(
+    (surface) => surface.axis === hole.axis && surface.at[0] === at[0] && surface.at[1] === at[1],
+  );
 }
 
 function familyName(primitive: string): string {
@@ -283,11 +297,31 @@ function bundleReferences(bundle: Bundle): ReadonlyArray<string> {
   );
 }
 
+const FEMALE = 1;
+const FAR_END_CLOSED = 2;
+const ORIGIN_SIXTEENTHS = 16;
+
+async function holeOpensThrough(connectors: ConnectorRecords, wheel: WheelPart): Promise<boolean> {
+  const record = await connectors.load(`ldraw:${wheel.reading.reference.replace(/\.dat$/u, "")}`);
+  if (!record) return false;
+  const [p, q] = across(wheel.hole.axis);
+  const onLine: number[] = [];
+  for (let k = 0; k < record.count; k++) {
+    const axis = record.axis[k] ?? -1;
+    if (record.gender[k] !== FEMALE || axis < 0 || axis >> 1 !== wheel.hole.axis) continue;
+    const atP = (record.origin[3 * k + p] ?? 0) / ORIGIN_SIXTEENTHS;
+    const atQ = (record.origin[3 * k + q] ?? 0) / ORIGIN_SIXTEENTHS;
+    if (atP === wheel.hole.at[0] && atQ === wheel.hole.at[1]) onLine.push(k);
+  }
+  return onLine.some((k) => ((record.caps[k] ?? 0) & FAR_END_CLOSED) === 0);
+}
+
 export async function trainPools(
   bundle: Bundle,
   library: PinnedLibrary,
   reader: PartReader,
   rails: ReadonlyArray<RailHeadBands>,
+  connectors: ConnectorRecords,
 ): Promise<TrainPools> {
   const studNames = bundle.job.studPrimitives;
   const spread = minimumWheelSpread(rails);
@@ -355,9 +389,10 @@ export async function trainPools(
 
   const axles = [...(await reader.read(axleCandidates)).values()].flatMap((reading) => {
     const span = axleSpan(reading);
-    return span ? [{ reading, span }] : [];
+    return span ? [{ reading, span, stops: axleStops(reading, span) }] : [];
   });
   const axleRadii = axles
+    .filter((axle) => axle.stops.length === 0)
     .map(({ reading, span }) => {
       const [p, q] = across(span.axis);
       const { min, max } = reading.bounds;
@@ -380,13 +415,15 @@ export async function trainPools(
     const block = blockOf(reading, holeFit);
     if (!block) continue;
     const plain = block.holes.length === 0 && block.sideStuds.length === 0;
-    if (plain) spacers.push(block);
-    if (plain && block.heightPlates === 1) plates.push(block);
+    const stacks = receivesStudsBelow(block, reading);
+    if (plain && stacks) spacers.push(block);
+    if (plain && stacks && block.heightPlates === 1) plates.push(block);
     if (block.sideStuds.length > 0) continue;
     const roundHoles = block.holes.filter((hole) => hole.kind === "round");
     if (roundHoles.length !== block.holes.length || roundHoles.length === 0) continue;
-    if (roundHoles.every((hole) => hole.axis !== VERTICAL)) bearings.push(block);
-    if (block.heightPlates === 1 && roundHoles.every((hole) => hole.axis === VERTICAL)) {
+    const rigid = block.width * block.depth >= RIGID_BEARING_STUDS;
+    if (rigid && roundHoles.every((hole) => hole.axis !== VERTICAL)) bearings.push(block);
+    if (stacks && block.heightPlates === 1 && roundHoles.every((hole) => hole.axis === VERTICAL)) {
       pivotPlates.push(block);
     }
   }
@@ -409,10 +446,14 @@ export async function trainPools(
     );
     return outer > 0 ? [reference] : [];
   });
-  const wheels = [...(await reader.read(roundWheelLike)).values()].flatMap((reading) => {
+  const readWheels = [...(await reader.read(roundWheelLike)).values()].flatMap((reading) => {
     const wheel = wheelOf(reading);
     return wheel ? [wheel] : [];
   });
+  const throughHoles = await Promise.all(
+    readWheels.map((wheel) => holeOpensThrough(connectors, wheel)),
+  );
+  const wheels = readWheels.filter((_, index) => throughHoles[index]);
 
   const runningFrames = await reader.frames(runningCandidates);
   const pairLike = [...runningFrames].flatMap(([reference, frames]) =>

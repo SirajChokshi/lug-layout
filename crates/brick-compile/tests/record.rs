@@ -8,9 +8,7 @@ use brick_compile::bake::{BakeError, LatticeShape, ModelBaker, RecordShelf};
 use brick_compile::compile::stud_primitives_from_table;
 use brick_compile::cover::{tree_order, CoverShard, PartSolid};
 use brick_compile::model::bake_model;
-use brick_compile::record::{BakeRecord, RecordError};
-use brick_compile::vehicle::part_bounds;
-use brick_compile::vehicle::VehicleSignatures;
+use brick_compile::record::{whole_bounds, BakeRecord, RecordError};
 use brick_compile::{compile_part, CompileOptions, Lod};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashSet};
@@ -83,7 +81,7 @@ fn every_fixture_part_decodes_to_its_compiled_mesh_studs_bounds_and_the_same_sol
         let Ok(compiled) = compile_part(&library, reference, &options) else {
             continue;
         };
-        let bounds = part_bounds(&library, reference).expect("bounds of a compiled part");
+        let bounds = whole_bounds(&library, reference).expect("bounds of a compiled part");
         let bytes = BakeRecord::of(&compiled, bounds).encode().expect("encode");
         let decoded = BakeRecord::decode(&bytes).expect("decode");
         assert_eq!(
@@ -130,7 +128,7 @@ fn every_fixture_part_decodes_to_its_compiled_mesh_studs_bounds_and_the_same_sol
 fn a_record_carrying_another_order_is_refused_or_rebuilds_a_different_solid() {
     let library = common::fixture_library();
     let compiled = compile_part(&library, "3001.dat", &CompileOptions::default()).expect("3001");
-    let bounds = part_bounds(&library, "3001.dat").expect("bounds");
+    let bounds = whole_bounds(&library, "3001.dat").expect("bounds");
     let record = BakeRecord::of(&compiled, bounds);
     let built = PartSolid::from_mesh(&compiled.mesh);
     let mut duplicated = record.clone();
@@ -173,14 +171,6 @@ fn a_model_baked_from_records_equals_the_model_baked_from_compiled_parts() {
     let palette = palette();
     let stud_primitives = table_studs();
     let allowlist = palette_list(&palette, "unofficialAllowlist");
-    let vehicle_parts = &palette["vehicleParts"];
-    let signatures = VehicleSignatures {
-        bogie_pivots: palette_list(vehicle_parts, "bogiePivots"),
-        pivot_pins: palette_list(vehicle_parts, "pivotPins"),
-        wheelsets: palette_list(vehicle_parts, "wheelsets"),
-        wheels: palette_list(vehicle_parts, "wheels"),
-        couplers: palette_list(vehicle_parts, "couplers"),
-    };
     let source = fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../.cache/omr")
@@ -204,7 +194,7 @@ fn a_model_baked_from_records_equals_the_model_baked_from_compiled_parts() {
         let Ok(compiled) = compile_part(&library, reference, &options) else {
             continue;
         };
-        let bounds = part_bounds(&library, reference).expect("bounds");
+        let bounds = whole_bounds(&library, reference).expect("bounds");
         let bytes = BakeRecord::of(&compiled, bounds).encode().expect("encode");
         shelf.insert(
             reference.clone(),
@@ -240,26 +230,21 @@ fn a_model_baked_from_records_equals_the_model_baked_from_compiled_parts() {
         let cover = baker
             .cover(&drawn, lattice.as_ref(), CoverShard::WHOLE)
             .expect("cover");
-        let vehicles = baker.vehicles(&drawn, &signatures, &[]).expect("vehicles");
         let refused = drawn.iter().all(|instance| {
             matches!(
                 baker.standard_part(&instance.part),
                 Err(BakeError::Recorded { .. })
             )
         });
-        (lattice, cover, vehicles, refused)
+        (lattice, cover, refused)
     };
     let compiled = bake(None);
     let recorded = bake(Some(&shelf));
+    assert!(!drawn.is_empty(), "the train bakes from recorded parts");
     assert!(
-        !drawn.is_empty() && !compiled.2.is_empty(),
-        "the train bakes with a vehicle"
-    );
-    assert!(
-        !compiled.3 && recorded.3,
+        !compiled.2 && recorded.2,
         "only the recorded bake took every part from a record"
     );
     assert_eq!(recorded.0, compiled.0, "lattice");
     assert_eq!(recorded.1, compiled.1, "cover");
-    assert_eq!(recorded.2, compiled.2, "vehicles");
 }

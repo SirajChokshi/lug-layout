@@ -59,8 +59,7 @@ import { BomService } from "./bom/bom-service.ts";
 import { OwnedPartsService } from "./bom/owned-parts-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
-import { IndexedDbRunningGearOverrideStore } from "./running-gear/override-store.ts";
-import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
+import { RunningGearInspector } from "./running-gear/running-gear-inspector.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
@@ -113,7 +112,6 @@ import {
   PANEL_LAYOUT,
   PANEL_LAYOUT_STORE,
   RUNNING_GEAR,
-  RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
   SIM_WORKER_PORT,
   TRACK_SCENE,
@@ -167,8 +165,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
   bind(PLAN_SHEET_SERVICE).to(PlanSheetService).inSingletonScope();
-  bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
-  bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
+  bind(RUNNING_GEAR).to(RunningGearInspector).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
   bind(OWNED_PARTS).to(OwnedPartsService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();

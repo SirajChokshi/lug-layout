@@ -746,7 +746,7 @@ async function consistSources(
     if (name === null) throw new Error(`consist ${consist.ref} is not an OMR model`);
     const walked = await modelSource(container, name);
     const riding = new Set<number>();
-    for (const vehicle of walked.model.vehicles) {
+    for (const vehicle of walked.model.runningGear.vehicles) {
       for (const instances of [vehicle.body, ...vehicle.bogies.map((bogie) => bogie.instances)]) {
         for (const i of instances) riding.add(i);
         bodies.push(rigidBodySource(instances, walked));

@@ -107,6 +107,7 @@ import {
   PLACEMENT_SEARCH,
   RAIL_YARD,
   ROAD_EDIT_SESSION,
+  RUNNING_GEAR,
   TALLEST_TRAIN,
   TRACK_PIERS,
   SNAP_SHAPES,
@@ -260,6 +261,8 @@ import type {
   VehicleFootprint,
 } from "../trains/rail-yard.ts";
 import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
+import type { IRunningGear } from "../running-gear/running-gear-inspector.ts";
+import { hasRunningGear } from "../running-gear/running-gear-summary.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
 import { MeasureTool } from "./measure-tool.ts";
@@ -1487,6 +1490,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(ROAD_EDIT_SESSION) private readonly roads: IRoadEditSession,
     @inject(TALLEST_TRAIN) private readonly tallestTrains: ITallestTrain,
     @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
+    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
   ) {
     this.placed = new PlacedChunks(backend, (placeable, handle) =>
       this.trackWorld.carriedTrackAt(placeable, handle),
@@ -1929,8 +1933,9 @@ export class Editor implements IEditor, IEditedWorld {
 
   private measureTallestTrain(): void {
     const track = this.trackWorld.drawing();
-    if (!track) return;
-    this.tallestTrains.measure(track.playTrack().railPart).then(
+    const rail = track?.playTrack().rail ?? null;
+    if (!track || rail === null) return;
+    this.tallestTrains.measure(rail).then(
       () => this.applyTallestTrain(),
       (error: unknown) => {
         this.update({
@@ -3866,6 +3871,13 @@ export class Editor implements IEditor, IEditedWorld {
         onRails: onRails.has(handle),
       })),
     });
+    const placed = new Set(this.placed.models().map((model) => model.placeable));
+    this.runningGear.setModels(
+      this.catalog.placeables().flatMap((placeable) => {
+        const gear = placeable && placed.has(placeable) ? this.catalog.gearModel(placeable) : null;
+        return gear && hasRunningGear(gear.runningGear) ? [gear] : [];
+      }),
+    );
   }
 
   private showMarkers(): void {

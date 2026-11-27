@@ -375,6 +375,7 @@ export interface PlayTrack {
   readonly graph: TrackGraph;
   readonly pieces: ReadonlyArray<TrackPiece>;
   readonly railPart: string;
+  readonly rail: number | null;
   readonly railTopY: number;
   readonly halfWidthLdu: number;
 }
@@ -957,6 +958,7 @@ export class TrackDrawing implements ExtensionSite {
       graph: this.graph,
       pieces: this.pieces,
       railPart: rail.straight.piece.part,
+      rail: rail.straight.piece.connectors.find((end) => end.rail !== null)?.rail ?? null,
       railTopY: rail.railTopLdu,
       halfWidthLdu: Math.min((box[2] ?? 0) - (box[0] ?? 0), (box[3] ?? 0) - (box[1] ?? 0)) / 2,
     };

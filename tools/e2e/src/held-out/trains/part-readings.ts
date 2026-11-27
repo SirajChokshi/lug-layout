@@ -1,5 +1,6 @@
 import { type PinnedLibrary } from "./pinned-library.ts";
 import { BrickCompiler } from "@brr/import";
+import type { PartRolling } from "@brr/schema/bundle";
 import type { Vec3 } from "../assembly.ts";
 import type { Bundle } from "../bundle.ts";
 
@@ -20,6 +21,7 @@ export interface PartReading {
   readonly frames: ReadonlyArray<PrimitiveFrame>;
   readonly studs: ReadonlyArray<PrimitiveFrame>;
   readonly triangles: Float32Array;
+  readonly rolling: PartRolling | null;
 }
 
 const PINNED_LIBRARY_KEY = "held-out-pinned";
@@ -52,6 +54,7 @@ interface GltfJson {
     readonly studs: ReadonlyArray<{ readonly primitive: string; readonly matrix: number[] }>;
     readonly bounds: { readonly min: number[]; readonly max: number[] };
     readonly ldraw: { readonly file: string };
+    readonly rolling?: PartRolling;
   };
 }
 
@@ -230,6 +233,7 @@ export class PartReader {
           frames,
           studs: meshed.json.extras.studs.map(frameOf),
           triangles: triangles(meshed),
+          rolling: meshed.json.extras.rolling ?? null,
         });
       }
     }

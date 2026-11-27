@@ -327,7 +327,6 @@ const PHASES: ReadonlyArray<readonly [string, (input: TimedInput) => number]> = 
   ["Lattice", (input) => bakeMs(input, "latticeMs")],
   ["Cells, before placement opens", (input) => input.timings.bakePhases?.coverMs ?? 0],
   ["Stud cover, after placement opens", (input) => input.timings.coverPhases?.coverMs ?? 0],
-  ["Vehicles", (input) => bakeMs(input, "vehiclesMs")],
 ];
 
 function otherMs(input: TimedInput): number {

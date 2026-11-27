@@ -99,7 +99,6 @@ export class WorkerModelImporter implements IModelImporter {
       ldconfigCodes: context.ldconfigCodes,
       translucentColors: context.translucentCodes,
       tableDepthLdu: context.tableDepthLdu,
-      vehicles: context.vehicles,
     };
   }
 
