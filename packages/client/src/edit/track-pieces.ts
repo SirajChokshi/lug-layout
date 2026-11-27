@@ -4,6 +4,7 @@ import { conjugateZeta16, pose16, pose16Equals, type Pose16 } from "@brr/math";
 export type Lever = "straight" | "branching";
 
 const FORMED_VARIANT = /-f\d+$/u;
+const LIBRARY_PREFIX = /^[a-z]+:/u;
 const LEVER_TITLE: ReadonlyArray<readonly [RegExp, Lever]> = [
   [/\s+Straight$/u, "straight"],
   [/\s+Branching$/u, "branching"],
@@ -105,6 +106,11 @@ export class TrackPieceSet {
   element(index: number): PieceElement {
     const { element, title } = this.entry(index);
     return { element, title };
+  }
+
+  label(index: number): string {
+    const { element, title } = this.entry(index);
+    return `${element.replace(LIBRARY_PREFIX, "")} ${title}`;
   }
 
   thrown(index: number): number | null {

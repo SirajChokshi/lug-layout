@@ -329,6 +329,7 @@ export { trackBlockText } from "./edit/track-drag.ts";
 export type { TallestTrain } from "./trains/tallest-train.ts";
 export {
   TOO_STEEP,
+  libraryPieceEndText,
   lowClearanceText,
   tallyText,
   toolHints,
@@ -382,6 +383,7 @@ export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type {
   ExtensionKind,
   ExtensionTurn,
+  TrackChoicePiece,
   TrackChoiceView,
   TrackExtendView,
   UnjoinedEndView,

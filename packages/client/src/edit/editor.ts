@@ -119,6 +119,7 @@ import { NOTHING_REBUILT, type ITrackWorld } from "./track-world.ts";
 import type { ITrackPathSelection, TrackPathScope } from "./track-path-selection.ts";
 import {
   TRACK_PIECE_PREFIX,
+  type ExtensionAttempt,
   type ITrackEditSession,
   type SwitchAttempt,
   type SwitchThrowRequest,
@@ -2322,17 +2323,25 @@ export class Editor implements IEditor, IEditedWorld {
   extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void {
     if (this.state.mode !== "track" || this.state.readOnly || this.tracks.holding()) return;
     if (this.tracks.dragging() || this.tracks.piering()) return;
-    const attempt = this.tracks.extend(turn);
+    this.layExtension(this.tracks.extend(turn), eventTimeMs);
+  }
+
+  private appendTrackPiece(id: string): boolean {
+    if (this.state.mode !== "track") return false;
+    return this.layExtension(this.tracks.appendPiece(id), performance.now());
+  }
+
+  private layExtension(attempt: ExtensionAttempt, eventTimeMs: number): boolean {
     switch (attempt.kind) {
       case "none":
-        return;
+        return false;
       case "blocked":
         this.update(this.tracks.view());
-        return;
+        return true;
       case "lay":
         this.commitLay(attempt.lay, eventTimeMs);
         this.repaintTrackPreview();
-        return;
+        return true;
       default: {
         const unhandled: never = attempt;
         throw new Error(`unhandled extension attempt ${String(unhandled)}`);
@@ -2411,6 +2420,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.enterRoadMode(id);
       return;
     }
+    if (id !== null && this.appendTrackPiece(id)) return;
     if (id !== null && this.tracks.pick(id)) {
       this.active = null;
       this.select([]);
@@ -2581,9 +2591,14 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   cycleConnector(): void {
-    if (!this.tracks.holding()) return;
-    this.tracks.nextConnector();
-    this.showHeldPiece();
+    if (this.tracks.holding()) {
+      this.tracks.nextConnector();
+      this.showHeldPiece();
+      return;
+    }
+    if (this.state.mode !== "track" || this.state.readOnly) return;
+    const view = this.tracks.nextPreviewEnd();
+    if (view) this.update(view);
   }
 
   mirrorPiece(): void {

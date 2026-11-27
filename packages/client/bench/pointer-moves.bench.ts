@@ -284,6 +284,7 @@ for (let run = 0; run < straightRuns; run++) {
   stroke([[-6400, z], ...RUN_STEPS_LDU.map((x): readonly [number, number] => [x, z])]);
 }
 if (fixture) {
+  editor.dropTrackEnd();
   editor.chooseItem(switchItem());
   for (let k = 0; k < FIXTURE_SWITCHES; k++) {
     aimAt(

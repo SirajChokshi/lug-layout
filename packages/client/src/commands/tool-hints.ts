@@ -28,7 +28,12 @@ import type {
   TrackRefusal,
 } from "../edit/track-drawing.ts";
 import { trackBlockText } from "../edit/track-drag.ts";
-import type { TrackChoiceView, TrackExtendView, UnjoinedEndView } from "../edit/track-extension.ts";
+import type {
+  TrackChoicePiece,
+  TrackChoiceView,
+  TrackExtendView,
+  UnjoinedEndView,
+} from "../edit/track-extension.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
 
@@ -304,19 +309,26 @@ function extendTitle(choice: TrackChoiceView): string {
       return "Next piece: curve left";
     case "right":
       return "Next piece: curve right";
+    case "piece":
+      return `Next piece: ${choice.piece.label}`;
     case "join":
       return `Next: join, ${pieces(choice.straights + choice.curves)}`;
     default: {
-      const unhandled: never = choice.kind;
+      const unhandled: never = choice;
       throw new Error(`unhandled choice ${String(unhandled)}`);
     }
   }
 }
 
+export function libraryPieceEndText({ end, ends }: TrackChoicePiece): string {
+  return `attaches by its end ${end + 1} of ${ends}`;
+}
+
 function extendDetail(choice: TrackChoiceView, extend: TrackExtendView): string | null {
   if (extend.unjoined) return unjoinedText(extend.unjoined);
   if (choice.blocked) return `the piece would ${trackBlockText(choice.blocked)}`;
-  return choice.joinsEnd ? "joins the open end exactly" : null;
+  if (choice.joinsEnd) return "joins the open end exactly";
+  return choice.kind === "piece" ? libraryPieceEndText(choice.piece) : null;
 }
 
 function extendView(extend: TrackExtendView, released: Omit<HintView, "hints"> | null): HintView {
@@ -337,6 +349,7 @@ function extendView(extend: TrackExtendView, released: Omit<HintView, "hints"> |
       key("extend-left", "left"),
       key("extend-right", "right"),
       key("extend-preview", choice?.joinsEnd ? "join" : "lay it"),
+      key("next-connector", "next end"),
       key("next-track-choice", "other choices"),
       key("undo", "undo"),
       key("select-tool", extend.continuing ? "let go of the end" : "done"),

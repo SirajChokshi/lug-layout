@@ -1,5 +1,6 @@
 import {
   HALF_TURN_16,
+  ZETA16_ORDER,
   attachPose16,
   composePose16,
   isLatticePose16,
@@ -51,6 +52,31 @@ export function trackMove(piece: TrackPieceDef, from: number, to: number): Track
     delta: rotateZeta16(subtractZeta16(exit.position, entry.position), frame),
     turn: normalizeHeading16(frame + exit.heading),
   };
+}
+
+function turnSteps(heading: number): number {
+  const steps = normalizeHeading16(heading);
+  return Math.min(steps, ZETA16_ORDER - steps);
+}
+
+export function continuingExit(piece: TrackPieceDef, entry: number): number | null {
+  const ahead = connector(piece, entry).heading + HALF_TURN_16;
+  let exit: number | null = null;
+  let fewest = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < piece.connectors.length; index++) {
+    const end = piece.connectors[index];
+    if (index === entry || !end) continue;
+    const steps = turnSteps(end.heading - ahead);
+    if (steps >= fewest) continue;
+    exit = index;
+    fewest = steps;
+  }
+  return exit;
+}
+
+export function continuingMove(piece: TrackPieceDef, entry: number): TrackMove | null {
+  const exit = continuingExit(piece, entry);
+  return exit === null ? null : trackMove(piece, entry, exit);
 }
 
 export function seatsOnStuds(piece: TrackPieceDef): boolean {
