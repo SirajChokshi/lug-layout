@@ -8,6 +8,7 @@ export interface MateFinder {
   readonly proposesEveryPose: boolean;
   insert(model: ModelConnectors, pose: LatticePose, owner: number): void;
   remove(model: ModelConnectors, pose: LatticePose, owner: number): void;
+  clear(): void;
   placedChanged(): void;
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void;
   proposeOnLattice(

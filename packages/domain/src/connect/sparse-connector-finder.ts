@@ -262,6 +262,15 @@ export class SparseConnectorFinder implements MateFinder {
     this.revision++;
   }
 
+  clear(): void {
+    this.cells.setAll(NO_SLOT);
+    this.regions.setAll(NO_SLOT);
+    this.chunks.setAll(0);
+    this.slots = 0;
+    this.freeSlot = NO_SLOT;
+    this.revision++;
+  }
+
   placedChanged(): void {
     this.revision++;
   }

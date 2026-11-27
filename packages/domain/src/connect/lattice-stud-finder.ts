@@ -239,6 +239,17 @@ export class LatticeStudFinder implements MateFinder {
     this.stamp(model, pose, false);
   }
 
+  clear(): void {
+    for (let bucket = 0; bucket < this.levelsOf.length; bucket++) {
+      const levels = this.levelsOf[bucket];
+      if (!levels) continue;
+      for (let l = 0; l < levels.length; l++) levels[l]?.clear();
+    }
+    this.provenanceUses.fill(0);
+    this.presentCount = 0;
+    this.revision++;
+  }
+
   placedChanged(): void {
     this.revision++;
   }

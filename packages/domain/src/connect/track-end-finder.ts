@@ -90,6 +90,13 @@ export class TrackEndFinder implements MateFinder {
     }
   }
 
+  clear(): void {
+    this.slotCount.fill(0, 0, this.slots);
+    this.slotHolder.fill(NO_HOLDER, 0, this.slots);
+    this.holders = 0;
+    this.freeHolder = NO_HOLDER;
+  }
+
   placedChanged(): void {}
 
   proposeOnLattice(
