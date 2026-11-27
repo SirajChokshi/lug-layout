@@ -954,35 +954,10 @@ footer {
   stroke-opacity: 0.85;
 }
 
-.note-legend-box {
-  fill: var(--surface-panel-solid);
-  fill-opacity: 0.92;
-  stroke: var(--border-strong);
-}
-
-.note-legend-swatch {
-  stroke: var(--border-strong);
-}
-
-.note-legend-title,
-.note-legend-label {
-  fill: var(--text-primary);
-  font-size: var(--text-small);
-}
-
-.note-legend-title {
-  font-weight: var(--weight-strong);
-}
-
-.note-panel .note-field-wide {
-  grid-column: 1 / -1;
-}
-
 .note-panel .selection-field select {
   box-sizing: border-box;
   width: 100%;
   height: var(--control-height-sm);
-  padding: 0 var(--space-2);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   background: var(--surface-panel-solid);
@@ -990,87 +965,8 @@ footer {
   font: inherit;
 }
 
-.note-panel .selection-field select:focus-visible {
-  border-color: var(--accent);
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.note-selected {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.note-selected .selection-name {
-  margin: 0;
-}
-
-.note-colors {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.note-swatches {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.note-swatch {
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-}
-
-.note-swatch[aria-pressed="true"] {
-  box-shadow:
-    0 0 0 2px var(--surface-panel-solid),
-    0 0 0 4px var(--accent);
-}
-
-.note-color-input {
-  width: 26px;
-  height: 20px;
-  padding: 0;
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-xs);
-  background: var(--surface-panel-solid);
-  cursor: pointer;
-}
-
-.note-panel .note-refusal {
-  margin: 0;
+.note-panel p[role="alert"] {
   color: var(--status-warn);
-  font-size: var(--text-small);
-}
-
-.note-panel .note-ruler-ends {
-  margin: 0;
-  font-size: var(--text-small);
-}
-
-.note-panel .note-ruler-ends div {
-  display: grid;
-  grid-template-columns: 52px 1fr;
-  gap: var(--space-3);
-}
-
-.note-panel .note-ruler-ends dt {
-  color: var(--text-muted);
-}
-
-.note-panel .note-ruler-ends dd {
-  margin: 0;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
 }
 
 .toolbar-hint {

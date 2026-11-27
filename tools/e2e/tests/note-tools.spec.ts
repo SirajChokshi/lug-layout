@@ -127,7 +127,7 @@ test("zone, label and ruler tools draw notes through the UI in 3D and the 2D pla
   await page.keyboard.type("Ada's kiosk");
   await page.keyboard.press("Enter");
   await editor.press("r");
-  await expect(page.locator(".note-texts .note-label text")).toHaveText("Ada's kiosk");
+  await expect(page.locator(".note-texts text")).toHaveText("Ada's kiosk");
 
   await editor.press("Shift+U");
   await expect(editor.root).toHaveAttribute("data-mode", "ruler");

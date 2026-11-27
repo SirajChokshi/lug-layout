@@ -2,6 +2,7 @@ import type { NoteBody, NoteEntry, NotePoint } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
 import type { WorldBox } from "@brr/render";
 import type { PlacementRecordV1 } from "@brr/schema/world";
+import { nearestStud } from "../edit/group-transform.ts";
 import type { NoteSketch } from "./note-sketch.ts";
 
 export const NOTE_TOOL_KINDS = ["zone", "text", "ruler"] as const;
@@ -12,7 +13,7 @@ export function noteToolOf(mode: string): NoteToolKind | null {
   return NOTE_TOOL_KINDS.find((kind) => kind === mode) ?? null;
 }
 
-export type NoteDraftKind = "rect" | "polygon" | "move" | "corner" | "ruler" | "ruler-end";
+export type NoteDraftKind = "polygon" | "shape";
 
 export interface NoteModelView {
   readonly placement: PlacementRecordV1;
@@ -33,19 +34,18 @@ export interface NoteStyle {
   readonly textColor: string;
   readonly rulerColor: string;
   readonly textHeightStuds: number;
-  readonly owner: number | null;
 }
 
 export interface NoteToolHost {
   entries(): ReadonlyArray<NoteEntry>;
   editable(entry: NoteEntry): boolean;
-  selected(): NoteEntry | null;
-  select(id: string | null, fresh?: boolean): void;
+  selectedEntry(): NoteEntry | null;
+  choose(id: string | null, fresh?: boolean): void;
   add(body: NoteBody): string | null;
   update(id: string, body: NoteBody): boolean;
   refuse(reason: string): void;
-  style(): NoteStyle;
-  newNote(): Pick<NoteBody, "layer" | "owner"> | null;
+  newStyle(): NoteStyle;
+  newLayer(): number | null;
 }
 
 export interface NoteTool {
@@ -62,12 +62,8 @@ export interface NoteTool {
   sketch(out: NoteSketch): void;
 }
 
-export function onStud(ldu: number): number {
-  return Math.round(ldu / STUD_LDU) * STUD_LDU + 0;
-}
-
 export function studAt(pointer: NotePointer): NotePoint {
-  return { x: onStud(pointer.x), z: onStud(pointer.z) };
+  return { x: nearestStud(pointer.x), z: nearestStud(pointer.z) };
 }
 
 export function samePoint(a: NotePoint, b: NotePoint): boolean {

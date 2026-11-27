@@ -175,10 +175,7 @@ export {
   TEXT_PROJECTION_FLOATS,
   TEXT_UP_OFFSET,
   type INoteEditSession,
-  type LegendRowView,
   type NoteEditView,
-  type NoteLayerView,
-  type NoteOwnerView,
   type NoteTextView,
   type NoteToolView,
   type RulerEndView,
@@ -193,7 +190,6 @@ export {
 } from "./notes/note-tool.ts";
 export { TEXT_LINE_HEIGHT_EM } from "./notes/text-frame.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
-export type { NoteRecordV2, RulerNoteV2, TextNoteV2, ZoneNoteV2 } from "@brr/schema/world";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,

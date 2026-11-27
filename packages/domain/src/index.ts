@@ -88,17 +88,7 @@ export {
   type RulerSnapKind,
   type SnapModel,
 } from "./notes/ruler-snap.ts";
-export {
-  NO_CORNER,
-  nearestCorner,
-  outlineCentroid,
-  segmentDistance,
-  shiftedOutline,
-  studRect,
-  withCornerAt,
-  zoneContains,
-  type ZoneOutline,
-} from "./notes/zone-outline.ts";
+export { studRect, zoneContains, type ZoneOutline } from "./notes/zone-outline.ts";
 export {
   ConsistHandle,
   ConsistLayout,

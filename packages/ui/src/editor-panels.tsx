@@ -515,7 +515,7 @@ interface StudDraft {
   readonly owner: string;
 }
 
-function StudField({
+export function StudField({
   label,
   value,
   owner,

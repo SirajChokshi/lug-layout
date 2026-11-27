@@ -1,19 +1,16 @@
 import {
-  NO_CORNER,
-  nearestCorner,
-  shiftedOutline,
   studRect,
-  withCornerAt,
   zoneContains,
   type NoteEntry,
   type NotePoint,
   type ZoneOutline,
 } from "@brr/domain";
+import { planeHypot } from "@brr/math";
 import { ZONE_VERTEX_MIN, type StudPoint, type ZoneNoteV2 } from "@brr/schema/world";
+import { nearestStud } from "../edit/group-transform.ts";
 import { areaText } from "../edit/size-labels.ts";
 import { DRAFT_RGB, rgbOf, type NoteSketch } from "./note-sketch.ts";
 import {
-  onStud,
   samePoint,
   studAt,
   studsAt,
@@ -26,38 +23,44 @@ import {
 
 type ZoneGesture =
   | { readonly kind: "rect"; readonly from: NotePoint; to: NotePoint; moved: boolean }
+  | { readonly kind: "corner-click"; at: NotePoint }
   | {
-      readonly kind: "move";
+      readonly kind: "move" | "corner";
       readonly entry: NoteEntry;
       readonly zone: ZoneNoteV2;
+      readonly corner: number;
       readonly pressX: number;
       readonly pressZ: number;
-      dx: number;
-      dz: number;
-    }
-  | {
-      readonly kind: "corner";
-      readonly entry: NoteEntry;
-      readonly zone: ZoneNoteV2;
-      readonly index: number;
-      to: NotePoint;
-    }
-  | { readonly kind: "corner-click"; at: NotePoint };
+      x: number;
+      z: number;
+    };
 
+const NO_CORNER = -1;
 const TOO_FEW_CORNERS = `A zone needs at least ${ZONE_VERTEX_MIN} corners.`;
 const FLAT_RECTANGLE = "Drag across at least one stud each way to draw a rectangle.";
 
-function zoneOf(entry: NoteEntry | null): ZoneNoteV2 | null {
-  return entry?.note.kind === "zone" ? entry.note : null;
+function nearestCorner(outline: ZoneOutline, x: number, z: number, reach: number): number {
+  let best = NO_CORNER;
+  let bestDistance = reach;
+  outline.forEach(([cornerX, cornerZ], i) => {
+    const distance = planeHypot(cornerX - x, cornerZ - z);
+    if (distance > bestDistance) return;
+    best = i;
+    bestDistance = distance;
+  });
+  return best;
 }
 
-function nextZoneName(entries: ReadonlyArray<NoteEntry>): string {
-  const zones = entries.filter((entry) => entry.note.kind === "zone").length;
-  return `Zone ${zones + 1}`;
+function studOutline(points: ReadonlyArray<NotePoint>): StudPoint[] {
+  return points.map((point) => [point.x, point.z]);
 }
 
-function cornersText(count: number): string {
-  return `${count} ${count === 1 ? "corner" : "corners"}`;
+function changedOutline(gesture: Extract<ZoneGesture, { kind: "move" | "corner" }>): StudPoint[] {
+  const { zone, corner, x, z } = gesture;
+  return zone.outline.map(([cornerX, cornerZ], i) => {
+    if (gesture.kind === "move") return [cornerX + x + 0, cornerZ + z + 0];
+    return i === corner ? [x, z] : [cornerX, cornerZ];
+  });
 }
 
 export class ZoneTool implements NoteTool {
@@ -80,12 +83,13 @@ export class ZoneTool implements NoteTool {
       this.gesture = { kind: "corner-click", at };
       return;
     }
-    const selectedEntry = this.host.selected();
-    const selected = zoneOf(selectedEntry);
-    if (selected && selectedEntry) {
-      const index = nearestCorner(selected.outline, pointer.x, pointer.z, pointer.reachLdu);
-      if (index !== NO_CORNER) {
-        this.gesture = { kind: "corner", entry: selectedEntry, zone: selected, index, to: at };
+    const pressed = { pressX: pointer.x, pressZ: pointer.z, x: 0, z: 0 };
+    const selected = this.host.selectedEntry();
+    if (selected?.note.kind === "zone") {
+      const corner = nearestCorner(selected.note.outline, pointer.x, pointer.z, pointer.reachLdu);
+      if (corner !== NO_CORNER) {
+        const zone = selected.note;
+        this.gesture = { kind: "corner", entry: selected, zone, corner, ...pressed, ...at };
         return;
       }
     }
@@ -94,40 +98,32 @@ export class ZoneTool implements NoteTool {
       (entry) =>
         entry.note.kind === "zone" && zoneContains(entry.note.outline, pointer.x, pointer.z),
     );
-    const zone = zoneOf(under);
-    if (under && zone) {
-      this.gesture = {
-        kind: "move",
-        entry: under,
-        zone,
-        pressX: pointer.x,
-        pressZ: pointer.z,
-        dx: 0,
-        dz: 0,
-      };
-      return;
-    }
-    this.gesture = { kind: "rect", from: at, to: at, moved: false };
+    this.gesture =
+      under?.note.kind === "zone"
+        ? { kind: "move", entry: under, zone: under.note, corner: NO_CORNER, ...pressed }
+        : { kind: "rect", from: at, to: at, moved: false };
   }
 
   drag(pointer: NotePointer): void {
     this.hover(pointer);
     const gesture = this.gesture;
     if (!gesture) return;
+    const at = studAt(pointer);
     switch (gesture.kind) {
       case "rect":
-        gesture.to = studAt(pointer);
-        gesture.moved ||= !samePoint(gesture.from, gesture.to);
-        return;
-      case "move":
-        gesture.dx = onStud(pointer.x - gesture.pressX);
-        gesture.dz = onStud(pointer.z - gesture.pressZ);
-        return;
-      case "corner":
-        gesture.to = studAt(pointer);
+        gesture.to = at;
+        gesture.moved ||= !samePoint(gesture.from, at);
         return;
       case "corner-click":
-        gesture.at = studAt(pointer);
+        gesture.at = at;
+        return;
+      case "move":
+        gesture.x = nearestStud(pointer.x - gesture.pressX);
+        gesture.z = nearestStud(pointer.z - gesture.pressZ);
+        return;
+      case "corner":
+        gesture.x = at.x;
+        gesture.z = at.z;
         return;
       default: {
         const unhandled: never = gesture;
@@ -140,19 +136,19 @@ export class ZoneTool implements NoteTool {
     if (pointer) this.drag(pointer);
     const gesture = this.gesture;
     this.gesture = null;
-    if (!gesture) return;
-    switch (gesture.kind) {
+    switch (gesture?.kind) {
+      case undefined:
+        return;
       case "rect":
-        this.releaseRect(gesture.from, gesture.to, gesture.moved);
-        return;
-      case "move":
-        this.releaseMove(gesture.entry, gesture.zone, gesture.dx, gesture.dz);
-        return;
-      case "corner":
-        this.releaseCorner(gesture.entry, gesture.zone, gesture.index, gesture.to);
+        if (!gesture.moved) this.clickGround(gesture.from);
+        else this.addZone(studRect(gesture.from, gesture.to));
         return;
       case "corner-click":
         this.addCorner(gesture.at);
+        return;
+      case "move":
+      case "corner":
+        this.changeZone(gesture);
         return;
       default: {
         const unhandled: never = gesture;
@@ -180,36 +176,27 @@ export class ZoneTool implements NoteTool {
 
   draft(): NoteDraftKind | null {
     if (this.corners.length > 0) return "polygon";
-    switch (this.gesture?.kind) {
-      case "rect":
-        return this.gesture.moved ? "rect" : null;
-      case "move":
-        return "move";
-      case "corner":
-        return "corner";
-      case "corner-click":
-      case undefined:
-        return null;
-      default: {
-        const unhandled: never = this.gesture;
-        throw new Error(`unhandled zone gesture ${String(unhandled)}`);
-      }
-    }
+    const gesture = this.gesture;
+    if (gesture?.kind === "move" || gesture?.kind === "corner") return "shape";
+    return gesture?.kind === "rect" && gesture.moved ? "shape" : null;
   }
 
   detail(): string | null {
     const gesture = this.gesture;
-    if (this.corners.length > 0) {
-      const closable = this.corners.length >= ZONE_VERTEX_MIN;
-      return `${cornersText(this.corners.length)}${closable ? ", click the first corner or press Enter to close" : ""}`;
+    const count = this.corners.length;
+    if (count > 0) {
+      const close =
+        count >= ZONE_VERTEX_MIN ? ", click the first corner or press Enter to close" : "";
+      return `${count} ${count === 1 ? "corner" : "corners"}${close}`;
     }
     if (gesture?.kind === "rect" && gesture.moved) {
-      const rect = studRect(gesture.from, gesture.to);
-      return rect ? this.rectText(gesture.from, gesture.to) : FLAT_RECTANGLE;
+      const { from, to } = gesture;
+      return studRect(from, to)
+        ? areaText(Math.abs(to.x - from.x), Math.abs(to.z - from.z))
+        : FLAT_RECTANGLE;
     }
-    if (gesture?.kind === "move")
-      return `${gesture.zone.name}, by ${studsAt({ x: gesture.dx, z: gesture.dz })}`;
-    if (gesture?.kind === "corner") return `corner to ${studsAt(gesture.to)}`;
+    if (gesture?.kind === "move") return `${gesture.zone.name}, by ${studsAt(gesture)}`;
+    if (gesture?.kind === "corner") return `corner to ${studsAt(gesture)}`;
     return this.cursor ? `at ${studsAt(this.cursor)}` : null;
   }
 
@@ -220,128 +207,71 @@ export class ZoneTool implements NoteTool {
 
   sketch(out: NoteSketch): void {
     const gesture = this.gesture;
-    const handle = this.reach / 2;
-    if (this.corners.length > 0) {
+    const first = this.corners[0];
+    if (first) {
       const band = this.cursor ? [...this.corners, this.cursor] : this.corners;
-      out.outline(this.studOutline(band), false, DRAFT_RGB);
-      const first = this.corners[0];
-      if (first) out.square(first.x, first.z, handle, DRAFT_RGB);
+      out.outline(studOutline(band), false, DRAFT_RGB);
+      out.square(first.x, first.z, this.reach / 2, DRAFT_RGB);
       return;
     }
-    if (!gesture) return;
-    switch (gesture.kind) {
-      case "rect": {
-        const rect = gesture.moved ? studRect(gesture.from, gesture.to) : null;
-        if (rect) out.zone(rect, DRAFT_RGB);
-        return;
-      }
-      case "move":
-        out.zone(
-          shiftedOutline(gesture.zone.outline, gesture.dx, gesture.dz),
-          rgbOf(gesture.zone.color),
-        );
-        return;
-      case "corner":
-        out.zone(
-          withCornerAt(gesture.zone.outline, gesture.index, gesture.to),
-          rgbOf(gesture.zone.color),
-        );
-        out.square(gesture.to.x, gesture.to.z, handle, DRAFT_RGB);
-        return;
-      case "corner-click":
-        return;
-      default: {
-        const unhandled: never = gesture;
-        throw new Error(`unhandled zone gesture ${String(unhandled)}`);
-      }
+    if (gesture?.kind === "rect") {
+      const rect = gesture.moved ? studRect(gesture.from, gesture.to) : null;
+      if (rect) out.zone(rect, DRAFT_RGB);
     }
-  }
-
-  private rectText(from: NotePoint, to: NotePoint): string {
-    return areaText(Math.abs(to.x - from.x), Math.abs(to.z - from.z));
-  }
-
-  private studOutline(points: ReadonlyArray<NotePoint>): ZoneOutline {
-    return points.map((point): StudPoint => [point.x, point.z]);
-  }
-
-  private releaseRect(from: NotePoint, to: NotePoint, moved: boolean): void {
-    if (!moved) {
-      this.clickGround(from);
-      return;
+    if (gesture?.kind === "move" || gesture?.kind === "corner") {
+      out.zone(changedOutline(gesture), rgbOf(gesture.zone.color));
     }
-    const outline = studRect(from, to);
-    if (!outline) {
-      this.host.refuse(FLAT_RECTANGLE);
-      return;
-    }
-    this.addZone(outline);
   }
 
   private clickGround(at: NotePoint): void {
-    if (this.host.selected()) {
-      this.host.select(null);
-      return;
-    }
-    this.addCorner(at);
+    if (this.host.selectedEntry()) this.host.choose(null);
+    else this.addCorner(at);
   }
 
-  private releaseMove(entry: NoteEntry, zone: ZoneNoteV2, dx: number, dz: number): void {
-    if (dx === 0 && dz === 0) {
-      this.host.select(entry.id);
-      return;
-    }
+  private changeZone(gesture: Extract<ZoneGesture, { kind: "move" | "corner" }>): void {
+    const { entry, zone } = gesture;
+    const outline = changedOutline(gesture);
+    const unchanged = outline.every(([x, z], i) => {
+      const corner = zone.outline[i];
+      return corner?.[0] === x && corner[1] === z;
+    });
     const { index: _index, ...body } = zone;
-    if (this.host.update(entry.id, { ...body, outline: shiftedOutline(zone.outline, dx, dz) })) {
-      this.host.select(entry.id);
-    }
-  }
-
-  private releaseCorner(entry: NoteEntry, zone: ZoneNoteV2, index: number, to: NotePoint): void {
-    const corner = zone.outline[index];
-    if (!corner || (corner[0] === to.x && corner[1] === to.z)) return;
-    const { index: _index, ...body } = zone;
-    this.host.update(entry.id, { ...body, outline: withCornerAt(zone.outline, index, to) });
+    if (unchanged || this.host.update(entry.id, { ...body, outline })) this.host.choose(entry.id);
   }
 
   private addCorner(at: NotePoint): void {
     const first = this.corners[0];
     const last = this.corners.at(-1);
     if (last && samePoint(last, at)) return;
-    if (first && this.corners.length >= ZONE_VERTEX_MIN && this.nearFirst(first, at)) {
-      this.closePolygon();
-      return;
-    }
-    this.corners = [...this.corners, at];
-  }
-
-  private nearFirst(first: NotePoint, at: NotePoint): boolean {
-    return (
-      samePoint(first, at) ||
-      nearestCorner([[first.x, first.z]], at.x, at.z, this.reach) !== NO_CORNER
-    );
+    const closing =
+      first !== undefined &&
+      this.corners.length >= ZONE_VERTEX_MIN &&
+      planeHypot(first.x - at.x, first.z - at.z) <= this.reach;
+    if (closing) this.closePolygon();
+    else this.corners = [...this.corners, at];
   }
 
   private closePolygon(): void {
-    if (this.corners.length < ZONE_VERTEX_MIN) {
-      this.host.refuse(TOO_FEW_CORNERS);
-      return;
-    }
-    if (this.addZone(this.studOutline(this.corners))) this.corners = [];
+    if (this.corners.length < ZONE_VERTEX_MIN) this.host.refuse(TOO_FEW_CORNERS);
+    else if (this.addZone(studOutline(this.corners))) this.corners = [];
   }
 
-  private addZone(outline: ZoneOutline): boolean {
-    const base = this.host.newNote();
-    if (!base) return false;
+  private addZone(outline: StudPoint[] | null): boolean {
+    if (!outline) {
+      this.host.refuse(FLAT_RECTANGLE);
+      return false;
+    }
+    const layer = this.host.newLayer();
+    if (layer === null) return false;
+    const zones = this.host.entries().filter((entry) => entry.note.kind === "zone").length;
     const id = this.host.add({
       kind: "zone",
-      ...base,
-      name: nextZoneName(this.host.entries()),
-      color: this.host.style().zoneColor,
-      outline: outline.map(([x, z]) => [x, z]),
+      layer,
+      name: `Zone ${zones + 1}`,
+      color: this.host.newStyle().zoneColor,
+      outline,
     });
-    if (id === null) return false;
-    this.host.select(id);
-    return true;
+    if (id !== null) this.host.choose(id);
+    return id !== null;
   }
 }

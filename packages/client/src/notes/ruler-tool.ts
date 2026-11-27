@@ -1,7 +1,6 @@
 import {
   rulerSpan,
   sameRulerEnd,
-  segmentDistance,
   snapRulerEnd,
   type NoteEntry,
   type NoteSpan,
@@ -70,7 +69,14 @@ function withEnd(ruler: RulerNoteV2, side: RulerSide, end: RulerEndV2): RulerNot
   return side === "from" ? { ...ruler, from: end } : { ...ruler, to: end };
 }
 
-export function snapText({ snap, model }: Snapped): string {
+function segmentDistance({ ax, az, bx, bz }: NoteSpan, x: number, z: number): number {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const along = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+  return planeHypot(ax + along * dx - x, az + along * dz - z);
+}
+
+function snapText({ snap, model }: Snapped): string {
   const at = studsAt(snap);
   if (!model) return `free end at ${at}`;
   switch (snap.kind) {
@@ -109,7 +115,7 @@ export class RulerTool implements NoteTool {
   press(pointer: NotePointer): void {
     this.hover(pointer);
     const aim = snapped(pointer);
-    const selected = this.host.selected();
+    const selected = this.host.selectedEntry();
     const ruler = rulerOf(selected);
     const side = ruler ? this.grabbedSide(ruler, pointer) : null;
     if (selected && ruler && side) {
@@ -144,16 +150,16 @@ export class RulerTool implements NoteTool {
       return;
     }
     if (samePlace(gesture.from, gesture.to)) return;
-    const base = this.host.newNote();
-    if (!base) return;
+    const layer = this.host.newLayer();
+    if (layer === null) return;
     const id = this.host.add({
       kind: "ruler",
-      ...base,
+      layer,
       from: gesture.from.snap.end,
       to: gesture.to.snap.end,
-      color: this.host.style().rulerColor,
+      color: this.host.newStyle().rulerColor,
     });
-    if (id !== null) this.host.select(id);
+    if (id !== null) this.host.choose(id);
   }
 
   cancel(): boolean {
@@ -169,9 +175,7 @@ export class RulerTool implements NoteTool {
   }
 
   draft(): NoteDraftKind | null {
-    const gesture = this.gesture;
-    if (!gesture?.moved) return null;
-    return gesture.kind === "new" ? "ruler" : "ruler-end";
+    return this.gesture?.moved ? "shape" : null;
   }
 
   detail(): string | null {
@@ -233,11 +237,12 @@ export class RulerTool implements NoteTool {
   private click(pointer: NotePointer | null): void {
     const under =
       pointer &&
-      topmost(this.host, (entry) => {
-        if (entry.note.kind !== "ruler") return false;
-        const { ax, az, bx, bz } = rulerSpan(entry.note);
-        return segmentDistance(ax, az, bx, bz, pointer.x, pointer.z) <= pointer.reachLdu;
-      });
-    this.host.select(under ? under.id : null);
+      topmost(
+        this.host,
+        (entry) =>
+          entry.note.kind === "ruler" &&
+          segmentDistance(rulerSpan(entry.note), pointer.x, pointer.z) <= pointer.reachLdu,
+      );
+    this.host.choose(under ? under.id : null);
   }
 }

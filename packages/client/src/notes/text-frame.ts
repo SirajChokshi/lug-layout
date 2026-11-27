@@ -22,20 +22,14 @@ export function writeTextAxes(rot: number, out: TextAxes): TextAxes {
   return out;
 }
 
-export function textAxes(rot: number): TextAxes {
-  return writeTextAxes(rot, { alongX: 0, alongZ: 0, upX: 0, upZ: 0 });
-}
-
-export function textLines(text: string): ReadonlyArray<string> {
-  return text.split("\n");
-}
+const axes: TextAxes = { alongX: 0, alongZ: 0, upX: 0, upZ: 0 };
 
 export function textHeightLdu(note: Pick<TextNoteV2, "heightStuds">): number {
   return note.heightStuds * STUD_LDU;
 }
 
 function halfExtents(note: TextNoteV2): { readonly along: number; readonly across: number } {
-  const lines = textLines(note.text);
+  const lines = note.text.split("\n");
   const longest = Math.max(...lines.map((line) => line.length));
   const height = textHeightLdu(note);
   return {
@@ -45,7 +39,7 @@ function halfExtents(note: TextNoteV2): { readonly along: number; readonly acros
 }
 
 export function textContains(note: TextNoteV2, x: number, z: number, margin: number): boolean {
-  const axes = textAxes(note.rot);
+  writeTextAxes(note.rot, axes);
   const dx = x - note.x;
   const dz = z - note.z;
   const along = dx * axes.alongX + dz * axes.alongZ;
@@ -55,7 +49,7 @@ export function textContains(note: TextNoteV2, x: number, z: number, margin: num
 }
 
 export function textCorners(note: TextNoteV2): Float64Array {
-  const axes = textAxes(note.rot);
+  writeTextAxes(note.rot, axes);
   const half = halfExtents(note);
   const corners = new Float64Array(8);
   const signs = [
