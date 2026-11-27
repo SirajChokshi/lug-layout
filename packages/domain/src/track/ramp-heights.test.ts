@@ -114,7 +114,7 @@ describe("runHeights", () => {
         if (!move) return;
         layout.place(indexOf(move), placement, heights.yPlates[i] ?? 0, heights.rise[i] ?? 0);
       });
-      const graph = new TrackGraph(layout);
+      const graph = TrackGraph.of(layout);
       const unjoinedInside = moves.slice(1).filter((move, i) => {
         const entry = (graph.endStart[i + 1] ?? 0) + move.from;
         return graph.endPartner[entry] === NO_END;

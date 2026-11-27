@@ -117,6 +117,7 @@ import type { TrackSupport } from "./track-support.ts";
 import { writeChunkSquares } from "./plan-reach.ts";
 import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from "./track-bands.ts";
 import { TrackPlacements, contentOf } from "./track-placements.ts";
+import { PlacementEnds } from "./placement-ends.ts";
 import { heightText, type LabelView } from "./size-labels.ts";
 import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
@@ -658,6 +659,7 @@ export class TrackDrawing implements ExtensionSite {
   private heldCarrier = new Int32Array(0);
   private combined: TrackLayout;
   private readonly placements = new TrackPlacements();
+  private readonly placementEnds: PlacementEnds;
   private heldStale = false;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
@@ -759,7 +761,8 @@ export class TrackDrawing implements ExtensionSite {
     const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.combined = this.layout;
-    this.graph = new TrackGraph(this.layout);
+    this.placementEnds = new PlacementEnds(this.layout.pieces);
+    this.graph = TrackGraph.of(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
       const shape = kitFootprints(piece, shapes);
@@ -2387,7 +2390,7 @@ export class TrackDrawing implements ExtensionSite {
 
   private combine(): TrackLayout {
     if (this.held.length === 0) return this.layout;
-    const combined = new TrackLayout(this.pieces.map(pieceSpec));
+    const combined = new TrackLayout(this.layout.pieces);
     for (let p = 0; p < this.layout.count; p++) {
       combined.place(
         this.layout.piece(p),
@@ -2411,18 +2414,19 @@ export class TrackDrawing implements ExtensionSite {
     this.previousCrossingOutlines = this.crossingOutlines;
     this.crossingOutlines = new Map();
     this.crossingPieceList = null;
-    this.graph = new TrackGraph(this.combined);
+    const ends = Array.from({ length: this.combined.count }, (_, p) =>
+      this.placementEnds.of(this.placements.at(p)),
+    );
+    this.graph = TrackGraph.fromEnds(this.combined, ends);
     const world: TrackEnd[] = [];
     const inRunFrames: TrackEnd[] = [];
     const owners: number[] = [];
     for (const end of this.graph.openEnds) {
       const placement = this.graph.endPlacement[end] ?? 0;
-      const connector = this.graph.endConnector[end] ?? 0;
-      const open: TrackEnd = {
-        pose: this.combined.connectorPose(placement, connector),
-        yPlates: this.combined.endYPlates(placement, connector),
-        frame: this.combined.frame(placement),
-      };
+      const piece = ends[placement];
+      const at = piece?.ends[this.graph.endConnector[end] ?? 0];
+      if (!piece || !at) throw new Error(`open end ${end} has no cached end on its piece`);
+      const open: TrackEnd = { pose: at.pose, yPlates: at.yPlates, frame: piece.placement.frame };
       if (open.frame.id !== WORLD_TRACK_FRAME.id) {
         inRunFrames.push(open);
         continue;

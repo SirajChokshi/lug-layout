@@ -303,7 +303,7 @@ describe("switch ladders", () => {
           };
           turnAround(extendTo(layout, turnAround(far.entry), span / STRAIGHT_STUDS));
 
-          const graph = new TrackGraph(layout);
+          const graph = TrackGraph.of(layout);
           expect(graph.issues).toEqual([]);
           expect(graph.openEnds.length).toBe(0);
           expect(graph.joinCount * 2).toBe(graph.endCount);

@@ -1,4 +1,5 @@
-import { posesJoin16, STUD_LDU, zeta16ToStuds, type Pose16 } from "@brr/math";
+import { posesJoin16, type Pose16 } from "@brr/math";
+import { pieceEnds, type PieceEnds } from "./piece-ends.ts";
 import type { TrackLayout } from "./track-layout.ts";
 
 export const NO_END = -1;
@@ -36,7 +37,30 @@ export class TrackGraph {
   readonly openEnds: Int32Array;
   readonly issues: ReadonlyArray<TrackGraphIssue>;
 
-  constructor(layout: TrackLayout) {
+  static of(layout: TrackLayout): TrackGraph {
+    return new TrackGraph(layout, layoutEnds(layout));
+  }
+
+  static fromEnds(layout: TrackLayout, ends: ReadonlyArray<PieceEnds>): TrackGraph {
+    if (ends.length !== layout.count) {
+      throw new Error(
+        `ends were given for ${ends.length} placements of a ${layout.count}-piece layout`,
+      );
+    }
+    for (let p = 0; p < layout.count; p++) {
+      const given = ends[p];
+      if (
+        !given ||
+        given.spec !== layout.pieces[layout.piece(p)] ||
+        !layout.sameRow(p, given.placement)
+      ) {
+        throw new Error(`the ends given for placement ${p} weren't computed from its row`);
+      }
+    }
+    return new TrackGraph(layout, ends);
+  }
+
+  private constructor(layout: TrackLayout, ends: ReadonlyArray<PieceEnds>) {
     const placementCount = layout.count;
     const endStart = new Int32Array(placementCount + 1);
     let edgeTotal = 0;
@@ -58,26 +82,25 @@ export class TrackGraph {
     const byPosition = new Map<string, number[]>();
 
     for (let p = 0; p < placementCount; p++) {
+      const piece = ends[p];
+      if (!piece) throw new Error(`placement ${p} has no ends to build its graph from`);
       const first = endStart[p] ?? 0;
-      const last = endStart[p + 1] ?? 0;
-      const frame = layout.frame(p);
-      for (let end = first; end < last; end++) {
-        const connector = end - first;
-        const yPlates = layout.endYPlates(p, connector);
-        const pose = layout.connectorPose(p, connector);
-        const studs = zeta16ToStuds(pose.position);
-        poses.push(pose);
+      const frame = piece.placement.frame.id;
+      for (let connector = 0; connector < piece.ends.length; connector++) {
+        const at = piece.ends[connector];
+        if (!at) throw new Error(`placement ${p} has no end at connector ${connector}`);
+        const end = first + connector;
+        poses.push(at.pose);
         endPlacement[end] = p;
         endConnector[end] = connector;
-        endXLdu[end] = studs.x * STUD_LDU + frame.xLdu;
-        endZLdu[end] = studs.z * STUD_LDU + frame.zLdu;
-        endHeading[end] = pose.heading;
-        endYPlates[end] = yPlates;
-        endFrame[end] = frame.id;
-        const key = endKey(pose, yPlates, frame.id);
-        const group = byPosition.get(key);
+        endXLdu[end] = at.xLdu;
+        endZLdu[end] = at.zLdu;
+        endHeading[end] = at.pose.heading;
+        endYPlates[end] = at.yPlates;
+        endFrame[end] = frame;
+        const group = byPosition.get(at.key);
         if (group) group.push(end);
-        else byPosition.set(key, [end]);
+        else byPosition.set(at.key, [end]);
       }
     }
 
@@ -254,6 +277,17 @@ export class TrackGraph {
   }
 }
 
-function endKey(pose: Pose16, yPlates: number, frame: number): string {
-  return `${frame}:${yPlates}:${pose.position.join(",")}`;
+function layoutEnds(layout: TrackLayout): ReadonlyArray<PieceEnds> {
+  return Array.from({ length: layout.count }, (_, p) => {
+    const piece = layout.piece(p);
+    const spec = layout.pieces[piece];
+    if (!spec) throw new RangeError(`placement ${p} has no piece ${piece} in its layout`);
+    return pieceEnds(spec, {
+      piece,
+      pose: layout.pose(p),
+      yPlates: layout.yPlates(p),
+      rise: layout.rise(p),
+      frame: layout.frame(p),
+    });
+  });
 }

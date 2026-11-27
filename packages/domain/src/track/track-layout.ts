@@ -7,6 +7,7 @@ import {
   type Pose16,
 } from "@brr/math";
 import { WORLD_TRACK_FRAME, type TrackFrame } from "./end-gaps.ts";
+import { endYPlatesOf, type PiecePlacement } from "./piece-ends.ts";
 
 export interface TrackRoute {
   readonly from: number;
@@ -30,7 +31,6 @@ const INT16_MAX = 2 ** 15 - 1;
 export const INT8_MIN = -(2 ** 7);
 export const INT8_MAX = 2 ** 7 - 1;
 const RAMP_CONNECTORS = 2;
-const RAMP_HIGH_END = 1;
 
 function isIntegerIn(value: number, min: number, max: number): boolean {
   return Number.isInteger(value) && value >= min && value <= max;
@@ -198,8 +198,33 @@ export class TrackLayout {
     if (!isIntegerIn(connector, 0, connectorCount - 1)) {
       throw new RangeError(`placement ${placement} has no connector ${connector}`);
     }
-    const base = this.yPlates(placement);
-    return connector === RAMP_HIGH_END ? base + this.rise(placement) : base;
+    return endYPlatesOf(this.yPlates(placement), this.rise(placement), connector);
+  }
+
+  sameRow(placement: number, other: PiecePlacement): boolean {
+    this.checkPlacement(placement);
+    if (
+      this.pieceOf[placement] !== other.piece ||
+      this.headingOf[placement] !== other.pose.heading ||
+      this.yPlatesOf[placement] !== other.yPlates ||
+      this.riseOf[placement] !== other.rise
+    ) {
+      return false;
+    }
+    const frame = this.frames.get(this.frameOf[placement] ?? WORLD_TRACK_FRAME.id);
+    if (
+      frame?.id !== other.frame.id ||
+      frame.xLdu !== other.frame.xLdu ||
+      frame.zLdu !== other.frame.zLdu
+    ) {
+      return false;
+    }
+    const offset = placement * ZETA16_COEFFICIENT_COUNT;
+    const position = other.pose.position;
+    for (let k = 0; k < ZETA16_COEFFICIENT_COUNT; k++) {
+      if (this.positionOf[offset + k] !== position[k]) return false;
+    }
+    return true;
   }
 
   pose(placement: number): Pose16 {

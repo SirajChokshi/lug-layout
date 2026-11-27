@@ -44,7 +44,7 @@ function straightLine(): SimLoad {
   const layout = new TrackLayout([{ connectors: [entry, exit], routes: [{ from: 0, to: 1 }] }]);
   let last = layout.place(0, POSE16_IDENTITY, 0);
   for (let i = 1; i < PIECES; i++) last = layout.attach(0, 0, { placement: last, connector: 1 });
-  const graph = new TrackGraph(layout);
+  const graph = TrackGraph.of(layout);
   const straight = { kind: "straight", lengthLdu: Number(STRAIGHT_STUDS) * STUD_LDU } as const;
   return {
     graph: {

@@ -55,16 +55,16 @@ beforeAll(async () => {
 
 describe("track graph from catalog pieces", () => {
   it("closes a circle of R40 curves only after sixteen, and leaves a short loop open", () => {
-    const circle = new TrackGraph(buildTrackPlan("ldraw:74747*16", catalog).layout);
+    const circle = TrackGraph.of(buildTrackPlan("ldraw:74747*16", catalog).layout);
     expect([circle.joinCount, circle.openEnds.length, circle.issues.length]).toEqual([16, 0, 0]);
 
-    const short = new TrackGraph(buildTrackPlan("ldraw:74747*15, ldraw:74746", catalog).layout);
+    const short = TrackGraph.of(buildTrackPlan("ldraw:74747*15, ldraw:74746", catalog).layout);
     expect(short.joinCount).toBe(15);
     expect(Array.from(short.openEnds, (end) => short.endPlacement[end])).toEqual([0, 15]);
   });
 
   it("joins a dogbone with two reversing loops so every directed edge reaches every other", () => {
-    const graph = new TrackGraph(buildTrackPlan(DOGBONE, catalog).layout);
+    const graph = TrackGraph.of(buildTrackPlan(DOGBONE, catalog).layout);
     expect([graph.openEnds.length, graph.issues.length, graph.switchCount]).toEqual([0, 0, 4]);
     for (let edge = 0; edge < graph.edgeCount; edge++) {
       expect(graph.reachableEdgeCount(edge)).toBe(graph.edgeCount);
@@ -73,7 +73,7 @@ describe("track graph from catalog pieces", () => {
 
   it("lets a facing switch's state choose the route and gives a trailing move one way on", () => {
     const { layout } = buildTrackPlan("ldraw:74746, ldraw:75541-f1, ldraw:74746", catalog);
-    const graph = new TrackGraph(layout);
+    const graph = TrackGraph.of(layout);
     const states = new Uint8Array(graph.switchCount);
     const facing = 0;
     expect(graph.edgeSwitch[facing]).not.toBe(NO_SWITCH);
@@ -96,7 +96,7 @@ describe("track graph from catalog pieces", () => {
     const piece = planned.piece(0);
     layout.place(piece, POSE16_IDENTITY, 0);
     layout.place(piece, POSE16_IDENTITY, 0);
-    const graph = new TrackGraph(layout);
+    const graph = TrackGraph.of(layout);
     expect([graph.joinCount, graph.openEnds.length, graph.issues.length]).toEqual([0, 4, 2]);
   });
 

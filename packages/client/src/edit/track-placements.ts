@@ -1,13 +1,6 @@
-import type { TrackFrame, TrackLayout } from "@brr/domain";
-import type { Pose16 } from "@brr/math";
+import type { PiecePlacement, TrackLayout } from "@brr/domain";
 
-export interface TrackPlacement {
-  readonly piece: number;
-  readonly pose: Pose16;
-  readonly yPlates: number;
-  readonly rise: number;
-  readonly frame: TrackFrame;
-}
+export type TrackPlacement = PiecePlacement;
 
 export function contentOf(layout: TrackLayout, placement: number): TrackPlacement {
   return {

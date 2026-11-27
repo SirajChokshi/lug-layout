@@ -754,7 +754,7 @@ function laidFootprints(layout: TrackDrawing, parts: ReadonlyArray<PartAsset>): 
   return cells;
 }
 
-function pieceEnds(layout: TrackDrawing): ReadonlyArray<ReadonlyArray<TrackEndView>> {
+function endViewsByPiece(layout: TrackDrawing): ReadonlyArray<ReadonlyArray<TrackEndView>> {
   const routes = layout.routes();
   const refs = Array.from({ length: layout.pieceCount }, (_, p) => layout.footprintAt(p).ref);
   let next = 0;
@@ -782,7 +782,7 @@ function crossings(
   rects: ReadonlyArray<Rect> = [],
 ): ReadonlyArray<string> {
   const cells = laidFootprints(layout, parts);
-  const ends = pieceEnds(layout);
+  const ends = endViewsByPiece(layout);
   const found: string[] = [];
   for (let a = 0; a < cells.length; a++) {
     for (let b = a + 1; b < cells.length; b++) {
@@ -3017,7 +3017,7 @@ it("plays the rails on the graph of exactly the layout it hands them, after ever
       }
       const play = layout.playTrack();
       expect(graphArrays(play.graph), `seed ${seed}, step ${step}`).toEqual(
-        graphArrays(new TrackGraph(play.layout)),
+        graphArrays(TrackGraph.of(play.layout)),
       );
       seen.joined = Math.max(seen.joined, play.graph.joinCount);
       seen.switches = Math.max(seen.switches, play.graph.switchCount);

@@ -9,6 +9,7 @@ import {
 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { WORLD_TRACK_FRAME, endGaps, type TrackFrame } from "./end-gaps.ts";
+import { pieceEnds, type PieceEnds } from "./piece-ends.ts";
 import { NO_END, TrackGraph } from "./track-graph.ts";
 import { TrackLayout, type TrackPieceSpec } from "./track-layout.ts";
 
@@ -135,7 +136,7 @@ describe("track heights", () => {
     const ramp = layout.place(STRAIGHT, POSE16_IDENTITY, 2, 1);
     const above = layout.attach(STRAIGHT, 0, { placement: ramp, connector: 1 });
     const level = layout.place(STRAIGHT, layout.pose(above), 2);
-    const graph = new TrackGraph(layout);
+    const graph = TrackGraph.of(layout);
 
     expect(layout.endYPlates(ramp, 0)).toBe(2);
     expect(layout.endYPlates(above, 0)).toBe(3);
@@ -168,7 +169,7 @@ describe("run frames", () => {
       runFrame,
     );
     const inOtherRun = layout.place(0, exit, 0, 0, otherRun);
-    const graph = new TrackGraph(layout);
+    const graph = TrackGraph.of(layout);
     expect(partnerOf(graph, world, 1)).toBe(NO_END);
     expect(partnerOf(graph, inOtherRun, 0)).toBe(NO_END);
     expect(partnerOf(graph, inRun, 1)).toBe((graph.endStart[sameRun] ?? 0) + 0);
@@ -180,7 +181,7 @@ describe("run frames", () => {
     const layout = new TrackLayout([straight(16n)]);
     layout.place(0, POSE16_IDENTITY, 0);
     const inRun = layout.place(0, exit, 0, 0, runFrame);
-    const graph = new TrackGraph(layout);
+    const graph = TrackGraph.of(layout);
     const end = graph.endStart[inRun] ?? 0;
     expect([graph.endXLdu[end], graph.endZLdu[end], graph.endFrame[end]]).toEqual([
       16 * STUD_LDU + runFrame.xLdu,
@@ -199,4 +200,54 @@ describe("run frames", () => {
     layout.place(0, POSE16_IDENTITY, 0, 0, runFrame);
     expect(() => layout.place(0, exit, 0, 0, { ...runFrame, xLdu: 1 })).toThrow(RangeError);
   });
+});
+
+it("builds the graph from given ends only when each placement's were computed from its own spec and row, and refuses ends moved, swapped, re-framed, raised, re-ramped, from another spec with as many ends, or one too many", () => {
+  const pieces = [straight(16n), straight(8n)];
+  const layout = new TrackLayout(pieces);
+  const [world, run, otherRun] = RUN_FRAMES;
+  if (!world || !run || !otherRun) throw new Error("no run frames");
+  layout.place(0, POSE16_IDENTITY, 0);
+  layout.place(1, pose16(zeta16([16n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0), 2, 1, run);
+  layout.place(0, pose16(zeta16([24n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0), 3);
+  const rows = laidPieces(layout);
+  const endsOf = (spec: TrackPieceSpec | undefined, row: (typeof rows)[number] | undefined) => {
+    if (!spec || !row) throw new Error("no such spec or row");
+    return pieceEnds(spec, row);
+  };
+  const own = rows.map((row) => endsOf(pieces[row.piece], row));
+  const [first, ramp, last] = rows;
+  const [firstEnds, , lastEnds] = own;
+  if (!first || !ramp || !last || !firstEnds || !lastEnds) {
+    throw new Error("the layout has fewer than three pieces");
+  }
+  const refused = {
+    moved: own.with(
+      0,
+      endsOf(pieces[0], { ...first, pose: pose16(zeta16([4n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0) }),
+    ),
+    swapped: own.with(0, lastEnds).with(2, firstEnds),
+    reframed: own.with(1, endsOf(pieces[1], { ...ramp, frame: otherRun })),
+    raised: own.with(2, endsOf(pieces[0], { ...last, yPlates: last.yPlates + 1 })),
+    reramped: own.with(1, endsOf(pieces[1], { ...ramp, rise: ramp.rise + 1 })),
+    anotherSpec: own.with(0, endsOf(pieces[1], first)),
+  };
+
+  const refusal = (ends: ReadonlyArray<PieceEnds>): string | null => {
+    try {
+      TrackGraph.fromEnds(layout, ends);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+  const notFromItsRow = expect.stringMatching(/weren't computed from its row/);
+
+  expect(TrackGraph.fromEnds(layout, own)).toEqual(TrackGraph.of(layout));
+  expect(
+    Object.fromEntries(Object.entries(refused).map(([name, ends]) => [name, refusal(ends)])),
+  ).toEqual(Object.fromEntries(Object.keys(refused).map((name) => [name, notFromItsRow])));
+  expect(refusal([...own, ...own.slice(0, 1)])).toBe(
+    "ends were given for 4 placements of a 3-piece layout",
+  );
 });

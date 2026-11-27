@@ -137,6 +137,7 @@ export {
   type CoincidentEndsIssue,
   type TrackGraphIssue,
 } from "./track/track-graph.ts";
+export { pieceEnds, type PieceEnds, type PiecePlacement } from "./track/piece-ends.ts";
 export {
   NEAR_MISS_RADIUS_LDU,
   WORLD_TRACK_FRAME,
