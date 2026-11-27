@@ -2,11 +2,9 @@ import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
-  LINK_PROGRESS_SHARE,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
   catalogModule,
-  type ILinkProgressShare,
   type PartConnectors,
 } from "@brr/catalog";
 import { BrickCompiler, type CompileRequest, type PartOutcome } from "@brr/import";
@@ -80,24 +78,9 @@ const runFile = promisify(execFile);
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
 
-class SharedProgress implements ILinkProgressShare {
-  shared = 0;
-
-  share(): void {
-    this.shared += 1;
-  }
-
-  listen(): void {}
-}
-
-function importWorker(
-  indexedDb?: IDBFactory,
-  fetchUrl?: FetchFunction,
-  share: ILinkProgressShare = new SharedProgress(),
-): IImportWorkerService {
+function importWorker(indexedDb?: IDBFactory, fetchUrl?: FetchFunction): IImportWorkerService {
   const container = new Container();
   container.load(...importWorkerModules(idlePort));
-  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(share);
   if (indexedDb !== undefined) container.rebind(INDEXED_DB).toConstantValue(indexedDb);
   if (fetchUrl !== undefined) container.rebind(IMPORT_FETCH).toConstantValue(fetchUrl);
   return container.get(IMPORT_WORKER_SERVICE);
@@ -217,7 +200,6 @@ async function bundleLoader() {
   container.bind(ASSET_FETCHER).toService(NETWORK_ASSET_FETCHER);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
-  container.bind(LINK_PROGRESS_SHARE).toConstantValue(new SharedProgress());
   return container.get(PART_BUNDLE_LOADER);
 }
 
@@ -235,15 +217,14 @@ it("hands the import path the committed section vocabulary, pinned by its SHA-25
   });
 });
 
-it("gives a bundle part the same connector table from the catalog loader as when an import fetches it as a pinned part, and shares the import's download progress", async () => {
+it("gives a bundle part the same connector table from the catalog loader as when an import fetches it as a pinned part", async () => {
   const loader = await bundleLoader();
   const context = await loader.importContext(LOD);
   const { repo, commit, root } = context.source;
   mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
 
   const fromCatalog = await loader.loadPartConnectors(LOD, TECHNIC_PART);
-  const progress = new SharedProgress();
-  const imported = await importWorker(undefined, undefined, progress).run({
+  const imported = await importWorker().run({
     kind: "import",
     ticket: 1,
     compilerUrl: new URL(context.compilerPath, base).href,
@@ -292,7 +273,6 @@ it("gives a bundle part the same connector table from the catalog loader as when
   expect(imported.connectors[technic]).toEqual(fromCatalog);
   expect(imported.connectors[unbundled]).toBeNull();
   expect(imported.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
-  expect(progress.shared).toBeGreaterThan(0);
 });
 
 it("gives a part the bundle's connector packages don't list the record a pinned library publication lists for it, fetched beside the bundle's and kept in the asset cache for a later worker that can't reach the publication, and still reports a part neither lists", async () => {

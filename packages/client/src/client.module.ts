@@ -6,7 +6,6 @@ import {
   CATALOG_API_BASE_URL,
   catalogModule,
   DEFAULT_BUNDLE_MANIFEST_FILE,
-  LINK_PROGRESS_SHARE,
   PART_BUNDLE_LOADER,
 } from "@brr/catalog";
 import {
@@ -18,7 +17,7 @@ import {
   TrackEndFinder,
 } from "@brr/domain";
 import { renderModule } from "@brr/render";
-import { openLinkProgressBroadcast, type RpcPort } from "@brr/rpc";
+import type { RpcPort } from "@brr/rpc";
 import { storageModule } from "@brr/storage";
 import { ContainerModule, type ResolutionContext } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
@@ -263,7 +262,6 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
         return config.startSimWorker();
       })
       .inSingletonScope();
-    bind(LINK_PROGRESS_SHARE).toDynamicValue(openLinkProgressBroadcast).inSingletonScope();
     bind(TRADEMARK_DISCLAIMER).toConstantValue(config.disclaimer);
     bind(STARTER_FILE_URLS).toConstantValue(config.starterFileUrls ?? new Map());
   });

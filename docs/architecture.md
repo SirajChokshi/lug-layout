@@ -741,14 +741,14 @@ export class LayoutService implements ILayoutService {
 ```
 
 - tsconfig sets `experimentalDecorators: true` and **`emitDecoratorMetadata: false`**. Vite's esbuild can't emit decorator metadata anyway, so nothing may depend on type reflection. A lint rule rejects `@inject()` without a token and rejects class-as-identifier bindings. Classes from pure packages are bound with `toDynamicValue(ctx => new RuleEngine(ctx.get(PROFILE_REGISTRY)))`, which needs no decorators. This is also the fallback for every binding if §11 item 28 finds problems.
-- Bindings are grouped into one `ContainerModule` per package (`clientModule`, `storageModule`, `renderModule`, …). The two exceptions are `storage`'s `assetCacheModule`, the asset cache alone, which the import worker loads instead of `storageModule`, and `catalog`'s `linkProgressModule`, `LinkProgress` alone, which it loads instead of `catalogModule`. Composition roots load the modules they need, and tests load modules with fakes substituted.
+- Bindings are grouped into one `ContainerModule` per package (`clientModule`, `storageModule`, `renderModule`, …). The one exception is `storage`'s `assetCacheModule`, the asset cache alone, which the import worker loads instead of `storageModule`. Composition roots load the modules they need, and tests load modules with fakes substituted.
 - Services are singletons by default and are resolved once at startup or when a tool activates. **Nothing is resolved from a container in a hot path.**
 
 ### 14.4 Per-worker containers
 - Each thread owns **its own Inversify container**, built in its worker entry from that worker's modules. No singletons and no service instances are shared across threads.
   - **Main thread:** client, render (MVP), storage and ui-facing modules. Remote engines are bound to **proxy implementations** from `rpc`: `SIM_CLIENT → SimWorkerProxy`, `IMPORT_CLIENT → ImportWorkerProxy`.
   - **Sim worker:** `sim` engine, a track/road graph snapshot and a clock. It exposes `ISimEngine` over `rpc`.
-  - **Import worker:** `import`, `catalog` (read-only), compile-wasm, `storage`'s `assetCacheModule` (only the asset cache, shared with the main thread through IndexedDB; `storageModule` binds the same plus the main thread's repositories) and `catalog`'s `linkProgressModule` (only `LinkProgress`, which shares download progress with the other threads; `catalogModule` binds the same plus the main thread's catalog services). It exposes `IImportEngine`.
+  - **Import worker:** `import`, `catalog` (read-only), compile-wasm and `storage`'s `assetCacheModule` (only the asset cache, shared with the main thread through IndexedDB; `storageModule` binds the same plus the main thread's repositories). It exposes `IImportEngine`.
   - **Render worker (P1):** `render`, `catalog` and the OffscreenCanvas. The main thread then binds `SCENE_BACKEND → RenderWorkerProxy`.
 - Cross-thread traffic only goes through `rpc` messages:
   - typed request and response unions;

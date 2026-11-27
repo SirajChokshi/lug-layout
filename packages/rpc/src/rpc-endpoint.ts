@@ -26,7 +26,7 @@ interface Pending<Receive> {
   readonly resolve: (body: Receive) => void;
 }
 
-export function isEnvelope(value: unknown): value is RpcEnvelope<unknown> {
+function isEnvelope(value: unknown): value is RpcEnvelope<unknown> {
   return (
     typeof value === "object" &&
     value !== null &&
