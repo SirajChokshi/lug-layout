@@ -15,7 +15,7 @@
     "glyph-parity": "pnpm --filter @brr/asset-pipeline ldraw-library check && cargo build --release --quiet -p brick-compile-cli --bin model-glyphs && cargo build --release --quiet --target wasm32-wasip1 -p brick-compile-wasm && target/release/model-glyphs --ldraw .cache/ldraw-library --palette tools/asset-pipeline/palette.json --primitives tools/asset-pipeline/primitive-connectors.json --ldconfig .cache/ldraw/LDConfig.ldr --geometry docs/verified-facts/geometry.json --model .cache/omr --model packages/import/test-data/custom-pile.ldr --model packages/import/test-data/my-container-and-tank-wagons.ldr --out .cache/glyph-parity && pnpm --filter @brr/e2e glyph-parity",
     "lint:rust": "node tools/rust-comment-check/src/cli.ts crates",
     "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
-    "lint:boundaries": "depcruise --config .dependency-cruiser.json packages apps tools/asset-pipeline/src tools/e2e/src tools/e2e/tests tools/e2e/playwright.config.ts tools/e2e/held-out.config.ts",
+    "lint:boundaries": "depcruise --config .dependency-cruiser.json packages apps tools/asset-pipeline/src tools/e2e/src tools/e2e/tests tools/e2e/playwright.config.ts tools/e2e/held-out.config.ts tools/e2e/show-world.config.ts",
     "check:infra": "terraform -chdir=infra/cloudflare fmt -check -recursive && terraform -chdir=infra/cloudflare init -backend=false -input=false -lockfile=readonly && terraform -chdir=infra/cloudflare validate",
     "test:wasm": "node --no-warnings tools/wasi-test-runner/src/cli.ts -p brick-compile --test identify"
   },
