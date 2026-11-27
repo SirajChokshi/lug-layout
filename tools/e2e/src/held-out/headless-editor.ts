@@ -10,11 +10,14 @@ import {
 import {
   BrickCompiler,
   importStudioFile,
+  layoutParts,
   LdrawMirror,
   ModelImportEngine,
   type FetchFunction,
   type IBakeHelper,
   type ImportResult,
+  type LayoutPart,
+  type LayoutPartsRequest,
   type RollingDiagnosticsRows,
 } from "@brr/import";
 import {
@@ -289,6 +292,13 @@ class InProcessImportPool implements IImportWorkerPool {
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
+  }
+
+  async layoutParts({
+    fileName,
+    text,
+  }: Omit<LayoutPartsRequest, "kind">): Promise<ReadonlyArray<LayoutPart>> {
+    return layoutParts(new BrickCompiler(this.bundle.compiler), fileName, text);
   }
 }
 

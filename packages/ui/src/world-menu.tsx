@@ -9,7 +9,7 @@ import type { WorldIndexEntry } from "@brr/schema/world";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { downloadBlob } from "./download.ts";
 import { ImportReportDetails } from "./import-report.tsx";
-import { MODEL_FILE_ACCEPT, importModelFiles } from "./model-files.ts";
+import { LAYOUT_FILE_ACCEPT, MODEL_FILE_ACCEPT, importModelFiles } from "./model-files.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -103,6 +103,8 @@ function modelImportText(view: ModelImportView): string {
       return `${view.file} is in the palette, but its ${view.reason ?? "stud check failed"}. Its studs stay unchecked.`;
     case "refused":
       return `${view.file} can't be placed: ${view.reason ?? "no stud lattice from the bake"}.`;
+    case "held":
+      return `${view.file} is held as laid out, one placement per submodel: click the layout to place it, R turns it, Esc lets go. Its submodels stay in the palette.${view.reason === null ? "" : ` ${view.reason}`}`;
     default: {
       const unhandled: never = view.status;
       throw new Error(`unhandled ${String(unhandled)}`);
@@ -120,7 +122,9 @@ function ModelImportStatus({ view }: { readonly view: ModelImportView }) {
     >
       <p
         className={
-          view.status === "refused" || view.status === "check-failed"
+          view.status === "refused" ||
+          view.status === "check-failed" ||
+          (view.status === "held" && view.reason !== null)
             ? "world-warning"
             : "world-note"
         }
@@ -153,6 +157,7 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
   const [open, setOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const modelInput = useRef<HTMLInputElement>(null);
+  const layoutInput = useRef<HTMLInputElement>(null);
   const { world, worlds, bundleVersion, storageError, readOnly } = snapshot;
   const ready = snapshot.status === "ready" && world !== null;
   const stored = ready && storageError === null;
@@ -191,6 +196,18 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
     void importModelFiles(editor, input.files ?? []).finally(() => {
       input.value = "";
     });
+  };
+
+  const onImportLayout = (event: ChangeEvent<HTMLInputElement>): void => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    void file
+      .arrayBuffer()
+      .then((buffer) => editor.importLayoutFile({ name: file.name, bytes: new Uint8Array(buffer) }))
+      .finally(() => {
+        input.value = "";
+      });
   };
 
   const onImport = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -327,6 +344,21 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
           multiple
           aria-label="Import a model file (.io, .ldr, .mpd)"
           onChange={onImportModel}
+        />
+        <button
+          type="button"
+          disabled={!ready || readOnly || modelImport?.status === "importing"}
+          onClick={() => layoutInput.current?.click()}
+        >
+          Import as layout
+        </button>
+        <input
+          ref={layoutInput}
+          className="world-import layout-file-import"
+          type="file"
+          accept={LAYOUT_FILE_ACCEPT}
+          aria-label="Import an LDraw file's submodels as a layout (.ldr, .mpd)"
+          onChange={onImportLayout}
         />
       </div>
       {modelImport && <ModelImportStatus view={modelImport} />}

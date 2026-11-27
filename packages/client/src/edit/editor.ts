@@ -56,6 +56,7 @@ import {
 import {
   BRICK_LDU,
   CHUNK_LDU,
+  IDENTIFICATION_ACCEPTED_DEVIATION_LDU,
   PLATE_LDU,
   SIXTEENTHS_PER_LDU,
   STUD_LDU,
@@ -80,7 +81,7 @@ import {
   type WorldBox,
 } from "@brr/render";
 import type { Decoded, Issue } from "@brr/schema/decode";
-import type { ImportReport, StudioReport } from "@brr/import";
+import type { ImportReport, LayoutPart, StudioReport } from "@brr/import";
 import {
   importRef,
   importedSha256,
@@ -455,7 +456,13 @@ export interface PlaceableCoverView {
   readonly heightPlates: number;
 }
 
-export type ModelImportStatus = "importing" | "checking" | "placeable" | "check-failed" | "refused";
+export type ModelImportStatus =
+  | "importing"
+  | "checking"
+  | "placeable"
+  | "check-failed"
+  | "refused"
+  | "held";
 
 export interface ModelImportView {
   readonly file: string;
@@ -631,6 +638,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setPlacementModeOverride(held: boolean): void;
   goTo(x: number, z: number): void;
   importModelFile(file: ModelFileInput): Promise<boolean>;
+  importLayoutFile(file: ModelFileInput): Promise<boolean>;
   measureFrames(): void;
   cycleTier(): void;
   trackRoutes(): ReadonlyArray<TrackRouteView>;
@@ -1008,8 +1016,9 @@ class RoadSnapQuery {
     this.snap = snap;
   }
 }
-const OPENED_PLAN_COMPONENT = 0;
+const WHOLE_GROUP_COMPONENT = 0;
 const NO_PIECES: ReadonlyArray<PieceMember> = [];
+const NOTHING_DRAWN = "nothing in the file is drawn";
 const WORLD_FRAME: PlacementPose = { refId: -1, colorId: -1, x: 0, z: 0, yPlates: 0, rot: 0 };
 const PASTE_REFUSED = "Can't paste here.";
 const DELETE_REFUSED = "Can't delete.";
@@ -1027,6 +1036,48 @@ function poseOf(model: PlacedModel): PlacementPose {
     z: handle.z,
     yPlates: handle.yPlates,
     rot: handle.rot,
+  };
+}
+
+interface LayoutPiece {
+  readonly refId: number;
+  readonly placeable: Placeable;
+}
+
+interface LayoutMembers {
+  readonly members: ReadonlyArray<ModelMember>;
+  readonly leftOut: ReadonlyArray<string>;
+}
+
+function layoutMembers(pieces: ReadonlyArray<LayoutPiece>): LayoutMembers {
+  const [anchor] = pieces;
+  if (!anchor) return { members: [], leftOut: [] };
+  const [anchorX, anchorY, anchorZ] = anchor.placeable.frameShift;
+  const members: ModelMember[] = [];
+  const leftOut: string[] = [];
+  for (const { refId, placeable } of pieces) {
+    const [shiftX, shiftY, shiftZ] = placeable.frameShift;
+    const plates = (anchorY - shiftY) / PLATE_LDU;
+    const yPlates = Math.round(plates);
+    if (Math.abs(plates - yPlates) * PLATE_LDU > IDENTIFICATION_ACCEPTED_DEVIATION_LDU) {
+      leftOut.push(
+        `${placeable.label}: its height isn't a whole number of plates from ${anchor.placeable.label}'s`,
+      );
+      continue;
+    }
+    const x = anchorX - shiftX + 0;
+    const z = anchorZ - shiftZ + 0;
+    const pose = { refId, colorId: placeable.worldColor, x, z, yPlates, rot: 0 };
+    members.push({ model: null, placeable, pose, component: WHOLE_GROUP_COMPONENT });
+  }
+  const lowest = Math.min(...members.map(({ pose }) => pose.yPlates));
+  const resting = RESTS_ON_TABLE_Y_PLATES - lowest;
+  return {
+    members: members.map((member) => ({
+      ...member,
+      pose: { ...member.pose, yPlates: member.pose.yPlates + resting },
+    })),
+    leftOut,
   };
 }
 
@@ -2019,6 +2070,61 @@ export class Editor implements IEditor, IEditedWorld {
     const item = await this.session.addModelFile(file, "announce");
     if (item !== null && !this.state.readOnly) this.chooseItem(item);
     return item !== null;
+  }
+
+  async importLayoutFile(file: ModelFileInput): Promise<boolean> {
+    if (this.state.readOnly) return false;
+    const layout = { file: file.name, item: null, report: null, studio: null } as const;
+    this.update({ modelImport: { ...layout, status: "importing", reason: null } });
+    const parts = await this.catalog.layoutParts(file.name, file.bytes).catch(errorText);
+    if (typeof parts === "string") {
+      this.update({ modelImport: { ...layout, status: "refused", reason: parts } });
+      return false;
+    }
+    const pieces: LayoutPiece[] = [];
+    const unplaced: string[] = [];
+    for (const part of parts) {
+      const piece = await this.layoutPiece(part);
+      if (typeof piece === "string") unplaced.push(`${part.name}: ${piece}`);
+      else pieces.push(piece);
+    }
+    const { members, leftOut } = layoutMembers(pieces);
+    const omitted = [...unplaced, ...leftOut].join("; ");
+    const [frame] = members;
+    if (!frame) {
+      const reason = omitted === "" ? NOTHING_DRAWN : omitted;
+      this.update({ modelImport: { ...layout, status: "refused", reason } });
+      return false;
+    }
+    const reason = omitted === "" ? null : `Left out: ${omitted}.`;
+    this.update({ modelImport: { ...layout, status: "held", reason } });
+    this.chooseItem(null);
+    for (const { placeable } of members) this.requestMeshes(placeable);
+    const boxes = members.map(({ placeable, pose }) =>
+      posedBox(placeable.box, pose.x, pose.z, pose.yPlates * PLATE_LDU, pose.rot),
+    );
+    const pivot = latticeCentre(unionBox(boxes));
+    this.holdGroup({
+      kind: "paste",
+      ...this.pasteEdit(members, NO_PIECES),
+      frameModel: 0,
+      frame: frame.pose,
+      grabX: pivot.x,
+      grabZ: pivot.z,
+      placement: null,
+    });
+    return true;
+  }
+
+  private async layoutPiece(part: LayoutPart): Promise<LayoutPiece | string> {
+    const bytes = new TextEncoder().encode(part.text);
+    const item = await this.session.addModelFile({ name: part.name, bytes }, "announce");
+    const refId = item === null ? null : this.catalog.itemRefId(item);
+    const placeable = refId === null ? null : this.catalog.placeables()[refId];
+    if (refId !== null && placeable) return { refId, placeable };
+    const shown = this.state.modelImport;
+    const refused = shown?.file === part.name && shown.status === "refused" ? shown.reason : null;
+    return refused ?? this.state.fileError ?? "it didn't import";
   }
 
   private requestMeshes(placeable: Placeable): void {
@@ -5445,7 +5551,7 @@ export class Editor implements IEditor, IEditedWorld {
       model: null,
       placeable: this.placeableAt(pose.refId),
       pose,
-      component: OPENED_PLAN_COMPONENT,
+      component: WHOLE_GROUP_COMPONENT,
     }));
     const pieces = laid.value.map(({ piece, pose, yPlates, rise }) => ({
       index: null,

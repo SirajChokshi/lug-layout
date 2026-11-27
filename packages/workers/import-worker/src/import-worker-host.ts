@@ -1,8 +1,10 @@
 import {
+  layoutParts,
   transferablesOf,
   type ImportWorkerPlaced,
   type ImportWorkerRequest,
   type ImportWorkerResponse,
+  type LayoutPartsRequest,
   type RollingDiagnosticsRequest,
 } from "@brr/import";
 import { IMPORT_PROTOCOL, RpcEndpoint, type BakeHelperHandoff, type RpcPort } from "@brr/rpc";
@@ -26,7 +28,7 @@ function messageOf(error: unknown): string {
 export class ImportWorkerHost {
   private readonly endpoint: RpcEndpoint<
     ImportWorkerResponse | ImportWorkerPlaced,
-    ImportWorkerRequest | RollingDiagnosticsRequest | BakeHelperHandoff
+    ImportWorkerRequest | RollingDiagnosticsRequest | LayoutPartsRequest | BakeHelperHandoff
   >;
 
   constructor(
@@ -59,6 +61,16 @@ export class ImportWorkerHost {
             (error: unknown) =>
               this.endpoint.reply(id, { kind: "failed", message: messageOf(error) }),
           );
+          return;
+        case "layoutParts":
+          this.compilers
+            .load(message.compilerUrl)
+            .then((compiler) => layoutParts(compiler, message.fileName, message.text))
+            .then(
+              (parts) => this.endpoint.reply(id, { kind: "layoutParts", parts }),
+              (error: unknown) =>
+                this.endpoint.reply(id, { kind: "failed", message: messageOf(error) }),
+            );
           return;
         case "useBakeHelpers":
           this.bakeHelpers.use(message.ports);

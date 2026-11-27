@@ -3,6 +3,8 @@ import type {
   ImportWorkerPlaced,
   ImportWorkerRequest,
   ImportWorkerResponse,
+  LayoutPart,
+  LayoutPartsRequest,
   LibraryBakeSource,
   PlacementListener,
   RollingDiagnosticsRequest,
@@ -26,12 +28,13 @@ export interface IImportWorkerPool {
     libraryBake: LibraryBakeSource,
     partIds: ReadonlyArray<string>,
   ): Promise<RollingDiagnosticsRows>;
+  layoutParts(request: Omit<LayoutPartsRequest, "kind">): Promise<ReadonlyArray<LayoutPart>>;
 }
 
 interface Primary {
   readonly worker: Worker;
   readonly endpoint: RpcEndpoint<
-    ImportWorkerRequest | RollingDiagnosticsRequest | BakeHelperHandoff,
+    ImportWorkerRequest | RollingDiagnosticsRequest | LayoutPartsRequest | BakeHelperHandoff,
     ImportWorkerResponse | ImportWorkerPlaced
   >;
   readonly crashed: Promise<never>;
@@ -94,7 +97,8 @@ export class ImportWorkerPool implements IImportWorkerPool {
         case "placed":
           throw new Error("the import worker replied with a placement instead of a result");
         case "rollingDiagnostics":
-          throw new Error("the import worker answered an import with rolling diagnostics");
+        case "layoutParts":
+          throw new Error(`the import worker answered an import with ${response.kind}`);
         default: {
           const unhandled: never = response;
           throw new Error(`unhandled import worker response ${String(unhandled)}`);
@@ -122,7 +126,32 @@ export class ImportWorkerPool implements IImportWorkerPool {
         throw new Error(response.message);
       case "imported":
       case "placed":
-        throw new Error("the import worker answered a rolling diagnostics request with an import");
+      case "layoutParts":
+        throw new Error(
+          `the import worker answered a rolling diagnostics request with ${response.kind}`,
+        );
+      default: {
+        const unhandled: never = response;
+        throw new Error(`unhandled import worker response ${String(unhandled)}`);
+      }
+    }
+  }
+
+  async layoutParts(request: Omit<LayoutPartsRequest, "kind">): Promise<ReadonlyArray<LayoutPart>> {
+    const primary = this.primary ?? this.startPrimary();
+    const response = await Promise.race([
+      primary.endpoint.request({ ...request, kind: "layoutParts" }, []),
+      primary.crashed,
+    ]);
+    switch (response.kind) {
+      case "layoutParts":
+        return response.parts;
+      case "failed":
+        throw new Error(response.message);
+      case "imported":
+      case "placed":
+      case "rollingDiagnostics":
+        throw new Error(`the import worker answered a layout request with ${response.kind}`);
       default: {
         const unhandled: never = response;
         throw new Error(`unhandled import worker response ${String(unhandled)}`);

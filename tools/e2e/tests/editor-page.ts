@@ -776,6 +776,12 @@ export class EditorPage {
     return this.importOutcome(basename(file));
   }
 
+  async importLayout(file: string): Promise<ModelImport> {
+    await UsersOwnParts.of(this.page.context()).learn(file);
+    await this.page.locator("input.layout-file-import").setInputFiles(file);
+    return this.importOutcome(basename(file));
+  }
+
   async openPlanFile(file: string): Promise<void> {
     await UsersOwnParts.of(this.page.context()).learn(file);
     await this.page
