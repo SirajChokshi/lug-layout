@@ -20,7 +20,7 @@ import {
   type PlanTable,
   type TableTop,
 } from "@brr/client";
-import { useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { downloadBlob } from "./download.ts";
 import { PrintSheets } from "./print-sheets.tsx";
 import { usePlanVersion } from "./use-plan-version.ts";
@@ -615,6 +615,20 @@ function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly 
   );
 }
 
+function PlanEdits({
+  readOnly,
+  children,
+}: {
+  readonly readOnly: boolean;
+  readonly children: ReactNode;
+}) {
+  return (
+    <fieldset className="plan-edits" disabled={readOnly}>
+      {children}
+    </fieldset>
+  );
+}
+
 function ActivePlan({
   camera,
   editor,
@@ -625,6 +639,7 @@ function ActivePlan({
   sheets,
   sheetSets,
   plan,
+  readOnly,
 }: {
   readonly camera: IEditorCamera;
   readonly editor: IEditor;
@@ -635,35 +650,38 @@ function ActivePlan({
   readonly sheets: IPlanSheetService;
   readonly sheetSets: ISheetSets;
   readonly plan: PlanRegion;
+  readonly readOnly: boolean;
 }) {
   return (
     <>
-      <div className="plan-grid">
-        <MmField
-          name="room-width"
-          label="Room width mm"
-          value={plan.footprint.roomWidthMm}
-          onCommit={(roomWidthMm) => plans.updatePlan(plan.id, { roomWidthMm })}
-        />
-        <MmField
-          name="room-depth"
-          label="Room depth mm"
-          value={plan.footprint.roomDepthMm}
-          onCommit={(roomDepthMm) => plans.updatePlan(plan.id, { roomDepthMm })}
-        />
-        <MmField
-          name="max-overhang"
-          label="Overhang limit mm"
-          value={plan.maxOverhangMm}
-          onCommit={(maxOverhangMm) => plans.updatePlan(plan.id, { maxOverhangMm })}
-        />
-        <MmField
-          name="max-reach"
-          label="Reach limit mm"
-          value={plan.maxReachMm}
-          onCommit={(maxReachMm) => plans.updatePlan(plan.id, { maxReachMm })}
-        />
-      </div>
+      <PlanEdits readOnly={readOnly}>
+        <div className="plan-grid">
+          <MmField
+            name="room-width"
+            label="Room width mm"
+            value={plan.footprint.roomWidthMm}
+            onCommit={(roomWidthMm) => plans.updatePlan(plan.id, { roomWidthMm })}
+          />
+          <MmField
+            name="room-depth"
+            label="Room depth mm"
+            value={plan.footprint.roomDepthMm}
+            onCommit={(roomDepthMm) => plans.updatePlan(plan.id, { roomDepthMm })}
+          />
+          <MmField
+            name="max-overhang"
+            label="Overhang limit mm"
+            value={plan.maxOverhangMm}
+            onCommit={(maxOverhangMm) => plans.updatePlan(plan.id, { maxOverhangMm })}
+          />
+          <MmField
+            name="max-reach"
+            label="Reach limit mm"
+            value={plan.maxReachMm}
+            onCommit={(maxReachMm) => plans.updatePlan(plan.id, { maxReachMm })}
+          />
+        </div>
+      </PlanEdits>
       <p className="plan-meta">
         Origin chunk {plan.originChunkX}, {plan.originChunkZ} · {plans.insideCount(plan.id)}{" "}
         placements in this plan · {plans.sandboxCount()} in the sandbox
@@ -672,20 +690,22 @@ function ActivePlan({
         <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>
           View from above
         </button>
-        <button type="button" onClick={() => plans.removePlan(plan.id)}>
+        <button type="button" disabled={readOnly} onClick={() => plans.removePlan(plan.id)}>
           Delete plan
         </button>
       </div>
-      <TablesEditor
-        editor={editor}
-        drawing={drawing}
-        held={held}
-        fillGridStuds={fillGridStuds}
-        plan={plan}
-        tops={plans.regionView(plan.id).tables}
-        plans={plans}
-      />
-      <ObstaclesEditor plan={plan} plans={plans} />
+      <PlanEdits readOnly={readOnly}>
+        <TablesEditor
+          editor={editor}
+          drawing={drawing}
+          held={held}
+          fillGridStuds={fillGridStuds}
+          plan={plan}
+          tops={plans.regionView(plan.id).tables}
+          plans={plans}
+        />
+        <ObstaclesEditor plan={plan} plans={plans} />
+      </PlanEdits>
       <PrintSheets editor={editor} sheets={sheets} sheetSets={sheetSets} plan={plan} />
       <PlanChecks plans={plans} planId={plan.id} />
     </>
@@ -823,6 +843,7 @@ export function PlanPanel({
           sheets={sheets}
           sheetSets={sheetSets}
           plan={active}
+          readOnly={readOnly}
         />
       ) : (
         <>
@@ -830,11 +851,15 @@ export function PlanPanel({
             No plan yet. Outside plans the world is a sandbox and plan rules don't apply. Draw a
             table to start one around it.
           </p>
-          <DrawTablesButton editor={editor} drawing={drawing} label="Draw a table (B)" />
+          <PlanEdits readOnly={readOnly}>
+            <DrawTablesButton editor={editor} drawing={drawing} label="Draw a table (B)" />
+          </PlanEdits>
         </>
       )}
       <PlanFiles editor={editor} plan={active} ready={ready} readOnly={readOnly} />
-      <NewPlanForm camera={camera} plans={plans} />
+      <PlanEdits readOnly={readOnly}>
+        <NewPlanForm camera={camera} plans={plans} />
+      </PlanEdits>
     </details>
   );
 }

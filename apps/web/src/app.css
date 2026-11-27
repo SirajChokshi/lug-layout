@@ -496,6 +496,10 @@ footer {
   cursor: pointer;
 }
 
+.plan-edits {
+  display: contents;
+}
+
 .plan-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

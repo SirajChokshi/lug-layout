@@ -32,6 +32,7 @@ import {
   type HistoryStep,
   type NoteChange,
   type PlanChange,
+  type PlanState,
   type PlacementHandle,
   type PlacementContents,
   type PlacementPose,
@@ -1536,6 +1537,7 @@ export class Editor implements IEditor, IEditedWorld {
   private measure: MeasureTool | null = null;
   private tables: TableTool | null = null;
   private fillTool: FillTool | null = null;
+  private reportedPlans: PlanState;
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -1574,6 +1576,7 @@ export class Editor implements IEditor, IEditedWorld {
       RESTS_ON_TABLE_Y_PLATES,
     );
     this.state = { ...this.state, ...session.view(), ...frames.view(), ...ground.view() };
+    this.reportedPlans = { regions: plans.plans(), activePlanId: plans.activePlanId() };
     session.subscribe(() => this.sessionChanged());
     frames.subscribe(() => this.update(this.frames.view()));
     ground.subscribe(() => this.update(this.ground.view()));
@@ -1595,12 +1598,11 @@ export class Editor implements IEditor, IEditedWorld {
 
   private sessionChanged(): void {
     this.update(this.session.view());
-    if (
-      this.state.readOnly &&
-      (this.active || this.tracks.holding() || this.gesture || this.state.mode === "road")
-    ) {
+    if (!this.state.readOnly) return;
+    if (this.active || this.tracks.holding() || this.gesture || this.state.mode === "road") {
       this.chooseItem(null);
     }
+    if (this.state.mode === "table") this.setTableTool(false);
   }
 
   subscribe(listener: () => void): () => void {
@@ -4105,7 +4107,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.showGuides();
       return;
     }
-    if (this.state.status !== "ready") return;
+    if (this.state.status !== "ready" || this.state.readOnly) return;
     this.chooseItem(null);
     this.select([]);
     this.tables?.planChanged();
@@ -4330,6 +4332,16 @@ export class Editor implements IEditor, IEditedWorld {
   private plansChanged(): void {
     if (this.state.mode === "table" && this.tables?.planChanged()) this.showGuides();
     if (!this.mappingRequested && this.plans.plans().length > 0) void this.mapParts();
+    this.reportPlans();
+  }
+
+  private reportPlans(): void {
+    const regions = this.plans.plans();
+    const activePlanId = this.plans.activePlanId();
+    const reported = this.reportedPlans;
+    if (regions === reported.regions && activePlanId === reported.activePlanId) return;
+    this.reportedPlans = { regions, activePlanId };
+    this.session.plansEdited(this.reportedPlans);
   }
 
   private async mapParts(): Promise<void> {
@@ -5483,13 +5495,13 @@ export class Editor implements IEditor, IEditedWorld {
 
   undo(eventTimeMs: number): void {
     const next = this.history.nextUndo();
-    if ((this.state.readOnly && next?.kind !== "plan") || this.throwRefused(next)) return;
+    if (this.state.readOnly || this.throwRefused(next)) return;
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
     const next = this.history.nextRedo();
-    if ((this.state.readOnly && next?.kind !== "plan") || this.throwRefused(next)) return;
+    if (this.state.readOnly || this.throwRefused(next)) return;
     this.replay(this.history.redo(), eventTimeMs);
   }
 
@@ -5949,6 +5961,8 @@ export class Editor implements IEditor, IEditedWorld {
       world: this.world,
     });
     if (noteIssues.length > 0) return noteIssues;
+    this.reportedPlans = stored.plans;
+    this.plans.restore(stored.plans);
     for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);

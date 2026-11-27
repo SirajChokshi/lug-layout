@@ -728,13 +728,11 @@ export function commandEnabled(
     case "focus":
       return snapshot.selection !== null;
     case "undo":
-      return (
-        snapshot.history.undo === "plan" || (snapshot.history.undo !== null && !snapshot.readOnly)
-      );
+      return snapshot.history.undo !== null && !snapshot.readOnly;
     case "redo":
-      return (
-        snapshot.history.redo === "plan" || (snapshot.history.redo !== null && !snapshot.readOnly)
-      );
+      return snapshot.history.redo !== null && !snapshot.readOnly;
+    case "draw-tables":
+      return !snapshot.readOnly;
     case "centre":
       return snapshot.hover !== null;
     case "draw-track":
@@ -767,7 +765,6 @@ export function commandEnabled(
     case "zoom-in":
     case "zoom-out":
     case "measure":
-    case "draw-tables":
     case "toggle-joins":
     case "toggle-grid":
     case "toggle-road-snap":
