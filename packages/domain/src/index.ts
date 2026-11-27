@@ -85,7 +85,9 @@ export {
 export { SavedNoteShards, type NoteShardChange } from "./notes/saved-note-shards.ts";
 export {
   LayerTable,
+  NO_HIDDEN_LAYERS,
   type CreatedLayer,
+  type HiddenLayers,
   type LayerAction,
   type LayerChange,
   type LayerPatch,
