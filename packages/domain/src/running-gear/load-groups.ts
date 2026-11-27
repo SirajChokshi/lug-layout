@@ -40,7 +40,7 @@ export interface Bearing {
   readonly through: Set<number>;
 }
 
-export type OutsideReason = "throughStandingParts" | "onSeveralVehicles" | "loadUnidentified";
+export type OutsideReason = "throughAnchoredParts" | "onSeveralVehicles" | "groupUnidentified";
 
 export interface OutsideRefusal {
   readonly reason: OutsideReason;
@@ -59,9 +59,9 @@ type PairCase =
   | { readonly decided: false };
 
 const REASON_ORDER: ReadonlyArray<OutsideReason> = [
-  "throughStandingParts",
+  "throughAnchoredParts",
   "onSeveralVehicles",
-  "loadUnidentified",
+  "groupUnidentified",
 ];
 
 function readsAcrossParts(mates: MatePairs, mate: number): boolean {
@@ -126,6 +126,7 @@ export class LoadJudge {
   readonly groupOf: Int32Array;
   private readonly boxless: Uint8Array;
   private readonly floatBoxed: Uint8Array;
+  private readonly undecidableGroups = new Set<number>();
 
   constructor(
     private readonly poses: LoadPoses,
@@ -150,7 +151,7 @@ export class LoadJudge {
     }
     const loose = Array.from({ length: count }, (_, i) => i).filter(outside);
     for (const i of loose) {
-      if (this.floatBoxed[i] !== 1) this.boxless[i] = 1;
+      if (!poses.authored.box(i)) this.boxless[i] = 1;
     }
     this.tieByGeometry(loose, ties);
     const indexOfRoot = new Map<number, number>();
@@ -174,6 +175,7 @@ export class LoadJudge {
   }
 
   undecidable(group: number): boolean {
+    if (this.undecidableGroups.has(group)) return true;
     return (this.groups[group]?.members ?? []).some((i) => this.boxless[i] === 1);
   }
 
@@ -213,9 +215,11 @@ export class LoadJudge {
       let floor: Interval["low"] | null = null;
       for (const wheel of wheels[vehicle] ?? []) {
         const low = authored.box(wheel)?.[MODEL_UP]?.low;
-        if (low !== undefined && (floor === null || compareExactRational(low, floor) < 0)) {
-          floor = low;
+        if (low === undefined) {
+          this.undecidableGroups.add(group);
+          continue;
         }
+        if (floor === null || compareExactRational(low, floor) < 0) floor = low;
       }
       if (floor === null) continue;
       for (const member of g.members) {
@@ -241,9 +245,11 @@ export class LoadJudge {
     }
     const a = authored.box(n);
     const b = authored.box(r);
-    if (!a) this.boxless[n] = 1;
-    if (!b) this.boxless[r] = 1;
-    if (!a || !b) return { decided: false };
+    if (!a || !b) {
+      this.boxless[n] = 1;
+      this.boxless[r] = 1;
+      return { decided: false };
+    }
     return { decided: true, a, b, up: AXIS_POS_Y };
   }
 
@@ -370,13 +376,13 @@ export function outsideRefusals(
     const anchored = judge.anchored(g, bearing, wheels);
     for (const [vehicle, entry] of bearing) {
       if (anchored && entry.through.size > 0) {
-        note(vehicle, "throughStandingParts", g, entry.through);
+        note(vehicle, "throughAnchoredParts", g, entry.through);
       } else if (!anchored && bearing.size >= 2) {
         note(vehicle, "onSeveralVehicles", g, entry.members);
       }
     }
     if (judge.undecidable(g)) {
-      for (const vehicle of survivors) note(vehicle, "loadUnidentified", g, group.members);
+      for (const vehicle of survivors) note(vehicle, "groupUnidentified", g, group.members);
     }
   });
   const refusals = new Map<number, OutsideRefusal>();

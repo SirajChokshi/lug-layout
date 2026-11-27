@@ -11,7 +11,14 @@ import {
   type ExactRational,
 } from "@brr/math";
 import { AXIS_FREE, axisDimension, axisSign } from "../connect/connector-table.ts";
-import type { PartInstances, SubmodelFrames } from "../connect/submodel-frames.ts";
+import {
+  IdentifiedPoint,
+  identifyPoint,
+  MODEL_ROOT,
+  TRANSFORM_FLOATS,
+  type PartInstances,
+  type SubmodelFrames,
+} from "../connect/submodel-frames.ts";
 import type { AuthoredBoxes } from "./authored-boxes.ts";
 import type { PartExtents } from "./part-extents.ts";
 import {
@@ -28,8 +35,9 @@ const MODEL_UP = 1;
 const SIXTEENTHS = exactRational(16n, 1n);
 const ROW = 4;
 const TRANSLATION = 3;
-const AXES = 3;
 const ZERO = exactRational(0n, 1n);
+const ONE = exactRational(1n, 1n);
+const MINUS_ONE = exactRational(-1n, 1n);
 
 export interface ClearanceWheelset {
   readonly wheelset: DetectedWheelset;
@@ -105,40 +113,47 @@ function wheelsetPlane(
 }
 
 interface AuthoredPlane {
+  readonly up: number;
+  readonly upSign: number;
+  readonly railTopHeight: ExactRational;
   readonly lateral: number;
-  readonly railTop: ExactRational;
   readonly headBands: ReadonlyArray<Interval>;
 }
 
-interface LocalAxis {
+interface SignedAxis {
   readonly axis: number;
   readonly sign: number;
 }
 
-function latticeAxis(
-  instances: PartInstances,
-  instance: number,
-  modelRow: number,
-): LocalAxis | null {
-  const row = instance * ROW * AXES + modelRow * ROW;
-  const entries = [0, 1, 2].map((k) => instances.matrices[row + k] ?? 0);
+function signedUnitRow(transform: ArrayLike<number>, row: number): SignedAxis | null {
+  const entries = [0, 1, 2].map((k) => transform[row * ROW + k] ?? 0);
   const axis = entries.findIndex((entry) => Math.abs(entry) === 1);
   if (axis < 0 || entries.some((entry, k) => k !== axis && entry !== 0)) return null;
   return { axis, sign: Math.sign(entries[axis] ?? 0) };
 }
 
-function carries(pose: ReadonlyArray<ExactRational>, local: LocalAxis, modelRow: number): boolean {
-  return [0, 1, 2].every((row) =>
-    exactRationalEquals(
+function carriedTo(pose: ReadonlyArray<ExactRational>, local: SignedAxis): SignedAxis | null {
+  const column = [0, 1, 2].map((row) =>
+    multiplyExactRational(
       pose[row * ROW + local.axis] ?? ZERO,
-      exactRational(BigInt(row === modelRow ? local.sign : 0), 1n),
+      exactRational(BigInt(local.sign), 1n),
     ),
   );
+  const axis = column.findIndex((entry) => !exactRationalEquals(entry, ZERO));
+  if (axis < 0) return null;
+  const value = column[axis] ?? ZERO;
+  const unit = exactRationalEquals(value, ONE) ? 1 : exactRationalEquals(value, MINUS_ONE) ? -1 : 0;
+  if (
+    unit === 0 ||
+    column.some((entry, row) => row !== axis && !exactRationalEquals(entry, ZERO))
+  ) {
+    return null;
+  }
+  return { axis, sign: unit };
 }
 
 function authoredPlane(
   frames: SubmodelFrames,
-  heights: AxleHeights,
   instances: PartInstances,
   authored: AuthoredBoxes,
   seated: ClearanceWheelset,
@@ -146,51 +161,67 @@ function authoredPlane(
   const { wheelset } = seated;
   const axle = wheelset.axleInstance;
   const pose = authored.pose(axle);
-  const up = latticeAxis(instances, axle, MODEL_UP);
-  const lateralAxis = latticeAxis(instances, axle, wheelset.modelDimension);
-  const own = modelAxisIn(frames, axle, wheelset.frame, wheelset.modelDimension);
-  const lateralOwn = heights.along(
-    axle,
-    wheelset.axlePoint,
-    wheelset.frame,
-    wheelset.modelDimension,
+  const toFrame = new Float64Array(TRANSFORM_FLOATS);
+  const toModel = new Float64Array(TRANSFORM_FLOATS);
+  if (!pose || !frames.relate(axle, wheelset.frame, toFrame)) return UNIDENTIFIED;
+  frames.relate(axle, MODEL_ROOT, toModel);
+  const ownLocal = signedUnitRow(toFrame, wheelset.dimension);
+  const upLocal = signedUnitRow(toModel, MODEL_UP);
+  const own = ownLocal ? carriedTo(pose, ownLocal) : null;
+  const up = upLocal ? carriedTo(pose, upLocal) : null;
+  const point = new IdentifiedPoint();
+  const identified = identifyPoint(
+    toFrame,
+    wheelset.axlePoint[0] ?? 0,
+    wheelset.axlePoint[1] ?? 0,
+    wheelset.axlePoint[2] ?? 0,
+    1 << wheelset.dimension,
+    point,
   );
-  if (
-    !pose ||
-    !up ||
-    !lateralAxis ||
-    !carries(pose, up, MODEL_UP) ||
-    !carries(pose, lateralAxis, wheelset.modelDimension) ||
-    own === AXIS_FREE ||
-    lateralOwn === null
-  ) {
-    return UNIDENTIFIED;
-  }
-  const point = [0, 1, 2].map((k) => exactRationalFromFloat64(wheelset.axlePoint[k] ?? 0));
+  if (!own || !up || !identified) return UNIDENTIFIED;
+  const local = [0, 1, 2].map((k) => exactRationalFromFloat64(wheelset.axlePoint[k] ?? 0));
   const at = (row: number): ExactRational =>
-    point.reduce(
+    local.reduce(
       (sum, value, k) =>
         addExactRational(sum, multiplyExactRational(pose[row * ROW + k] ?? ZERO, value)),
       pose[row * ROW + TRANSLATION] ?? ZERO,
     );
-  const lateral = at(wheelset.modelDimension);
+  const axleLateral = exactRational(BigInt(point.sixteenths[wheelset.dimension] ?? 0), 1n);
   const centre = exactRational(BigInt(wheelset.trackCentre), 1n);
-  const offOwn = exactRational(BigInt(lateralOwn), 1n);
+  const lateralRoot = at(own.axis);
+  const along = (offset: ExactRational): ExactRational =>
+    addExactRational(
+      lateralRoot,
+      multiplyExactRational(toLdu(offset), exactRational(BigInt(own.sign), 1n)),
+    );
   return {
-    lateral: wheelset.modelDimension,
-    railTop: subtractExactRational(at(MODEL_UP), wheelset.rollingRadius),
+    up: up.axis,
+    upSign: up.sign,
+    railTopHeight: subtractExactRational(
+      multiplyExactRational(at(up.axis), exactRational(BigInt(up.sign), 1n)),
+      wheelset.rollingRadius,
+    ),
+    lateral: own.axis,
     headBands: seated.headBands.map(([from, to]) => {
-      const band = signedInterval(
-        axisSign(own),
-        addExactRational(centre, from),
-        addExactRational(centre, to),
+      const ends = [from, to].map((end) =>
+        along(subtractExactRational(addExactRational(centre, end), axleLateral)),
       );
-      return {
-        low: addExactRational(lateral, toLdu(subtractExactRational(band.low, offOwn))),
-        high: addExactRational(lateral, toLdu(subtractExactRational(band.high, offOwn))),
-      };
+      const [first = ZERO, second = ZERO] = ends;
+      return compareExactRational(first, second) <= 0
+        ? { low: first, high: second }
+        : { low: second, high: first };
     }),
   };
+}
+
+function lowestAlong(
+  box: ReadonlyArray<Interval>,
+  axis: number,
+  sign: number,
+): ExactRational | null {
+  const interval = box[axis];
+  if (!interval) return null;
+  return sign > 0 ? interval.low : multiplyExactRational(interval.high, MINUS_ONE);
 }
 
 export function clearance(
@@ -204,9 +235,7 @@ export function clearance(
 ): ClearanceFailure | null {
   const placed = new PlacedInstance(frames);
   const planes = new Map<string, WheelsetPlane | typeof UNIDENTIFIED>();
-  const rootPlanes = seated.map((wheelset) =>
-    authoredPlane(frames, heights, instances, authored, wheelset),
-  );
+  const rootPlanes = seated.map((wheelset) => authoredPlane(frames, instances, authored, wheelset));
   const below: number[] = [];
   const unidentified: number[] = [];
   for (const instance of checked) {
@@ -239,14 +268,14 @@ export function clearance(
       if (!plane || !placedHere) {
         const box = authored.box(instance);
         const root = rootPlanes[w] ?? UNIDENTIFIED;
-        const lateral = box?.[root?.lateral ?? -1];
-        const height = box?.[MODEL_UP];
-        if (!root || !lateral || !height) {
+        const lateral = root ? box?.[root.lateral] : undefined;
+        const lowest = root && box ? lowestAlong(box, root.up, root.upSign) : null;
+        if (!root || !lateral || !lowest) {
           identified = false;
           continue;
         }
         fails =
-          compareExactRational(height.low, root.railTop) < 0 &&
+          compareExactRational(lowest, root.railTopHeight) < 0 &&
           root.headBands.some((band) => overlapsWithLength(lateral, band));
         continue;
       }

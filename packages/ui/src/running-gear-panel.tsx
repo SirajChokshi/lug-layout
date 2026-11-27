@@ -18,9 +18,9 @@ const UNRESOLVED_TEXT: Readonly<Record<UnresolvedRunningGearReason, string>> = {
   supportPlaneUnidentified: "two wheelsets' axle heights can't be compared exactly",
   belowRailTop: "a part other than a wheel reaches below the rail top over a rail head",
   clearanceUnidentified: "a part's position can't be compared exactly with the rail top",
-  throughStandingParts: "standing structure passes through the vehicle",
+  throughAnchoredParts: "anchored structure passes through the vehicle",
   onSeveralVehicles: "a load rests on more than one vehicle",
-  loadUnidentified: "a part near the vehicle has no exact box to judge it by",
+  groupUnidentified: "a loose part in the model has no exact box to judge it by",
 };
 
 function fillOf(box: GearBox): string {
