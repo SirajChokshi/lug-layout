@@ -9,6 +9,7 @@ export interface ModelSelectionView {
   readonly item: string;
   readonly yPlates: number;
   readonly rot: number;
+  readonly layer: number;
   readonly box: WorldBox;
 }
 
@@ -19,6 +20,7 @@ export interface TrackSelectionView {
   readonly centreZ: number;
   readonly yPlates: number;
   readonly heading: number;
+  readonly layer: number;
   readonly box: WorldBox;
 }
 
@@ -64,6 +66,7 @@ function modelView(model: PlacedModel): ModelSelectionView {
     item: model.placeable.id,
     yPlates: handle.yPlates,
     rot: handle.rot,
+    layer: handle.layer,
     box: model.box,
   };
 }

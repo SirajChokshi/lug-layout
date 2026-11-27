@@ -24,11 +24,14 @@ import {
   type ConsistPose,
   type ConsistRef,
   NO_TRACK_CHANGE,
+  NO_HIDDEN_LAYERS,
   layOnLayer,
+  type HiddenLayers,
   type LayerAction,
   type LayerChange,
   type LayeredPose,
   type LayerLocks,
+  type LayerTable,
   type TrackPieceAt,
   type TrackPieceRef,
   type EditKind,
@@ -105,8 +108,10 @@ import {
   notDrawnItems,
   type BomInput,
   type BomScope,
+  type HiddenLayerParts,
   type IBomSource,
 } from "../bom/bom-service.ts";
+import { layerTallyText, tallyLayers, type LayerTally } from "../layers/layer-tally.ts";
 import type { IPlanSheetSource, PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
@@ -637,6 +642,9 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   cancelGesture(): void;
   moveSelectionBy(dx: number, dz: number, eventTimeMs: number): void;
   moveSelectionTo(xStuds: number, zStuds: number, eventTimeMs: number): void;
+  moveSelectionToLayer(layer: number, eventTimeMs: number): void;
+  selectLayer(layer: number): void;
+  layerContents(): ReadonlyMap<number, LayerTally>;
   turnSelectedModelTo(rot: number, eventTimeMs: number): void;
   copySelection(): void;
   pasteClipboard(): void;
@@ -906,7 +914,13 @@ interface GroupPlacement extends GroupTargets {
 
 type GroupAction = "turn" | "move" | "delete";
 
-const GROUP_EDITS: ReadonlySet<EditKind> = new Set<EditKind>(["place", "rotate", "move", "remove"]);
+const GROUP_EDITS: ReadonlySet<EditKind> = new Set<EditKind>([
+  "place",
+  "rotate",
+  "move",
+  "remove",
+  "move-to-layer",
+]);
 const DOCUMENT_EDITS: ReadonlySet<EditKind> = new Set<EditKind>(["plan", "layer"]);
 
 interface BoxDrag {
@@ -1189,7 +1203,7 @@ function counted(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-function editLabel(edit: EditSummary | null): string | null {
+function editLabel(edit: EditSummary | null, layers: LayerTable): string | null {
   if (edit === null) return null;
   switch (edit.kind) {
     case "place":
@@ -1218,6 +1232,8 @@ function editLabel(edit: EditSummary | null): string | null {
       return `open plan (${counted(edit.placements, "placement", "placements")}, ${counted(edit.pieces, "track piece", "track pieces")})`;
     case "layer":
       return layerEditLabel(edit.action, edit.name);
+    case "move-to-layer":
+      return `move to layer "${layers.layer(edit.layer)?.name ?? edit.layer}" (${counted(edit.members, "item", "items")})`;
     default: {
       const unhandled: never = edit;
       throw new Error(`unhandled edit ${JSON.stringify(unhandled)}`);
@@ -1243,6 +1259,8 @@ function layerEditLabel(action: LayerAction, name: string): string {
       return `unlock layer "${name}"`;
     case "opacity":
       return `layer "${name}" opacity`;
+    case "remove":
+      return `remove layer "${name}"`;
     default: {
       const unhandled: never = action;
       throw new Error(`unhandled layer action ${String(unhandled)}`);
@@ -1403,6 +1421,7 @@ export class Editor implements IEditor, IEditedWorld {
   private history: EditHistory;
   private readonly layerLocks: LayerLocks = { isLocked: (layer) => this.layers.isLocked(layer) };
   private lockedInBox = 0;
+  private layerTallies: ReadonlyMap<number, LayerTally> | null = null;
   private readonly consistRefs = new Map<ConsistHandle, ConsistRef>();
   private activeTrain: PlayModel | null = null;
   private trainAim: RailAim | null = null;
@@ -1640,6 +1659,7 @@ export class Editor implements IEditor, IEditedWorld {
     annotations.onEdit((change) => this.notesEdited(change));
     events.onEdit((change) => this.eventEdited(change));
     layers.onEdit((change) => this.layerEdited(change));
+    layers.guardRemoval((layer) => this.layerRemovalRefusal(layer));
   }
 
   private sessionChanged(): void {
@@ -3881,8 +3901,8 @@ export class Editor implements IEditor, IEditedWorld {
     return {
       undo: undo?.kind ?? null,
       redo: redo?.kind ?? null,
-      undoLabel: editLabel(undo),
-      redoLabel: editLabel(redo),
+      undoLabel: editLabel(undo, this.layers.table()),
+      redoLabel: editLabel(redo, this.layers.table()),
       undoDepth: this.history.undoDepth,
       redoDepth: this.history.redoDepth,
     };
@@ -4003,6 +4023,81 @@ export class Editor implements IEditor, IEditedWorld {
       : null;
   }
 
+  layerContents(): ReadonlyMap<number, LayerTally> {
+    this.layerTallies ??= tallyLayers(this.placed.models(), this.trackWorld.drawing());
+    return this.layerTallies;
+  }
+
+  private layerRemovalRefusal(layer: number): string | null {
+    const tally = this.layerContents().get(layer);
+    if (!tally) return null;
+    return `holds ${layerTallyText(tally)}; move them to another layer or delete them first`;
+  }
+
+  selectLayer(layer: number): void {
+    const record = this.layers.table().layer(layer);
+    if (!record || this.gesture) return;
+    if (this.state.mode !== "select") this.chooseItem(null);
+    const track = this.trackWorld.drawing();
+    const members: SelectionMember[] = this.placed
+      .models()
+      .filter((model) => model.handle.layer === layer)
+      .map((model) => ({ kind: "model", model }));
+    for (let placement = 0; placement < (track?.pieceCount ?? 0); placement++) {
+      if (track?.pieceLayer(placement) === layer) members.push({ kind: "track", placement });
+    }
+    this.select(members);
+    const refusal = record.locked
+      ? `Layer "${record.name}" is locked, so its parts can't be selected.`
+      : !record.visible
+        ? `Layer "${record.name}" is hidden, so its parts can't be selected.`
+        : members.length === 0
+          ? `Layer "${record.name}" holds nothing to select.`
+          : null;
+    if (refusal !== null) this.update({ selectionRefusal: refusal });
+  }
+
+  moveSelectionToLayer(layer: number, eventTimeMs: number): void {
+    if (this.state.readOnly || this.gesture) return;
+    const refusal = this.moveToLayerRefusal(layer);
+    if (refusal !== null) {
+      this.update({ selectionRefusal: refusal });
+      return;
+    }
+    const track = this.trackWorld.drawing();
+    const pieces = track
+      ? this.selection.pieces.map((placement) => track.laidPiece(placement)).toSorted(byIndex)
+      : [];
+    const kept = this.selection.members;
+    const placements = this.selection.models.map((model) => model.placement);
+    const edit = this.history.moveToLayer(placements, pieces, layer);
+    if (!edit) return;
+    const { added } = this.show(edit, eventTimeMs);
+    const unmoved = kept.filter((member) => member.kind !== "model" || member.model.handle.live);
+    this.select([...unmoved, ...added.map((model): SelectionMember => ({ kind: "model", model }))]);
+    const target = this.layers.table().layer(layer);
+    if (target && !target.visible) {
+      this.update({
+        selectionRefusal: `Moved to hidden layer "${target.name}", where they can't be picked.`,
+      });
+    }
+  }
+
+  private moveToLayerRefusal(layer: number): string | null {
+    const record = this.layers.table().layer(layer);
+    if (!record) return `Layer ${layer} isn't in this world.`;
+    if (record.kind !== "parts") {
+      return `"${record.name}" is a ${record.kind} layer, and parts go on a parts layer.`;
+    }
+    if (record.locked) return `Layer "${record.name}" is locked, so nothing can be moved onto it.`;
+    if (this.selection.models.length + this.selection.pieces.length === 0) {
+      return this.selection.trains.length > 0
+        ? "Trains run on the track and have no layer of their own."
+        : "Select models or track pieces to move to a layer.";
+    }
+    return null;
+  }
+
   private show(
     edit: AppliedEdit,
     eventTimeMs: number,
@@ -4013,6 +4108,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (edit.event) this.events.restore(edit.event.after);
     if (edit.layers) this.layers.restore(edit.layers.after);
     const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
+    if (edit.changes.length > 0 || trackChanged) this.layerTallies = null;
     const documentOnly =
       (edit.plan !== null || edit.notes !== null || edit.event !== null || edit.layers !== null) &&
       edit.changes.length === 0 &&
@@ -4636,7 +4732,8 @@ export class Editor implements IEditor, IEditedWorld {
     }
   }
 
-  bomInput(scope: BomScope): BomInput {
+  bomInput(scope: BomScope, hiddenLayers: HiddenLayerParts = "include"): BomInput {
+    const hidden = hiddenLayers === "include" ? NO_HIDDEN_LAYERS : this.layers.table();
     const ldrawCodes = this.bundleColorCodes;
     if (!ldrawCodes) throw new Error("the editor has not loaded");
     const placeables = this.catalog.placeables();
@@ -4661,13 +4758,13 @@ export class Editor implements IEditor, IEditedWorld {
       });
     switch (scope.kind) {
       case "world":
-        return this.sceneBom(null, counter, contents, uncounted);
+        return this.sceneBom(null, hidden, counter, contents, uncounted);
       case "region":
-        return this.sceneBom(scope.region, counter, contents, uncounted);
+        return this.sceneBom(scope.region, hidden, counter, contents, uncounted);
       case "selection":
         return this.selectionBom(counter, contents, uncounted);
       case "plan":
-        return this.planBom(scope.planId, counter, contents, uncounted);
+        return this.planBom(scope.planId, hidden, counter, contents, uncounted);
       default: {
         const unhandled: never = scope;
         throw new Error(`unhandled scope ${String(unhandled)}`);
@@ -4677,13 +4774,14 @@ export class Editor implements IEditor, IEditedWorld {
 
   private sceneBom(
     region: PlacementRegion | null,
+    hidden: HiddenLayers,
     counter: BomCounter,
     contents: PlacementContents,
     uncounted: () => BomInput["uncounted"],
   ): BomInput {
     let placements =
-      countPlacements(this.world, contents, counter, region) +
-      (this.trackWorld.drawing()?.countParts(counter, region) ?? 0);
+      countPlacements(this.world, contents, counter, region, hidden) +
+      (this.trackWorld.drawing()?.countParts(counter, region, hidden) ?? 0);
     for (const handle of this.consists.consists()) {
       const box = this.railYard.box(handle);
       if (region && !box) continue;
@@ -4706,6 +4804,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private planBom(
     planId: string,
+    hidden: HiddenLayers,
     counter: BomCounter,
     contents: PlacementContents,
     uncounted: () => BomInput["uncounted"],
@@ -4726,11 +4825,13 @@ export class Editor implements IEditor, IEditedWorld {
         case "model": {
           const model = byId.get(source);
           if (!model) throw new Error(`plan row ${row} names model ${source}, which isn't placed`);
+          if (hidden.isHidden(model.handle.layer)) continue;
           contents.addTo(counter, model.handle.refId, model.handle.colorId);
           break;
         }
         case "track":
           if (!track) throw new Error(`plan row ${row} names track piece ${source} with no track`);
+          if (hidden.isHidden(track.pieceLayer(source))) continue;
           track.countPiece(counter, source);
           break;
         default: {
@@ -4805,6 +4906,7 @@ export class Editor implements IEditor, IEditedWorld {
       centreZ: piece.zLdu,
       yPlates: piece.yPlates,
       heading: piece.heading,
+      layer: track.pieceLayer(placement),
       box: piece.box,
     };
   }
@@ -6272,6 +6374,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.world = world;
     this.consists = new ConsistLayout();
     this.history = new EditHistory(world, this.consists, this.annotations, this.layerLocks);
+    this.layerTallies = null;
     this.placed.addAll(
       handles.flatMap((handle) => {
         const placeable = this.catalog.placeables()[handle.refId];

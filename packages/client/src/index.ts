@@ -169,8 +169,10 @@ export {
 } from "./plan/plan-service.ts";
 export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
-export type { ILayerService } from "./layers/layer-service.ts";
+export type { ILayerService, LayerRemovalGuard } from "./layers/layer-service.ts";
+export { layerTallyText, type LayerTally } from "./layers/layer-tally.ts";
 export type { LayerTable } from "@brr/domain";
+export { OPACITY_PERCENT_MAX } from "@brr/schema/world";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -457,6 +459,7 @@ export type {
   BomFiles,
   BomInput,
   BomScope,
+  HiddenLayerParts,
   IBomService,
   IBomSource,
   OwnVsBuyReport,
