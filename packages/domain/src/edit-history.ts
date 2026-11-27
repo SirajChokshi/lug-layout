@@ -22,7 +22,8 @@ export type EditKind =
   | "note"
   | "open-plan"
   | "event"
-  | "layer";
+  | "layer"
+  | "move-to-layer";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
@@ -63,7 +64,8 @@ export type EditSummary =
   | { readonly kind: "road" | "fill"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number }
   | { readonly kind: "open-plan"; readonly placements: number; readonly pieces: number }
-  | { readonly kind: "layer"; readonly action: LayerAction; readonly name: string };
+  | { readonly kind: "layer"; readonly action: LayerAction; readonly name: string }
+  | { readonly kind: "move-to-layer"; readonly members: number; readonly layer: number };
 
 export interface PlacementPose {
   readonly refId: number;
@@ -236,8 +238,13 @@ function summary(edit: Edit): EditSummary {
     case "layer": {
       const change = edit.layers;
       if (!change) throw new Error("a layer edit carries no layer change");
-      const name = change.after.layer(change.layer)?.name ?? "";
-      return { kind: edit.kind, action: change.action, name };
+      const layer = change.after.layer(change.layer) ?? change.before.layer(change.layer);
+      return { kind: edit.kind, action: change.action, name: layer?.name ?? "" };
+    }
+    case "move-to-layer": {
+      const layer = edit.changes[0]?.after?.layer ?? edit.track.lay[0]?.layer;
+      if (layer === undefined) throw new Error("a move to a layer moves nothing");
+      return { kind: edit.kind, members: edit.changes.length + edit.track.lay.length, layer };
     }
     default: {
       const unhandled: never = edit.kind;
@@ -377,6 +384,23 @@ export class EditHistory {
 
   remove(placement: PlacementRef): AppliedEdit {
     return this.commit("remove", [{ placement, to: null }]);
+  }
+
+  moveToLayer(
+    placements: ReadonlyArray<PlacementRef>,
+    pieces: ReadonlyArray<TrackPieceAt>,
+    layer: number,
+  ): AppliedEdit | null {
+    checkLayer(layer);
+    const requests: PlacementRequest[] = [];
+    for (const placement of placements) {
+      const pose = poseOf(this.liveHandle(placement));
+      if (pose.layer !== layer) requests.push({ placement, to: { ...pose, layer } });
+    }
+    const lift = pieces.filter((piece) => piece.layer !== layer);
+    if (requests.length + lift.length === 0) return null;
+    const lay = lift.map((piece) => ({ ...piece, layer }));
+    return this.commit("move-to-layer", requests, { lift, lay });
   }
 
   commit(

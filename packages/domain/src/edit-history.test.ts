@@ -346,6 +346,36 @@ describe("EditHistory", () => {
     expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0"]);
   });
 
+  it("moves placements and track pieces to a layer as one step that changes only their layer, skipping members already there", () => {
+    const world = new World();
+    const history = new EditHistory(world);
+    const pose = { refId: 1, colorId: 4, x: 40, z: -60, yPlates: 3, rot: 1, layer: 0 };
+    const placements = [pose, { ...pose, x: 640, layer: 2 }].map((at) => {
+      const placement = history.place(at).changes[0]?.placement;
+      if (!placement) throw new Error("place reported no change");
+      return placement;
+    });
+    const pieces = [
+      { ...straightAt(0, 0n), yPlates: 2, rise: 1 },
+      { ...straightAt(1, 16n), layer: 2 },
+    ];
+    history.commit("lay-track", [], { lift: [], lay: pieces });
+    const before = livePlacements(world);
+
+    const moved = history.moveToLayer(placements, pieces, 2);
+
+    expect(history.nextUndo()).toEqual({ kind: "move-to-layer", members: 2, layer: 2 });
+    expect(moved?.changes.map(({ from, to }) => [from?.layer, to?.layer])).toEqual([[0, 2]]);
+    expect(moved?.track).toEqual({ lift: [pieces[0]], lay: [{ ...pieces[0], layer: 2 }] });
+    expect(livePlacements(world)).toEqual(["1,4,40,-60,3,1,2", "1,4,640,-60,3,1,2"]);
+    expect(history.moveToLayer(placements, moved?.track.lay ?? [], 2)).toBeNull();
+    expect(history.undo()?.track).toEqual({ lift: moved?.track.lay, lay: moved?.track.lift });
+    expect(livePlacements(world)).toEqual(before);
+    expect(history.redo()?.kind).toBe("move-to-layer");
+    expect(livePlacements(world)).toEqual(["1,4,40,-60,3,1,2", "1,4,640,-60,3,1,2"]);
+    expect(history.undoDepth).toBe(4);
+  });
+
   it("drops the redo branch when a new edit follows an undo", () => {
     const world = new World();
     const history = new EditHistory(world);
