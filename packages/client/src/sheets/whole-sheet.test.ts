@@ -1,6 +1,27 @@
 import { mmRectInWorld, studsInside, type PlanRegion, type TableTop } from "@brr/domain";
+import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
-import { planSheetSvg, type PlanSheet } from "./plan-sheet.ts";
+import { mainThreadModules } from "../client.module.ts";
+import type { PlanSheet } from "../plan/plan-sheet.ts";
+import { SHEET_COMPOSER, SVG_SHEET_WRITER } from "../tokens.ts";
+
+const container = new Container();
+container.load(
+  ...mainThreadModules({
+    bundleBaseUrl: "unused",
+    disclaimer: "unused",
+    startSimWorker: () => new MessageChannel().port1,
+  }),
+);
+const composer = container.get(SHEET_COMPOSER);
+const writer = container.get(SVG_SHEET_WRITER);
+
+function planSheetSvg(sheet: PlanSheet): string {
+  const document = composer.compose(sheet, { kind: "whole" });
+  const [page] = document.pages;
+  if (!page || document.pages.length !== 1) throw new Error("a whole sheet is one page");
+  return writer.pageSvg(page, sheet.name);
+}
 
 const ORIGIN_X = -1280;
 const ORIGIN_Z = 640;
@@ -106,15 +127,15 @@ function attribute(element: string, name: string): string {
   return value;
 }
 
-describe("planSheetSvg", () => {
+describe("the whole plan sheet", () => {
   const svg = planSheetSvg(SHEET);
 
   it("draws at 1:1: the page is in millimetres, LDU geometry is scaled by 0.4, and the check bar is 8 studs = 64 mm", () => {
     const root = /<svg[^>]*>/u.exec(svg)?.[0] ?? "";
     const width = attribute(root, "width");
     const height = attribute(root, "height");
-    const bar = /<g class="check-bar">(<line[^>]*>)/u.exec(svg)?.[1] ?? "";
-    const geometry = /<g transform="([^"]*)">/u.exec(svg)?.[1] ?? "";
+    const bar = /<g class="check-bar">[^]*?(<line[^>]*>)/u.exec(svg)?.[1] ?? "";
+    const geometry = /<g class="layer-tables" transform="([^"]*)">/u.exec(svg)?.[1] ?? "";
     const table = /<rect class="table"[^>]*>/u.exec(svg)?.[0] ?? "";
 
     expect({
@@ -154,9 +175,21 @@ describe("planSheetSvg", () => {
     ]);
   });
 
-  it("numbers every placement on the plan and lists it in the key with its parts, and totals them", () => {
+  it("numbers every placement on the plan and lists it in the key with its parts, totals them, and draws a legend of what the sheet shows", () => {
     const all = texts(svg);
     const key = all.slice(all.indexOf("Key: numbers on the plan"));
+    const legend = [...svg.matchAll(/<text class="legend"[^>]*>([^<]*)<\/text>/gu)].map(
+      (match) => match[1],
+    );
+    expect(legend).toEqual([
+      "Room walls",
+      "Table top",
+      "Model footprint",
+      "Track piece outline",
+      "Dimension in studs and cm",
+      "Placement number (see key)",
+      "Placement with a plan issue",
+    ]);
     expect(key.slice(0, 13)).toEqual([
       "Key: numbers on the plan",
       "No.",
@@ -170,7 +203,7 @@ describe("planSheetSvg", () => {
       "Train Track 9V Curve #1 · plan issue",
       "14",
       "Total: 2 placements",
-      expect.stringContaining("blue, a placed model's footprint"),
+      "Not checked yet:",
     ]);
     expect(all).toEqual(
       expect.arrayContaining(["1", "2", "Attic & loft <east>", SHEET.disclaimer]),

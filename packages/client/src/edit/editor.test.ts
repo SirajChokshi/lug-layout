@@ -89,6 +89,7 @@ import {
   type StoredWorld,
   type WorldChange,
 } from "@brr/storage";
+import { readZip } from "@brr/storage/zip";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
@@ -8981,6 +8982,29 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   expect(sheetPaths(svg, "track").map((d) => d.split("M").length - 1)).toEqual([8, 8, 8]);
   expect(svg).toContain('class="roadway"');
   expect(sheetPaths(svg, "ramp")).toHaveLength(4);
+
+  const tiled = container.get(PLAN_SHEET_SERVICE).download(editor, planId, {
+    format: "svg",
+    layout: { kind: "tiled", paper: "a4", orientation: "auto", denominator: 1, overlapMm: 10 },
+  });
+  const zip = await readZip(tiled.bytes);
+  const pages = new Map(
+    [...(zip.ok ? zip.value : [])].map(([name, bytes]) => [name, new TextDecoder().decode(bytes)]),
+  );
+  const tiles = [...pages].filter(([name]) => /^\d+-[A-Z]+\d+\.svg$/u.test(name));
+  const onTiles = (kind: string) => new Set(tiles.flatMap(([, page]) => sheetPaths(page, kind)));
+  expect(tiled.fileName).toBe("Plan-1.plan-tiled-a4-1to1.svg.zip");
+  expect([...pages.keys()][0]).toBe("01-cover.svg");
+  expect(tiles.length).toBe(tiled.pages - (pages.size - tiles.length));
+  expect(
+    new Set(
+      tiles.map(([, page]) =>
+        /<svg [^>]*width="(\d+)mm" height="(\d+)mm"/u.exec(page)?.slice(1).join("×"),
+      ),
+    ),
+  ).toEqual(new Set(["297×210"]));
+  expect(onTiles("model")).toEqual(new Set(sheetPaths(svg, "model")));
+  expect(onTiles("track")).toEqual(new Set(sheetPaths(svg, "track")));
 }, 120_000);
 
 const SEAT_LEVEL_MODULE = "mils-plain";

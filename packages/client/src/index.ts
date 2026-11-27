@@ -177,6 +177,23 @@ export type {
   IPlanSheetSource,
   PlanSheetShapes,
 } from "./plan/plan-sheet-service.ts";
+export {
+  DEFAULT_OVERLAP_MM,
+  MAX_OVERLAP_MM,
+  MIN_OVERLAP_MM,
+  sheetLayoutProblems,
+  type SheetFormat,
+  type SheetLayout,
+  type SheetRequest,
+} from "./sheets/sheet-document.ts";
+export { TILED_SCALE_DENOMINATORS, scaleText } from "./sheets/drawing-scale.ts";
+export {
+  PAPER_SIZES,
+  type OrientationChoice,
+  type PaperId,
+  type PaperSize,
+} from "./sheets/paper.ts";
+export type { SheetFile } from "./sheets/svg-sheet-writer.ts";
 export type {
   IssueSeverity,
   LduRect,

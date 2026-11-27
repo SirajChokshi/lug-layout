@@ -55,6 +55,11 @@ import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { PlanSheetService } from "./plan/plan-sheet-service.ts";
+import { PlanDrawing } from "./sheets/plan-drawing.ts";
+import { SheetComposer } from "./sheets/sheet-composer.ts";
+import { CourierTypeface } from "./sheets/sheet-typeface.ts";
+import { SvgSheetWriter } from "./sheets/svg-sheet-writer.ts";
+import { SheetTiler } from "./sheets/tile-grid.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { OwnedPartsService } from "./bom/owned-parts-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
@@ -124,6 +129,11 @@ import {
   VEHICLE_IDS,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
+  PLAN_DRAWING,
+  SHEET_COMPOSER,
+  SHEET_TILER,
+  SHEET_TYPEFACE,
+  SVG_SHEET_WRITER,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
@@ -167,6 +177,11 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
   bind(PLAN_SHEET_SERVICE).to(PlanSheetService).inSingletonScope();
+  bind(SHEET_TYPEFACE).to(CourierTypeface).inSingletonScope();
+  bind(SHEET_TILER).to(SheetTiler).inSingletonScope();
+  bind(PLAN_DRAWING).to(PlanDrawing).inSingletonScope();
+  bind(SHEET_COMPOSER).to(SheetComposer).inSingletonScope();
+  bind(SVG_SHEET_WRITER).to(SvgSheetWriter).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
