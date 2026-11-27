@@ -1,6 +1,7 @@
 :root {
   --ref-gray-0: #ffffff;
   --ref-gray-50: #f6f6f6;
+  --ref-gray-75: #f1f1f1;
   --ref-gray-100: #ebebeb;
   --ref-gray-150: #e3e3e3;
   --ref-gray-200: #d9d9d9;
@@ -25,6 +26,7 @@
   --ref-sky: #d9e6f2;
 
   --surface-canvas: var(--ref-sky);
+  --surface-chrome: var(--ref-gray-75);
   --surface-panel-solid: var(--ref-gray-0);
   --surface-sunken: var(--ref-gray-50);
   --surface-hover: var(--ref-gray-100);
@@ -89,6 +91,11 @@
 
   --control-height: 22px;
   --control-height-sm: 20px;
+
+  --menubar-height: 28px;
+  --toolstrip-height: 32px;
+  --statusbar-height: 22px;
+  --layer-menu: 10;
 
   --motion-fast: 80ms;
   --motion-base: 140ms;

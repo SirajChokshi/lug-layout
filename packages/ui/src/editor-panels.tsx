@@ -8,6 +8,7 @@ import {
   commandSpec,
   placementModeSwitchEnabled,
   tallyText,
+  type CommandId,
   type EditorActionId,
   type EditorSnapshot,
   type IEditor,
@@ -24,9 +25,11 @@ import {
   type TrainSelectionView,
   type UndrawnPart,
 } from "@brr/client";
+import type { IconName } from "./icons/glyphs.ts";
+import { Icon } from "./icons/icon.tsx";
 import { PLATFORM, shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type ComponentProps, type FormEvent } from "react";
 import { TrackPanel } from "./track-panel.tsx";
 import { isCompactLayout } from "./use-compact-layout.ts";
 
@@ -191,6 +194,35 @@ function RoadJoins({ editor, snapshot }: PanelProps) {
   );
 }
 
+function ToolButton({
+  icon,
+  label,
+  command,
+  hint,
+  labelled = false,
+  ...button
+}: {
+  readonly icon: IconName;
+  readonly label: string;
+  readonly command: CommandId;
+  readonly hint?: string;
+  readonly labelled?: boolean;
+} & Omit<ComponentProps<"button">, "children" | "title" | "type">) {
+  const keys = shortcutText(command);
+  return (
+    <button
+      type="button"
+      className="tool-button"
+      title={`${label} (${keys})${hint === undefined ? "" : `. ${hint}`}`}
+      aria-keyshortcuts={keys}
+      {...button}
+    >
+      <Icon name={icon} />
+      <span className={labelled ? "tool-label" : "visually-hidden"}>{label}</span>
+    </button>
+  );
+}
+
 export function PlacementToolbar({
   editor,
   snapshot,
@@ -205,101 +237,110 @@ export function PlacementToolbar({
   const { history } = snapshot;
   return (
     <div className="toolbar" role="toolbar" aria-label="Placement tools">
-      <button
-        type="button"
+      <ToolButton
+        icon="select"
+        label="Select"
+        command="select-tool"
+        labelled
         aria-pressed={snapshot.mode === "select"}
         onClick={() => editor.chooseItem(null)}
-      >
-        Select ({shortcutText("select-tool")})
-      </button>
-      <button
-        type="button"
+      />
+      <ToolButton
+        icon="track"
+        label="Draw track"
+        command="draw-track"
+        labelled
         data-action="draw-track"
         aria-pressed={commandActive("draw-track", snapshot)}
         disabled={!commandEnabled("draw-track", snapshot, play)}
         onClick={(event) => onEditorAction("draw-track", event.timeStamp)}
-      >
-        Draw track ({shortcutText("draw-track")})
-      </button>
-      <button
-        type="button"
+      />
+      <ToolButton
+        icon="road"
+        label="Draw road"
+        command="draw-road"
+        labelled
         data-action="draw-road-tool"
         aria-pressed={commandActive("draw-road", snapshot)}
         disabled={!commandEnabled("draw-road", snapshot, play)}
         onClick={(event) => onEditorAction("draw-road", event.timeStamp)}
-      >
-        Draw road ({shortcutText("draw-road")})
-      </button>
-      <button
-        type="button"
+      />
+      <ToolButton
+        icon="measure"
+        label="Measure"
+        command="measure"
+        labelled
         data-action="measure"
         aria-pressed={commandActive("measure", snapshot)}
         disabled={!commandEnabled("measure", snapshot, play)}
         onClick={(event) => onEditorAction("measure", event.timeStamp)}
-      >
-        Measure ({shortcutText("measure")})
-      </button>
+      />
       {snapshot.rulers > 0 && (
-        <button type="button" data-action="clear-rulers" onClick={() => editor.clearRulers()}>
-          Clear {snapshot.rulers} {snapshot.rulers === 1 ? "ruler" : "rulers"}
+        <button
+          type="button"
+          className="tool-button"
+          data-action="clear-rulers"
+          onClick={() => editor.clearRulers()}
+        >
+          <Icon name="ruler" />
+          <span className="tool-label">
+            Clear {snapshot.rulers} {snapshot.rulers === 1 ? "ruler" : "rulers"}
+          </span>
         </button>
       )}
-      <button
-        type="button"
+      <span className="toolbar-divider" />
+      <ToolButton
+        icon="rotate"
+        label="Rotate"
+        command="rotate"
+        hint={`Shift-click or ${shortcutText("rotate-back")} turns the other way`}
         disabled={!commandEnabled("rotate", snapshot, play)}
-        title={`Shift-click or ${shortcutText("rotate-back")} turns the other way`}
         onClick={(event) => editor.rotate(event.timeStamp, event.shiftKey ? -1 : 1)}
-      >
-        Rotate ({shortcutText("rotate")})
-      </button>
+      />
       <PlacementModeSwitch
         snapshot={snapshot}
         enabled={placementModeSwitchEnabled(snapshot, play)}
         onEditorAction={onEditorAction}
       />
-      <button
-        type="button"
+      <span className="toolbar-divider" />
+      <ToolButton
+        icon="delete"
+        label="Delete"
+        command="delete"
         disabled={!commandEnabled("delete", snapshot, play)}
         onClick={(event) => editor.deleteSelection(event.timeStamp)}
-      >
-        Delete ({shortcutText("delete")})
-      </button>
-      <button
-        type="button"
+      />
+      <ToolButton
+        icon="undo"
+        label={history.undoLabel === null ? "Undo" : `Undo ${history.undoLabel}`}
+        command="undo"
         data-action="undo"
         disabled={!commandEnabled("undo", snapshot, play)}
         onClick={(event) => editor.undo(event.timeStamp)}
-      >
-        Undo{history.undoLabel === null ? "" : ` ${history.undoLabel}`} ({shortcutText("undo")})
-      </button>
-      <button
-        type="button"
+      />
+      <ToolButton
+        icon="redo"
+        label={history.redoLabel === null ? "Redo" : `Redo ${history.redoLabel}`}
+        command="redo"
         data-action="redo"
         disabled={!commandEnabled("redo", snapshot, play)}
         onClick={(event) => editor.redo(event.timeStamp)}
-      >
-        Redo{history.redoLabel === null ? "" : ` ${history.redoLabel}`} ({shortcutText("redo")})
-      </button>
-      <button
-        type="button"
+      />
+      <span className="toolbar-divider" />
+      <ToolButton
+        icon="find"
+        label="Find"
+        command="open-palette"
         data-action="open-palette"
         onClick={() => onShellCommand("open-palette")}
-      >
-        Find ({shortcutText("open-palette")})
-      </button>
-      <button
-        type="button"
+      />
+      <ToolButton
+        icon="keyboard"
+        label="Shortcuts"
+        command="show-shortcuts"
         data-action="show-shortcuts"
         onClick={() => onShellCommand("show-shortcuts")}
-      >
-        Shortcuts ({shortcutText("show-shortcuts")})
-      </button>
-      <GoTo editor={editor} />
-      <p className="toolbar-hint">
-        Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the
-        wheel zooms at the cursor. Arrows nudge selected models and track pieces one stud, otherwise
-        pan; Shift-arrows orbit. Double-click selects a track run (Shift: all joined track).
-      </p>
+      />
     </div>
   );
 }
@@ -328,7 +369,7 @@ function PlacementModeSwitch({
     <button
       type="button"
       role="switch"
-      className="placement-mode"
+      className="tool-button placement-mode"
       aria-checked={precise}
       aria-describedby={held ? heldId : undefined}
       aria-keyshortcuts={chord?.key}
@@ -340,7 +381,8 @@ function PlacementModeSwitch({
       title={`Press ${shortcutText("toggle-placement-mode")} or click to switch. Magnetic placement snaps a held model onto connectors near the cursor; precise placement puts it exactly at the cursor. Hold ${alt} to switch while held (${alt} with a two-finger scroll still orbits).`}
       onClick={(event) => onEditorAction("toggle-placement-mode", event.timeStamp)}
     >
-      Precise placement
+      <Icon name="precise" />
+      <span className="tool-label">Precise placement</span>
       <span className="placement-mode-state" aria-hidden="true">
         {switchState(effective === "precise", held, alt)} ({shortcutText("toggle-placement-mode")})
       </span>
@@ -840,10 +882,25 @@ export function EditorHud({
   );
 }
 
-export function EditorFooter({ disclaimer }: { readonly disclaimer: string }) {
+const MOUSE_HINT =
+  "Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the wheel zooms at the cursor. Arrows nudge selected models and track pieces one stud, otherwise pan; Shift-arrows orbit. Double-click selects a track run (Shift: all joined track).";
+
+export function EditorFooter({
+  editor,
+  disclaimer,
+}: {
+  readonly editor: IEditor;
+  readonly disclaimer: string;
+}) {
   return (
     <footer className="editor-footer">
-      {disclaimer} <CreditLinks />
+      <GoTo editor={editor} />
+      <p className="status-hint" title={MOUSE_HINT}>
+        {MOUSE_HINT}
+      </p>
+      <p className="status-legal">
+        {disclaimer} <CreditLinks />
+      </p>
     </footer>
   );
 }

@@ -1,5 +1,6 @@
 import type { CameraSnapshot, EditorSnapshot, IEditorCamera } from "@brr/client";
 import { useSyncExternalStore } from "react";
+import { Icon } from "./icons/icon.tsx";
 import { shortcutText } from "./keys.tsx";
 
 export function useCameraSnapshot(camera: IEditorCamera): CameraSnapshot {
@@ -29,6 +30,7 @@ export function ViewControls({ camera, snapshot, compact }: ViewControlsProps) {
           title={`Perspective 3D view (${shortcutText("toggle-plan-view")} toggles)`}
           onClick={() => camera.setMode("orbit")}
         >
+          <Icon name="view-3d" />
           3D
         </button>
         <button
@@ -38,6 +40,7 @@ export function ViewControls({ camera, snapshot, compact }: ViewControlsProps) {
           title={`Top-down 2D plan, true to scale (${shortcutText("toggle-plan-view")} toggles)`}
           onClick={() => camera.setMode("plan")}
         >
+          <Icon name="view-plan" />
           {compact ? "2D" : "2D plan"}
         </button>
       </div>
@@ -47,6 +50,7 @@ export function ViewControls({ camera, snapshot, compact }: ViewControlsProps) {
         title={`Zoom to fit everything (${shortcutText("fit-all")})`}
         onClick={() => camera.fitAll()}
       >
+        <Icon name="fit" />
         Fit all
       </button>
       <button
@@ -58,6 +62,7 @@ export function ViewControls({ camera, snapshot, compact }: ViewControlsProps) {
           if (selection) camera.focus(selection.box);
         }}
       >
+        <Icon name="focus" />
         Focus
       </button>
       <div className="view-segment" role="group" aria-label="Zoom">
@@ -67,7 +72,7 @@ export function ViewControls({ camera, snapshot, compact }: ViewControlsProps) {
           title={`Zoom out (${shortcutText("zoom-out")})`}
           onClick={() => camera.zoomStep(-1)}
         >
-          −
+          <Icon name="zoom-out" />
         </button>
         <button
           type="button"
@@ -75,7 +80,7 @@ export function ViewControls({ camera, snapshot, compact }: ViewControlsProps) {
           title={`Zoom in (${shortcutText("zoom-in")})`}
           onClick={() => camera.zoomStep(1)}
         >
-          +
+          <Icon name="zoom-in" />
         </button>
       </div>
       <label
