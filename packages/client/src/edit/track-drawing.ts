@@ -966,6 +966,10 @@ export class TrackDrawing implements ExtensionSite {
     return this.layout.count;
   }
 
+  get trackGraph(): TrackGraph {
+    return this.graph;
+  }
+
   pieceParts(): ReadonlyArray<KitPart> {
     return [...this.byCatalogIndex.values()];
   }

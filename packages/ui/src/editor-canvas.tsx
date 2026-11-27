@@ -213,7 +213,10 @@ export function EditorCanvas({ editor, camera, play, paletteDrag, options }: Edi
       gestureLastScale = scale;
       editor.pointerMove(pointer.current.ndcX, pointer.current.ndcY);
     };
-    const onDoubleClick = (): void => {
+    const onDoubleClick = (event: MouseEvent): void => {
+      const [x, y] = ndc(canvas, event);
+      const scope = event.shiftKey ? "network" : "run";
+      if (play.snapshot().status !== "running" && editor.selectTrackPath(x, y, scope)) return;
       const box = editor.snapshot().selection?.box;
       if (box) camera.focus(box);
     };

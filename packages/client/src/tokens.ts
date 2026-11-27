@@ -30,6 +30,7 @@ import type { IEditor } from "./edit/editor.ts";
 import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IRoadEditSession } from "./edit/road-edit-session.ts";
 import type { ITrackEditSession } from "./edit/track-edit-session.ts";
+import type { ITrackPathSelection } from "./edit/track-path-selection.ts";
 import type { ITrackWorld } from "./edit/track-world.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
 import type { ITableGround } from "./ground/table-ground.ts";
@@ -68,6 +69,9 @@ export const EDITOR_FRAME_LOOP: ServiceIdentifier<IEditorFrameLoop> = Symbol.for
 export const TRACK_WORLD: ServiceIdentifier<ITrackWorld> = Symbol.for("brr.client.TrackWorld");
 export const TRACK_EDIT_SESSION: ServiceIdentifier<ITrackEditSession> = Symbol.for(
   "brr.client.TrackEditSession",
+);
+export const TRACK_PATH_SELECTION: ServiceIdentifier<ITrackPathSelection> = Symbol.for(
+  "brr.client.TrackPathSelection",
 );
 export const ROAD_EDIT_SESSION: ServiceIdentifier<IRoadEditSession> = Symbol.for(
   "brr.client.RoadEditSession",
