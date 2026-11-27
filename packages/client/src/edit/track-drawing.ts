@@ -116,6 +116,7 @@ import { OBSTACLE_RECT_FLOATS, cellKey, type StudSeats } from "./track-obstacles
 import type { TrackSupport } from "./track-support.ts";
 import { writeChunkSquares } from "./plan-reach.ts";
 import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from "./track-bands.ts";
+import { TrackPlacements, contentOf } from "./track-placements.ts";
 import { heightText, type LabelView } from "./size-labels.ts";
 import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
@@ -656,6 +657,8 @@ export class TrackDrawing implements ExtensionSite {
   private carriers: ReadonlyArray<TrackCarrier> = [];
   private heldCarrier = new Int32Array(0);
   private combined: TrackLayout;
+  private readonly placements = new TrackPlacements();
+  private heldStale = false;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private pieceBoxes = new Float64Array(0);
@@ -1103,6 +1106,7 @@ export class TrackDrawing implements ExtensionSite {
     this.held = held;
     this.carriers = carriers;
     this.heldCarrier = heldCarrier;
+    this.heldStale = true;
     this.recomputeEnds();
   }
 
@@ -2081,10 +2085,12 @@ export class TrackDrawing implements ExtensionSite {
       if (!same) throw new Error(`laid track piece ${at.index} is not the piece the edit lifts`);
       touched.add(this.chunkOfPlaced(laid));
       this.layout.remove(at.index);
+      this.placements.lifted(at.index);
     }
     for (const at of change.lay) {
       const part = this.pieceByIndex(at.piece);
       this.layout.insert(at.index, at.piece, at.pose, at.yPlates, at.rise);
+      this.placements.laid(at.index, contentOf(this.layout, at.index));
       touched.add(this.chunkOfPlaced({ part, placement: at.pose, yPlates: at.yPlates, rise: 0 }));
     }
     this.indexChunks();
@@ -2397,6 +2403,10 @@ export class TrackDrawing implements ExtensionSite {
 
   private recomputeEnds(): void {
     this.combined = this.combine();
+    if (this.heldStale) {
+      this.placements.heldFrom(this.combined);
+      this.heldStale = false;
+    }
     this.indexBands();
     this.previousCrossingOutlines = this.crossingOutlines;
     this.crossingOutlines = new Map();
