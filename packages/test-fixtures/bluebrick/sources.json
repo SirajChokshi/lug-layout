@@ -25,6 +25,14 @@
       "source": "https://github.com/kuboaki/ev3_train/blob/b935c07e07f831ea5e004dca33aaf3eb769002f5/images/parts_wrk/sample_track01.bbm"
     },
     {
+      "file": "synthetic-loops.bbm",
+      "sha256": "14a607888351f5c213ccdb3a574154ed2784c35915b7cc57bf31742b562ee552",
+      "author": "Brick Railroad",
+      "license": "this repository's terms",
+      "licenseText": null,
+      "source": "written for this repository from LDraw part numbers 3811, 32087, 53400, 53401, 74746 and 74747"
+    },
+    {
       "file": "synthetic-yard.bbm",
       "sha256": "0248d194b504015938b0d5f08303b8e347fef1c70c18a8cabe9f77ae9c744fd0",
       "author": "Brick Railroad",

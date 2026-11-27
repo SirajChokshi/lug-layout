@@ -412,6 +412,7 @@ it("every BlueBrick map in the fixtures comes back through the compiler in the s
     "fordyce-2026.bbm",
     "queue.bbm",
     "sample_track01.bbm",
+    "synthetic-loops.bbm",
     "synthetic-yard.bbm",
     "tight-corner.bbm",
   ]);
