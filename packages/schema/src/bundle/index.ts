@@ -1311,8 +1311,9 @@ export const UnresolvedRunningGearReason = v.picklist([
   "supportPlaneUnidentified",
   "belowRailTop",
   "clearanceUnidentified",
-  "shedsParts",
-  "sheddingUnidentified",
+  "throughStandingParts",
+  "onSeveralVehicles",
+  "loadUnidentified",
 ]);
 export type UnresolvedRunningGearReason = v.InferOutput<typeof UnresolvedRunningGearReason>;
 

@@ -31,8 +31,16 @@ import { clearance, type ClearanceWheelset } from "./clearance.ts";
 import { ExactBoxes, modelBoxes } from "./exact-boxes.ts";
 import type { PartExtents } from "./part-extents.ts";
 import type { PartRollingTable } from "./part-rolling.ts";
-import { NO_VEHICLE, ON_BODY, restingCredits, type Riders } from "./resting-ride.ts";
-import { shedding, type SheddingPoses } from "./shedding.ts";
+import {
+  creditInRounds,
+  LoadJudge,
+  NO_VEHICLE,
+  ON_BODY,
+  outsideRefusals,
+  type LoadPoses,
+  type OutsideRefusal,
+  type Riders,
+} from "./load-groups.ts";
 import { AxleHeights } from "./support-plane.ts";
 import { AuthoredBoxes } from "./authored-boxes.ts";
 import type { AuthoredPoses } from "./authored-poses.ts";
@@ -266,46 +274,50 @@ export class RunningGearDetector {
     }
     const candidates = gears.filter((gear) => !excluded.has(gear.body));
     const riders = this.riders(candidates, partition, attachedTo, instances.count);
-    for (const credit of restingCredits(frames, instances, extents, mates, riders)) {
-      for (const instance of credit.instances) {
-        riders.vehicleOf[instance] = credit.vehicle;
-        riders.bogieOf[instance] = credit.bogie;
-      }
-    }
+    const seatedOf = candidates.map((gear) => {
+      const own = this.ownWheelsets(gear, partition);
+      const seated = own.filter((w) => partition.seated[w] === 1);
+      return { own, seated };
+    });
+    const wheels = seatedOf.map(({ seated }) =>
+      seated.flatMap((w) => [...(wheelsets[w]?.memberInstances ?? [])]),
+    );
+    const poses: LoadPoses = {
+      identified: new ExactBoxes(frames, instances, extents),
+      authored: new AuthoredBoxes(instances, extents, input.authored),
+      boxes: modelBoxes(instances, extents),
+    };
+    const judge =
+      candidates.length > 0 ? new LoadJudge(poses, mates, riders, instances.count) : null;
+    const credits = judge ? creditInRounds(judge, riders, candidates.length, wheels) : [];
     const ridingOf = candidates.map((): number[] => []);
     riders.vehicleOf.forEach((v, instance) => {
       if (v !== NO_VEHICLE) ridingOf[v]?.push(instance);
     });
     const heights = new AxleHeights(frames);
-    const checks = candidates.map((gear, v) => {
-      const own = this.ownWheelsets(gear, partition);
-      const seated = own.filter((w) => partition.seated[w] === 1);
-      const members = new Set(seated.flatMap((w) => [...(wheelsets[w]?.memberInstances ?? [])]));
+    const checks = candidates.map((_, v) => {
+      const own = seatedOf[v]?.own ?? [];
+      const seated = seatedOf[v]?.seated ?? [];
+      const members = new Set(wheels[v] ?? []);
       const riding = ridingOf[v] ?? [];
-      const checked = riding.filter((instance) => !members.has(instance));
       const refusal = clearance(
         frames,
         heights,
         instances,
         extents,
         seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
-        checked,
+        riding.filter((instance) => !members.has(instance)),
       );
-      return { own, riding, checked, refusal };
+      return { own, riding, refusal };
     });
-    const poses: SheddingPoses = {
-      identified: new ExactBoxes(frames, instances, extents),
-      authored: new AuthoredBoxes(instances, extents, input.authored),
-      boxes: modelBoxes(instances, extents),
-    };
-    const outside = Array.from(riders.vehicleOf.keys()).filter((instance) => {
-      const v = riders.vehicleOf[instance] ?? NO_VEHICLE;
-      return v === NO_VEHICLE || checks[v]?.refusal;
-    });
+    const survivors = new Set(candidates.flatMap((_, v) => (checks[v]?.refusal ? [] : [v])));
+    const outside = judge
+      ? outsideRefusals(judge, riders, candidates.length, wheels, credits, survivors)
+      : new Map<number, OutsideRefusal>();
     candidates.forEach((gear, v) => {
       const check = checks[v];
       if (!check) return;
-      const failure = check.refusal ?? shedding(poses, check.checked, outside);
+      const failure = check.refusal ?? outside.get(v);
       if (!failure) return;
       unresolved.push({
         reason: failure.reason,
