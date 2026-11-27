@@ -40,6 +40,7 @@ import {
   ConsistBodies,
   StandingRemainderBody,
   rigidBodies,
+  GhostBuffers,
   standingGhost,
   type StandingConsist,
 } from "./consist-bodies.ts";
@@ -106,6 +107,34 @@ export interface VehicleFootprint {
 }
 
 const FOOTPRINT_CORNERS = [0, 1, 3, 2] as const;
+
+class AimScratch {
+  poses = new Float64Array(0);
+  matrices = new Float64Array(0);
+  boxes = new Float64Array(0);
+  readonly bounds = new Float64Array(SOLID_BOX_FLOATS);
+  private readonly outlines: Float64Array[] = [];
+
+  posesFor(vehicles: number): Float64Array {
+    const length = vehicles * VEHICLE_POSE_FLOATS;
+    if (this.poses.length !== length) this.poses = new Float64Array(length);
+    return this.poses;
+  }
+
+  solidsFor(parts: number): void {
+    if (this.matrices.length === parts * SOLID_MATRIX_FLOATS) return;
+    this.matrices = new Float64Array(parts * SOLID_MATRIX_FLOATS);
+    this.boxes = new Float64Array(parts * SOLID_BOX_FLOATS);
+  }
+
+  outline(vehicle: number): Float64Array {
+    const kept = this.outlines[vehicle];
+    if (kept) return kept;
+    const made = new Float64Array(FOOTPRINT_CORNERS.length * 2);
+    this.outlines[vehicle] = made;
+    return made;
+  }
+}
 const BODY = 0;
 const FRONT_BOGIE = 1;
 const REAR_BOGIE = 2;
@@ -286,6 +315,8 @@ export class RailYard implements IRailYard {
   private readonly modelKeys = new WeakMap<PlayModel, number>();
   private nextModelKey = 0;
   private readonly parked: Parked[] = [];
+  private readonly ghostBuffers = new GhostBuffers();
+  private readonly aimScratch = new AimScratch();
   private hidden = false;
   private watched: ObstacleModels | null = null;
 
@@ -345,7 +376,7 @@ export class RailYard implements IRailYard {
       };
     }
     const head = { edge: this.spot[SPOT_EDGE] ?? edge, offsetLdu: this.spot[SPOT_OFFSET] ?? 0 };
-    let stood = this.stand(model.label, prepared, rails, head);
+    let stood = this.stand(model.label, prepared, rails, head, this.aimScratch);
     if (typeof stood === "string") return { kind: "refused", reason: stood, seat: null };
     if (stood.lengthLdu > prepared.straightLdu) {
       if (!network.seat(edge, offset, stood.lengthLdu, this.spot)) {
@@ -355,7 +386,7 @@ export class RailYard implements IRailYard {
         edge: this.spot[SPOT_EDGE] ?? edge,
         offsetLdu: this.spot[SPOT_OFFSET] ?? 0,
       };
-      stood = this.stand(model.label, prepared, rails, reseated);
+      stood = this.stand(model.label, prepared, rails, reseated, this.aimScratch);
       if (typeof stood === "string") return { kind: "refused", reason: stood, seat: null };
     }
     const holder = this.holderOf(stood.pieces, null);
@@ -450,6 +481,7 @@ export class RailYard implements IRailYard {
       this.track?.railTopY ?? 0,
       seat.remainders,
       seat.groundY,
+      this.ghostBuffers,
     );
   }
 
@@ -556,7 +588,7 @@ export class RailYard implements IRailYard {
         }
         highest = Math.max(highest, along * sinPitch + top * cosPitch);
       }
-      const outline = new Float64Array(FOOTPRINT_CORNERS.length * 2);
+      const outline = this.aimScratch.outline(v);
       FOOTPRINT_CORNERS.forEach((corner, k) => {
         const u = corner & 1 ? front : rear;
         const w = boxes[o + (corner & 2 ? 5 : 2)] ?? 0;
@@ -734,6 +766,7 @@ export class RailYard implements IRailYard {
     prepared: Prepared,
     rails: RailTrack,
     head: RailHead,
+    scratch: AimScratch | null = null,
   ): RailSeat | string {
     const run = this.run;
     if (!run) return `${label} has no track to stand on.`;
@@ -742,7 +775,7 @@ export class RailYard implements IRailYard {
       return `${label} is longer than this loop of track.`;
     }
     const count = prepared.vehicles.length;
-    const poses = new Float64Array(count * VEHICLE_POSE_FLOATS);
+    const poses = scratch ? scratch.posesFor(count) : new Float64Array(count * VEHICLE_POSE_FLOATS);
     this.poser.writeTrain(
       run,
       prepared.geometry,
@@ -779,7 +812,7 @@ export class RailYard implements IRailYard {
     };
     const { remainders, boxes, tops } = prepared;
     const groundY = this.laidAt(pieces, rails);
-    const solids = this.seatSolids(prepared.solids, poses);
+    const solids = this.seatSolids(prepared.solids, poses, scratch);
     return {
       anchor,
       head,
@@ -795,11 +828,16 @@ export class RailYard implements IRailYard {
     };
   }
 
-  private seatSolids(vehicle: VehicleSolids, poses: Float64Array): PosedParts {
+  private seatSolids(
+    vehicle: VehicleSolids,
+    poses: Float64Array,
+    scratch: AimScratch | null,
+  ): PosedParts {
     const count = vehicle.parts.length;
-    const matrices = new Float64Array(count * SOLID_MATRIX_FLOATS);
-    const boxes = new Float64Array(count * SOLID_BOX_FLOATS);
-    const bounds = new Float64Array(SOLID_BOX_FLOATS);
+    scratch?.solidsFor(count);
+    const matrices = scratch ? scratch.matrices : new Float64Array(count * SOLID_MATRIX_FLOATS);
+    const boxes = scratch ? scratch.boxes : new Float64Array(count * SOLID_BOX_FLOATS);
+    const bounds = scratch ? scratch.bounds : new Float64Array(SOLID_BOX_FLOATS);
     emptyBounds(bounds);
     const solids = this.catalog.partSolids();
     const frame = this.vehicleFrame;

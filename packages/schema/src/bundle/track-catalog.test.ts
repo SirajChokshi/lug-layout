@@ -107,6 +107,7 @@ function indexWith(rail: number | null, rails: ReadonlyArray<typeof RAIL> | null
     }),
     trackShapes: [],
     tablePlane: { part: "table", depthBelowTopLdu: 8 },
+    levelCrossing: { systems: [], ramps: [] },
     compiler:
       rails === null
         ? null

@@ -58,6 +58,7 @@ function compiledManifest() {
         inlinePartsResolvedToOfficial: [],
         instances: 0,
         lattice: null,
+        vehicles: 0,
         sha256: SHA256_ZERO,
         cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, cells: null },
       },

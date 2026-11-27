@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { readFile, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,10 +10,12 @@ import {
   type TrackRoute,
 } from "./editor-page.ts";
 
-const LOCOMOTIVE = "omr:10133-1";
-const OFFICIAL_CABOOSE = new URL("../../../.cache/omr/10014-1.mpd", import.meta.url);
+const LOCOMOTIVE = "omr:10020-1";
+const MY_OWN_CAR = fileURLToPath(
+  new URL("../../../packages/client/test-data/custom-bogie-wagon.mpd", import.meta.url),
+);
 const MY_WAGONS = fileURLToPath(
-  new URL("../../../packages/import/test-data/my-container-and-tank-wagons.ldr", import.meta.url),
+  new URL("../../../packages/client/test-data/my-two-wagons.ldr", import.meta.url),
 );
 const HEADINGS = 16;
 const EAST = 0;
@@ -24,16 +25,6 @@ const RUN_DEADLINE_MS = 30_000;
 const SAMPLE_MS = 200;
 const LOCOMOTIVE_AT = { x: 0, z: 0 };
 const CABOOSE_AT = { x: -100, z: 1600 };
-
-async function writeMyBlueCaboose(path: string): Promise<void> {
-  const official = await readFile(OFFICIAL_CABOOSE, "utf8");
-  const custom = official
-    .replaceAll("10014 - ", "my blue caboose - ")
-    .split("\n")
-    .map((line) => line.replace(/^1 0 /u, "1 1 "))
-    .join("\n");
-  await writeFile(path, custom);
-}
 
 function isCurve(route: TrackRoute): boolean {
   return (route.to.heading - route.from.heading + HEADINGS) % HEADINGS !== HEADINGS / 2;
@@ -69,9 +60,7 @@ test("trains set by hand on a hand-drawn oval, imported ones included, couple wh
   expect(oval.openEnds).toBe(0);
   await editor.escape();
 
-  const file = test.info().outputPath("my-blue-caboose.mpd");
-  await writeMyBlueCaboose(file);
-  const imported = await editor.importModel(file);
+  const imported = await editor.importModel(MY_OWN_CAR);
   expect(imported.status, imported.text).toBe("placeable");
   const wagons = await editor.importModel(MY_WAGONS);
   expect(wagons.status, wagons.text).toBe("placeable");

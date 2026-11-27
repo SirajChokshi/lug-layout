@@ -69,7 +69,7 @@ const NO_LOOK: LookSettings = {
 };
 const RAY_HEIGHT_LDU = 10_000;
 const GREEN_BASEPLATE = "ldraw:3811@2";
-const LOCOMOTIVE = "omr:10133-1";
+const LOCOMOTIVE = "omr:10020-1";
 const RUN_FROM_X = -800;
 const RUN_TO_X = 800;
 const RUN_Z = 800;

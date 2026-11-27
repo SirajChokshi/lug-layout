@@ -122,7 +122,7 @@ it("the bundle manifest's fields, its model entries' and its compiler's are exac
     compiler: [
       "file",
       "unofficialAllowlist",
-      "vehicles",
+      "rails",
       "primitives",
       "sectionVocabulary",
       "cavityProbe",

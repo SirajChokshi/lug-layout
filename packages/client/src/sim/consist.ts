@@ -44,7 +44,7 @@ interface PlanePoint {
 
 function inPlan({ vehicle, sign }: Orientation, model: Vec3): PlanePoint {
   const [x, , z] = toVehicleFrame(vehicle, model);
-  return { x: sign * x, z: sign * z };
+  return { x: sign * x + 0, z: sign * z + 0 };
 }
 
 function guideAt({ vehicle, sign }: Orientation, end: End): ModelVehicle["guides"][number] {

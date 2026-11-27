@@ -122,10 +122,7 @@ import {
   TRAIN_PLAY,
   WORLD_SESSION,
 } from "../tokens.ts";
-import {
-  InThreadModelImporter,
-  pinnedOmrModel,
-} from "../import/in-thread-importer.test-support.ts";
+import { InThreadModelImporter } from "../import/in-thread-importer.test-support.ts";
 import { InThreadSim } from "../sim/in-thread-sim.test-support.ts";
 import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/domain";
 import type { BomScope } from "../bom/bom-service.ts";
@@ -666,8 +663,8 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
 
-const LOCOMOTIVE = "omr:10133-1";
-const LOCOMOTIVE_LABEL = "10133-1 Burlington Northern Santa Fe Locomotive (2004)";
+const LOCOMOTIVE = "omr:10020-1";
+const LOCOMOTIVE_LABEL = "10020-1 Santa Fe Super Chief (2002)";
 const CABOOSE = "omr:10014-1";
 const CABOOSE_LABEL = "10014-1 Caboose (2001)";
 const MY_OWN_TRAIN = "omr:10205-1";
@@ -761,10 +758,7 @@ it("draws an oval of 6-wide plastic track with its own tool, every end joined ex
   expect(new Set(nineVolt.map((piece) => piece.ref))).toEqual(new Set(["ldraw:74746"]));
 }, 120_000);
 
-const MY_WAGONS = new URL(
-  "../../../import/test-data/my-container-and-tank-wagons.ldr",
-  import.meta.url,
-);
+const MY_WAGONS = new URL("my-two-wagons.ldr", testData);
 
 function isCurve(route: TrackRouteView): boolean {
   return (route.to.heading - route.from.heading + ZETA16_ORDER) % ZETA16_ORDER !== ZETA16_ORDER / 2;
@@ -788,14 +782,8 @@ function curveFarthestFrom(
   return farthest;
 }
 
-async function myBlueCaboose(): Promise<Uint8Array> {
-  const official = await pinnedOmrModel("10014-1.mpd");
-  const custom = official
-    .replaceAll("10014 - ", "my blue caboose - ")
-    .split("\n")
-    .map((line) => line.replace(/^1 0 /u, "1 1 "))
-    .join("\n");
-  return new TextEncoder().encode(custom);
+function myOwnCar(): Promise<Uint8Array> {
+  return readFile(new URL(CUSTOM_BOGIE_WAGON, testData));
 }
 
 function trainsOf(editor: IEditor) {
@@ -941,10 +929,10 @@ it("couples a user's own caboose behind a set's locomotive and a user's two wago
   );
   drawOval(editor, backend);
   await loadCatalogItem(catalog, LOCOMOTIVE);
-  await editor.importModelFile({ name: "my-blue-caboose.mpd", bytes: await myBlueCaboose() });
+  await editor.importModelFile({ name: CUSTOM_BOGIE_WAGON, bytes: await myOwnCar() });
   const caboose = editor.snapshot().modelImport?.item ?? "";
   await editor.importModelFile({
-    name: "my-container-and-tank-wagons.ldr",
+    name: "my-two-wagons.ldr",
     bytes: await readFile(MY_WAGONS),
   });
   const wagons = editor.snapshot().modelImport?.item ?? "";
@@ -984,18 +972,18 @@ it("couples a user's own caboose behind a set's locomotive and a user's two wago
   await editor.newWorld("Second");
   await editor.openWorld(first);
 
-  const whole = `${LOCOMOTIVE_LABEL} + my-blue-caboose.mpd + my-container-and-tank-wagons.ldr`;
+  const whole = `${LOCOMOTIVE_LABEL} + ${CUSTOM_BOGIE_WAGON} + my-two-wagons.ldr`;
   expect({ behindLoco, behindCaboose }).toEqual({
     behindLoco: { couples: { end: "rear", train: LOCOMOTIVE_LABEL }, refused: null },
     behindCaboose: {
-      couples: { end: "rear", train: `${LOCOMOTIVE_LABEL} + my-blue-caboose.mpd` },
+      couples: { end: "rear", train: `${LOCOMOTIVE_LABEL} + ${CUSTOM_BOGIE_WAGON}` },
       refused: null,
     },
   });
   expect({ coupled, running, undoneOnce, undoneTwice, redone }).toEqual({
     coupled: [whole],
     running: [[whole, 4]],
-    undoneOnce: [`${LOCOMOTIVE_LABEL} + my-blue-caboose.mpd`],
+    undoneOnce: [`${LOCOMOTIVE_LABEL} + ${CUSTOM_BOGIE_WAGON}`],
     undoneTwice: [LOCOMOTIVE_LABEL],
     redone: [whole],
   });
@@ -1027,12 +1015,12 @@ it("runs every train on the rails, imported ones included, from exactly where ea
   drawOval(editor, backend);
   await loadCatalogItem(catalog, LOCOMOTIVE);
   const imported = await editor.importModelFile({
-    name: "my-blue-caboose.mpd",
-    bytes: await myBlueCaboose(),
+    name: CUSTOM_BOGIE_WAGON,
+    bytes: await myOwnCar(),
   });
   const custom = editor.snapshot().modelImport?.item ?? "";
   const importedWagons = await editor.importModelFile({
-    name: "my-container-and-tank-wagons.ldr",
+    name: "my-two-wagons.ldr",
     bytes: await readFile(MY_WAGONS),
   });
   const wagons = editor.snapshot().modelImport?.item ?? "";
@@ -1076,9 +1064,9 @@ it("runs every train on the rails, imported ones included, from exactly where ea
   expect(wagonsPlaced).toMatchObject({ placements: 0, refusedClicks: 0 });
   expect(started).toMatchObject({ status: "running", error: null });
   expect(started.trains.map((train) => [train.label, train.vehicles])).toEqual([
-    ["10133-1 Burlington Northern Santa Fe Locomotive (2004)", 1],
-    ["my-blue-caboose.mpd", 1],
-    ["my-container-and-tank-wagons.ldr", 2],
+    [LOCOMOTIVE_LABEL, 1],
+    [CUSTOM_BOGIE_WAGON, 1],
+    ["my-two-wagons.ldr", 2],
   ]);
   expect(parked.length).toBeGreaterThan(0);
   expect(sameStanding(playing, parked)).toBe(true);
@@ -1089,7 +1077,7 @@ it("runs every train on the rails, imported ones included, from exactly where ea
 }, 240_000);
 
 const BUILDING = "10190-1";
-const UNRESOLVED_TRAIN = "10205-1";
+const UNRESOLVED_TRAIN = "4555-1";
 
 function inThreadImports(bound: Container): void {
   bound
@@ -1097,45 +1085,48 @@ function inThreadImports(bound: Container): void {
     .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
 }
 
-it("offers exactly the placed models whose running gear resolves as trains, imported ones included, after every place, delete and undo", async () => {
+it("sets on the rails exactly the held models whose running gear resolves as trains, imported ones included, and keeps that set through delete and undo", async () => {
   const { editor, backend } = await startEditor(
     [BUILDING, UNRESOLVED_TRAIN],
     new BundleDirectoryFetcher(),
     [],
     inThreadImports,
   );
+  drawOval(editor, backend);
   const place = placer(editor, backend);
   const trains = () => editor.snapshot().trains.map((train) => train.item);
-  const nothingPlaced = trains();
   const bogieWagon = await importTestModel(editor, CUSTOM_BOGIE_WAGON);
   const twoAxleWagon = await importTestModel(editor, CUSTOM_TWO_AXLE_WAGON);
-  await place(`omr:${BUILDING}`, 0, 0);
-  await place(`omr:${UNRESOLVED_TRAIN}`, 3200, 0);
-  const notTrainsPlaced = trains();
-  await place(bogieWagon, 0, 3200);
-  const bogieWagonPlaced = trains();
-  await place(twoAxleWagon, 3200, 3200);
-  const allPlaced = trains();
-  selectAt(editor, backend, 0, 3200);
+  const curve = curveFarthestFrom(editor, [
+    { x: 0, z: 0 },
+    { x: -100, z: 1600 },
+  ]);
+  await place(`omr:${BUILDING}`, 6400, 0);
+  await place(`omr:${UNRESOLVED_TRAIN}`, curve.x, curve.z);
+  const notTrainsHeld = trains();
+  await place(bogieWagon, 0, 0);
+  const bogieWagonSet = trains();
+  await place(twoAxleWagon, -100, 1600);
+  const bothSet = trains();
+  editor.chooseItem(null);
+  selectAt(editor, backend, 0, 0);
   editor.deleteSelection(0);
   const bogieWagonDeleted = trains();
   editor.undo(0);
   const deleteUndone = trains();
 
   expect({
-    nothingPlaced,
-    notTrainsPlaced,
-    bogieWagonPlaced,
-    allPlaced,
+    notTrainsHeld,
+    bogieWagonSet,
+    bothSet: bothSet.toSorted(),
     bogieWagonDeleted,
-    deleteUndone,
+    deleteUndone: deleteUndone.toSorted(),
   }).toEqual({
-    nothingPlaced: [],
-    notTrainsPlaced: [],
-    bogieWagonPlaced: [bogieWagon],
-    allPlaced: [bogieWagon, twoAxleWagon],
+    notTrainsHeld: [],
+    bogieWagonSet: [bogieWagon],
+    bothSet: [bogieWagon, twoAxleWagon].toSorted(),
     bogieWagonDeleted: [twoAxleWagon],
-    deleteUndone: [bogieWagon, twoAxleWagon],
+    deleteUndone: [bogieWagon, twoAxleWagon].toSorted(),
   });
 }, 240_000);
 
@@ -8497,7 +8488,13 @@ it("refuses a fill tile where a held train would stand on the rails, and places 
   await loadCatalogItem(catalog, LOCOMOTIVE);
   await chosen(editor, LOCOMOTIVE);
 
-  dragFill(editor, backend, [-640, -640], [640, 640]);
+  const straight = editor.trackRoutes().find((route) => !isCurve(route));
+  if (!straight) throw new Error("the oval has no straight");
+  const onRails = {
+    x: (straight.from.xLdu + straight.to.xLdu) / 2,
+    z: (straight.from.zLdu + straight.to.zLdu) / 2,
+  };
+  dragFill(editor, backend, [onRails.x - 1280, onRails.z - 1280], [onRails.x, onRails.z]);
   const { lastFill, placements } = editor.snapshot();
 
   expect({
@@ -9671,15 +9668,17 @@ it("waits for a generated pier's studs to be checked before laying the raised ru
   expect(editor.snapshot().track?.unsupported).toBe(0);
 }, 180_000);
 
-const ROOF_BRICK = "1 4 40 -311 10 1 0 0 0 1 0 0 0 1 3005.dat";
 const BRICK_LDU = 24;
+const TALL_STACK_BRICKS = 20;
+const WAGON_TOP_Y = -63;
 
-async function myTallCaboose(): Promise<Uint8Array> {
-  const official = await pinnedOmrModel("10014-1.mpd");
-  const lines = official.replaceAll("10014 - ", "my tall caboose - ").split("\n");
-  const car = lines.findIndex((line) => line.startsWith("0 FILE my tall caboose - train car"));
-  lines.splice(car + 1, 0, ROOF_BRICK);
-  return new TextEncoder().encode(lines.join("\n"));
+async function myTallWagon(): Promise<Uint8Array> {
+  const wagon = await readFile(new URL(CUSTOM_TWO_AXLE_WAGON, testData), "utf8");
+  const stack = Array.from(
+    { length: TALL_STACK_BRICKS },
+    (_, k) => `1 4 0 ${WAGON_TOP_Y - BRICK_LDU * (k + 1)} 0 -1 0 0 0 1 0 0 0 -1 3001.dat`,
+  );
+  return new TextEncoder().encode(`${wagon.trimEnd()}\n${stack.join("\n")}\n`);
 }
 
 it("measures the tallest train from every train in the catalog, and again when a user imports a taller one, which it then names", async () => {
@@ -9690,10 +9689,10 @@ it("measures the tallest train from every train in the catalog, and again when a
   await vi.waitFor(() => expect(tallest()).not.toBeNull(), { timeout: 60_000 });
   const bundled = tallest();
   const imported = await editor.importModelFile({
-    name: "my-tall-caboose.mpd",
-    bytes: await myTallCaboose(),
+    name: "my-tall-wagon.ldr",
+    bytes: await myTallWagon(),
   });
-  await vi.waitFor(() => expect(tallest()?.model).toBe("my-tall-caboose.mpd"), { timeout: 60_000 });
+  await vi.waitFor(() => expect(tallest()?.model).toBe("my-tall-wagon.ldr"), { timeout: 60_000 });
 
   expect(imported).toBe(true);
   expect(bundled?.model).toBe(TALLEST_TRAIN);

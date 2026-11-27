@@ -2060,4 +2060,8 @@ Committed LDraw test inputs, one row per section. Sections modified from LDraw l
 | `packages/import/test-data/critic-gap.mpd` | `9999-1 - 3001.dat` | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt | 2026-11-16 [critic] Modified from LDraw parts/3001.dat: subpart recoloured 4, side quads recoloured 14 |
 | `packages/import/test-data/critic-gap.mpd` | `9998-1 - 3001.dat` | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt | 2026-11-16 [critic] Modified from LDraw parts/3001.dat: side quads listed from a different starting vertex |
 | `packages/import/test-data/custom-pile.ldr` | `` | Brick Railroad tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |
-| `packages/import/test-data/my-container-and-tank-wagons.ldr` | `` | Brick Railroad tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |
+| `packages/client/test-data/custom-bogie-wagon.mpd` | `custom-bogie-wagon.ldr` | lug-layout tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |
+| `packages/client/test-data/custom-bogie-wagon.mpd` | `custom-bogie.ldr` | lug-layout tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |
+| `packages/client/test-data/custom-two-axle-wagon.ldr` | `` | lug-layout tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |
+| `packages/client/test-data/my-two-wagons.ldr` | `` | lug-layout tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |
+| `packages/client/test-data/technic-building.ldr` | `` | lug-layout tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |

@@ -14,19 +14,17 @@ import {
   type PartInstances,
   type RunningGear,
 } from "@brr/domain";
-import { BundleIndexFields, PartShape, SubmodelTree } from "@brr/schema/bundle";
+import { BundleIndexFields, BundleModelEntry, PartShape, SubmodelTree } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as v from "valibot";
 import { MANIFEST_FILE } from "./publish.ts";
 
-const RunningGearManifest = v.pick(BundleIndexFields, [
-  "models",
-  "compiler",
-  "connectors",
-  "connectivity",
-]);
+const RunningGearManifest = v.object({
+  ...v.pick(BundleIndexFields, ["compiler", "connectors", "connectivity"]).entries,
+  models: v.array(v.omit(BundleModelEntry, ["vehicles"])),
+});
 
 const RunningGearModel = v.object({
   parts: v.array(v.string()),

@@ -3872,6 +3872,9 @@ export class Editor implements IEditor, IEditedWorld {
       })),
     });
     const placed = new Set(this.placed.models().map((model) => model.placeable));
+    for (const { pose } of this.consists.consists()) {
+      for (const { refId } of [pose, ...pose.coupled]) placed.add(this.placeableAt(refId));
+    }
     this.runningGear.setModels(
       this.catalog.placeables().flatMap((placeable) => {
         const gear = placeable && placed.has(placeable) ? this.catalog.gearModel(placeable) : null;

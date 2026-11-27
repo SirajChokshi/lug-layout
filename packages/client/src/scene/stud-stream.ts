@@ -3,7 +3,7 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type StudInstances } from 
 import type { ChunkPartInstances } from "./placements.ts";
 import type { ColorTable } from "./viewer-scene.ts";
 
-interface PartInstances {
+export interface PartInstances {
   readonly count: number;
   readonly partIndex: Uint16Array;
   readonly colorIndex: Uint16Array;
@@ -49,25 +49,49 @@ export function bakedVisible(cover: ModelStudCover | undefined, stud: number): b
   return (((cover.visibleBits[stud >>> 5] ?? 0) >>> (stud & (BITS_PER_WORD - 1))) & 1) === 1;
 }
 
+export function studTotal(parts: ReadonlyArray<PartShapeAsset>, instances: PartInstances): number {
+  let totalStuds = 0;
+  for (let i = 0; i < instances.count; i++) {
+    totalStuds += parts[instances.partIndex[i] ?? 0]?.studPrimitiveIndex.length ?? 0;
+  }
+  return totalStuds;
+}
+
 function studStream(
   parts: ReadonlyArray<PartShapeAsset>,
   colors: ColorTable,
   instances: PartInstances,
   bakedCover: ModelStudCover | undefined,
 ): StudInstances {
-  let totalStuds = 0;
-  for (let i = 0; i < instances.count; i++) {
-    totalStuds += parts[instances.partIndex[i] ?? 0]?.studPrimitiveIndex.length ?? 0;
-  }
+  const totalStuds = studTotal(parts, instances);
   if (bakedCover && bakedCover.studs !== totalStuds) {
     throw new Error(
       `the bake's stud cover lists ${bakedCover.studs} studs but the model's parts have ${totalStuds}`,
     );
   }
+  const written = {
+    primitiveIndex: new Uint8Array(totalStuds),
+    colorIndex: new Uint16Array(totalStuds),
+    matrices: new Float32Array(totalStuds * INSTANCE_MATRIX_FLOATS),
+  };
+  const count = writeStuds(parts, colors, instances, bakedCover, written);
+  return {
+    count,
+    primitiveIndex: written.primitiveIndex.slice(0, count),
+    colorIndex: written.colorIndex.slice(0, count),
+    matrices: written.matrices.slice(0, count * INSTANCE_MATRIX_FLOATS),
+  };
+}
+
+export function writeStuds(
+  parts: ReadonlyArray<PartShapeAsset>,
+  colors: ColorTable,
+  instances: PartInstances,
+  bakedCover: ModelStudCover | undefined,
+  out: Pick<StudInstances, "primitiveIndex" | "colorIndex" | "matrices">,
+): number {
+  const { primitiveIndex, colorIndex, matrices } = out;
   let stud = 0;
-  const primitiveIndex = new Uint8Array(totalStuds);
-  const colorIndex = new Uint16Array(totalStuds);
-  const matrices = new Float32Array(totalStuds * INSTANCE_MATRIX_FLOATS);
   let count = 0;
   for (let i = 0; i < instances.count; i++) {
     const part = parts[instances.partIndex[i] ?? 0];
@@ -91,10 +115,5 @@ function studStream(
       count++;
     }
   }
-  return {
-    count,
-    primitiveIndex: primitiveIndex.slice(0, count),
-    colorIndex: colorIndex.slice(0, count),
-    matrices: matrices.slice(0, count * INSTANCE_MATRIX_FLOATS),
-  };
+  return count;
 }

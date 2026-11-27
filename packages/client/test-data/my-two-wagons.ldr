@@ -1,0 +1,12 @@
+0 My two wagons
+0 Name: my-two-wagons.ldr
+0 Author: lug-layout tests
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+1 16 150 -63 0 0 0 1 0 1 0 -1 0 0 2878c01.dat
+1 8 100 -55 0 -1 0 0 0 1 0 0 0 -1 3034.dat
+1 16 100 -63 0 -1 0 0 0 1 0 0 0 -1 3020.dat
+1 16 50 -63 0 0 0 1 0 1 0 -1 0 0 2878c01.dat
+1 16 -50 -63 0 0 0 1 0 1 0 -1 0 0 2878c01.dat
+1 14 -100 -55 0 -1 0 0 0 1 0 0 0 -1 3034.dat
+1 16 -100 -63 0 -1 0 0 0 1 0 0 0 -1 3020.dat
+1 16 -150 -63 0 0 0 1 0 1 0 -1 0 0 2878c01.dat

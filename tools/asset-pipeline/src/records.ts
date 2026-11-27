@@ -31,7 +31,7 @@ const UNSAFE_FILE_CHARACTERS = /[^A-Za-z0-9_-]/gu;
 const CompiledTables = v.object({
   parts: v.array(ManifestPart),
   credits: v.array(BundleCredit),
-  models: v.array(BundleModelEntry),
+  models: v.array(v.omit(BundleModelEntry, ["vehicles"])),
   trackCatalog: TrackCatalog,
   levelCrossing: LevelCrossingFacts,
 });

@@ -9,7 +9,7 @@ import {
 } from "@brr/domain";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type ISceneBackend } from "@brr/render";
 import type { PlayModel } from "../play/play-models.ts";
-import { withStuds } from "../scene/stud-stream.ts";
+import { studTotal, withStuds, writeStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { ConsistVehicle, RigidBodyInstances, StandingRemainder } from "../sim/consist.ts";
 import type { IVehicleIds } from "./vehicle-ids.ts";
@@ -82,12 +82,39 @@ function writeFlatFrame(poses: Float64Array, at: number, y: number, out: Float64
   out.set([c, 0, -s, poses[at] ?? 0, 0, 1, 0, y, s, 0, c, poses[at + 1] ?? 0]);
 }
 
+export class GhostBuffers {
+  partIndex = new Uint16Array(0);
+  colorIndex = new Uint16Array(0);
+  matrices = new Float32Array(0);
+  studPrimitives = new Uint8Array(0);
+  studColors = new Uint16Array(0);
+  studMatrices = new Float32Array(0);
+  readonly frame = new Float64Array(SOLID_MATRIX_FLOATS);
+  readonly lifts = new Float64Array(1);
+  readonly posedPart = new Float64Array(SOLID_MATRIX_FLOATS);
+
+  fit(count: number): void {
+    if (this.partIndex.length === count) return;
+    this.partIndex = new Uint16Array(count);
+    this.colorIndex = new Uint16Array(count);
+    this.matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
+  }
+
+  fitStuds(count: number): void {
+    if (this.studPrimitives.length === count) return;
+    this.studPrimitives = new Uint8Array(count);
+    this.studColors = new Uint16Array(count);
+    this.studMatrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
+  }
+}
+
 export function standingGhost(
   consist: StandingConsist,
   poses: Float64Array,
   railTopY: number,
   remainders: ReadonlyArray<StandingRemainder>,
   groundY: number,
+  buffers: GhostBuffers,
 ): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } {
   const originX = poses[POSE_BODY] ?? 0;
   const originZ = poses[POSE_BODY + 1] ?? 0;
@@ -112,13 +139,9 @@ export function standingGhost(
   }
   let count = 0;
   for (const { rigid } of posed) count += rigid.instances.length;
-  const partIndex = new Uint16Array(count);
-  const colorIndex = new Uint16Array(count);
-  const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
+  buffers.fit(count);
+  const { partIndex, colorIndex, matrices, frame, lifts, posedPart } = buffers;
   let slot = 0;
-  const frame = new Float64Array(SOLID_MATRIX_FLOATS);
-  const lifts = new Float64Array(1);
-  const posedPart = new Float64Array(SOLID_MATRIX_FLOATS);
   for (const { rigid, model, at, y, onRails } of posed) {
     lifts[0] = y;
     if (onRails) writeRigidFrame(poses, onRails.vehicleAt, onRails.body, lifts, 0, frame, 0);
@@ -134,15 +157,15 @@ export function standingGhost(
       slot++;
     }
   }
-  return {
-    instances: withStuds(
-      { originX: 0, originZ: 0, count, partIndex, colorIndex, matrices },
-      consist.parts,
-      consist.colors,
-    ),
-    x: originX,
-    z: originZ,
+  const base = { originX: 0, originZ: 0, count, partIndex, colorIndex, matrices };
+  buffers.fitStuds(studTotal(consist.parts, base));
+  const studs = {
+    primitiveIndex: buffers.studPrimitives,
+    colorIndex: buffers.studColors,
+    matrices: buffers.studMatrices,
   };
+  const studCount = writeStuds(consist.parts, consist.colors, base, undefined, studs);
+  return { instances: { ...base, studs: { count: studCount, ...studs } }, x: originX, z: originZ };
 }
 
 export class StandingRemainderBody {

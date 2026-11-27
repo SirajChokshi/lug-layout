@@ -141,7 +141,10 @@ const shadowLibraryRoot = join(repoRoot, ".cache", "ldcad-shadow-library");
 const omrRoot = join(repoRoot, ".cache", "omr");
 const catalogRoot = join(repoRoot, ".cache", "catalog");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
-const TEST_DATA_DIRECTORIES = [join("packages", "import", "test-data")];
+const TEST_DATA_DIRECTORIES = [
+  join("packages", "import", "test-data"),
+  join("packages", "client", "test-data"),
+];
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
 const bundleRoot = join(toolRoot, "dist", "bundle");
 const inferredConnectorsPath = join(toolRoot, "inferred-connectors.json");

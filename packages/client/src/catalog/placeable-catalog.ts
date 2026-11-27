@@ -715,8 +715,23 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     parts: ImportedParts,
   ): Promise<AddedPlaceable> {
     return this.requests.adopt(
-      this.loader.loadPartSet(this.lod, parts.partIds, parts.compiled),
-      (set) => this.adoptPlaceable(file, model, parts, set),
+      Promise.all([
+        this.loader.loadPartSet(this.lod, parts.partIds, parts.compiled),
+        this.partConnectors(parts),
+      ]),
+      ([set, connectors]) => this.adoptPlaceable(file, model, { ...parts, connectors }, set),
+    );
+  }
+
+  private partConnectors(parts: ImportedParts): Promise<ReadonlyArray<PartConnectors | null>> {
+    return Promise.all(
+      parts.partIds.map(async (partId, index) => {
+        const own = parts.connectors[index] ?? null;
+        if (own) return own;
+        const loaded = await this.loader.readPartConnectors(this.lod, partId);
+        if (loaded.kind === "loaded") return loaded.connectors;
+        return this.broughtRecords.get(partId) ?? null;
+      }),
     );
   }
 
@@ -842,11 +857,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   ): ModelRunningGear {
     if (!this.runningGear) throw new Error("the bundle names no measured rail for running gear");
     const { shapes, mating, detector } = this.runningGear;
-    const connectors = imported.connectors.map((columns, p) =>
-      columns === null
-        ? null
-        : ConnectorTable.fromColumns(columns, shapes, imported.partIds[p] ?? `part ${p}`),
-    );
+    const connectors = imported.partIds.map((partId, p) => {
+      const columns = imported.connectors[p] ?? null;
+      return columns === null ? null : ConnectorTable.fromColumns(columns, shapes, partId);
+    });
     const instances: PartInstances = {
       count: model.instanceCount,
       partIndex: model.partIndex,

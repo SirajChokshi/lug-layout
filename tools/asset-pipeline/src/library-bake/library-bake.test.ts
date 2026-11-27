@@ -90,6 +90,7 @@ function glbBytes(stem: string, unread: ReadonlyArray<unknown> | undefined): Buf
       sources: [],
       studs: [],
       bounds: ORIGIN,
+      extents: null,
       ...(unread === undefined ? {} : { rolling: { stepsPerLdu: 16, surfaces: [], unread } }),
     },
   };
