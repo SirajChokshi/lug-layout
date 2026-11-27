@@ -1,6 +1,6 @@
-# Catalog search and part bundle on Cloudflare
+# Catalog search, layout API and part bundle on Cloudflare
 
-Terraform for the server-side catalog search (`apps/catalog-api`) and for the bucket that serves the compiled part bundle to the web app:
+Terraform for the server-side catalog search (`apps/catalog-api`), the layout API (`apps/layout-api`: accounts and worlds saved to the cloud, off until `layout_api` is set) and the bucket that serves the compiled part bundle to the web app:
 
 | Resource | Name | Purpose |
 |---|---|---|
@@ -17,14 +17,22 @@ Terraform for the server-side catalog search (`apps/catalog-api`) and for the bu
 | `cloudflare_r2_bucket_cors.ldraw_library` | | `GET` and `HEAD` from any origin, for the import worker. |
 | `cloudflare_r2_custom_domain.ldraw_library` | `ldraw_library_domain` | Optional public custom domain in `zone_id`. |
 | `cloudflare_r2_managed_domain.ldraw_library` | `pub-….r2.dev` | The library bucket's r2.dev domain, on while `ldraw_library_r2_dev` is true (the default). |
+| `cloudflare_d1_database.layouts` | `brr-layouts` | Accounts, sign-in links and sessions (as token hashes only), worlds, their versions and the index of their files. Read replication off, so every read sees the latest save. Only while `layout_api` is set, as are the rows below. |
+| `cloudflare_r2_bucket.layout_files` | `brr-layout-files` | Worlds' shards, version snapshots and original model files, content-addressed under `worlds/<id>/` (`apps/layout-api/README.md`). Private. |
+| `cloudflare_r2_managed_domain.layout_files` | | Keeps r2.dev off for that bucket: only the Worker reads it. |
+| `cloudflare_email_sending_subdomain.layout_mail` | `layout_api.mail_domain` | Cloudflare Email Service sending on that subdomain of `zone_id`, for sign-in mail. |
+| `cloudflare_workers_script.layout_api` | `brr-layout-api` | The layout API Worker, bound to D1 (`LAYOUT_DB`), R2 (`LAYOUT_FILES`), Email Service (`MAILER`, allowed to send only from `layout_api.mail_from`), `APP_ORIGIN` and `MAIL_FROM`, and two rate limiters (`SIGN_IN_RATE_LIMIT` per client address, `ACCOUNT_RATE_LIMIT` per account). |
+| `cloudflare_workers_cron_trigger.layout_api` | `17 3 * * *` | The daily run that deletes expired sign-in links and sessions. |
+| `cloudflare_workers_script_subdomain.layout_api` | | `brr-layout-api.<account>.workers.dev`, on while `layout_api.workers_dev` is true (the default). |
+| `cloudflare_workers_route.layout_api` | `layout_api.route_pattern` | Optional zone route. |
 
 The web app finds the Worker through `base_url` in `catalog-api.json`, which `apps/web/vercel-build.sh` exports as `VITE_CATALOG_API_BASE_URL` unless Vercel sets it. While it is `null`, deployed apps search only locally. Copy the output `catalog_api_base_url` into it once `route_pattern` is set (workers.dev has no edge cache), commit it, and redeploy Production by hand, because `ignoreCommand` skips commits that touch only `infra/`.
 
-Names, the compatibility date, the rate limits and observability come from `apps/catalog-api/wrangler.json`, so `wrangler dev`, the loader and Terraform can't drift apart. The part bundle bucket's name comes from `part-bundles.json`, which the asset pipeline's uploader reads too, and the LDraw library bucket's name comes from `ldraw-library.json` in the same way. Terraform uploads the Worker bundle; nothing here runs `wrangler deploy`. `pnpm check:infra` (run by CI and `pnpm check`) checks formatting and validates the configuration with the pinned provider.
+Names, the compatibility date, the rate limits and observability come from `apps/catalog-api/wrangler.json`, and the layout API's (with its cron and mail binding name) from `apps/layout-api/wrangler.json`, so `wrangler dev`, the loader and Terraform can't drift apart. The layout API's two `vars` are development values; Terraform binds `APP_ORIGIN` and `MAIL_FROM` from `layout_api` instead, and refuses a plan when `wrangler.json` declares a var it doesn't bind. The part bundle bucket's name comes from `part-bundles.json`, which the asset pipeline's uploader reads too, and the LDraw library bucket's name comes from `ldraw-library.json` in the same way. Terraform uploads the Worker bundle; nothing here runs `wrangler deploy`. `pnpm check:infra` (run by CI and `pnpm check`) checks formatting, validates the configuration with the pinned provider and runs `tests/*.tftest.hcl` against a mocked provider, with no account and no credentials: they plan the module with `layout_api` null and check that no layout API resource is planned, apply it with `layout_api` set and check every binding, and check that each `layout_api` validation refuses bad input.
 
 Why wrangler is used only for `dev` and the loader:
 - **The code upload stays in Terraform.** `wrangler deploy` uploads the script together with its bindings and settings. If it ran next to Terraform, the two would overwrite each other's view of the same `cloudflare_workers_script`, and every plan would show drift. With one owner, a plan shows exactly what an apply changes, including a new bundle (`content_sha256`).
-- **There are no D1 migrations.** The schema belongs to each release, not to the database. Every load creates `catalog_releases` and `catalog_current` if they don't exist, and drops and recreates its own `r<release>_*` tables (`apps/catalog-api/src/release-schema.ts`). A new database therefore needs no step between `apply` and the first load, and `wrangler d1 migrations` has nothing to apply.
+- **There are no D1 migrations to run.** For the catalog, the schema belongs to each release, not to the database. Every load creates `catalog_releases` and `catalog_current` if they don't exist, and drops and recreates its own `r<release>_*` tables (`apps/catalog-api/src/release-schema.ts`). A new database therefore needs no step between `apply` and the first load, and `wrangler d1 migrations` has nothing to apply. The layout API's Worker creates and upgrades its own tables before it first touches `brr-layouts` (`apps/layout-api/README.md`, *Storage*), so its code and its schema always deploy together.
 - **No database id is pasted anywhere.** Terraform binds the Worker to `cloudflare_d1_database.catalog.id`. `wrangler.json` carries only `database_name`; with no `database_id`, wrangler 4.163 looks the database up by name (`GET /accounts/<account>/d1/database/brr-catalog`) for `--remote` commands. The id is still printed as the `d1_database_id` output.
 
 ## Credentials
@@ -36,9 +44,10 @@ One account API token does everything: Terraform's Cloudflare API calls, Terrafo
 - Account · **Workers Scripts · Edit** (`Workers Scripts Write`: script, bindings, workers.dev toggle, rate limiters)
 - Account · **D1 · Edit** (`D1 Write`: the database and the loader's imports)
 - Account · **Workers R2 Storage · Edit** (`Workers R2 Storage Write`: the buckets and their objects, which covers `brr-catalog-releases`, `brr-part-bundles`, `brr-ldraw-library` and the state bucket `brr-terraform-state`)
-- Zone · **Workers Routes · Edit** (`Workers Routes Write`), scoped to the zone, only if you set `route_pattern`
+- Zone · **Workers Routes · Edit** (`Workers Routes Write`), scoped to the zone, only if you set `route_pattern` or `layout_api.route_pattern`
+- Zone · **Email Sending · Edit** (`Email Sending Write`), scoped to the zone, only once `layout_api` is set. The cron trigger needs nothing more than Workers Scripts · Edit.
 
-The dashboard's **Edit** is the API's **Write**: Account · D1 · Edit is the permission group `D1 Write`. The groups above are the ones Cloudflare's OpenAPI schema (`x-api-token-group`, [`cloudflare/api-schemas`](https://github.com/cloudflare/api-schemas) at `023a080`) lists for every endpoint the provider calls: D1 database create, read, update and delete; R2 bucket create, update and delete; Worker script upload, settings and subdomain; zone Workers routes. The schema names no group for the D1 import API, which `wrangler d1 execute --file --remote` uses, for R2 single-object `PUT`, for the R2 bucket CORS endpoints, for the r2.dev managed-domain endpoints, or for custom-domain create and update; a custom domain also adds a DNS record to the zone. Those are unverified until the first remote load or the first apply that creates them. If one fails with an authorization error, report the endpoint rather than widening the token blindly.
+The dashboard's **Edit** is the API's **Write**: Account · D1 · Edit is the permission group `D1 Write`. The groups above are the ones Cloudflare's OpenAPI schema (`x-api-token-group`, [`cloudflare/api-schemas`](https://github.com/cloudflare/api-schemas) at `023a080`, and at `904c543` for Email Sending subdomains and Worker schedules) lists for every endpoint the provider calls: D1 database create, read, update and delete; R2 bucket create, update and delete; Worker script upload, settings, schedules and subdomain; zone Workers routes; zone Email Sending subdomains. The schema names no group for the D1 import API, which `wrangler d1 execute --file --remote` uses, for R2 single-object `PUT`, for the R2 bucket CORS endpoints, for the r2.dev managed-domain endpoints, or for custom-domain create and update; a custom domain also adds a DNS record to the zone. Those are unverified until the first remote load or the first apply that creates them. If one fails with an authorization error, report the endpoint rather than widening the token blindly.
 
 **S3 credentials come from the same token.** R2's S3 API, which the Terraform state backend and the part bundle uploader use, accepts an API token with R2 permissions: the Access Key ID is the token's **id**, and the Secret Access Key is the **SHA-256 hex digest of the token value**. Cloudflare documents this in *R2 → Authentication → Get S3 API credentials from an API token*. The *Data localization → R2* guide uses exactly this setup: an account API token with Account · Workers R2 Storage · Edit, token id as the access key, `echo -n "<token>" | shasum -a 256` as the secret. Account API tokens are listed as supported for R2. `ci/terraform.sh` derives both values from `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_API_TOKEN_ID` and runs `terraform -chdir=infra/cloudflare` with them, in CI and locally alike, printing nothing of its own so `terraform show -json` output stays valid JSON. In GitHub Actions, `ci/configure.sh` registers the derived secret as a log mask earlier in the same job. This hasn't been checked against a live account yet.
 
@@ -66,13 +75,13 @@ Put your account id into the `endpoints.s3` URL in `backend.hcl`.
 ```sh
 export CLOUDFLARE_API_TOKEN=…  CLOUDFLARE_API_TOKEN_ID=…
 cp infra/cloudflare/terraform.tfvars.example infra/cloudflare/terraform.tfvars
-pnpm --filter @brr/catalog-api build
+pnpm --filter @brr/catalog-api --filter @brr/layout-api build
 infra/cloudflare/ci/terraform.sh init -backend-config=backend.hcl
 infra/cloudflare/ci/terraform.sh plan -out=catalog.tfplan
 infra/cloudflare/ci/terraform.sh apply catalog.tfplan
 ```
 
-Rebuild the Worker before every `plan`: the plan compares `content_sha256` of `apps/catalog-api/dist/index.js`.
+Rebuild the Workers before every `plan` (`pnpm --filter @brr/catalog-api --filter @brr/layout-api build`): the plan compares `content_sha256` of `apps/catalog-api/dist/index.js`, and of `apps/layout-api/dist/index.js` while `layout_api` is set.
 
 ## Deploy from GitHub Actions
 
@@ -80,11 +89,11 @@ Pull requests need no secrets. The `check` job in `ci.yml` runs `pnpm check:infr
 
 Two workflows replace the manual steps above. Neither commits or prints a secret, and neither uses `backend.hcl`: `ci/configure.sh` writes it to the runner's temp directory from `backend.hcl.example` and the account id secret on every run.
 
-**`.github/workflows/catalog-deploy.yml`** runs on pushes to `main` that touch its deploy inputs: `apps/catalog-api`, `infra/cloudflare`, `pnpm-lock.yaml` or the workflow itself, but not the two READMEs. The list lives once, in the workflow's `on.push.paths`, and `ci/apply-guard.sh` reads it from there.
+**`.github/workflows/catalog-deploy.yml`** (*Cloudflare deploy*) runs on pushes to `main` that touch its deploy inputs: `apps/catalog-api`, `apps/layout-api`, the `@brr/schema` and `@brr/math` sources both Workers bundle, `infra/cloudflare`, `pnpm-lock.yaml` or the workflow itself, but not the READMEs, tests or Terraform tests. The list lives once, in the workflow's `on.push.paths`, and `ci/apply-guard.sh` reads it from there.
 
 | Job | Environment | What it does |
 |---|---|---|
-| Build Worker | none, no secrets | Installs only `@brr/catalog-api`, typechecks, tests and builds it, and uploads `dist/index.js` as an artifact. |
+| Build Workers | none, no secrets | Installs only `@brr/catalog-api` and `@brr/layout-api`, typechecks, tests and builds both, and uploads both `dist/index.js` bundles as one artifact. |
 | Terraform plan | `production` | Skips if main has moved on to different deploy inputs (see below). Otherwise `init`, `plan`, and writes the plan summary (resource addresses and actions, never attribute values) to the run's summary page for review. The full plan is in the job log. |
 | Terraform apply | `production` | Same guard, then plans again and refuses unless that plan is the reviewed one: the same resources, actions and before and after values, compared by digest. Then applies exactly that plan. |
 
@@ -93,7 +102,7 @@ Two workflows replace the manual steps above. Neither commits or prints a secret
 2. Open the run's summary and read *Terraform plan for review*.
 3. Approve **Terraform apply** if that's what should change; reject it otherwise, and production stays as it is.
 
-Plan and apply both refuse a plan that destroys or replaces the D1 database or any R2 bucket (`ci/plan-report.sh` matches every `cloudflare_r2_bucket`). Do that locally, on purpose. If `production` lacks a secret, the plan job fails and names it.
+Plan and apply both refuse a plan that destroys or replaces any D1 database or R2 bucket (`ci/plan-report.sh` matches every `cloudflare_d1_database` and `cloudflare_r2_bucket`, so `brr-layouts` and `brr-layout-files` are covered too). Setting `layout_api` back to null plans their deletion, so the workflow refuses it. Do that locally, on purpose. If `production` lacks a secret, the plan job fails and names it.
 
 Push runs share one run-level concurrency group, `catalog-deploy-main`, with `cancel-in-progress: false`. A run joins the group when it is created, so builds, plans and applies run one whole run at a time, in push order, and never overlap. GitHub keeps one run in the group and one waiting. A newer push replaces the waiting run, which shows as cancelled; nothing is lost, because the newer commit contains it. Before planning and again before applying, `ci/apply-guard.sh` compares the run's commit with main's tip, using a full-history checkout. It skips with a notice if the commit isn't an ancestor of the tip, or if `git diff` shows the deploy inputs differ between them. When the inputs differ, a newer push changed them and started its own run, queued behind this one. Otherwise the commit's deploy inputs are the tip's, so it applies even when unrelated commits have landed on `main` since. Re-running an old run therefore can't roll production back.
 
@@ -123,11 +132,11 @@ Three environment secrets in `production`, and nothing in repository secrets:
 | `CLOUDFLARE_API_TOKEN` | The account API token's value (see *Credentials*). |
 | `CLOUDFLARE_API_TOKEN_ID` | That token's id, 32 hex characters. Not secret on its own, but it's half of the R2 key pair. |
 
-The non-secret Terraform variables (`d1_primary_location_hint`, `r2_location`, `workers_dev_enabled`, `zone_id`, `route_pattern`, `part_bundle_domain`, `part_bundle_r2_dev`, `ldraw_library_domain`, `ldraw_library_r2_dev`) come from the repository variable `CATALOG_TFVARS_JSON`, a JSON object like `{"d1_primary_location_hint":"wnam","r2_location":"wnam"}`. It may not contain `account_id` or `cloudflare_api_token`. Leave it unset for the defaults in `variables.tf`. It must match what earlier applies used: a different `d1_primary_location_hint` can plan a new database, which the workflow refuses.
+The non-secret Terraform variables (`d1_primary_location_hint`, `r2_location`, `workers_dev_enabled`, `zone_id`, `route_pattern`, `part_bundle_domain`, `part_bundle_r2_dev`, `ldraw_library_domain`, `ldraw_library_r2_dev`, `layout_api`) come from the repository variable `CATALOG_TFVARS_JSON`, a JSON object like `{"d1_primary_location_hint":"wnam","r2_location":"wnam"}`. It may not contain `account_id` or `cloudflare_api_token`. Leave it unset for the defaults in `variables.tf`. It must match what earlier applies used: a different `d1_primary_location_hint` can plan a new database, which the workflow refuses.
 
 ### One-time setup
 
-1. Create the state bucket: `pnpm --filter @brr/catalog-api exec wrangler r2 bucket create brr-terraform-state` after `wrangler login`, or *R2 → Create bucket* in the dashboard. CI and local runs share `cloudflare/catalog.tfstate` in it, so state from an earlier local apply carries over. Don't create `brr-catalog`, `brr-catalog-releases`, `brr-part-bundles` or `brr-ldraw-library` by hand: the first apply creates them, and Terraform never adopts a resource that isn't in its state.
+1. Create the state bucket: `pnpm --filter @brr/catalog-api exec wrangler r2 bucket create brr-terraform-state` after `wrangler login`, or *R2 → Create bucket* in the dashboard. CI and local runs share `cloudflare/catalog.tfstate` in it, so state from an earlier local apply carries over. Don't create `brr-catalog`, `brr-catalog-releases`, `brr-part-bundles`, `brr-ldraw-library`, `brr-layouts` or `brr-layout-files` by hand: the first apply creates them, and Terraform never adopts a resource that isn't in its state.
 2. Register the account's workers.dev subdomain in *Workers & Pages → Overview*. Without it, `workers_dev_enabled` has no effect.
 3. Create the account API token (see *Credentials*). Copy its value and its id.
 4. Create the `production` environment under *Settings → Environments*, before adding secrets and before merging any change that triggers the deploy workflow, because the merge push starts a deploy. Add yourself as a required reviewer, and under *Deployment branches and tags* allow `main` only.
@@ -177,3 +186,30 @@ Older releases stay in D1 until their tables are dropped by hand; their SQLite f
 - **The app's URL.** `public_base_url` in `ldraw-library.json` is a committed copy of the `ldraw_library_base_url` output. It's `null` until the first apply. While it's `null`, deployed builds keep reading the library from GitHub raw; committing it switches them to this bucket, and from then on GitHub is dev-only (`docs/ldraw-library.md`). Switch domains in the same three steps as the part bundle, using `ldraw_library_domain`, `ldraw_library_r2_dev` and `ldraw-library.json`.
 - **CORS and caching.** `GET` and `HEAD` from any origin. Every object is immutable: its key contains the pinned commit.
 - **Pruning.** The part bundle workflow's `library-publish` job keeps only the current and previous commits and those the live part bundles name, and deletes the rest (*Pruning old commits* in `docs/ldraw-library.md`).
+
+## Layout API
+
+`apps/layout-api` (endpoints, storage and limits in its README) is deployed only once `layout_api` is set, so merging its code changes nothing in production. Until then the deploy workflow builds and tests its bundle and plans none of its resources.
+
+To turn it on, add `layout_api` to `CATALOG_TFVARS_JSON` (and `zone_id` if it isn't there yet), then approve the next deploy's plan:
+
+```json
+{
+  "zone_id": "<32-hex zone id>",
+  "layout_api": {
+    "app_origin": "https://<web app host>",
+    "mail_domain": "mail.<zone domain>",
+    "mail_from": "sign-in@mail.<zone domain>",
+    "route_pattern": "layouts-api.<zone domain>/*"
+  }
+}
+```
+
+- `app_origin` is the origin sign-in links open, with no path. The web app reads the link's `#sign-in=` fragment (B6.2).
+- `mail_domain` is a subdomain of `zone_id` that Terraform sets up for Email Service sending, and `mail_from` an address on it. The Worker's mail binding may send only from that address.
+- `route_pattern` is optional. Without it the API serves on workers.dev only (`workers_dev`, default true). It answers private data, so it needs no edge cache either way.
+- Add Zone · Email Sending · Edit to the API token first (*Credentials*).
+
+**Unverified until the first apply that turns it on:** whether the account can use Email Service sending on that zone, and whether `cloudflare_email_sending_subdomain` also publishes the subdomain's SPF, DKIM and return-path DNS records or leaves them to be added in the dashboard (*Email Service → Sending*). After that apply, check the subdomain's DNS status there and sign in once with a real address before pointing the web app at the API. If an endpoint refuses the token, report it rather than widening the token.
+
+The Worker creates its D1 tables on its first request, so no step runs between `apply` and first use. Turning `layout_api` back to null plans the deletion of `brr-layouts` and `brr-layout-files`, which the deploy workflow refuses; do it locally, on purpose.

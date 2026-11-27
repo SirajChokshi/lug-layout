@@ -44,3 +44,23 @@ output "catalog_api_base_url" {
   description = "base_url for catalog-api.json: the Worker's zone route. Null without route_pattern, since workers.dev has no edge cache."
   value       = var.route_pattern == null ? null : "https://${trimsuffix(var.route_pattern, "/*")}/"
 }
+
+output "layout_api_worker_name" {
+  description = "The layout API Worker. Null while layout_api is null."
+  value       = one(cloudflare_workers_script.layout_api[*].script_name)
+}
+
+output "layout_d1_database_id" {
+  description = "D1 database holding accounts, sessions, worlds and their versions. Null while layout_api is null."
+  value       = one(cloudflare_d1_database.layouts[*].id)
+}
+
+output "layout_files_bucket_name" {
+  description = "Private bucket holding worlds' shards, snapshots and original model files. Null while layout_api is null."
+  value       = one(cloudflare_r2_bucket.layout_files[*].name)
+}
+
+output "layout_api_base_url" {
+  description = "The layout API's zone route. Null without layout_api.route_pattern."
+  value       = local.layout_route_count == 0 ? null : "https://${trimsuffix(var.layout_api.route_pattern, "/*")}/"
+}

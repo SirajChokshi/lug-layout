@@ -21,6 +21,7 @@ The source of truth is `docs/architecture.md`. Section numbers like "§14" refer
 apps/web                Vite + React; main-thread composition root
   starters              starter worlds the welcome card offers: unpacked world archives, data only (docs/starter-worlds.md)
 apps/catalog-api        Cloudflare Worker: catalog search over D1, release files in R2. Imports no @brr/* package.
+apps/layout-api         Cloudflare Worker: accounts by emailed sign-in link (D1), worlds saved as content-addressed shards and original model files (R2). Imports only @brr/schema.
 packages/
   config                shared tsconfig presets and the Vitest preset
   math                  L0: units, Rot90, lattice check, chunk key
@@ -37,7 +38,7 @@ tools/oxlint-plugin     repo-specific oxlint rules (brr/no-comments)
 tools/asset-pipeline    offline Node CLI: fetch and pin LDraw inputs, build the part bundle. Apps never import it.
 tools/rust-comment-check  no-comments check for Rust sources
 tools/wasi-test-runner  runs Rust integration tests compiled for wasm32-wasip1 under node:wasi
-infra/cloudflare        Terraform for the catalog Worker, D1 and R2 (README has plan/apply and token scopes)
+infra/cloudflare        Terraform for the catalog and layout API Workers, their D1, R2 and mail (README has plan/apply and token scopes)
 docs/                   architecture.md, verified-facts.md
 ```
 
@@ -71,6 +72,7 @@ docs/                   architecture.md, verified-facts.md
 - `pnpm lint:boundaries` runs dependency-cruiser (`.dependency-cruiser.json`) against the §14.2 layer table; CI and `pnpm check` run it
 - `pnpm check:infra` runs `terraform fmt -check`, `init -backend=false` and `validate` on `infra/cloudflare` (needs Terraform ≥ 1.10); CI and `pnpm check` run it
 - `pnpm --filter @brr/catalog-api dev`, `load-release` and `measure` run the catalog Worker locally, load a release into D1 and R2, and measure it (see `apps/catalog-api/README.md`)
+- `pnpm --filter @brr/layout-api dev` runs the layout API Worker locally (mail stays in the local explorer), and `measure <world directory>...` saves unpacked worlds through it as successive versions, reads every version back byte for byte and times each step (see `apps/layout-api/README.md`). Terraform deploys it only once `layout_api` is set (`infra/cloudflare/README.md`)
 - Later: `turbo run bench`, `turbo run wasm`
 
 Before you finish: `pnpm check` is green.

@@ -302,6 +302,38 @@
       "to": {
         "path": "^apps/catalog-api/"
       }
+    },
+    {
+      "name": "layout-api-imports-only-schema",
+      "severity": "error",
+      "from": {
+        "path": "^apps/layout-api/"
+      },
+      "to": {
+        "path": "^(packages|tools|apps/(web|catalog-api))/",
+        "pathNot": "^packages/schema/"
+      }
+    },
+    {
+      "name": "layout-api-imports-only-valibot-from-npm",
+      "severity": "error",
+      "from": {
+        "path": "^apps/layout-api/"
+      },
+      "to": {
+        "path": "(^|/)node_modules/",
+        "pathNot": "(^|/)node_modules/valibot/"
+      }
+    },
+    {
+      "name": "nothing-imports-layout-api",
+      "severity": "error",
+      "from": {
+        "pathNot": "^apps/layout-api/"
+      },
+      "to": {
+        "path": "^apps/layout-api/"
+      }
     }
   ],
   "options": {
@@ -309,7 +341,7 @@
       "path": "(^|/)node_modules/"
     },
     "exclude": {
-      "path": "(\\.(test|test-support|bench)\\.ts$|(^|/)vitest\\.config\\.ts$|(^|/)vite\\.config\\.ts$|^(apps|packages|tools)/[^/]+/dist/)"
+      "path": "(\\.(test|test-support|bench)\\.ts$|(^|/)vitest\\.config\\.ts$|(^|/)vite\\.config\\.ts$|^(apps|packages|tools)/[^/]+/dist/|(^|/)\\.wrangler/)"
     },
     "parser": "swc",
     "tsPreCompilationDeps": true,

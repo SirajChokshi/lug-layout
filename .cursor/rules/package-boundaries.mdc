@@ -8,7 +8,7 @@ alwaysApply: true
 Dependencies only point **down**. A package never imports from its own layer (except the listed same-layer edges) or from a layer above it.
 
 ```
-L6 apps/web · apps/catalog-api (server)
+L6 apps/web · apps/catalog-api · apps/layout-api (servers)
 L5 ui · workers/*
 L4 client
 L3 sim · import
@@ -34,6 +34,7 @@ L0 math
 | tools/asset-pipeline | math, schema, domain, catalog, valibot, brick-compile CLI. Nothing imports it. |
 | tools/e2e | math, schema, catalog, import, client, render, storage, inversify, valibot, Playwright, Vitest. A test-tooling composition root like apps/web: builds a `Container` from `mainThreadModules` with only boundary tokens rebound. Nothing imports it. |
 | apps/catalog-api | schema and valibot only (`@brr/config`, wrangler and `@cloudflare/workers-types` as dev tooling). Nothing imports it. |
+| apps/layout-api | the same as apps/catalog-api. Nothing imports it. |
 | tools/oxlint-plugin | `@oxlint/plugins` only. Loaded by `.oxlintrc.json`, never imported by code. |
 | tools/wasi-test-runner | Node built-ins only (`@brr/config` as dev tooling). Run by `pnpm test:wasm`, never imported by code. |
 
