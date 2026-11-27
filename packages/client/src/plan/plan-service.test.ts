@@ -41,6 +41,7 @@ class IssueBoxBackend implements ISceneBackend {
     this.issueBoxes = boxes;
   }
   setGuides(): void {}
+  setNoteShapes(): void {}
   projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}

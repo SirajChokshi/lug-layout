@@ -7,6 +7,7 @@ import {
   type EditorOptions,
   type IAnnotationService,
   type IBomService,
+  type INoteEditSession,
   type IEditor,
   type IEditorCamera,
   type IEventDetails,
@@ -37,6 +38,8 @@ import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlacementChip } from "./placement-chip.tsx";
+import { NotePanel } from "./note-panel.tsx";
+import { NoteTexts } from "./note-texts.tsx";
 import { PlanPanel } from "./plan-panel.tsx";
 import { PlanScaleBar } from "./plan-scale-bar.tsx";
 import { SceneLabels } from "./scene-labels.tsx";
@@ -69,6 +72,7 @@ interface EditorAppProps {
   readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
   readonly annotations: IAnnotationService;
+  readonly notes: INoteEditSession;
   readonly sheets: IPlanSheetService;
   readonly sheetSets: ISheetSets;
   readonly events: IEventDetails;
@@ -166,6 +170,7 @@ export function EditorApp({
   scaleBar,
   plans,
   annotations,
+  notes,
   sheets,
   sheetSets,
   events,
@@ -244,6 +249,7 @@ export function EditorApp({
         paletteDrag={palette.drag}
         options={options}
       />
+      <NoteTexts notes={notes} />
       <SceneLabels editor={editor} snapshot={snapshot} />
       <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
       <PlacementChip snapshot={snapshot} />
@@ -273,6 +279,7 @@ export function EditorApp({
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} starters={starters} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
+        <NotePanel editor={editor} notes={notes} snapshot={snapshot} />
         <TrackHeightPanel editor={editor} snapshot={snapshot} />
         <TrackExtendPanel editor={editor} snapshot={snapshot} />
         <TrackLoopsPanel editor={editor} snapshot={snapshot} />

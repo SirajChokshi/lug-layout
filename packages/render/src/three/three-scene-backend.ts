@@ -65,6 +65,7 @@ import {
   type PaletteLevel,
   type PartMeshUpdate,
   type PartPalette,
+  type NoteShapes,
   type PlanOverlay,
   type RebaseEvent,
   type SceneBackendConfig,
@@ -87,6 +88,7 @@ import { type ChunkNeeds, ChunkNeedsBuilder } from "./chunk-needs.ts";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { GroundPlane } from "./ground-plane.ts";
 import { GuideLines } from "./guide-lines.ts";
+import { NoteShapeLayer } from "./note-shapes.ts";
 import { MirroredGeometries } from "./mirrored-geometry.ts";
 import {
   MATRIX4_FLOATS,
@@ -790,6 +792,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly rayPoint = new Vector3();
   private readonly projected = new Vector3();
   private readonly guides = new GuideLines();
+  private readonly noteShapes = new NoteShapeLayer();
   private detailedLevel: LevelGeometries = emptyLevel();
   private farLevel: LevelGeometries = emptyLevel();
   private paletteCounts: PaletteCounts | undefined;
@@ -885,7 +888,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
     this.scene.add(this.trackEndGroup);
-    this.scene.add(this.guides.lines);
+    this.scene.add(this.guides.lines, this.noteShapes.fills, this.noteShapes.lines);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -1755,6 +1758,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.guides.place(this.renderOriginX, this.renderOriginZ);
   }
 
+  setNoteShapes(shapes: NoteShapes): void {
+    this.changed = true;
+    this.noteShapes.set(shapes);
+    this.noteShapes.place(this.renderOriginX, this.renderOriginZ);
+  }
+
   projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void {
     const point = this.projected
       .set(x - this.renderOriginX, y, z - this.renderOriginZ)
@@ -2321,6 +2330,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
     this.guides.place(this.renderOriginX, this.renderOriginZ);
+    this.noteShapes.place(this.renderOriginX, this.renderOriginZ);
     if (this.rebases.length === REBASE_LOG_LIMIT) this.rebases.shift();
     this.rebaseCount++;
     this.rebases.push({
@@ -2567,7 +2577,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.readTierStats(out);
     this.showFarModels();
     renderer.info.reset();
-    if (this.pipeline && this.camera === this.perspective) this.pipeline.render();
+    const lookPipeline = this.camera === this.perspective ? this.pipeline : undefined;
+    this.noteShapes.showFills(lookPipeline === undefined);
+    if (lookPipeline) lookPipeline.render();
     else renderer.render(this.scene, this.camera);
     out.drawCalls = renderer.info.render.drawCalls;
     out.triangles = renderer.info.render.triangles;

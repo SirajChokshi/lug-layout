@@ -451,6 +451,7 @@ class HeadlessBackend implements ISceneBackend {
   }
   setIssueBoxes(): void {}
   setGuides(): void {}
+  setNoteShapes(): void {}
   projectToNdc(): void {}
   private aimX = 0;
   private aimZ = 0;
@@ -7561,6 +7562,9 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   }
   setGuides(...args: Parameters<ISceneBackend["setGuides"]>): void {
     this.three.setGuides(...args);
+  }
+  setNoteShapes(...args: Parameters<ISceneBackend["setNoteShapes"]>): void {
+    this.three.setNoteShapes(...args);
   }
   projectToNdc(...args: Parameters<ISceneBackend["projectToNdc"]>): void {
     this.three.projectToNdc(...args);

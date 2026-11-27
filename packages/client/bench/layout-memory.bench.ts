@@ -9,6 +9,7 @@ import {
   type FarModelPlacement,
   type FrameStats,
   type GuideSegment,
+  type NoteShapes,
   type GroundSettings,
   type GhostVerdict,
   type ISceneBackend,
@@ -335,6 +336,9 @@ class WindowlessBackend implements ISceneBackend {
   }
   setGuides(segments: ReadonlyArray<GuideSegment>): void {
     this.scene.setGuides(segments);
+  }
+  setNoteShapes(shapes: NoteShapes): void {
+    this.scene.setNoteShapes(shapes);
   }
   projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void {
     this.scene.projectToNdc(x, y, z, out, offset);

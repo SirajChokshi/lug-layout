@@ -169,7 +169,31 @@ export {
   type TableTypeInput,
 } from "./plan/plan-service.ts";
 export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
+export {
+  DEFAULT_NOTE_STYLE,
+  TEXT_ALONG_OFFSET,
+  TEXT_PROJECTION_FLOATS,
+  TEXT_UP_OFFSET,
+  type INoteEditSession,
+  type LegendRowView,
+  type NoteEditView,
+  type NoteLayerView,
+  type NoteOwnerView,
+  type NoteTextView,
+  type NoteToolView,
+  type RulerEndView,
+  type SelectedNoteView,
+} from "./notes/note-edit-session.ts";
+export {
+  NOTE_TOOL_KINDS,
+  noteToolOf,
+  type NoteDraftKind,
+  type NoteStyle,
+  type NoteToolKind,
+} from "./notes/note-tool.ts";
+export { TEXT_LINE_HEIGHT_EM } from "./notes/text-frame.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
+export type { NoteRecordV2, RulerNoteV2, TextNoteV2, ZoneNoteV2 } from "@brr/schema/world";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -242,6 +266,7 @@ export type {
 } from "@brr/domain";
 export {
   ANNOTATION_SERVICE,
+  NOTE_EDIT_SESSION,
   RUNNING_GEAR,
   BOM_SERVICE,
   OWNED_PARTS,

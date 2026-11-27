@@ -116,6 +116,7 @@ export class AimedBackend implements ISceneBackend {
   setSelectionBoxes(): void {}
   setGround(): void {}
   setGuides(): void {}
+  setNoteShapes(): void {}
   projectToNdc(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}

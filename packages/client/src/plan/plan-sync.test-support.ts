@@ -214,6 +214,7 @@ export class RecordingBackend implements ISceneBackend, Recorder {
     this.boxes = boxes;
   }
   setGuides(): void {}
+  setNoteShapes(): void {}
   projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}

@@ -212,6 +212,7 @@ class TopDownBackend implements ISceneBackend {
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
   setGuides(): void {}
+  setNoteShapes(): void {}
   projectToNdc(): void {}
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
     out.set([ndcX * WORLD_PER_NDC, EYE_HEIGHT, ndcY * WORLD_PER_NDC, 0, -1, 0]);

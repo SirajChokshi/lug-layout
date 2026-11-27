@@ -68,6 +68,7 @@ export {
   noteAt,
   rulerEndPoint,
   rulerSpan,
+  sameRulerEnd,
   withNote,
   withReplacedNote,
   withoutNote,
@@ -80,6 +81,24 @@ export {
   type PlacementMove,
 } from "./notes/note-state.ts";
 export { SavedNoteShards, type NoteShardChange } from "./notes/saved-note-shards.ts";
+export {
+  NO_SNAP_MODEL,
+  snapRulerEnd,
+  type RulerSnap,
+  type RulerSnapKind,
+  type SnapModel,
+} from "./notes/ruler-snap.ts";
+export {
+  NO_CORNER,
+  nearestCorner,
+  outlineCentroid,
+  segmentDistance,
+  shiftedOutline,
+  studRect,
+  withCornerAt,
+  zoneContains,
+  type ZoneOutline,
+} from "./notes/zone-outline.ts";
 export {
   ConsistHandle,
   ConsistLayout,

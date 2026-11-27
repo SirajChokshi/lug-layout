@@ -223,6 +223,16 @@ function ToolButton({
   );
 }
 
+const NOTE_TOOL_BUTTONS: ReadonlyArray<{
+  readonly id: EditorActionId;
+  readonly label: string;
+  readonly icon: IconName;
+}> = [
+  { id: "zone-tool", label: "Zone", icon: "plan" },
+  { id: "label-tool", label: "Label", icon: "text" },
+  { id: "ruler-tool", label: "Ruler", icon: "ruler" },
+];
+
 export function PlacementToolbar({
   editor,
   snapshot,
@@ -275,6 +285,19 @@ export function PlacementToolbar({
         disabled={!commandEnabled("measure", snapshot, play)}
         onClick={(event) => onEditorAction("measure", event.timeStamp)}
       />
+      {NOTE_TOOL_BUTTONS.map(({ id, label, icon }) => (
+        <ToolButton
+          key={id}
+          icon={icon}
+          label={label}
+          command={id}
+          labelled
+          data-action={id}
+          aria-pressed={commandActive(id, snapshot)}
+          disabled={!commandEnabled(id, snapshot, play)}
+          onClick={(event) => onEditorAction(id, event.timeStamp)}
+        />
+      ))}
       {snapshot.rulers > 0 && (
         <button
           type="button"
