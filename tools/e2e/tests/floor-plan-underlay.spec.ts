@@ -44,12 +44,12 @@ function underlaySection(page: Page) {
 
 async function openPlanPanel(page: Page): Promise<void> {
   const panel = page.locator(".plan-panel");
-  if ((await panel.getAttribute("open")) === null) await panel.locator("> summary").click();
+  if ((await panel.getAttribute("open")) === null) await panel.locator(":scope > summary").click();
 }
 
 async function exportedWorld(page: Page): Promise<string> {
   const menu = page.locator(".world-menu");
-  if ((await menu.getAttribute("open")) === null) await menu.locator("> summary").click();
+  if ((await menu.getAttribute("open")) === null) await menu.locator(":scope > summary").click();
   const download = page.waitForEvent("download");
   await menu.getByRole("button", { name: "Export .brr.zip" }).click();
   const file = await download;

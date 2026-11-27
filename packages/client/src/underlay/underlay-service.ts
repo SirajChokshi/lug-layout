@@ -82,6 +82,7 @@ export class UnderlayService implements IUnderlayService {
   private readonly listeners = new Set<() => void>();
   private shown: WorldUnderlay | null = null;
   private current: UnderlayView | null = null;
+  private turns: Promise<void> = Promise.resolve();
 
   constructor(
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
@@ -101,7 +102,24 @@ export class UnderlayService implements IUnderlayService {
     return this.current;
   }
 
-  async edit(patch: UnderlayPatch, file?: UnderlayFile): Promise<ReadonlyArray<Issue>> {
+  edit(patch: UnderlayPatch, file?: UnderlayFile): Promise<ReadonlyArray<Issue>> {
+    return this.inTurn(() => this.edited(patch, file));
+  }
+
+  remove(): Promise<ReadonlyArray<Issue>> {
+    return this.inTurn(() => this.removed());
+  }
+
+  private inTurn(task: () => Promise<ReadonlyArray<Issue>>): Promise<ReadonlyArray<Issue>> {
+    const run = this.turns.then(task);
+    this.turns = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async edited(patch: UnderlayPatch, file?: UnderlayFile): Promise<ReadonlyArray<Issue>> {
     const before = this.session.view().underlay;
     const refusal = this.refusal(before, touchesLockedFields(patch, file));
     if (refusal !== null) return [{ path: PATH, message: refusal }];
@@ -122,7 +140,7 @@ export class UnderlayService implements IUnderlayService {
     return record.ok ? this.stored({ record: record.value, file: image }) : record.issues;
   }
 
-  async remove(): Promise<ReadonlyArray<Issue>> {
+  private async removed(): Promise<ReadonlyArray<Issue>> {
     const before = this.session.view().underlay;
     if (before === null) return [];
     const refusal = this.refusal(before, true);

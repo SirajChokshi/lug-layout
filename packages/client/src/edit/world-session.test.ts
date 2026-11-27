@@ -626,9 +626,17 @@ describe("floor-plan underlay", () => {
     expect(underlay.view()?.record).toEqual(RECORD);
   });
 
-  it("refuses to move, rescale, replace or remove a locked underlay, but takes opacity and unlocking", async () => {
+  it("applies edits issued back to back in turn; locked, it refuses moving, rescaling, replacing and removing but takes opacity and unlocking", async () => {
     const { underlay } = await sessionOnIndexedDb();
-    await underlay.edit({ ...SCALED, locked: true }, HALL);
+    const backToBack = await Promise.all([
+      underlay.edit(SCALED, HALL),
+      underlay.edit({ opacity: 70 }),
+      underlay.edit({ locked: true }),
+    ]);
+    expect({ backToBack, record: underlay.view()?.record }).toMatchObject({
+      backToBack: [[], [], []],
+      record: { opacity: 70, locked: true },
+    });
     const refusals = [
       await underlay.edit({ x: 1280 }),
       await underlay.edit({ distanceMm: 8000 }),
