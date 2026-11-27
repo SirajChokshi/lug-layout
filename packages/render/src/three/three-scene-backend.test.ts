@@ -1177,7 +1177,19 @@ const SPREAD_CHUNKS = [
   [19_200, 12_800],
 ] as const;
 const RESTING_EYE_LDU = 12_000;
-const SHRUNK_CHUNK = { originX: 640, originZ: 0 } as const;
+const FAR_PART_X_LDU = 3_200;
+
+function withFarPart(originX: number, originZ: number): ChunkInstances {
+  return {
+    ...chunkOf(0),
+    originX,
+    originZ,
+    count: 2,
+    partIndex: new Uint16Array(2),
+    colorIndex: new Uint16Array(2),
+    matrices: Float32Array.from([...IDENTITY, ...translatedX(IDENTITY, FAR_PART_X_LDU)]),
+  };
+}
 
 function restedFresh(chunkOrigins: ReadonlyArray<readonly [number, number]>): number {
   const fresh = shadowedBackend(chunkOrigins);
@@ -1210,30 +1222,30 @@ it.each([
   },
 );
 
-it("rests at the shadow range the live chunks need once a chunk is rebuilt smaller or deleted, and keeps it when a chunk is rebuilt with the same parts", () => {
+it("rests at the shadow range the live chunks need once a model leaves a chunk or a chunk is deleted, and keeps it when a chunk is rebuilt with the same parts", () => {
   const shadowed = shadowedBackend(SPREAD_CHUNKS);
   viewedAlong(shadowed.backend, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
   const before = rested(shadowed).far;
   setChunks(shadowed.backend, SPREAD_CHUNKS);
   viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
   const rebuilt = rested(shadowed);
-  shadowed.backend.setChunk(1, { ...chunkOf(0), ...SHRUNK_CHUNK });
+  const [originX, originZ] = SPREAD_CHUNKS[1];
+  shadowed.backend.setChunk(1, withFarPart(originX, originZ));
   viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
-  const shrunk = rested(shadowed);
+  const grown = rested(shadowed);
+  shadowed.backend.setChunk(1, { ...chunkOf(0), originX, originZ });
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+  const modelLeft = rested(shadowed);
   shadowed.backend.deleteChunk(1);
   viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
   const deleted = rested(shadowed);
 
-  expect({ rebuilt, shrunk, deleted }).toEqual({
+  expect({ rebuilt, modelLeft, deleted }).toEqual({
     rebuilt: { asked: 0, stillAsking: false, far: before },
-    shrunk: {
-      asked: 0,
-      stillAsking: false,
-      far: restedFresh([SPREAD_CHUNKS[0], [SHRUNK_CHUNK.originX, SHRUNK_CHUNK.originZ]]),
-    },
+    modelLeft: { asked: 0, stillAsking: false, far: before },
     deleted: { asked: 0, stillAsking: false, far: restedFresh(SPREAD_CHUNKS.slice(0, 1)) },
   });
-  expect(shrunk.far).toBeLessThan(before);
+  expect(grown.far).toBeGreaterThan(before);
 });
 
 it.each([
