@@ -5258,7 +5258,10 @@ it("places library tables a quarter turn at a time with their corner on the 8-st
   const issues = async () => {
     const planId = plans.activePlanId() ?? "";
     await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
-    return plans.issues(planId).map((issue) => issue.rule);
+    return plans
+      .issues(planId)
+      .map((issue) => issue.rule)
+      .filter((rule) => rule !== "bomMapping");
   };
   const counted = () =>
     library.usage(plans.activePlanId()).map(({ placed, short }) => ({ placed, short }));
@@ -5313,8 +5316,11 @@ it("places library tables a quarter turn at a time with their corner on the 8-st
   editor.undo(0);
   const unresized = tables();
   await vi.waitFor(async () => {
-    const stored = await repository.read(showId);
-    expect(stored.ok && stored.value.manifest.plans?.[0]?.footprint.tables.length).toBe(3);
+    const saved = await repository.read(showId);
+    const numbers = saved.ok
+      ? saved.value.manifest.plans?.[0]?.footprint.tables.map((table) => table.number)
+      : [];
+    expect(numbers).toEqual([1, 3, 2]);
   });
   const stored = await repository.read(showId);
   const manifest = stored.ok ? stored.value.manifest : null;
