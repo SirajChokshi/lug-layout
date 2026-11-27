@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use brick_compile::bake::{KeptParts, LatticeShape, ModelBaker, RecordShelf};
+use brick_compile::bluebrick::read_bbm;
 use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
@@ -144,6 +145,10 @@ impl Session {
             ),
             Operation::ReadStudio => Ok(match read_io(request.segment("io")?) {
                 Ok(archive) => Reply::from(archive),
+                Err(error) => Reply::from(error),
+            }),
+            Operation::ReadBlueBrick => Ok(match read_bbm(request.segment("bbm")?) {
+                Ok(map) => Reply::BlueBrickRead { map },
                 Err(error) => Reply::from(error),
             }),
             Operation::Compile {
