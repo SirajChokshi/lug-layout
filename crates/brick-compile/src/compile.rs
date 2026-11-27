@@ -2,10 +2,10 @@ use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
 use crate::cover::{part_cover_fits, CellsTooLarge};
+use crate::extents::{part_extents, PartExtents};
 use crate::flatten::{
     ExactTriangle, FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle,
 };
-use crate::extents::{part_extents, PartExtents};
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
 use crate::mesh::{self, Mesh};

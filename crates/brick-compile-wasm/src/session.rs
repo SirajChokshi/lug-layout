@@ -29,8 +29,8 @@ use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
 use crate::receptors::DrawnReceptors;
 use crate::reply::{
-    AuthoredIdentification, BakePhases, Cover, Failure, InlineOutcome, InlinePair,
-    Lattice, LooseGeometry, PartOutcome, Reply, Section,
+    AuthoredIdentification, BakePhases, Cover, Failure, InlineOutcome, InlinePair, Lattice,
+    LooseGeometry, PartOutcome, Reply, Section,
 };
 use crate::request::{InlineCheck, Operation};
 use crate::tracking::TrackingLibrary;
