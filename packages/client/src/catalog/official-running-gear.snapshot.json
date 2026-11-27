@@ -1,422 +1,524 @@
 {
-  "7936-1": {
-    "vehicles": [
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 4,
-        "seated": 2,
-        "body": 63,
-        "endCandidates": [0, 0]
-      }
+ "7936-1": {
+  "vehicles": [
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "couplings": [],
-    "unresolved": [],
-    "unreadRows": 482
-  },
-  "10264-1": {
-    "vehicles": [],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 1670,
-        "wheelsets": 1
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 4,
+    "seated": 2,
+    "body": 63,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [],
+  "unreadRows": 482
+ },
+ "10264-1": {
+  "vehicles": [],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 1670,
+    "wheelsets": 1
+   }
+  ],
+  "unreadRows": 2786
+ },
+ "10185-1": {
+  "vehicles": [],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 1836,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 5,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 277,
+    "wheelsets": 1
+   },
+   {
+    "reason": "belowRailTop",
+    "instances": 9,
+    "wheelsets": 4
+   }
+  ],
+  "unreadRows": 1769
+ },
+ "10190-1": {
+  "vehicles": [],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 1,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 233,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 201,
+    "wheelsets": 1
+   },
+   {
+    "reason": "belowRailTop",
+    "instances": 8,
+    "wheelsets": 2
+   }
+  ],
+  "unreadRows": 3086
+ },
+ "10218-1": {
+  "vehicles": [],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "wheelsetSpansPivot",
+    "instances": 4,
+    "wheelsets": 1
+   },
+   {
+    "reason": "wheelsetSpansPivot",
+    "instances": 6,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 1858,
+    "wheelsets": 1
+   }
+  ],
+  "unreadRows": 1309
+ },
+ "2150-1": {
+  "vehicles": [],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 442,
+    "wheelsets": 1
+   }
+  ],
+  "unreadRows": 799
+ },
+ "4554-1": {
+  "vehicles": [],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 434,
+    "wheelsets": 1
+   }
+  ],
+  "unreadRows": 651
+ },
+ "4555-1": {
+  "vehicles": [
+   {
+    "guides": [
+     "bogiePivot",
+     "bogiePivot"
     ],
-    "unreadRows": 2786
-  },
-  "10185-1": {
-    "vehicles": [],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 1836,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 5,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 277,
-        "wheelsets": 1
-      },
-      {
-        "reason": "belowRailTop",
-        "instances": 9,
-        "wheelsets": 4
-      }
+    "bogieWheelsets": [
+     2,
+     2
     ],
-    "unreadRows": 1769
-  },
-  "10190-1": {
-    "vehicles": [],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 1,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 233,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 201,
-        "wheelsets": 1
-      },
-      {
-        "reason": "belowRailTop",
-        "instances": 8,
-        "wheelsets": 2
-      }
+    "fixedAxles": 0,
+    "wheelsets": 4,
+    "seated": 4,
+    "body": 33,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "wheelsetSpansPivot",
+    "instances": 2,
+    "wheelsets": 1
+   },
+   {
+    "reason": "wheelsetSpansPivot",
+    "instances": 2,
+    "wheelsets": 1
+   },
+   {
+    "reason": "wheelsetSpansPivot",
+    "instances": 2,
+    "wheelsets": 1
+   }
+  ],
+  "unreadRows": 515
+ },
+ "10128-1": {
+  "vehicles": [],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "belowRailTop",
+    "instances": 13,
+    "wheelsets": 2
+   }
+  ],
+  "unreadRows": 1186
+ },
+ "10133-1": {
+  "vehicles": [],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 1,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 1,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 1,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 1,
+    "wheelsets": 1
+   },
+   {
+    "reason": "belowRailTop",
+    "instances": 23,
+    "wheelsets": 2
+   }
+  ],
+  "unreadRows": 365
+ },
+ "10014-1": {
+  "vehicles": [
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "unreadRows": 3086
-  },
-  "10218-1": {
-    "vehicles": [],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "wheelsetSpansPivot",
-        "instances": 4,
-        "wheelsets": 1
-      },
-      {
-        "reason": "wheelsetSpansPivot",
-        "instances": 6,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 1858,
-        "wheelsets": 1
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 138,
+    "endCandidates": [
+     0,
+     2
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [],
+  "unreadRows": 142
+ },
+ "10020-1": {
+  "vehicles": [
+   {
+    "guides": [
+     "bogiePivot",
+     "bogiePivot"
     ],
-    "unreadRows": 1309
-  },
-  "2150-1": {
-    "vehicles": [],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 442,
-        "wheelsets": 1
-      }
+    "bogieWheelsets": [
+     2,
+     2
     ],
-    "unreadRows": 799
-  },
-  "4554-1": {
-    "vehicles": [],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 434,
-        "wheelsets": 1
-      }
+    "fixedAxles": 0,
+    "wheelsets": 4,
+    "seated": 4,
+    "body": 297,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [],
+  "unreadRows": 281
+ },
+ "10022-1_Dining-Car": {
+  "vehicles": [
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "unreadRows": 651
-  },
-  "4555-1": {
-    "vehicles": [
-      {
-        "guides": ["bogiePivot", "bogiePivot"],
-        "bogieWheelsets": [2, 2],
-        "fixedAxles": 0,
-        "wheelsets": 4,
-        "seated": 4,
-        "body": 33,
-        "endCandidates": [0, 0]
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 9,
+    "endCandidates": [
+     0,
+     0
+    ]
+   },
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "wheelsetSpansPivot",
-        "instances": 2,
-        "wheelsets": 1
-      },
-      {
-        "reason": "wheelsetSpansPivot",
-        "instances": 2,
-        "wheelsets": 1
-      },
-      {
-        "reason": "wheelsetSpansPivot",
-        "instances": 2,
-        "wheelsets": 1
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 9,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [],
+  "unreadRows": 197
+ },
+ "10025-1_Baggage-Car": {
+  "vehicles": [
+   {
+    "guides": [
+     "bogiePivot",
+     "bogiePivot"
     ],
-    "unreadRows": 515
-  },
-  "10128-1": {
-    "vehicles": [],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "belowRailTop",
-        "instances": 13,
-        "wheelsets": 2
-      }
+    "bogieWheelsets": [
+     2,
+     2
     ],
-    "unreadRows": 1186
-  },
-  "10133-1": {
-    "vehicles": [],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 1,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 1,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 1,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 1,
-        "wheelsets": 1
-      },
-      {
-        "reason": "belowRailTop",
-        "instances": 23,
-        "wheelsets": 2
-      }
+    "fixedAxles": 0,
+    "wheelsets": 4,
+    "seated": 4,
+    "body": 88,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [],
+  "unreadRows": 253
+ },
+ "10205-1": {
+  "vehicles": [
+   {
+    "guides": [
+     "bogiePivot",
+     "bogiePivot"
     ],
-    "unreadRows": 365
-  },
-  "10014-1": {
-    "vehicles": [
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 138,
-        "endCandidates": [0, 2]
-      }
+    "bogieWheelsets": [
+     2,
+     2
     ],
-    "couplings": [],
-    "unresolved": [],
-    "unreadRows": 142
-  },
-  "10020-1": {
-    "vehicles": [
-      {
-        "guides": ["bogiePivot", "bogiePivot"],
-        "bogieWheelsets": [2, 2],
-        "fixedAxles": 0,
-        "wheelsets": 4,
-        "seated": 4,
-        "body": 297,
-        "endCandidates": [0, 0]
-      }
+    "fixedAxles": 0,
+    "wheelsets": 6,
+    "seated": 4,
+    "body": 101,
+    "endCandidates": [
+     0,
+     10
+    ]
+   },
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "couplings": [],
-    "unresolved": [],
-    "unreadRows": 281
-  },
-  "10022-1_Dining-Car": {
-    "vehicles": [
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 9,
-        "endCandidates": [0, 0]
-      },
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 9,
-        "endCandidates": [0, 0]
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 44,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [],
+  "unreadRows": 190
+ },
+ "10013-1": {
+  "vehicles": [
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "couplings": [],
-    "unresolved": [],
-    "unreadRows": 197
-  },
-  "10025-1_Baggage-Car": {
-    "vehicles": [
-      {
-        "guides": ["bogiePivot", "bogiePivot"],
-        "bogieWheelsets": [2, 2],
-        "fixedAxles": 0,
-        "wheelsets": 4,
-        "seated": 4,
-        "body": 88,
-        "endCandidates": [0, 0]
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 9,
+    "endCandidates": [
+     0,
+     0
+    ]
+   },
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "couplings": [],
-    "unresolved": [],
-    "unreadRows": 253
-  },
-  "10205-1": {
-    "vehicles": [
-      {
-        "guides": ["bogiePivot", "bogiePivot"],
-        "bogieWheelsets": [2, 2],
-        "fixedAxles": 0,
-        "wheelsets": 6,
-        "seated": 4,
-        "body": 101,
-        "endCandidates": [0, 10]
-      },
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 44,
-        "endCandidates": [0, 0]
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 9,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 12,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 12,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 12,
+    "wheelsets": 1
+   }
+  ],
+  "unreadRows": 548
+ },
+ "10016-1": {
+  "vehicles": [
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "couplings": [],
-    "unresolved": [],
-    "unreadRows": 190
-  },
-  "10013-1": {
-    "vehicles": [
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 9,
-        "endCandidates": [0, 0]
-      },
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 9,
-        "endCandidates": [0, 0]
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 9,
+    "endCandidates": [
+     0,
+     0
+    ]
+   },
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 12,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 12,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 12,
-        "wheelsets": 1
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 9,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "wheelsetSpansPivot",
+    "instances": 16,
+    "wheelsets": 1
+   }
+  ],
+  "unreadRows": 258
+ },
+ "10017-1": {
+  "vehicles": [
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "unreadRows": 548
-  },
-  "10016-1": {
-    "vehicles": [
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 9,
-        "endCandidates": [0, 0]
-      },
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 9,
-        "endCandidates": [0, 0]
-      }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 9,
+    "endCandidates": [
+     0,
+     0
+    ]
+   },
+   {
+    "guides": [
+     "fixedAxle",
+     "fixedAxle"
     ],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "wheelsetSpansPivot",
-        "instances": 16,
-        "wheelsets": 1
-      }
-    ],
-    "unreadRows": 258
-  },
-  "10017-1": {
-    "vehicles": [
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 9,
-        "endCandidates": [0, 0]
-      },
-      {
-        "guides": ["fixedAxle", "fixedAxle"],
-        "bogieWheelsets": [],
-        "fixedAxles": 2,
-        "wheelsets": 2,
-        "seated": 2,
-        "body": 9,
-        "endCandidates": [0, 0]
-      }
-    ],
-    "couplings": [],
-    "unresolved": [
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 6,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 6,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 6,
-        "wheelsets": 1
-      },
-      {
-        "reason": "fewerThanTwoGuides",
-        "instances": 6,
-        "wheelsets": 1
-      }
-    ],
-    "unreadRows": 346
-  }
+    "bogieWheelsets": [],
+    "fixedAxles": 2,
+    "wheelsets": 2,
+    "seated": 2,
+    "body": 9,
+    "endCandidates": [
+     0,
+     0
+    ]
+   }
+  ],
+  "couplings": [],
+  "unresolved": [
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 6,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 6,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 6,
+    "wheelsets": 1
+   },
+   {
+    "reason": "fewerThanTwoGuides",
+    "instances": 6,
+    "wheelsets": 1
+   }
+  ],
+  "unreadRows": 346
+ }
 }
