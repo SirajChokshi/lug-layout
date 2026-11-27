@@ -2046,7 +2046,7 @@ it("road snap checks a join at the height the held plate rests at: beside a road
     [-280, 280].map((z) => `1 4 ${x} 0 ${z} 1 0 0 0 1 0 0 0 1 3001.dat`),
   );
   const platform = userRoadFile("my-platform.ldr", [
-    "1 2 0 -24 0 1 0 0 0 1 0 0 0 1 3811.dat",
+    "1 2 0 -8 0 1 0 0 0 1 0 0 0 1 3811.dat",
     ...legs,
   ]);
   await place(await importUserFile(editor, "my-platform.ldr", platform), 320, 320);
