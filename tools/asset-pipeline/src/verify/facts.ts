@@ -2,14 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AuditLock, ConnectivityLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import { OUTLINE_UNITS_PER_LDU, type Palette } from "@brr/schema/bundle";
+import type { Palette } from "@brr/schema/bundle";
 import { CATALOG_LAYOUTS, catalogScene } from "../track/catalog-scenes.ts";
 import { buildTrackCatalog, type TrackCatalogReport } from "../track/track-catalog.ts";
-import {
-  LEVEL_CROSSING_FILE,
-  levelCrossingData,
-  PLAN_OUTLINES_FILE,
-} from "../crossing/level-crossing.ts";
+import { LEVEL_CROSSING_FILE, levelCrossingData } from "../crossing/level-crossing.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { measureBaseplate } from "./geometry.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
@@ -226,21 +222,6 @@ export function levelCrossingReports(
   const data = levelCrossingData(library, palette, catalog.pieces, studPrimitives);
   const frame = "part frame, bundle +Y up (z = −z_LDraw), LDU";
   return [
-    {
-      fileName: PLAN_OUTLINES_FILE,
-      render: () =>
-        asJson({
-          source,
-          frame,
-          unitsPerLdu: OUTLINE_UNITS_PER_LDU,
-          derivation:
-            "exact union of the plan projections of every face of the part, from its LDraw decimals, in integer millionths of an LDU; outer rings counter-clockwise in (x, z), holes clockwise. Coordinates with up to six decimal places, and crossings of plan-axis edges, are exact; roundedLdu is the largest distance any coordinate moved to its millionth (longer products of subfile matrices, and crossings of oblique edges, which are rationals no decimal unit holds)",
-          outlines: [],
-        }).replace(
-          '"outlines": []',
-          `"outlines": [\n${data.outlines.map((outline) => `    ${JSON.stringify(outline)}`).join(",\n")}\n  ]`,
-        ),
-    },
     {
       fileName: LEVEL_CROSSING_FILE,
       render: () =>

@@ -1,4 +1,4 @@
-import { LEVEL_CROSSING_FILE, PLAN_OUTLINES_FILE } from "./crossing/level-crossing.ts";
+import { LEVEL_CROSSING_FILE } from "./crossing/level-crossing.ts";
 import { TRACK_CATALOG_FILE } from "./verify/facts.ts";
 
 const PIPELINE_DIRECTORY = "tools/asset-pipeline";
@@ -20,7 +20,6 @@ export const BUNDLE_DATA_FILES = {
   geometry: `${VERIFIED_FACTS_DIRECTORY}/geometry.json`,
   trackCatalog: `${VERIFIED_FACTS_DIRECTORY}/${TRACK_CATALOG_FILE}`,
   levelCrossing: `${VERIFIED_FACTS_DIRECTORY}/${LEVEL_CROSSING_FILE}`,
-  planOutlines: `${VERIFIED_FACTS_DIRECTORY}/${PLAN_OUTLINES_FILE}`,
 } as const;
 
 export const BUNDLE_DATA_DIRECTORIES = {

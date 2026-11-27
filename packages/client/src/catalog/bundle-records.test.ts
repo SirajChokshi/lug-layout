@@ -9,20 +9,26 @@ import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import { headingFootprints, planHull, verticalRange } from "@brr/domain";
 import { pieceFrameOutline } from "@brr/domain/piece-outline";
 import {
+  BundleIndex,
   ModelFile,
   PartShape,
-  PlanOutlinesFile,
   type BundleManifest,
   type ManifestPart,
+  type PlanOutline,
+  type PlanPoint,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
-import outlinesJson from "../../../../docs/verified-facts/plan-outlines.json" with { type: "json" };
 import { mainThreadModules } from "../client.module.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const fixtureBundleRoot = new URL(
+  "../../../../tools/asset-pipeline/fixture-bundle/standard/",
+  import.meta.url,
+);
+const MIN_RING_POINTS = 3;
 const BUNDLE_SWEEP_TIMEOUT_MS = 60_000;
 
 class BundleDirectoryFetcher implements IAssetFetcher {
@@ -37,11 +43,6 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 }
 
 const fetcher = new BundleDirectoryFetcher();
-const outlines = new Map(
-  decodedOrThrow(decode(PlanOutlinesFile, outlinesJson), "plan-outlines.json").outlines.map(
-    (outline) => [outline.part, outline.rings],
-  ),
-);
 const manifests = new Map<string, BundleManifest>();
 let loader: IPartBundleLoader;
 
@@ -63,7 +64,108 @@ async function glbOf(lod: string, part: ManifestPart) {
   return parseGlb(await fetcher.bytes(`${lod}/${part.file}`), part.file);
 }
 
-async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape> {
+async function catalogOutlines(lod: string): Promise<ReadonlyMap<string, PlanOutline>> {
+  const outlines = new Map<string, PlanOutline>();
+  for (const part of manifestOf(lod).catalogParts) {
+    const shape = decodedOrThrow(
+      decode(PartShape, JSON.parse(await fetcher.text(`${lod}/${part.shape.file}`))),
+      part.shape.file,
+    );
+    if (shape.outline) outlines.set(part.id, shape.outline);
+  }
+  return outlines;
+}
+
+function cross(a: PlanPoint, b: PlanPoint, c: PlanPoint): bigint {
+  return (
+    (BigInt(b[0]) - BigInt(a[0])) * (BigInt(c[1]) - BigInt(a[1])) -
+    (BigInt(b[1]) - BigInt(a[1])) * (BigInt(c[0]) - BigInt(a[0]))
+  );
+}
+
+function strictlyBetween(a: PlanPoint, point: PlanPoint, b: PlanPoint): boolean {
+  const along = (from: PlanPoint, to: PlanPoint) =>
+    (BigInt(point[0]) - BigInt(from[0])) * (BigInt(to[0]) - BigInt(from[0])) +
+    (BigInt(point[1]) - BigInt(from[1])) * (BigInt(to[1]) - BigInt(from[1]));
+  return along(a, b) > 0n && along(b, a) > 0n;
+}
+
+function twiceArea(ring: ReadonlyArray<PlanPoint>): bigint {
+  const origin = ring[0];
+  if (!origin) return 0n;
+  let sum = 0n;
+  for (let i = 1; i + 1 < ring.length; i++) {
+    const b = ring[i];
+    const c = ring[i + 1];
+    if (b && c) sum += cross(origin, b, c);
+  }
+  return sum;
+}
+
+function isOnOneLine(ring: ReadonlyArray<PlanPoint>): boolean {
+  const first = ring[0];
+  const far = ring.find((point) => first && (point[0] !== first[0] || point[1] !== first[1]));
+  return !first || !far || ring.every((point) => cross(first, far, point) === 0n);
+}
+
+function keepsOrderOf(kept: ReadonlyArray<PlanPoint>, ring: ReadonlyArray<PlanPoint>): boolean {
+  return ring.some((_, start) => {
+    let k = 0;
+    for (let i = 0; i < ring.length && k < kept.length; i++) {
+      const point = ring[(start + i) % ring.length];
+      const want = kept[k];
+      if (point && want && point[0] === want[0] && point[1] === want[1]) k++;
+    }
+    return k === kept.length;
+  });
+}
+
+function degenerateProblems(outline: PlanOutline): ReadonlyArray<string> {
+  return outline.flatMap((ring, r) => [
+    ...(ring.length < MIN_RING_POINTS ? [`ring ${r} has ${ring.length} points`] : []),
+    ...ring.flatMap((point, i) => {
+      const previous = ring[(i + ring.length - 1) % ring.length] ?? point;
+      const next = ring[(i + 1) % ring.length] ?? point;
+      const flat = cross(previous, point, next) === 0n;
+      return flat && !strictlyBetween(previous, point, next)
+        ? [`ring ${r} point ${i} ${point}`]
+        : [];
+    }),
+  ]);
+}
+
+async function shippedOutlines(
+  read: (file: string) => Promise<string>,
+): Promise<ReadonlyArray<readonly [string, PlanOutline]>> {
+  const index = decodedOrThrow(
+    decode(BundleIndex, JSON.parse(await read("manifest.json"))),
+    "manifest.json",
+  );
+  const shipped: Array<readonly [string, PlanOutline]> = index.trackShapes.map((shape) => [
+    `track shape ${shape.piece}`,
+    shape.outline,
+  ]);
+  for (const part of index.catalogParts) {
+    const shape = decodedOrThrow(
+      decode(PartShape, JSON.parse(await read(part.shape.file))),
+      part.shape.file,
+    );
+    if (shape.outline) shipped.push([`shape file ${part.shape.file}`, shape.outline]);
+  }
+  for (const entry of index.models) {
+    const model = decodedOrThrow(decode(ModelFile, JSON.parse(await read(entry.file))), entry.file);
+    for (const shape of model.shapes) {
+      if (shape.outline) shipped.push([`model ${entry.name} shape ${shape.id}`, shape.outline]);
+    }
+  }
+  return shipped;
+}
+
+async function shapeInBundle(
+  lod: string,
+  part: ManifestPart,
+  outline: PlanOutline | undefined,
+): Promise<PartShape> {
   const glb = await glbOf(lod, part);
   return {
     id: part.id,
@@ -78,7 +180,7 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
     ...(glb.document.extras.technic ? { technic: glb.document.extras.technic } : {}),
     ...(glb.document.extras.rolling ? { rolling: glb.document.extras.rolling } : {}),
     ...(glb.document.extras.topSurface ? { topSurface: glb.document.extras.topSurface } : {}),
-    ...(outlines.has(part.id) ? { outline: outlines.get(part.id) } : {}),
+    ...(outline ? { outline } : {}),
   };
 }
 
@@ -88,6 +190,7 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
     async () => {
       const manifest = manifestOf(lod);
       const parts = new Map(manifest.parts.map((part) => [part.id, part]));
+      const outlines = await catalogOutlines(lod);
       for (const entry of manifest.models) {
         const model = decodedOrThrow(
           decode(ModelFile, JSON.parse(await fetcher.text(`${lod}/${entry.file}`))),
@@ -96,7 +199,7 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
         for (const shape of model.shapes) {
           const part = parts.get(shape.id);
           if (!part) throw new Error(`${entry.name}: ${shape.id} is not in the part table`);
-          expect(shape).toEqual(await shapeInBundle(lod, part));
+          expect(shape).toEqual(await shapeInBundle(lod, part, outlines.get(part.id)));
         }
       }
     },
@@ -134,17 +237,22 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
         .toSorted(),
     );
     for (const part of manifest.catalogParts) {
-      const shape = decodedOrThrow(
+      const { outline, ...shape } = decodedOrThrow(
         decode(PartShape, JSON.parse(await fetcher.text(`${lod}/${part.shape.file}`))),
         part.shape.file,
       );
-      expect(shape).toEqual(await shapeInBundle(lod, part));
+      expect(shape).toEqual(await shapeInBundle(lod, part, undefined));
+      expect({ part: part.id, outlined: outline !== undefined }).toEqual({
+        part: part.id,
+        outlined: part.role === "track" || ramps.has(part.id),
+      });
     }
   });
 
-  it("hold each track piece's footprints at all 16 headings, its plan hull, its height range and its exact outline in its own frame", async () => {
+  it("hold each track piece's footprints at all 16 headings, its plan hull, its height range and its outline turned into its own frame, keeping each ring's exact area and dropping only rings that lie on one line and points that enclose nothing", async () => {
     const manifest = manifestOf(lod);
     const parts = new Map(manifest.parts.map((part) => [part.id, part]));
+    const outlines = await catalogOutlines(lod);
     expect(manifest.trackShapes.map((shape) => shape.piece)).toEqual(
       manifest.trackCatalog.pieces.map((piece) => piece.id),
     );
@@ -155,14 +263,47 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
       const [minY, maxY] = verticalRange(positions);
       const outline = outlines.get(piece.part);
       if (!outline) throw new Error(`track part ${piece.part} has no plan outline`);
-      expect(manifest.trackShapes.find((shape) => shape.piece === piece.id)).toEqual({
+      const shape = manifest.trackShapes.find((entry) => entry.piece === piece.id);
+      if (!shape) throw new Error(`track piece ${piece.id} has no track shape`);
+      const { outline: shipped, ...measured } = shape;
+      expect(measured).toEqual({
         piece: piece.id,
         footprints: Array.from(headingFootprints(positions, piece.partFrame.headingHalfSteps)),
         hull: Array.from(planHull(positions, piece.partFrame.headingHalfSteps)),
         minY,
         maxY,
-        outline: pieceFrameOutline(outline, piece.partFrame),
       });
+      const turned = pieceFrameOutline(outline, piece.partFrame).filter(
+        (ring) => !isOnOneLine(ring),
+      );
+      expect(shipped.map(twiceArea)).toEqual(turned.map(twiceArea));
+      expect(shipped.map((ring, r) => keepsOrderOf(ring, turned[r] ?? []))).toEqual(
+        shipped.map(() => true),
+      );
     }
+  });
+
+  it("ship no outline with a repeated point, a spike or a ring of fewer than three points", async () => {
+    const shipped = await shippedOutlines((file) => fetcher.text(`${lod}/${file}`));
+    expect(shipped.length).toBeGreaterThan(0);
+    expect(
+      shipped.flatMap(([where, outline]) =>
+        degenerateProblems(outline).map((problem) => `${where}: ${problem}`),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("the fixture bundle's records", () => {
+  it("ship no outline with a repeated point, a spike or a ring of fewer than three points", async () => {
+    const shipped = await shippedOutlines((file) =>
+      readFile(new URL(file, fixtureBundleRoot), "utf8"),
+    );
+    expect(shipped.length).toBeGreaterThan(0);
+    expect(
+      shipped.flatMap(([where, outline]) =>
+        degenerateProblems(outline).map((problem) => `${where}: ${problem}`),
+      ),
+    ).toEqual([]);
   });
 });

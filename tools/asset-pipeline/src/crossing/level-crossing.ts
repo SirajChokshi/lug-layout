@@ -1,19 +1,12 @@
-import type {
-  CrossingRamp,
-  CrossingTrackSystem,
-  Palette,
-  PartOutline,
-  TrackPiece,
-} from "@brr/schema/bundle";
+import type { CrossingRamp, CrossingTrackSystem, Palette, TrackPiece } from "@brr/schema/bundle";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
 import { measureRails } from "../verify/geometry.ts";
 import { RAIL_SECTION_X } from "../verify/geometry-report.ts";
-import { planOutline } from "./plan-outline.ts";
+import { planOutline, type BakedOutline } from "./plan-outline.ts";
 import { measureStud, rampFacts } from "./ramp-facts.ts";
 
 export const LEVEL_CROSSING_FILE = "level-crossing.json";
-export const PLAN_OUTLINES_FILE = "plan-outlines.json";
 
 const BUNDLE_PART_PREFIX = "ldraw:";
 
@@ -22,7 +15,6 @@ type CatalogPiece = Pick<TrackPiece, "part" | "kind" | "system" | "status">;
 export interface LevelCrossingData {
   readonly systems: ReadonlyArray<CrossingTrackSystem>;
   readonly ramps: ReadonlyArray<CrossingRamp>;
-  readonly outlines: ReadonlyArray<PartOutline>;
 }
 
 function polygonsOf(library: LdrawLibrary, file: string): PlacedPolygon[] {
@@ -82,19 +74,12 @@ export function levelCrossingData(
     const ramp = rampFacts(id, title, polygonsOf(library, file), stud);
     if (ramp) ramps.push(ramp);
   }
-  const outlined = [
-    ...new Set([...pieces.map((piece) => piece.part), ...ramps.map((r) => r.part)]),
-  ];
-  return {
-    systems: trackSystems(library, pieces),
-    ramps,
-    outlines: outlined.map((part) => {
-      const { rings, roundedLdu } = planOutline(polygonsOf(library, partFile(part)));
-      return {
-        part,
-        rings: rings.map((ring) => ring.map(([x, z]): [number, number] => [x, z])),
-        roundedLdu,
-      };
-    }),
-  };
+  return { systems: trackSystems(library, pieces), ramps };
+}
+
+export function planOutlines(
+  library: LdrawLibrary,
+  parts: ReadonlyArray<string>,
+): ReadonlyMap<string, BakedOutline> {
+  return new Map(parts.map((part) => [part, planOutline(polygonsOf(library, partFile(part)))]));
 }
