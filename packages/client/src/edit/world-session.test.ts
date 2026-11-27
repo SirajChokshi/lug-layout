@@ -35,6 +35,7 @@ import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import type {
   IEditedWorld,
   IWorldSession,
+  ModelFileOutcome,
   PlanContents,
   StoredContents,
   WorldContents,
@@ -128,8 +129,8 @@ class BaseplateWorld implements IEditedWorld {
     return [];
   }
 
-  async addImportedModel(): Promise<string | null> {
-    return null;
+  async addImportedModel(): Promise<ModelFileOutcome> {
+    return { kind: "refused", reason: "this test imports no models" };
   }
 
   planContents(): Decoded<PlanContents> {

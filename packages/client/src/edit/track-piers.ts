@@ -278,9 +278,9 @@ export class TrackPiers implements ITrackPiers {
     const file = pierFile(kit, heightPlates);
     if (!file) return null;
     const bytes = new TextEncoder().encode(file.text);
-    const item = await this.session.addModelFile({ name: file.name, bytes }, "quiet");
-    if (item === null) return null;
-    await studsChecked(item);
-    return this.catalog.itemRefId(item);
+    const added = await this.session.addModelFile({ name: file.name, bytes }, "quiet");
+    if (added.kind === "refused") return null;
+    await studsChecked(added.item);
+    return this.catalog.itemRefId(added.item);
   }
 }

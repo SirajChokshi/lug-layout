@@ -1218,11 +1218,17 @@ function placedPartFrames(editor: IEditor, catalog: IPlaceableCatalog): Readonly
 
 it("imports an LDraw file's top-level submodels as separate placements held as laid out, places them where the file puts them, and leaves out one that doesn't sit at whole plates", async () => {
   const { editor, backend, catalog } = await startImportingEditor();
+  const notices = new Set<string>();
+  const stopWatching = editor.subscribe(() => {
+    const shown = editor.snapshot().modelImport;
+    if (shown) notices.add(`${shown.file} ${shown.status}`);
+  });
 
   const held = await editor.importLayoutFile({
     name: "brick-layout.ldr",
     bytes: new TextEncoder().encode(USERS_LAYOUT),
   });
+  stopWatching();
   const notice = editor.snapshot().modelImport;
   await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0), { timeout: 60_000 });
   backend.aim(OPEN_TABLE_X, 0);
@@ -1230,6 +1236,7 @@ it("imports an LDraw file's top-level submodels as separate placements held as l
   editor.click(0, 0, 0);
 
   expect(held).toBe(true);
+  expect([...notices]).toEqual(["brick-layout.ldr importing", "brick-layout.ldr held"]);
   expect(notice).toMatchObject({
     file: "brick-layout.ldr",
     status: "held",

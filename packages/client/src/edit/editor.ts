@@ -278,6 +278,7 @@ import type {
   IWorldFiles,
   IWorldSession,
   ModelFileInput,
+  ModelFileOutcome,
   ModelImportNotice,
   PlanContents,
   PlanImport,
@@ -1772,9 +1773,9 @@ export class Editor implements IEditor, IEditedWorld {
     return this.catalog.placeables().filter((placeable) => placeable !== null);
   }
 
-  async addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<string | null> {
+  async addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<ModelFileOutcome> {
     const id = importRef(file.sha256);
-    if (this.catalog.itemRefId(id) !== null) return id;
+    if (this.catalog.itemRefId(id) !== null) return { kind: "added", item: id };
     const announced = notice === "announce";
     const importing = {
       file: file.name,
@@ -1792,7 +1793,7 @@ export class Editor implements IEditor, IEditedWorld {
         if (announced) {
           this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
         }
-        return null;
+        return { kind: "refused", reason: outcome.refusal };
       }
       case "placeable": {
         const refId = this.catalog.itemRefId(outcome.item.id);
@@ -1805,7 +1806,7 @@ export class Editor implements IEditor, IEditedWorld {
           outcome.credit,
           announced ? { ...reported, status: "placeable", item: outcome.item.id } : null,
         );
-        return outcome.item.id;
+        return { kind: "added", item: outcome.item.id };
       }
       case "checking": {
         await this.connectorTables.load(outcome.pending);
@@ -1821,7 +1822,7 @@ export class Editor implements IEditor, IEditedWorld {
         );
         this.studsLanding.set(outcome.item.id, landed);
         void landed.finally(() => this.studsLanding.delete(outcome.item.id));
-        return outcome.item.id;
+        return { kind: "added", item: outcome.item.id };
       }
       default: {
         const unhandled: never = outcome;
@@ -2067,9 +2068,10 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
-    const item = await this.session.addModelFile(file, "announce");
-    if (item !== null && !this.state.readOnly) this.chooseItem(item);
-    return item !== null;
+    const added = await this.session.addModelFile(file, "announce");
+    if (added.kind === "refused") return false;
+    if (!this.state.readOnly) this.chooseItem(added.item);
+    return true;
   }
 
   async importLayoutFile(file: ModelFileInput): Promise<boolean> {
@@ -2118,13 +2120,11 @@ export class Editor implements IEditor, IEditedWorld {
 
   private async layoutPiece(part: LayoutPart): Promise<LayoutPiece | string> {
     const bytes = new TextEncoder().encode(part.text);
-    const item = await this.session.addModelFile({ name: part.name, bytes }, "announce");
-    const refId = item === null ? null : this.catalog.itemRefId(item);
-    const placeable = refId === null ? null : this.catalog.placeables()[refId];
-    if (refId !== null && placeable) return { refId, placeable };
-    const shown = this.state.modelImport;
-    const refused = shown?.file === part.name && shown.status === "refused" ? shown.reason : null;
-    return refused ?? this.state.fileError ?? "it didn't import";
+    const added = await this.session.addModelFile({ name: part.name, bytes }, "quiet");
+    if (added.kind === "refused") return added.reason;
+    const refId = this.catalog.itemRefId(added.item);
+    if (refId === null) throw new Error(`${added.item} isn't in the catalog`);
+    return { refId, placeable: this.placeableAt(refId) };
   }
 
   private requestMeshes(placeable: Placeable): void {
