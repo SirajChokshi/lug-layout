@@ -25,7 +25,7 @@ interface HeldRequest {
 }
 
 class HeldRecordFetcher implements IAssetFetcher {
-  private readonly releases = new Map<string, HeldRequest>();
+  private readonly heldRequests = new Map<string, HeldRequest>();
   private holding: ReadonlySet<string> = new Set();
   private requested = 0;
   private answered = 0;
@@ -36,7 +36,7 @@ class HeldRecordFetcher implements IAssetFetcher {
   }
 
   get held(): ReadonlyArray<string> {
-    return [...this.releases.keys()];
+    return [...this.heldRequests.keys()];
   }
 
   release(path: string): void {
@@ -54,7 +54,7 @@ class HeldRecordFetcher implements IAssetFetcher {
       await new Promise((next) => setImmediate(next));
     } while (
       requestedBefore !== this.requested ||
-      this.answered + this.releases.size < this.requested
+      this.answered + this.heldRequests.size < this.requested
     );
   }
 
@@ -68,9 +68,9 @@ class HeldRecordFetcher implements IAssetFetcher {
   }
 
   private heldRequest(path: string): HeldRequest {
-    const request = this.releases.get(path);
+    const request = this.heldRequests.get(path);
     if (!request) throw new Error(`${path} isn't held`);
-    this.releases.delete(path);
+    this.heldRequests.delete(path);
     return request;
   }
 
@@ -79,7 +79,7 @@ class HeldRecordFetcher implements IAssetFetcher {
     try {
       const contents = await read();
       if (this.holding.has(path)) {
-        await new Promise<void>((release, fail) => this.releases.set(path, { release, fail }));
+        await new Promise<void>((release, fail) => this.heldRequests.set(path, { release, fail }));
       }
       this.served.add(path);
       return contents;
@@ -125,7 +125,7 @@ it("merges two models' parts into the palette in the order they were asked for, 
   const reversed = await paletteWhenReleased([1, 0]);
 
   expect(reversed).toEqual(inOrder);
-}, 120_000);
+}, 10_000);
 
 async function paletteAfterTheFirstRecordFails(failure: Error) {
   const ids = ["omr:10185-1", ...SETS];
@@ -169,4 +169,4 @@ it("lets the models asked for after a stalled record adopt once the stall is rep
   expect(stalled.adoptedWhileHeld).toBe(false);
   expect(stalled.firstFailure).toBe(stall);
   expect({ ...stalled, firstFailure: null }).toEqual({ ...refused, firstFailure: null });
-}, 120_000);
+}, 10_000);
