@@ -120,6 +120,7 @@ import { TrackPlacements, contentOf, type TrackPlacement } from "./track-placeme
 import { PlacementEnds } from "./placement-ends.ts";
 import { PlacementBands, type PlacementBand } from "./placement-bands.ts";
 import { SupportReach } from "./support-reach.ts";
+import { LevelVerdicts, type LevelVerdict } from "./level-verdicts.ts";
 import { heightText, type LabelView } from "./size-labels.ts";
 import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
@@ -162,6 +163,7 @@ const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
 const GROUND_PLATES = 0;
+const HELD_LEVEL: LevelVerdict = { held: true };
 const RAMP_HIGH_END = 1;
 const RAMP_CONNECTORS = 2;
 const INT16_MAX = 2 ** 15 - 1;
@@ -665,6 +667,9 @@ export class TrackDrawing implements ExtensionSite {
   private readonly placementBands = new PlacementBands((entry) => this.measureBand(entry));
   private readonly supportReach = new SupportReach((entry, support) =>
     this.measureReach(entry, support),
+  );
+  private readonly levelVerdicts = new LevelVerdicts((entry, support, band) =>
+    this.judgeLevel(entry, support, band),
   );
   private heldStale = false;
   private graph: TrackGraph;
@@ -1243,48 +1248,24 @@ export class TrackDrawing implements ExtensionSite {
   unsupportedPieces(): ReadonlyArray<UnsupportedPiece> | null {
     const support = this.support;
     if (!support) return null;
-    const box = this.collisionBox;
-    const layout = this.combined;
+    const count = this.combined.count;
     const bands = this.supportBands(support);
     const found: UnsupportedPiece[] = [];
-    const levelHeld = new Uint8Array(layout.count);
+    const levelHeld = new Uint8Array(count);
     const ramps: number[] = [];
-    for (let p = 0; p < layout.count; p++) {
-      const catalogIndex = layout.piece(p);
-      const outline = this.outlines.get(catalogIndex);
-      const piece = this.pieces[catalogIndex];
-      if (!outline || !piece) continue;
-      const yPlates = layout.yPlates(p);
-      const band = bands.get(yPlates);
-      if (!band) throw new Error(`no support band was built for ${yPlates} plates up`);
+    for (let p = 0; p < count; p++) {
+      const entry = this.placements.at(p);
+      if (!this.outlines.has(entry.piece) || !this.pieces[entry.piece]) continue;
+      const band = bands.get(entry.yPlates);
+      if (!band) throw new Error(`no support band was built for ${entry.yPlates} plates up`);
       if (band.pending) return null;
-      if (layout.rise(p) !== 0) {
+      if (entry.rise !== 0) {
         ramps.push(p);
         continue;
       }
-      const onTable = yPlates === GROUND_PLATES;
-      const placement = layout.pose(p);
-      const frame = layout.frame(p);
-      const placed = framedOutlineInto(
-        outline,
-        placement,
-        frame,
-        this.framedScratchFor(outline.length),
-      );
-      outlineBox(placed, box, 0);
-      const { studlessTops } = band.field.support;
-      const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
-      const { seats } = band;
-      const { partFrame } = piece;
-      if (
-        (top === NO_OBSTACLE && onTable) ||
-        support.supported(catalogIndex, partFrame, placement, seats, studlessTops, frame, onTable)
-      ) {
-        levelHeld[p] = 1;
-        continue;
-      }
-      const block = top === NO_OBSTACLE ? null : band.field.describe(studlessTopBlocker(top));
-      found.push({ piece: p, block, tilted: false });
+      const verdict = this.levelVerdicts.of(entry, support, band);
+      if (verdict.held) levelHeld[p] = 1;
+      else found.push({ piece: p, block: verdict.block, tilted: false });
     }
     for (const p of ramps) {
       const rests = this.rampRests(p, support, bands, levelHeld);
@@ -1292,6 +1273,41 @@ export class TrackDrawing implements ExtensionSite {
       if (!rests) found.push({ piece: p, block: null, tilted: true });
     }
     return found;
+  }
+
+  private judgeLevel(entry: TrackPlacement, support: TrackSupport, band: LayingBand): LevelVerdict {
+    const outline = this.outlines.get(entry.piece);
+    const piece = this.pieces[entry.piece];
+    if (!outline || !piece) throw new Error(`track piece ${entry.piece} has no outline to judge`);
+    const box = this.collisionBox;
+    const onTable = entry.yPlates === GROUND_PLATES;
+    const placed = framedOutlineInto(
+      outline,
+      entry.pose,
+      entry.frame,
+      this.framedScratchFor(outline.length),
+    );
+    outlineBox(placed, box, 0);
+    const { studlessTops } = band.field.support;
+    const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
+    if (
+      (top === NO_OBSTACLE && onTable) ||
+      support.supported(
+        entry.piece,
+        piece.partFrame,
+        entry.pose,
+        band.seats,
+        studlessTops,
+        entry.frame,
+        onTable,
+      )
+    ) {
+      return HELD_LEVEL;
+    }
+    return {
+      held: false,
+      block: top === NO_OBSTACLE ? null : band.field.describe(studlessTopBlocker(top)),
+    };
   }
 
   private rampRests(

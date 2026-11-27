@@ -34,6 +34,7 @@ export interface BandPieces {
 
 export interface LayingBand {
   readonly field: DragField;
+  readonly obstacles: TrackObstacles;
   readonly seats: StudSeats;
   readonly pending: boolean;
 }
@@ -178,7 +179,7 @@ export class TrackBands {
 
   private bandOf({ obstacles, pending }: SupportBand, outlines: SharingOutlines): LayingBand {
     const field = new DragField(outlines, obstacles, this.supportedOn(obstacles.seats));
-    return { field, seats: obstacles.seats, pending };
+    return { field, obstacles, seats: obstacles.seats, pending };
   }
 
   solid(lowPlates: number, highPlates: number): DragField {
