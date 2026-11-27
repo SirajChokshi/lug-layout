@@ -14,8 +14,8 @@
   --ref-blue-800: #0f3c86;
   --ref-amber-600: #9a6400;
   --ref-gold-500: #d29a00;
-  --ref-green-600: #1e8e3e;
-  --ref-red-600: #c5221f;
+  --ref-cyan-600: #00a8cc;
+  --ref-red-600: #d93025;
   --ref-orange-600: #e37400;
 
   --surface-panel-solid: var(--ref-slate-0);
@@ -40,7 +40,7 @@
 
   --status-warn: var(--ref-amber-600);
   --favorite: var(--ref-gold-500);
-  --diff-added: var(--ref-green-600);
+  --diff-added: var(--ref-cyan-600);
   --diff-removed: var(--ref-red-600);
   --diff-moved: var(--ref-orange-600);
 

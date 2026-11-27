@@ -21,8 +21,8 @@ const GUIDE_COLORS: Readonly<Record<GuideKind, number>> = {
   axis: 0x16222c,
   draft: 0x2f74e8,
   refused: 0xd32f2f,
-  added: 0x1e8e3e,
-  removed: 0xc5221f,
+  added: 0x00a8cc,
+  removed: 0xd93025,
   moved: 0xe37400,
 };
 const GUIDE_RENDER_ORDER = 3;

@@ -486,6 +486,12 @@ export class EditorPage {
     this.forgetView();
   }
 
+  async fitAll(): Promise<void> {
+    await this.page.getByRole("button", { name: "Fit all" }).click();
+    await this.viewAtRest();
+    this.forgetView();
+  }
+
   async catalog(): Promise<ReadonlyArray<CatalogEntry>> {
     return this.page.locator(".palette [data-section] [data-item]").evaluateAll((buttons) =>
       buttons.flatMap((button) => {

@@ -28,7 +28,15 @@ async function worldMenu(page: Page): Promise<Locator> {
   return menu;
 }
 
-test("a named version compared with later edits outlines in the 2D plan a user's own model moved, a track piece removed and a baseplate added, and Stop clears them", async ({
+async function changes(legend: Locator) {
+  return {
+    added: await legend.getAttribute("data-added"),
+    removed: await legend.getAttribute("data-removed"),
+    moved: await legend.getAttribute("data-moved"),
+  };
+}
+
+test("a named version compared with later edits outlines in the 2D plan a user's own model moved, a track piece removed and a baseplate added, follows undo back to no change, and Stop clears it", async ({
   page,
 }) => {
   const file = test.info().outputPath("my-signal-box.ldr");
@@ -56,21 +64,17 @@ test("a named version compared with later edits outlines in the 2D plan a user's
   await editor.placeAt(BASEPLATE, NEW_BASEPLATE_AT);
   await editor.escape();
   await expect(page.locator(".world-name")).toHaveAttribute("data-save", "saved");
+  await editor.fitAll();
   await page.screenshot({ path: test.info().outputPath("edited-since-the-version.png") });
 
   await menu.getByRole("button", { name: "Compare" }).click();
   const legend = menu.locator(".version-diff");
-  await expect(legend).toHaveAttribute("data-moved", "1");
-  const counts = {
-    added: await legend.getAttribute("data-added"),
-    removed: await legend.getAttribute("data-removed"),
-    moved: await legend.getAttribute("data-moved"),
-  };
+  await expect.poll(() => changes(legend)).toEqual({ added: "1", removed: "1", moved: "1" });
   await page.screenshot({ path: test.info().outputPath("compared-with-the-version.png") });
-  await editor.undo();
-  await expect(legend).toHaveAttribute("data-added", "0");
+  for (let step = 0; step < NUDGES + 2; step++) await editor.undo();
+  await expect.poll(() => changes(legend)).toEqual({ added: "0", removed: "0", moved: "0" });
+  await page.screenshot({ path: test.info().outputPath("every-edit-undone.png") });
   await menu.getByRole("button", { name: "Stop" }).click();
 
-  expect(counts).toEqual({ added: "1", removed: "1", moved: "1" });
   await expect(legend).toHaveCount(0);
 });
