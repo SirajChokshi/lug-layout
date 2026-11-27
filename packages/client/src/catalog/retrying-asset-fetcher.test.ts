@@ -173,7 +173,7 @@ it("reads Retry-After from a response in seconds, and falls back to the schedule
   fakeClock();
   for (const [retryAfter, waitMs] of [
     ["5", 5_000],
-    ["Fri, 27 Nov 2026 00:00:05 GMT", 1_000],
+    ["Fri, 27 Nov 2099 00:00:05 GMT", 1_000],
   ] as const) {
     const { startedAtMs } = answers([tooManyRequests(retryAfter), wholeResponse]);
     const reading = bundleFetcher().text(PART);
