@@ -44,7 +44,7 @@ function pixelGrid(size: PageSize): TileGrid {
 
 function tilingNote(name: string, grid: TileGrid): string {
   const { widthMm, heightMm } = grid.windowSize;
-  return `${name} is split into ${plural(grid.columns, "column", "columns")} and ${plural(grid.rows, "row", "rows")} of ${pixels(widthMm)} × ${pixels(heightMm)} px tiles, A1 to ${grid.name(grid.columns - 1, grid.rows - 1)}, so no tile is over ${MAX_TILE_PX} px a side.`;
+  return `Page ${name} is split into ${plural(grid.columns, "column", "columns")} and ${plural(grid.rows, "row", "rows")} of ${pixels(widthMm)} × ${pixels(heightMm)} px tiles, ${name}-A1 to ${name}-${grid.name(grid.columns - 1, grid.rows - 1)}, so no tile is over ${MAX_TILE_PX} px a side.`;
 }
 
 async function rasterized(svg: string): Promise<Uint8Array> {

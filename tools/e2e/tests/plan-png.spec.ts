@@ -107,7 +107,6 @@ test("a plan of two tables holding a user's own model downloads as a PNG at the 
   await editor.placeAt(model.item, ON_TABLE_ONE);
   await editor.escape();
 
-  await page.locator(".plan-panel > summary").click();
   const sheets = page.getByRole("region", { name: "Print sheets" });
   const download = sheets.getByRole("button", { name: "Download sheet" });
   await sheets.locator('select[name="sheet-layout"]').selectOption("image");
@@ -121,8 +120,11 @@ test("a plan of two tables holding a user's own model downloads as a PNG at the 
   await sheets.locator('select[name="sheet-format"]').selectOption("png");
   const fullSize = await downloaded(page, download);
   await expect(
-    sheets.getByText(/^sheet is split into \d+ columns? and \d+ rows? of /u),
+    sheets.getByText(
+      /^Page sheet is split into \d+ columns? and \d+ rows? of .* tiles, sheet-A1 to /u,
+    ),
   ).toBeVisible();
+  await sheets.screenshot({ path: test.info().outputPath("print-sheets.png") });
   await writeFile(test.info().outputPath(eight.name), eight.bytes);
   await writeFile(test.info().outputPath(fullSize.name), fullSize.bytes);
 
