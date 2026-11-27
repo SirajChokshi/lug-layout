@@ -8494,7 +8494,7 @@ it("refuses a fill tile where a held train would stand on the rails, and places 
     x: (straight.from.xLdu + straight.to.xLdu) / 2,
     z: (straight.from.zLdu + straight.to.zLdu) / 2,
   };
-  dragFill(editor, backend, [onRails.x - 1280, onRails.z - 1280], [onRails.x, onRails.z]);
+  dragFill(editor, backend, [onRails.x - 1280, onRails.z - 1440], [onRails.x, onRails.z]);
   const { lastFill, placements } = editor.snapshot();
 
   expect({
@@ -10059,16 +10059,24 @@ it("refuses a train set where its body meets a model over the track and a model 
 }, 180_000);
 
 const PLATFORM_CENTRE_LDU = 100;
-const UNDER_THE_OVERHANG_BRICKS = 4;
+const PLATFORM_ALONG_LDU = -8 * STUD;
+const PLATFORM_STUDS_LONG = 6;
+const UNDER_THE_OVERHANG_BRICKS = 1;
+const REACHING_THE_BODY_BRICKS = 3;
+
+function platformBrick(x: number, y: number): string {
+  return `1 7 ${x} ${y} 0 0 0 1 0 1 0 -1 0 0 2456.dat`;
+}
 
 function platformFile(name: string, bricks: number): Uint8Array {
-  return userRoadFile(
-    name,
-    Array.from(
-      { length: bricks },
-      (_, k) => `1 7 0 ${-BRICK_LDU * (k + 1)} 0 0 0 1 0 1 0 -1 0 0 2456.dat`,
-    ),
-  );
+  const base = Array.from({ length: bricks }, (_, k) => platformBrick(0, -BRICK_LDU * (k + 1)));
+  const jumperY = -BRICK_LDU * bricks - PLATE_LDU;
+  const jumpers = Array.from({ length: PLATFORM_STUDS_LONG }, (_, k) => {
+    const z = STUD * (k + 0.5 - PLATFORM_STUDS_LONG / 2);
+    return `1 7 0 ${jumperY} ${z} 1 0 0 0 1 0 0 0 1 15573.dat`;
+  });
+  const edge = platformBrick(STUD / 2, jumperY - BRICK_LDU);
+  return userRoadFile(name, [...base, ...jumpers, edge]);
 }
 
 it("takes a station platform beside the track under a train body's overhang, setting the train by it and the platform by the standing train, while a platform reaching the body is refused", async () => {
@@ -10088,16 +10096,19 @@ it("takes a station platform beside the track under a train body's overhang, set
   const high = await importUserFile(
     editor,
     "my-high-platform.ldr",
-    platformFile("my-high-platform.ldr", UNDER_THE_OVERHANG_BRICKS + 1),
+    platformFile("my-high-platform.ldr", REACHING_THE_BODY_BRICKS),
   );
   const place = settledPlacer(editor, backend);
 
-  await heldAlongTrack(editor, backend, frame, low, 0, SECOND_RUN_Z + PLATFORM_CENTRE_LDU);
+  const beside = (item: string, z: number) =>
+    heldAlongTrack(editor, backend, frame, item, PLATFORM_ALONG_LDU, z + PLATFORM_CENTRE_LDU);
+
+  await beside(low, SECOND_RUN_Z);
   editor.click(0, 0, 0);
   const byPlatform = await place(LOCOMOTIVE, 0, SECOND_RUN_Z);
   await place(LOCOMOTIVE, 0, 0);
-  const lowByTrain = await heldAlongTrack(editor, backend, frame, low, 0, PLATFORM_CENTRE_LDU);
-  const highByTrain = await heldAlongTrack(editor, backend, frame, high, 0, -PLATFORM_CENTRE_LDU);
+  const lowByTrain = await beside(low, 0);
+  const highByTrain = await beside(high, 0);
 
   expect({ byPlatform, lowByTrain, highByTrain, trains: editor.snapshot().trains.length }).toEqual({
     byPlatform: { placements: 1, refusedClicks: 0, reason: null },
