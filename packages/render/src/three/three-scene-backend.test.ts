@@ -1094,7 +1094,7 @@ const SHADOWS_ONLY = {
   shadows: true,
   oit: false,
 } as const;
-const SETTLING_FRAMES_ALLOWED = 3;
+const REST_FRAMES_ALLOWED = 3;
 
 function frameStats(): FrameStats {
   return {
@@ -1112,7 +1112,7 @@ function frameStats(): FrameStats {
 
 interface ShadowedBackend {
   readonly backend: ThreeSceneBackend;
-  shadowRange(): number;
+  renderedShadowFar(): number;
 }
 
 function shadowedBackend(
@@ -1130,19 +1130,19 @@ function shadowedBackend(
   } as unknown as WebGPURenderer;
   backend["renderer"] = renderer;
   backend["light"](renderer, look);
-  sendChunks(backend, chunkOrigins);
-  const shadowRange = (): number => {
+  setChunks(backend, chunkOrigins);
+  const renderedShadowFar = (): number => {
     const sun = rendered?.children.find(
       (child): child is DirectionalLight => child instanceof DirectionalLight && child.castShadow,
     );
-    return (
-      (sun?.shadow as { shadowNode?: { maxFar: number } } | undefined)?.shadowNode?.maxFar ?? 0
-    );
+    const shadowNode = (sun?.shadow as { shadowNode?: { maxFar: number } } | undefined)?.shadowNode;
+    if (!shadowNode) throw new Error("the rendered scene has no shadow-casting sun");
+    return shadowNode.maxFar;
   };
-  return { backend, shadowRange };
+  return { backend, renderedShadowFar };
 }
 
-function sendChunks(
+function setChunks(
   backend: ThreeSceneBackend,
   chunkOrigins: ReadonlyArray<readonly [number, number]>,
 ): void {
@@ -1159,17 +1159,17 @@ function viewedAlong(backend: ThreeSceneBackend, eyeHeights: ReadonlyArray<numbe
   }
 }
 
-function rested({ backend, shadowRange }: ShadowedBackend): {
+function rested({ backend, renderedShadowFar }: ShadowedBackend): {
   asked: number;
   stillAsking: boolean;
   far: number;
 } {
   let asked = 0;
-  while (backend.needsFrame() && asked < SETTLING_FRAMES_ALLOWED) {
+  while (backend.needsFrame() && asked < REST_FRAMES_ALLOWED) {
     asked++;
     backend.renderFrame(frameStats());
   }
-  return { asked, stillAsking: backend.needsFrame(), far: shadowRange() };
+  return { asked, stillAsking: backend.needsFrame(), far: renderedShadowFar() };
 }
 
 const SPREAD_CHUNKS = [
@@ -1177,6 +1177,7 @@ const SPREAD_CHUNKS = [
   [19_200, 12_800],
 ] as const;
 const RESTING_EYE_LDU = 12_000;
+const SHRUNK_CHUNK = { originX: 640, originZ: 0 } as const;
 
 function restedFresh(chunkOrigins: ReadonlyArray<readonly [number, number]>): number {
   const fresh = shadowedBackend(chunkOrigins);
@@ -1209,22 +1210,30 @@ it.each([
   },
 );
 
-it("rests at the shadow range the live chunks need once a chunk is deleted, and keeps it when a chunk is rebuilt with the same parts", () => {
+it("rests at the shadow range the live chunks need once a chunk is rebuilt smaller or deleted, and keeps it when a chunk is rebuilt with the same parts", () => {
   const shadowed = shadowedBackend(SPREAD_CHUNKS);
   viewedAlong(shadowed.backend, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
   const before = rested(shadowed).far;
-  sendChunks(shadowed.backend, SPREAD_CHUNKS);
+  setChunks(shadowed.backend, SPREAD_CHUNKS);
   viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
   const rebuilt = rested(shadowed);
+  shadowed.backend.setChunk(1, { ...chunkOf(0), ...SHRUNK_CHUNK });
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+  const shrunk = rested(shadowed);
   shadowed.backend.deleteChunk(1);
   viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
   const deleted = rested(shadowed);
 
-  expect({ rebuilt, shrank: deleted.far < before, deleted }).toEqual({
+  expect({ rebuilt, shrunk, deleted }).toEqual({
     rebuilt: { asked: 0, stillAsking: false, far: before },
-    shrank: true,
+    shrunk: {
+      asked: 0,
+      stillAsking: false,
+      far: restedFresh([SPREAD_CHUNKS[0], [SHRUNK_CHUNK.originX, SHRUNK_CHUNK.originZ]]),
+    },
     deleted: { asked: 0, stillAsking: false, far: restedFresh(SPREAD_CHUNKS.slice(0, 1)) },
   });
+  expect(shrunk.far).toBeLessThan(before);
 });
 
 it.each([
