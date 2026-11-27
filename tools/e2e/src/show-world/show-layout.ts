@@ -1,6 +1,48 @@
 import { STUD_LDU } from "@brr/math";
 import { SeededRandom } from "../held-out/generator.ts";
-import type { ShowSpec } from "./show-spec.ts";
+
+export interface ShowSpec {
+  readonly tableRows: number;
+  readonly tablesPerRow: number;
+  readonly tableWidthStuds: number;
+  readonly tableDepthStuds: number;
+  readonly aisleStuds: number;
+  readonly models: number;
+  readonly roadPlates: number;
+  readonly trackPieces: number;
+  readonly sidingsPerOval: number;
+  readonly contributors: number;
+}
+
+const TABLE = { tableWidthStuds: 192, tableDepthStuds: 96, aisleStuds: 128 };
+
+export const SHOW_SCALES: Readonly<Record<string, ShowSpec>> = {
+  show: {
+    ...TABLE,
+    tableRows: 10,
+    tablesPerRow: 12,
+    models: 250,
+    roadPlates: 400,
+    trackPieces: 2500,
+    sidingsPerOval: 3,
+    contributors: 30,
+  },
+  smoke: {
+    ...TABLE,
+    tableRows: 1,
+    tablesPerRow: 4,
+    models: 3,
+    roadPlates: 6,
+    trackPieces: 90,
+    sidingsPerOval: 1,
+    contributors: 2,
+  },
+};
+
+export interface Point {
+  readonly x: number;
+  readonly z: number;
+}
 
 export interface Rect {
   readonly minX: number;
@@ -35,7 +77,6 @@ export interface OvalPlan {
   readonly eastX: number;
   readonly laneZ: number;
   readonly returnZ: number;
-  readonly straightsPerSide: number;
   readonly sidingStarts: ReadonlyArray<number>;
 }
 
@@ -83,8 +124,8 @@ export function inRun(run: CellRun, cell: Cell): boolean {
 }
 
 export class ShowLayout {
-  readonly bands: number;
-  readonly columns: number;
+  private readonly bands: number;
+  private readonly columns: number;
   private readonly rowLength: number;
   private readonly depth: number;
   private readonly pitch: number;
@@ -177,7 +218,6 @@ export class ShowLayout {
       eastX: westX + laneLength,
       laneZ,
       returnZ: laneZ + halfTurnOffsetLdu,
-      straightsPerSide,
       sidingStarts: Array.from({ length: sidings }, (_, index) =>
         latticeFloor(westX + index * spacing + spacing / SIDING_LEAD_FRACTION),
       ),

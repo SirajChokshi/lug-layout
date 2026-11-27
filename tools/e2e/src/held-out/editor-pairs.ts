@@ -39,6 +39,8 @@ const LOAD_POLL_MS = 10;
 const LOAD_TIMEOUT_MS = 60_000;
 const NO_TIME = 0;
 const SETTLE_FRAME_LIMIT = 1_000;
+const WAIT_FRAME_LIMIT = 30_000;
+const DRAG_STEP_LDU = 160;
 
 export interface Pose {
   readonly x: number;
@@ -185,11 +187,36 @@ function unsettledFlags(flags: SettleFlags | null): ReadonlyArray<string> {
 
 export class EditorPath {
   constructor(
-    private readonly editor: IEditor,
+    readonly editor: IEditor,
     private readonly backend: AimedBackend,
     private readonly frame: () => Promise<void>,
     private readonly clock: SliceClock,
   ) {}
+
+  drag(fromX: number, fromZ: number, toX: number, toZ: number): void {
+    this.backend.aim(fromX, fromZ);
+    this.editor.pointerMove(0, 0);
+    this.editor.dragStart(0, 0);
+    const steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toZ - fromZ) / DRAG_STEP_LDU));
+    for (let step = 1; step <= steps; step++) {
+      this.backend.aim(
+        fromX + ((toX - fromX) * step) / steps,
+        fromZ + ((toZ - fromZ) * step) / steps,
+      );
+      this.editor.dragMove(0, 0);
+    }
+    this.editor.dragEnd(0, 0, NO_TIME);
+  }
+
+  async waitFor(done: () => boolean, what: string): Promise<void> {
+    for (let frames = 0; !done(); frames++) {
+      if (frames >= WAIT_FRAME_LIMIT) {
+        throw new Error(`${what} didn't happen within ${WAIT_FRAME_LIMIT} frames`);
+      }
+      await this.frame();
+      await new Promise((resolve) => setTimeout(resolve, LOAD_POLL_MS));
+    }
+  }
 
   async importModel(model: ModelInput): Promise<string> {
     const imported = await this.editor.importModelFile({

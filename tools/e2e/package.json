@@ -14,7 +14,7 @@
     "library-bake-parity": "node --experimental-transform-types --no-warnings src/library-bake-parity.ts",
     "glyph-parity": "node --experimental-transform-types --no-warnings src/glyph-parity.ts",
     "held-out": "vitest run --config held-out.config.ts",
-    "show-world": "vitest run --config show-world.config.ts"
+    "show-world": "vitest run --config held-out.config.ts src/show-world"
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",

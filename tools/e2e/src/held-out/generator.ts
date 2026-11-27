@@ -73,11 +73,9 @@ export interface ModuleFile {
 }
 
 export interface ShowModule {
-  readonly seed: number;
   readonly name: string;
   readonly author: string;
   readonly text: string;
-  readonly parts: number;
 }
 
 export interface ModulePair {
@@ -892,11 +890,9 @@ export function showModule(pools: BlockPools, seed: number, author: string): Sho
   const name = `show-module-${seed}.ldr`;
   const lines = [build.base, ...build.placed].map(lineOf);
   return {
-    seed,
     name,
     author,
     text: ldrawText(name, `Show module ${seed} by ${author}`, lines, `0 Author: ${author}`),
-    parts: build.parts,
   };
 }
 

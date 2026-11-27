@@ -6,14 +6,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { openBundle } from "../held-out/bundle.ts";
+import { EditorPath } from "../held-out/editor-pairs.ts";
 import { blockPools, SeededRandom, showModule } from "../held-out/generator.ts";
 import { startHeadlessEditor } from "../held-out/headless-editor.ts";
 import { cachingFetch } from "../held-out/import-path.ts";
 import { poolCandidates } from "../held-out/pool-candidates.ts";
-import { AimedEditor } from "./aimed-editor.ts";
-import { ShowLayout } from "./show-layout.ts";
-import { showSpecNamed, type ShowSpec } from "./show-spec.ts";
-import { ShowWorldBuilder, type ShowModelFile, type ShowWorld } from "./show-world-builder.ts";
+import { SHOW_SCALES, ShowLayout, type ShowSpec, type TrackKit } from "./show-layout.ts";
+import { ShowWorldBuilder, type ShowWorld } from "./show-world-builder.ts";
 import { TrackLayer } from "./track-layer.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -59,7 +58,13 @@ function baseplateFor(catalog: ReadonlyArray<CatalogItemView>, cellStuds: number
   return chosen;
 }
 
-function report(spec: ShowSpec, seed: number, world: ShowWorld, seconds: number): string {
+function report(
+  spec: ShowSpec,
+  seed: number,
+  kit: TrackKit,
+  world: ShowWorld,
+  seconds: number,
+): string {
   const { counts } = world;
   const rows: ReadonlyArray<readonly [string, string, string]> = [
     ["Tables", String(spec.tableRows * spec.tablesPerRow), String(counts.tables)],
@@ -76,9 +81,9 @@ function report(spec: ShowSpec, seed: number, world: ShowWorld, seconds: number)
     ["Parts in the world", "", String(counts.parts)],
   ];
   return [
-    `#### Show-scale world, ${spec.name} scale, seed ${seed} (SHOW_WORLD_SEED=${seed} SHOW_WORLD_SCALE=${spec.name} reproduces it)`,
+    `#### Show-scale world, ${scale} scale, seed ${seed} (SHOW_WORLD_SEED=${seed} SHOW_WORLD_SCALE=${scale} reproduces it)`,
     "",
-    `Built through \`IEditor\` in ${seconds.toFixed(0)} s. Track kit measured through the editor: a straight is ${world.kit.straightLdu} LDU, ${world.kit.curvesPerHalfTurn} curves turn it around ${Math.abs(world.kit.halfTurnOffsetLdu)} LDU over. ${world.refusedModelCells} model cells were refused by the editor and left to baseplates; ${world.unplacedModels} models found no cell.`,
+    `Built through \`IEditor\` in ${seconds.toFixed(0)} s. Track kit measured through the editor: a straight is ${kit.straightLdu} LDU, ${kit.curvesPerHalfTurn} curves turn it around ${Math.abs(kit.halfTurnOffsetLdu)} LDU over. ${world.refusedModelCells} model cells were refused by the editor and left to baseplates; ${world.unplacedModels} models found no cell.`,
     "",
     "| | Asked | Built |",
     "|---|---:|---:|",
@@ -91,14 +96,17 @@ function report(spec: ShowSpec, seed: number, world: ShowWorld, seconds: number)
   ].join("\n");
 }
 
-const spec = showSpecNamed(process.env["SHOW_WORLD_SCALE"] ?? "smoke");
+const scale = process.env["SHOW_WORLD_SCALE"] ?? "smoke";
+const spec = SHOW_SCALES[scale];
+if (!spec)
+  throw new Error(`SHOW_WORLD_SCALE ${scale} isn't one of ${Object.keys(SHOW_SCALES).join(", ")}`);
 
 it(
-  `builds the ${spec.name}-scale show world through the editor's own interface`,
+  `builds the ${scale}-scale show world through the editor's own interface`,
   async () => {
     const started = performance.now();
     const seed = seedOf();
-    process.stdout.write(`show world ${spec.name} seed ${seed} (SHOW_WORLD_SEED=${seed})\n`);
+    process.stdout.write(`show world ${scale} seed ${seed} (SHOW_WORLD_SEED=${seed})\n`);
     const bundle = await openBundle(BUNDLE_ROOT, RECORDS_ROOT, LIBRARY_CONNECTORS_ROOT);
     const fetchUrl = cachingFetch(join(CACHE_ROOT, "ldraw"));
     const pools = blockPools(
@@ -106,42 +114,34 @@ it(
       bundle.parts.values(),
       bundle.colors,
     );
-    const { editor, backend, frame, plans } = await startHeadlessEditor(
+    const { editor, backend, frame, clock, plans } = await startHeadlessEditor(
       BUNDLE_ROOT,
       bundle,
       fetchUrl,
     );
-    await editor.newWorld(`Show world ${spec.name} ${seed}`);
-    const hand = new AimedEditor(editor, backend, frame);
+    await editor.newWorld(`Show world ${scale} ${seed}`);
+    const path = new EditorPath(editor, backend, frame, clock);
     const { catalog, roadKits } = editor.snapshot();
     const road = roadKit(roadKits, spec);
     const baseplate = baseplateFor(catalog, road.tileStuds);
     const cellLdu = road.tileStuds * STUD_LDU;
-    const kit = await TrackLayer.probe(hand, TRACK_ITEM_ID, {
-      x: 0,
-      z: -PROBE_CLEARANCE_CELLS * cellLdu,
-    });
+    const track = new TrackLayer(path, TRACK_ITEM_ID);
+    const kit = await track.probe({ x: 0, z: -PROBE_CLEARANCE_CELLS * cellLdu });
     const layout = new ShowLayout(spec, cellLdu, kit, seed);
     const random = new SeededRandom(seed);
     const authors = layout.contributors();
-    const models: ShowModelFile[] = Array.from({ length: spec.models }, (_, index) => {
-      const module = showModule(
-        pools,
-        random.int(SEED_RANGE),
-        authors[index % authors.length] ?? "",
-      );
-      return { name: module.name, text: module.text, author: module.author, parts: module.parts };
-    });
-    const builder = new ShowWorldBuilder(
-      hand,
+    const models = Array.from({ length: spec.models }, (_, index) =>
+      showModule(pools, random.int(SEED_RANGE), authors[index % authors.length] ?? ""),
+    );
+    const world = await new ShowWorldBuilder(
+      path,
       layout,
-      new TrackLayer(hand, TRACK_ITEM_ID, "left"),
+      track,
       kit,
       { baseplate: baseplate.id, roadKit: road.id, track: TRACK_ITEM_ID },
       plans,
-    );
-    const world = await builder.build(models);
-    const stem = `show-world-${spec.name}-${seed}`;
+    ).build(models);
+    const stem = `show-world-${scale}-${seed}`;
     await mkdir(OUT_ROOT, { recursive: true });
     await writeFile(join(OUT_ROOT, `${stem}.brr.zip`), world.world);
     await writeFile(join(OUT_ROOT, `${stem}.brrplan.zip`), world.plan);
@@ -149,7 +149,7 @@ it(
       join(OUT_ROOT, `${stem}.edits.json`),
       `${JSON.stringify(world.edits, null, 2)}\n`,
     );
-    const text = report(spec, seed, world, (performance.now() - started) / MS_PER_SECOND);
+    const text = report(spec, seed, kit, world, (performance.now() - started) / MS_PER_SECOND);
     await writeFile(join(OUT_ROOT, `${stem}.md`), text);
     const summary = process.env["GITHUB_STEP_SUMMARY"];
     if (summary) await appendFile(summary, `${text}\n`);

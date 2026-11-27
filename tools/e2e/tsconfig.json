@@ -10,7 +10,6 @@
     "library-bake-tests",
     "playwright.config.ts",
     "playwright.library-bake.config.ts",
-    "held-out.config.ts",
-    "show-world.config.ts"
+    "held-out.config.ts"
   ]
 }
