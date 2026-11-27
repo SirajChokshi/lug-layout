@@ -23,7 +23,6 @@ import {
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
   SHEET_SETS,
-  TABLE_LIBRARY,
   type IViewerScene,
 } from "@brr/client";
 import { AboutPage, CreditsPage, EditorApp } from "@brr/ui";
@@ -159,7 +158,6 @@ function root(): ReactNode {
         sheetSets={container.get(SHEET_SETS)}
         events={container.get(EVENT_DETAILS)}
         layoutSize={container.get(LAYOUT_SIZE)}
-        tables={container.get(TABLE_LIBRARY)}
         bomService={container.get(BOM_SERVICE)}
         ownedParts={container.get(OWNED_PARTS)}
         play={container.get(TRAIN_PLAY)}

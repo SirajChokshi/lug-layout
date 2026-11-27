@@ -9,13 +9,7 @@ import {
   type TableType,
 } from "./plan-region.ts";
 
-export const TABLE_TURNS = [0, 1] as const;
-export type TableTurn = (typeof TABLE_TURNS)[number];
-
-export interface TableTypeSize {
-  readonly widthMm: number;
-  readonly depthMm: number;
-}
+export type TableTurn = 0 | 1;
 
 export function tableName(number: number): string {
   return `Table ${number}`;
@@ -28,7 +22,7 @@ export function lowestFreeTableNumber(tables: ReadonlyArray<Pick<PlanTable, "num
   return number;
 }
 
-export function tableTypeSize(type: TableType, turn: TableTurn): TableTypeSize {
+export function tableTypeSize(type: TableType, turn: TableTurn) {
   return turn === 0
     ? { widthMm: type.widthMm, depthMm: type.depthMm }
     : { widthMm: type.depthMm, depthMm: type.widthMm };
@@ -49,26 +43,19 @@ export function tableTypeRect(
   };
 }
 
-export function tableTurnOf(table: PlanTable, type: TableType): TableTurn {
-  return table.rect.width === type.widthMm && table.rect.depth === type.depthMm ? 0 : 1;
-}
-
-export function tableTypeOf(
-  table: PlanTable,
-  types: ReadonlyArray<TableType>,
-): TableType | undefined {
+function typeOf(table: PlanTable, types: ReadonlyArray<TableType>): TableType | undefined {
   return table.typeId === undefined ? undefined : types.find((type) => type.id === table.typeId);
 }
 
-export function untypedTable(table: PlanTable): PlanTable {
-  if (table.typeId === undefined) return table;
-  const { typeId: _typeId, ...untyped } = table;
-  return untyped;
+function untyped(table: PlanTable): PlanTable {
+  const { typeId: _typeId, ...rest } = table;
+  return rest;
 }
 
 export function withTypeKept(table: PlanTable, types: ReadonlyArray<TableType>): PlanTable {
-  const type = tableTypeOf(table, types);
-  return type && tableFitsType(table, type) ? table : untypedTable(table);
+  if (table.typeId === undefined) return table;
+  const type = typeOf(table, types);
+  return type && tableFitsType(table, type) ? table : untyped(table);
 }
 
 export function turnedTable(table: PlanTable): PlanTable {
@@ -76,22 +63,13 @@ export function turnedTable(table: PlanTable): PlanTable {
   return { ...table, rect: { ...rect, width: rect.depth, depth: rect.width } };
 }
 
-function retypedTable(
-  table: PlanTable,
-  before: TableType | undefined,
-  after: TableType | undefined,
-): PlanTable {
-  if (!after) return untypedTable(table);
+function retypedTable(table: PlanTable, before?: TableType, after?: TableType): PlanTable {
+  if (!after) return untyped(table);
   if (before === after) return table;
-  const size = tableTypeSize(after, before ? tableTurnOf(table, before) : 0);
   const { rect } = table;
-  if (
-    rect.width === size.widthMm &&
-    rect.depth === size.depthMm &&
-    table.heightMm === after.heightMm
-  ) {
-    return table;
-  }
+  const size = tableTypeSize(after, before && rect.width !== before.widthMm ? 1 : 0);
+  const sized = rect.width === size.widthMm && rect.depth === size.depthMm;
+  if (sized && table.heightMm === after.heightMm) return table;
   return {
     ...table,
     rect: { ...rect, width: size.widthMm, depth: size.depthMm },
@@ -99,35 +77,29 @@ function retypedTable(
   };
 }
 
-function grownAroundTables(region: PlanRegion): PlanRegion {
-  let grown = region;
-  for (let i = 0; i < region.footprint.tables.length; i++) {
+export function retypedRegion(
+  region: PlanRegion,
+  before: ReadonlyArray<TableType>,
+  after: ReadonlyArray<TableType>,
+): PlanRegion {
+  const tables = region.footprint.tables.map((table) =>
+    table.typeId === undefined
+      ? table
+      : retypedTable(table, typeOf(table, before), typeOf(table, after)),
+  );
+  if (tables.every((table, i) => table === region.footprint.tables[i])) return region;
+  let grown: PlanRegion = { ...region, footprint: { ...region.footprint, tables } };
+  for (let i = 0; i < tables.length; i++) {
     const table = grown.footprint.tables[i];
     if (table) grown = regionAround(grown, mmRectInWorld(grown, table.rect));
   }
   return grown;
 }
 
-export function retypedRegion(
-  region: PlanRegion,
-  before: ReadonlyArray<TableType>,
-  after: ReadonlyArray<TableType>,
-): PlanRegion {
-  let changed = false;
-  const tables = region.footprint.tables.map((table) => {
-    if (table.typeId === undefined) return table;
-    const next = retypedTable(table, tableTypeOf(table, before), tableTypeOf(table, after));
-    if (next !== table) changed = true;
-    return next;
-  });
-  if (!changed) return region;
-  return grownAroundTables({ ...region, footprint: { ...region.footprint, tables } });
-}
-
 export function placedTableCounts(region: PlanRegion): ReadonlyMap<number, number> {
   const counts = new Map<number, number>();
-  for (const table of region.footprint.tables) {
-    if (table.typeId !== undefined) counts.set(table.typeId, (counts.get(table.typeId) ?? 0) + 1);
+  for (const { typeId } of region.footprint.tables) {
+    if (typeId !== undefined) counts.set(typeId, (counts.get(typeId) ?? 0) + 1);
   }
   return counts;
 }

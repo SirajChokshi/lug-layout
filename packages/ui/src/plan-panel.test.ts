@@ -5,7 +5,6 @@ import {
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
   SHEET_SETS,
-  TABLE_LIBRARY,
 } from "@brr/client";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Container } from "inversify";
@@ -43,11 +42,7 @@ function addTableType(values: Readonly<Record<string, string>>): void {
   for (const [key, value] of Object.entries(values)) {
     fireEvent.change(namedField(`new-table-type-${key}`), { target: { value } });
   }
-  fireEvent.click(screen.getByRole("button", { name: "Add table type" }));
-}
-
-function placedTexts(): Array<string | null> {
-  return [...document.querySelectorAll("[data-placed]")].map((row) => row.textContent);
+  fireEvent.submit(screen.getByRole("form", { name: "New table type" }));
 }
 
 function renderPanel(container: Container): void {
@@ -63,7 +58,6 @@ function renderPanel(container: Container): void {
       sheetSets: container.get(SHEET_SETS),
       ready: true,
       readOnly: false,
-      library: container.get(TABLE_LIBRARY),
       armedType: null,
     }),
   );
@@ -111,53 +105,24 @@ it("commits a typed table size on Enter or blur, keeps the typed text while the 
   ]);
 });
 
-it("adds a table type from its form, names the field it refuses, counts the active plan's tables of each type against those owned, and keeps a library table's size to its type", () => {
+it("names the field a new table type is refused for, and keeps a library table's size and height to its type while it still moves", () => {
   const container = clientContainer();
   const plans = container.get(PLAN_SERVICE);
-  const library = container.get(TABLE_LIBRARY);
   renderPanel(container);
-  addTableType({ name: "Club 6ft", widthMm: "1830", depthMm: "760.5", owned: "2" });
-  const refused = { alert: screen.getByRole("alert").textContent, types: library.types().length };
+
+  addTableType({ name: "Club 6ft", widthMm: "1830", depthMm: "760.5" });
+  const refused = { alert: screen.getByRole("alert").textContent, types: plans.tableTypes() };
   addTableType({ depthMm: "760" });
-  const added = library.types();
-  const typeId = added[0]?.id ?? -1;
+  const typeId = plans.tableTypes()[0]?.id ?? -1;
   act(() => {
-    library.place(typeId, 0, 0, 0);
-    library.place(typeId, 1, 4800, 0);
-    library.place(typeId, 0, 0, 2400);
-  });
-  const placed = placedTexts();
-  const shortClass = document.querySelector("[data-placed]")?.className;
-  const sizes = [...document.querySelectorAll("[data-table-size]")].map((row) => row.textContent);
-  const widthFields = screen.queryAllByLabelText("Width in studs").length;
-  act(() => {
-    library.updateType(typeId, { owned: 3 });
+    plans.drawTable({ minX: 0, minZ: 0, maxX: 4575, maxZ: 1900 }, typeId);
   });
 
-  expect(refused).toEqual({
-    alert: "Depth must be an integer",
-    types: 0,
-  });
-  expect(added).toEqual([
-    {
-      id: 0,
-      name: "Club 6ft",
-      widthMm: 1830,
-      depthMm: 760,
-      heightMm: 750,
-      color: "#b58b5a",
-      owned: 2,
-    },
-  ]);
+  expect(refused).toEqual({ alert: "Depth mm must be an integer", types: [] });
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(placed).toEqual(["3 placed, 1 more than the 2 owned"]);
-  expect(shortClass).toBe("plan-warnings");
-  expect(sizes).toEqual([
-    "1830 × 760 mm, 750 mm high, from its type Club 6ft",
-    "760 × 1830 mm, 750 mm high, from its type Club 6ft",
-    "1830 × 760 mm, 750 mm high, from its type Club 6ft",
-  ]);
-  expect(widthFields).toBe(0);
-  expect(placedTexts()).toEqual(["3 of 3 owned placed in this plan"]);
-  expect(plans.plans()[0]?.footprint.tables.map((table) => table.number)).toEqual([1, 2, 3]);
+  expect(
+    ["Width in studs", "Depth in cm", "Height in cm", "From left wall in studs"].map(
+      (label) => field(label).closest("fieldset[disabled]") !== null,
+    ),
+  ).toEqual([true, true, true, false]);
 });

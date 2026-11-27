@@ -1,8 +1,13 @@
-import type { LduRect, TableTop, TableTurn } from "@brr/domain";
-import { STUD_LDU } from "@brr/math";
+import {
+  tableTypeRect,
+  tableTypeSize,
+  type LduRect,
+  type TableTop,
+  type TableTurn,
+} from "@brr/domain";
+import { lduFromMm, STUD_LDU } from "@brr/math";
 import { GUIDE_GRID_STUDS, type GuideSegment } from "@brr/render";
 import type { IPlanService, PlanView } from "../plan/plan-service.ts";
-import type { ITableLibrary } from "../plan/table-library.ts";
 import { rulerGuides, type Ruler } from "./measure-tool.ts";
 import { lengthText, type LabelView } from "./size-labels.ts";
 
@@ -36,11 +41,6 @@ interface TableDrag {
   readonly startX: number;
   readonly startZ: number;
   rect: LduRect | null;
-}
-
-interface ShownTable {
-  readonly id: string;
-  readonly rect: LduRect;
 }
 
 const MOVE: TableEdges = { minX: true, maxX: true, minZ: true, maxZ: true };
@@ -200,7 +200,6 @@ export class TableTool {
 
   constructor(
     private readonly plans: IPlanService,
-    private readonly library: ITableLibrary,
     private readonly y: number,
   ) {}
 
@@ -239,8 +238,8 @@ export class TableTool {
   planChanged(): boolean {
     const shown = this.stamp;
     const armed = this.armed;
-    if (armed && !this.library.types().some((type) => type.id === armed.typeId)) this.arm(null);
-    this.stamp = shown && this.armed ? this.stampAt(this.cursorX, this.cursorZ) : null;
+    if (armed && !this.plans.tableTypes().some((type) => type.id === armed.typeId)) this.arm(null);
+    this.stamp = shown && this.stampAt(this.cursorX, this.cursorZ);
     const restamped = armed !== this.armed || !sameStamp(shown, this.stamp);
     const planId = this.plans.activePlanId();
     const view = planId === null ? null : this.plans.regionView(planId);
@@ -304,7 +303,7 @@ export class TableTool {
     if (armed && this.stamping) {
       this.stamping = false;
       const stamp = this.stamp;
-      if (stamp) this.library.place(armed.typeId, armed.turn, stamp.minX, stamp.minZ);
+      if (stamp) this.plans.drawTable(stamp, armed.typeId);
       return;
     }
     const drag = this.drag;
@@ -356,10 +355,15 @@ export class TableTool {
 
   private stampAt(x: number, z: number): LduRect | null {
     const armed = this.armed;
-    return armed ? this.library.stampAt(armed.typeId, armed.turn, x, z) : null;
+    const type = this.plans.tableTypes().find((t) => t.id === armed?.typeId);
+    if (!armed || !type) return null;
+    const size = tableTypeSize(type, armed.turn);
+    const cornerX = snapToGuideGrid(x - lduFromMm(size.widthMm) / 2);
+    const cornerZ = snapToGuideGrid(z - lduFromMm(size.depthMm) / 2);
+    return tableTypeRect(type, armed.turn, cornerX, cornerZ);
   }
 
-  private shown(): ReadonlyArray<ShownTable> {
+  private shown(): ReadonlyArray<{ readonly id: string; readonly rect: LduRect }> {
     const drag = this.drag;
     const draggedId = drag?.handle?.tableId ?? null;
     const shown = this.tables().map(({ tableId, rect }) => ({

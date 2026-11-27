@@ -16,7 +16,6 @@ import {
   regionAround,
   retypedRegion,
   tableName,
-  tableTypeOf,
   TRACK_SEGMENT,
   turnedTable,
   uncheckedPlan,
@@ -38,7 +37,8 @@ import {
   type TableType,
 } from "@brr/domain";
 import { chunkOf, lduFromMm } from "@brr/math";
-import { tableFitsType } from "@brr/schema/world";
+import { decode, type Decoded, type Issue } from "@brr/schema/decode";
+import { TABLE_TYPE_ID_MAX, TableTypeRecordV2 } from "@brr/schema/world";
 import { SCENE_BACKEND, type ISceneBackend, type PlanOverlay, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
 
@@ -99,8 +99,8 @@ export type PlanPatch = Partial<
 > &
   Partial<Pick<PlanRegion["footprint"], "roomWidthMm" | "roomDepthMm">>;
 
-export type TableInput = Omit<PlanTable, "id" | "number">;
-export type TablePatch = Partial<Pick<PlanTable, "name" | "rect" | "heightMm">>;
+export type TableInput = Omit<PlanTable, "id" | "number" | "typeId">;
+export type TableTypeInput = Omit<TableType, "id">;
 export type ObstacleInput = Omit<PlanObstacle, "id">;
 
 export interface PlanInput extends Omit<PlanRegion, "id" | "footprint"> {
@@ -150,9 +150,11 @@ export interface IPlanService {
   removePlan(planId: string): void;
   activatePlan(planId: string | null): void;
   tableTypes(): ReadonlyArray<TableType>;
-  setTableTypes(types: ReadonlyArray<TableType>): void;
+  addTableType(input: TableTypeInput): Decoded<number>;
+  updateTableType(typeId: number, patch: Partial<TableTypeInput>): ReadonlyArray<Issue>;
+  removeTableType(typeId: number): void;
   addTable(planId: string, table: TableInput): string;
-  updateTable(planId: string, tableId: string, patch: TablePatch): void;
+  updateTable(planId: string, tableId: string, patch: Partial<TableInput>): void;
   removeTable(planId: string, tableId: string): void;
   drawTable(rect: LduRect, typeId?: number): DrawnTable;
   placeTable(planId: string, tableId: string, rect: LduRect): void;
@@ -239,21 +241,6 @@ function onlyName(patch: object): boolean {
   return true;
 }
 
-function numberedTable(tables: ReadonlyArray<PlanTable>, id: string, input: TableInput): PlanTable {
-  return { ...input, id, number: lowestFreeTableNumber(tables) };
-}
-
-function typedTable(table: PlanTable, types: ReadonlyArray<TableType>): PlanTable {
-  if (table.typeId === undefined) return table;
-  const type = tableTypeOf(table, types);
-  if (!type || !tableFitsType(table, type)) {
-    throw new Error(
-      `table ${table.id} doesn't have the size and height of table type ${table.typeId}`,
-    );
-  }
-  return table;
-}
-
 function withDrawnTable(
   plan: PlanRegion,
   tableId: string,
@@ -271,7 +258,7 @@ function withDrawnTable(
     heightMm: type?.heightMm ?? tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
     ...(type ? { typeId: type.id } : {}),
   };
-  const drawn = typedTable(table, type ? [type] : []);
+  const drawn = withTypeKept(table, type ? [type] : []);
   return { ...grown, footprint: { ...grown.footprint, tables: [...tables, drawn] } };
 }
 
@@ -666,9 +653,11 @@ export class PlanService implements IPlanService {
       footprint: {
         roomWidthMm: footprint.roomWidthMm,
         roomDepthMm: footprint.roomDepthMm,
-        tables: footprint.tables.map((table, i) =>
-          withTypeKept({ id: this.newId("table"), number: i + 1, ...table }, this.types),
-        ),
+        tables: footprint.tables.map((table, i) => ({
+          id: this.newId("table"),
+          number: i + 1,
+          ...table,
+        })),
         obstacles: footprint.obstacles.map((obstacle) => ({
           id: this.newId("obstacle"),
           ...obstacle,
@@ -737,15 +726,38 @@ export class PlanService implements IPlanService {
     return this.types;
   }
 
-  setTableTypes(types: ReadonlyArray<TableType>): void {
+  addTableType(input: TableTypeInput): Decoded<number> {
+    const last = this.types.at(-1)?.id ?? -1;
+    if (last === TABLE_TYPE_ID_MAX) {
+      return { ok: false, issues: [{ path: "tableTypes", message: "is full" }] };
+    }
+    const added = decode(TableTypeRecordV2, { ...input, id: last + 1 }, "table type");
+    if (!added.ok) return added;
+    this.setTableTypes([...this.types, added.value]);
+    return { ok: true, value: added.value.id };
+  }
+
+  updateTableType(typeId: number, patch: Partial<TableTypeInput>): ReadonlyArray<Issue> {
+    const type = this.types.find((t) => t.id === typeId);
+    if (!type) throw new Error(`no table type ${typeId}`);
+    const updated = decode(TableTypeRecordV2, { ...type, ...patch, id: typeId }, "table type");
+    if (!updated.ok) return updated.issues;
+    this.setTableTypes(this.types.map((t) => (t.id === typeId ? updated.value : t)));
+    return [];
+  }
+
+  removeTableType(typeId: number): void {
+    this.setTableTypes(this.types.filter((t) => t.id !== typeId));
+  }
+
+  private setTableTypes(types: ReadonlyArray<TableType>): void {
     this.edit(() => {
       this.evaluation.resetChanges();
-      const before = this.types;
-      const regions = this.regions.map((region) => retypedRegion(region, before, types));
-      regions.forEach((region, i) => {
-        if (region !== this.regions[i]) this.evaluation.replaceRegion(i, region);
+      this.regions = this.regions.map((region, i) => {
+        const retyped = retypedRegion(region, this.types, types);
+        if (retyped !== region) this.evaluation.replaceRegion(i, retyped);
+        return retyped;
       });
-      if (regions.some((region, i) => region !== this.regions[i])) this.regions = regions;
       this.types = types;
       this.afterChange(true);
     });
@@ -757,7 +769,7 @@ export class PlanService implements IPlanService {
       planId,
       (plan) => {
         const { tables } = plan.footprint;
-        const added = typedTable(numberedTable(tables, id, table), this.types);
+        const added = { ...table, id, number: lowestFreeTableNumber(tables) };
         return { ...plan, footprint: { ...plan.footprint, tables: [...tables, added] } };
       },
       true,
@@ -765,7 +777,7 @@ export class PlanService implements IPlanService {
     return id;
   }
 
-  updateTable(planId: string, tableId: string, patch: TablePatch): void {
+  updateTable(planId: string, tableId: string, patch: Partial<TableInput>): void {
     this.editRegion(
       planId,
       (plan) => ({

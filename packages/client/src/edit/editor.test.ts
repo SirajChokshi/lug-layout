@@ -77,7 +77,6 @@ import {
   shardName,
   worldHeader,
   worldManifest,
-  WorldManifestV2,
   type ConsistRecordV1,
   type LayerRecordV2,
   type NoteRecordV2,
@@ -138,7 +137,6 @@ import {
   SIM_CLIENT,
   SNAP_SHAPES,
   SPARSE_CONNECTOR_FINDER,
-  TABLE_LIBRARY,
   TRAIN_PLAY,
   WORLD_SESSION,
 } from "../tokens.ts";
@@ -5226,35 +5224,27 @@ it("draws and resizes a table on the 8-stud grid, checks a user's model against 
   expect({ ...state(), redo: editor.snapshot().history.redo }).toEqual({ ...removed, redo: null });
 }, 120_000);
 
-it("places library tables a quarter turn at a time with their corner on the 8-stud grid, numbered and counted against those owned, checks a user's model across their seam, resizes them with their type, and saves and reopens them with the world", async () => {
+it("places library tables a quarter turn at a time with their corner on the 8-stud grid, numbered and counted against those owned, checks a user's model across their seam, and resizes and removes them with their type, each one undo step", async () => {
   const userModel = "brick-2x4";
-  const repository = new MemoryRepository();
   const { editor, backend, catalog, container } = await startEditor(
     [],
     new BundleDirectoryFetcher(),
     [userModel],
-    (bound) => bound.rebind(WORLD_REPOSITORY).toConstantValue(repository),
   );
   const plans = container.get(PLAN_SERVICE);
-  const library = container.get(TABLE_LIBRARY);
   const brick = `omr:${userModel}`;
   await loadCatalogItem(catalog, brick);
   const place = placer(editor, backend);
-  expect(await editor.newWorld("Show")).toBe(true);
-  const showId = editor.snapshot().world?.id ?? "";
   const stamp = (x: number, z: number): void => {
     backend.aim(x, z);
     editor.pointerMove(0, 0);
     editor.dragStart(0, 0);
     editor.dragEnd(0, 0, 0);
   };
-  const tables = () => {
-    const planId = plans.activePlanId();
-    if (planId === null) return [];
-    return plans
-      .regionView(planId)
+  const tables = () =>
+    plans
+      .regionView(plans.activePlanId() ?? "")
       .tables.map(({ number, typeId, surface }) => ({ number, typeId, ...surface }));
-  };
   const issues = async () => {
     const planId = plans.activePlanId() ?? "";
     await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
@@ -5263,9 +5253,7 @@ it("places library tables a quarter turn at a time with their corner on the 8-st
       .map((issue) => issue.rule)
       .filter((rule) => rule !== "bomMapping");
   };
-  const counted = () =>
-    library.usage(plans.activePlanId()).map(({ placed, short }) => ({ placed, short }));
-  const added = library.addType({
+  const added = plans.addTableType({
     name: "Club board",
     widthMm: 1280,
     depthMm: 640,
@@ -5284,7 +5272,6 @@ it("places library tables a quarter turn at a time with their corner on the 8-st
   const armed = editor.snapshot();
   const placed = {
     tables: tables(),
-    counted: counted(),
     armed: armed.armedTable,
     mode: armed.mode,
     title: toolHints(armed).title,
@@ -5305,7 +5292,7 @@ it("places library tables a quarter turn at a time with their corner on the 8-st
   editor.armTableType(typeId);
   stamp(4800, 800);
   const replaced = { tables: tables(), issues: await issues() };
-  library.updateType(typeId, { widthMm: 1600 });
+  plans.updateTableType(typeId, { widthMm: 1600 });
   const resized = {
     tables: tables(),
     footprint: plans
@@ -5315,23 +5302,9 @@ it("places library tables a quarter turn at a time with their corner on the 8-st
   };
   editor.undo(0);
   const unresized = tables();
-  await vi.waitFor(async () => {
-    const saved = await repository.read(showId);
-    const numbers = saved.ok
-      ? saved.value.manifest.plans?.[0]?.footprint.tables.map((table) => table.number)
-      : [];
-    expect(numbers).toEqual([1, 3, 2]);
-  });
-  const stored = await repository.read(showId);
-  const manifest = stored.ok ? stored.value.manifest : null;
-  expect(await editor.newWorld("Other")).toBe(true);
-  const elsewhere = { tables: tables(), types: library.types().length };
-  expect(await editor.openWorld(showId)).toBe(true);
-  const reopened = { tables: tables(), types: library.types(), issues: await issues() };
-  library.removeType(typeId);
-  const untyped = { tables: tables(), counted: counted() };
+  plans.removeTableType(typeId);
+  const untyped = tables();
   editor.undo(0);
-  const retyped = tables();
 
   const board = (number: number, minX: number, minZ: number, maxX: number, maxZ: number) => ({
     number,
@@ -5345,18 +5318,8 @@ it("places library tables a quarter turn at a time with their corner on the 8-st
   const second = board(2, 3200, 0, 6400, 1600);
   const turned = board(3, 0, 1600, 1600, 4800);
   const relaid = [first, turned, second];
-  const clubBoard = {
-    id: typeId,
-    name: "Club board",
-    widthMm: 1280,
-    depthMm: 640,
-    heightMm: 750,
-    color: "#c8a165",
-    owned: 2,
-  };
   expect(placed).toEqual({
     tables: [first, second, turned],
-    counted: [{ placed: 3, short: 1 }],
     armed: { typeId, turn: 1, name: "Club board", widthMm: 640, depthMm: 1280 },
     mode: "table",
     title: "Placing Club board",
@@ -5380,30 +5343,8 @@ it("places library tables a quarter turn at a time with their corner on the 8-st
     footprint: ['Tables "Table 1" and "Table 2" overlap.'],
   });
   expect(unresized).toEqual(relaid);
-  expect(manifest && decode(WorldManifestV2, manifest).ok).toBe(true);
-  expect(manifest?.tableTypes).toEqual([clubBoard]);
-  expect(
-    manifest?.plans?.[0]?.footprint.tables.map(({ number, type, rect }) => ({
-      number,
-      type,
-      rect,
-    })),
-  ).toEqual([
-    { number: 1, type: typeId, rect: { x: 0, z: 0, width: 1280, depth: 640 } },
-    { number: 3, type: typeId, rect: { x: 0, z: 640, width: 640, depth: 1280 } },
-    { number: 2, type: typeId, rect: { x: 1280, z: 0, width: 1280, depth: 640 } },
-  ]);
-  expect(elsewhere).toEqual({ tables: [], types: 0 });
-  expect(reopened).toEqual({
-    tables: relaid,
-    types: [clubBoard],
-    issues: ["seam"],
-  });
-  expect(untyped).toEqual({
-    tables: relaid.map(({ typeId: _typeId, ...table }) => table),
-    counted: [],
-  });
-  expect(retyped).toEqual(relaid);
+  expect(untyped).toEqual(relaid.map(({ typeId: _typeId, ...table }) => table));
+  expect(tables()).toEqual(relaid);
 }, 240_000);
 
 it("checks a user's model in a two-table plan on plan sync: across the seam, out of reach, loose on a roadway and without catalog ids, and counts only the plan's rows in its parts list", async () => {

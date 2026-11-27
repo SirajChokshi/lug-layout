@@ -156,6 +156,9 @@ function noteWith(index: number, patch: Json): Json {
   return { ...RICH_NOTES, notes: replaced(rows(RICH_NOTES, "notes"), index, patch) };
 }
 
+const MISFIT =
+  "must give each typed table a table type the manifest lists, with its width and depth in either orientation and its height";
+
 const SAME_POINT_RULER = {
   kind: "ruler",
   index: 0,
@@ -336,31 +339,19 @@ describe("world schema v2", () => {
   });
 
   it.each([
-    [
-      "a typed table whose type the manifest doesn't list",
-      tableWith(2, { type: 7 }),
-      "must give each typed table a table type the manifest lists",
-    ],
+    ["a typed table whose type the manifest doesn't list", tableWith(2, { type: 7 }), MISFIT],
     [
       "typed tables but no table types",
       Object.fromEntries(Object.entries(RICH_MANIFEST).filter(([key]) => key !== "tableTypes")),
-      "must give each typed table a table type the manifest lists",
+      MISFIT,
     ],
     [
       "a typed table a stud wider than its type",
       tableWith(0, { rect: { x: 0, z: 0, width: 1532, depth: 762 } }),
-      "must give each typed table its table type's width and depth, in either orientation, and its height",
+      MISFIT,
     ],
-    [
-      "a typed table at another height than its type",
-      tableWith(1, { heightMm: 900 }),
-      "must give each typed table its table type's width and depth, in either orientation, and its height",
-    ],
-    [
-      "an untyped table given a type whose size it doesn't have",
-      tableWith(2, { type: 1 }),
-      "must give each typed table its table type's width and depth, in either orientation, and its height",
-    ],
+    ["a typed table at another height than its type", tableWith(1, { heightMm: 900 }), MISFIT],
+    ["an untyped table given a type whose size it doesn't have", tableWith(2, { type: 1 }), MISFIT],
   ])("rejects a manifest with %s", (_name, value, message) => {
     const decoded = decode(WorldManifestV2, value);
     expect(decoded.ok ? [] : decoded.issues).toContainEqual({ path: "$.plans", message });

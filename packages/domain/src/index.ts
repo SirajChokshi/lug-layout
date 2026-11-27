@@ -197,20 +197,15 @@ export {
   type TableType,
 } from "./plan/plan-region.ts";
 export {
-  TABLE_TURNS,
   lowestFreeTableNumber,
   placedTableCounts,
   retypedRegion,
   tableName,
-  tableTurnOf,
-  tableTypeOf,
   tableTypeRect,
   tableTypeSize,
   turnedTable,
-  untypedTable,
   withTypeKept,
   type TableTurn,
-  type TableTypeSize,
 } from "./plan/table-library.ts";
 export {
   BOX_MAX_X,

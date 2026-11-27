@@ -250,17 +250,10 @@ import {
   type TrackSelectionView,
   type TrainSelectionView,
 } from "./selection.ts";
-import {
-  ANNOTATION_SERVICE,
-  EDITOR_CAMERA,
-  PLAN_SERVICE,
-  TABLE_GROUND,
-  TABLE_LIBRARY,
-} from "../tokens.ts";
+import { ANNOTATION_SERVICE, EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
-import type { ITableLibrary } from "../plan/table-library.ts";
 import {
   appendTrackChange,
   appendViewUpdate,
@@ -1561,7 +1554,6 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
     @inject(ANNOTATION_SERVICE) private readonly annotations: IAnnotationService,
-    @inject(TABLE_LIBRARY) private readonly tableLibrary: ITableLibrary,
     @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
     @inject(EDITOR_FRAME_LOOP) private readonly frames: IEditorFrameLoop,
@@ -1755,11 +1747,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.ground.lay(index.tablePlane);
       this.canvas = canvas;
       this.measure = new MeasureTool(-index.tablePlane.depthBelowTopLdu);
-      this.tables = new TableTool(
-        this.plans,
-        this.tableLibrary,
-        -index.tablePlane.depthBelowTopLdu,
-      );
+      this.tables = new TableTool(this.plans, -index.tablePlane.depthBelowTopLdu);
       this.fillTool = new FillTool(-index.tablePlane.depthBelowTopLdu);
       const catalog = await this.catalog.start(index);
       this.catalogItems = catalog.items;
@@ -4155,7 +4143,7 @@ export class Editor implements IEditor, IEditedWorld {
   private armedTableView(): ArmedTableView | null {
     const armed = this.state.mode === "table" ? (this.tables?.armedTable ?? null) : null;
     if (!armed) return null;
-    const type = this.tableLibrary.types().find((t) => t.id === armed.typeId);
+    const type = this.plans.tableTypes().find((t) => t.id === armed.typeId);
     return type ? { ...armed, name: type.name, ...tableTypeSize(type, armed.turn) } : null;
   }
 

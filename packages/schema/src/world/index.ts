@@ -104,8 +104,6 @@ export {
   tableFitsType,
   worldDocument,
   type LayerKind,
-  type TableSize,
-  type TableTypeSize,
 } from "./document.ts";
 export {
   LegendEntryV2,

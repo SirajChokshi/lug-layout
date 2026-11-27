@@ -596,23 +596,11 @@ footer {
   color: #556;
 }
 
-.table-types {
-  margin: 0 0 var(--space-2);
-  padding: 0;
-  list-style: none;
-}
-
-.table-type {
-  margin-bottom: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-}
-
 .table-swatch {
-  flex: none;
-  width: var(--space-4);
-  height: var(--space-4);
+  display: inline-block;
+  width: var(--space-3);
+  height: var(--space-3);
+  margin-right: var(--space-1);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-xs);
 }
@@ -621,13 +609,6 @@ footer {
   flex: 1;
   min-width: 0;
   font: inherit;
-  padding: 2px 4px;
-}
-
-.table-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 .table-type-new {

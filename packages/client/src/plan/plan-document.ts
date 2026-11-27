@@ -1,4 +1,4 @@
-import type { PlanRegion, PlanState, PlanTable, TableType } from "@brr/domain";
+import type { PlanRegion, PlanState } from "@brr/domain";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { PlanRecordV1 } from "@brr/schema/plan";
 import {
@@ -6,8 +6,6 @@ import {
   OPACITY_PERCENT_MAX,
   type LayerRecordV2,
   type PlanRegionRecordV2,
-  type PlanTableV2,
-  type TableTypeRecordV2,
   type WorldDocument,
 } from "@brr/schema/world";
 
@@ -35,27 +33,13 @@ export function planRecord(region: PlanRegion): PlanRecordV1 {
   };
 }
 
-function tableRecord({ name, rect, heightMm, number, typeId }: PlanTable): PlanTableV2 {
-  return { name, rect, heightMm, number, ...(typeId === undefined ? {} : { type: typeId }) };
-}
-
 function planRegionRecord(region: PlanRegion, layer: number): PlanRegionRecordV2 {
   const record = planRecord(region);
-  return {
-    ...record,
-    footprint: { ...record.footprint, tables: region.footprint.tables.map(tableRecord) },
-    layer,
-  };
-}
-
-function tableTypeRecord(type: TableType): TableTypeRecordV2 {
-  const { id, name, widthMm, depthMm, heightMm, color, owned } = type;
-  return { id, name, widthMm, depthMm, heightMm, color, owned };
-}
-
-function savedTable(record: PlanTableV2, id: string): PlanTable {
-  const { name, rect, heightMm, number, type } = record;
-  return { id, number, name, rect, heightMm, ...(type === undefined ? {} : { typeId: type }) };
+  const tables = region.footprint.tables.map(({ id: _id, typeId, ...table }) => ({
+    ...table,
+    ...(typeId === undefined ? {} : { type: typeId }),
+  }));
+  return { ...record, footprint: { ...record.footprint, tables }, layer };
 }
 
 function savedRegion(record: PlanRegionRecordV2, index: number): PlanRegion {
@@ -69,7 +53,11 @@ function savedRegion(record: PlanRegionRecordV2, index: number): PlanRegion {
     footprint: {
       roomWidthMm: footprint.roomWidthMm,
       roomDepthMm: footprint.roomDepthMm,
-      tables: footprint.tables.map((table, i) => savedTable(table, `${id}-table-${i}`)),
+      tables: footprint.tables.map(({ type, ...table }, i) => ({
+        id: `${id}-table-${i}`,
+        ...table,
+        ...(type === undefined ? {} : { typeId: type }),
+      })),
       obstacles: footprint.obstacles.map(({ name, rect }, obstacle) => ({
         id: `${id}-obstacle-${obstacle}`,
         name,
@@ -130,8 +118,7 @@ function withPlanLayer(layers: ReadonlyArray<LayerRecordV2>): LayerRecordV2[] {
 
 export function withPlanState(document: WorldDocument, state: PlanState): WorldDocument {
   const { plans: stored, activePlan: _storedActive, tableTypes: _storedTypes, ...kept } = document;
-  const typed =
-    state.tableTypes.length === 0 ? {} : { tableTypes: state.tableTypes.map(tableTypeRecord) };
+  const typed = state.tableTypes.length === 0 ? {} : { tableTypes: [...state.tableTypes] };
   if (state.regions.length === 0) return { ...kept, ...typed };
   const layers = withPlanLayer(document.layers);
   const layer = stored?.[0]?.layer ?? layers.find(isPlanLayer)?.id ?? BASE_LAYER_ID;

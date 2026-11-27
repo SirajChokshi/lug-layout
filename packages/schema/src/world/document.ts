@@ -242,29 +242,21 @@ export const TableTypeTableV2 = v.pipe(
   v.check((types) => ascendingIds(types), "must list table type ids in strictly ascending order"),
 );
 
-export interface TableSize {
-  readonly rect: { readonly width: number; readonly depth: number };
-  readonly heightMm: number;
-}
-
-export interface TableTypeSize {
-  readonly widthMm: number;
-  readonly depthMm: number;
-  readonly heightMm: number;
-}
-
-export function tableFitsType(table: TableSize, type: TableTypeSize): boolean {
-  const { width, depth } = table.rect;
-  const along = width === type.widthMm && depth === type.depthMm;
-  const across = width === type.depthMm && depth === type.widthMm;
-  return table.heightMm === type.heightMm && (along || across);
-}
-
 export const PlanTableV2 = v.strictObject(
   { ...PlanTableV1.entries, number: TableNumber, type: v.exactOptional(TableTypeId) },
   strictMessage,
 );
 export type PlanTableV2 = v.InferOutput<typeof PlanTableV2>;
+
+export function tableFitsType(
+  table: Pick<PlanTableV2, "rect" | "heightMm">,
+  type: Pick<TableTypeRecordV2, "widthMm" | "depthMm" | "heightMm">,
+): boolean {
+  const { width, depth } = table.rect;
+  const along = width === type.widthMm && depth === type.depthMm;
+  const across = width === type.depthMm && depth === type.widthMm;
+  return table.heightMm === type.heightMm && (along || across);
+}
 
 function uniqueNumbers(tables: ReadonlyArray<PlanTableV2>): boolean {
   return new Set(tables.map((table) => table.number)).size === tables.length;
@@ -358,24 +350,12 @@ export function activePlanListed(document: Pick<WorldDocument, "plans" | "active
   return document.activePlan === undefined || document.activePlan < (document.plans?.length ?? 0);
 }
 
-type TypedTablesDocument = Pick<WorldDocument, "plans" | "tableTypes">;
-
-function everyTypedTable(
-  document: TypedTablesDocument,
-  test: (table: PlanTableV2, type: TableTypeRecordV2 | undefined) => boolean,
-): boolean {
+export function typedTablesFit(document: Pick<WorldDocument, "plans" | "tableTypes">): boolean {
   const types = new Map((document.tableTypes ?? []).map((type) => [type.id, type]));
   return (document.plans ?? []).every((plan) =>
-    plan.footprint.tables.every(
-      (table) => table.type === undefined || test(table, types.get(table.type)),
-    ),
+    plan.footprint.tables.every((table) => {
+      const type = table.type === undefined ? undefined : types.get(table.type);
+      return table.type === undefined || (type !== undefined && tableFitsType(table, type));
+    }),
   );
-}
-
-export function typedTablesListed(document: TypedTablesDocument): boolean {
-  return everyTypedTable(document, (_table, type) => type !== undefined);
-}
-
-export function typedTablesFit(document: TypedTablesDocument): boolean {
-  return everyTypedTable(document, (table, type) => !type || tableFitsType(table, type));
 }
