@@ -50,10 +50,12 @@ import { PLAN_SERVICE, SNAP_SHAPES } from "../tokens.ts";
 import { fixtureModel, fixtureModelChecks } from "./fixture-model.test-support.ts";
 import { partPlaceable, type Placeable } from "./placeable.ts";
 import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
+import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
 import {
   TrackDrawing,
   type ClosureState,
   type TrackBlockView,
+  type TrackCarrier,
   type TrackDragView,
   type TrackEndView,
   type TrackFootprint,
@@ -1885,6 +1887,71 @@ it("judges track carried in a run frame at its framed pose: the frame's offset p
   expect(unsupportedOf(layout)).toEqual([{ piece: 0, on: plate.placeable.label }]);
 });
 
+const RAMP_UP_PLATES = 3;
+const BRICK_FLOOR_STEP_STUDS = 2;
+const BRICK_FLOOR_MARGIN_STUDS = 6;
+
+function endStuds(pose: Pose16) {
+  return zeta16ToStuds(pose.position);
+}
+
+function floorFrom(studs: ReadonlyArray<number>): number {
+  return Math.floor(Math.min(...studs)) - BRICK_FLOOR_MARGIN_STUDS;
+}
+
+function floorTo(studs: ReadonlyArray<number>): number {
+  return Math.ceil(Math.max(...studs)) + BRICK_FLOOR_MARGIN_STUDS;
+}
+
+function brickFloor(brick: Placeable, ends: ReadonlyArray<Pose16>): GroundItem[] {
+  const xs = ends.map((end) => endStuds(end).x);
+  const zs = ends.map((end) => endStuds(end).z);
+  const items: GroundItem[] = [];
+  for (let x = floorFrom(xs); x <= floorTo(xs); x += BRICK_FLOOR_STEP_STUDS) {
+    for (let z = floorFrom(zs); z <= floorTo(zs); z += BRICK_FLOOR_STEP_STUDS) {
+      items.push({ placeable: brick, x: x * STUD_LDU, z: z * STUD_LDU });
+    }
+  }
+  return items;
+}
+
+it("rests a ramp's end on the level piece it joins while that piece is held, and on studs at that end's height without one, and tilts it otherwise", async () => {
+  const [baseplate, brick] = await Promise.all([
+    loosePart(GROUND_BASEPLATE),
+    fixtureModel(CUSTOM_BRICK),
+  ]);
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  layout.setSupport(await kitSupport(layout));
+  const onBaseplate: GroundItem = { placeable: baseplate, x: 0, z: 0 };
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const ramp = layAt(layout, studPose(-4, 0, 0), 0, RAMP_UP_PLATES);
+  const highEnd = layout.endPoses().find((_, end) => layout.endHeight(end) === RAMP_UP_PLATES);
+  if (!highEnd) throw new Error("the ramp has no open end at its top");
+  layout.applyTrack(layout.pieceChange(straight, highEnd, RAMP_UP_PLATES));
+  const level = ramp + 1;
+  const levelEnds = [0, 1].map((c) => layout.connectorPose(straight, highEnd, c));
+  const verdicts = (items: ReadonlyArray<GroundItem>) => {
+    layout.setBands(bandsOver(placeGround(items), layout));
+    return layout.unsupportedPieces();
+  };
+
+  const onBricks = verdicts([onBaseplate, ...brickFloor(brick, levelEnds)]);
+  const overAir = verdicts([onBaseplate]);
+  layout.applyTrack(layout.removal(level));
+  const rampAlone = verdicts([onBaseplate]);
+  const onStudsAlone = verdicts([onBaseplate, ...brickFloor(brick, [highEnd])]);
+
+  expect(layout.openEnds()).toHaveLength(2);
+  expect(onBricks).toEqual([]);
+  expect(overAir).toEqual([
+    { piece: level, block: null, tilted: false },
+    { piece: ramp, block: null, tilted: true },
+  ]);
+  expect(rampAlone).toEqual([{ piece: ramp, block: null, tilted: true }]);
+  expect(onStudsAlone).toEqual([]);
+});
+
 const REACH_SEED = 581;
 const REACH_LAYOUTS = 160;
 const REACH_TILES = 4;
@@ -2834,6 +2901,10 @@ const GRAPH_STEPS = 48;
 const LAY_CHANCE = 0.4;
 const LIFT_CHANCE = 0.6;
 const RELAY_CHANCE = 0.75;
+const THROW_CHANCE = 0.85;
+const OFF_THE_GROUND_CHANCE = 0.35;
+const GRAPH_HEIGHTS = [0, 3];
+const GRAPH_RISES = [0, 2, 3];
 const MOST_HELD = 4;
 const HELD_SPREAD_STUDS = 24;
 const RUN_FRAME = { id: 1, xLdu: 7.5, zLdu: 3.25 };
@@ -2865,11 +2936,23 @@ function graphArrays(graph: TrackGraph) {
   };
 }
 
-it("plays the rails on the graph of exactly the layout it hands them, after every lay, lift, re-lay and change of carried track", async () => {
+it("plays the rails on the graph of exactly the layout it hands them, after every lay, lift, re-lay, throw, raised piece, ramp and change of carried track", async () => {
   const bundle = await trackAndRoadBundle();
-  const seen = { joined: 0, switches: 0, held: 0, lifted: 0, relaid: 0 };
+  const seen = {
+    joined: 0,
+    switches: 0,
+    held: 0,
+    heldRaised: 0,
+    lifted: 0,
+    relaid: 0,
+    thrown: 0,
+    raised: 0,
+    ramps: 0,
+  };
   for (const seed of GRAPH_SEEDS) {
     const random = seeded(seed);
+    const pick = (values: ReadonlyArray<number>): number =>
+      values[Math.floor(random() * values.length)] ?? 0;
     const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
     const curve = placeableIndex(layout, NINE_VOLT_CURVE);
@@ -2883,7 +2966,12 @@ it("plays the rails on the graph of exactly the layout it hands them, after ever
         const at = ends[Math.floor(random() * ends.length)] ?? studPose(0, 0, 0);
         const piece = pieces[Math.floor(random() * pieces.length)] ?? straight;
         const count = 1 + Math.floor(random() * 3);
-        if (piece === switchPiece) layout.applyTrack(layout.pieceChange(piece, at, 0));
+        if (random() < OFF_THE_GROUND_CHANCE) {
+          const rise = pick(GRAPH_RISES);
+          layAt(layout, at, pick(GRAPH_HEIGHTS), rise);
+          if (rise === 0) seen.raised++;
+          else seen.ramps++;
+        } else if (piece === switchPiece) layout.applyTrack(layout.pieceChange(piece, at, 0));
         else if (piece === straight) layRun(layout, at, [{ kind: "straight", count }]);
         else layRun(layout, at, [{ kind: "turn", sign: random() < 0.5 ? 1 : -1, curves: count }]);
       } else if (roll < LIFT_CHANCE) {
@@ -2900,6 +2988,16 @@ it("plays the rails on the graph of exactly the layout it hands them, after ever
           });
           seen.relaid++;
         }
+      } else if (roll < THROW_CHANCE) {
+        const switches = Array.from({ length: layout.pieceCount }, (_, p) => p).filter(
+          (p) => layout.switchThrow(p) !== null,
+        );
+        const chosen = switches[Math.floor(random() * switches.length)];
+        const thrown = chosen === undefined ? null : layout.switchThrow(chosen);
+        if (thrown) {
+          layout.applyTrack(thrown.change);
+          seen.thrown++;
+        }
       } else {
         const count = Math.floor(random() * MOST_HELD);
         const held = Array.from({ length: count }, (_, instance) => ({
@@ -2909,12 +3007,13 @@ it("plays the rails on the graph of exactly the layout it hands them, after ever
             Math.floor(random() * HELD_SPREAD_STUDS) - HELD_SPREAD_STUDS / 2,
             Math.floor(random() * 4) * 4,
           ),
-          yPlates: 0,
+          yPlates: pick(GRAPH_HEIGHTS),
           instance,
           frame: random() < 0.5 ? WORLD_TRACK_FRAME : RUN_FRAME,
         }));
         layout.syncHeld(held, count === 0 ? [] : [carrierAtOrigin(count)]);
         seen.held += count;
+        seen.heldRaised += held.filter((piece) => piece.yPlates > 0).length;
       }
       const play = layout.playTrack();
       expect(graphArrays(play.graph), `seed ${seed}, step ${step}`).toEqual(
@@ -2925,9 +3024,310 @@ it("plays the rails on the graph of exactly the layout it hands them, after ever
     }
   }
 
-  expect(seen.joined).toBeGreaterThan(0);
-  expect(seen.switches).toBeGreaterThan(0);
-  expect(seen.held).toBeGreaterThan(0);
-  expect(seen.lifted).toBeGreaterThan(0);
-  expect(seen.relaid).toBeGreaterThan(0);
+  expect(Object.entries(seen).filter(([, count]) => count === 0)).toEqual([]);
 });
+
+const SIBLING_SEEDS = [21, 22, 23];
+const SIBLING_STEPS = 40;
+const SIBLING_STEP_KINDS = [
+  "lay",
+  "lay",
+  "ramp",
+  "ramp",
+  "raised",
+  "lift",
+  "relay",
+  "throw",
+  "held",
+  "bands",
+  "pending",
+  "support",
+] as const;
+const RAMP_RISES = [3, -3, 2];
+const TRACK_HEIGHTS = [0, 3, 6];
+const GROUND_SPREAD_STUDS = 32;
+const MOST_BRICKS = 6;
+const FLOOR_HALF_STUDS = 8;
+const REVISIT_CHANCE = 0.5;
+const SAMPLE_POSES = [
+  studPose(0, 0, 0),
+  studPose(8, 8, 4),
+  studPose(-12, 4, 2),
+  studPose(4, -16, 0),
+];
+const BRICK_SAMPLE_SPOTS: ReadonlyArray<StudPoint> = [
+  [0, 0],
+  [12, -8],
+  [-20, 16],
+];
+
+type SiblingStep = (typeof SIBLING_STEP_KINDS)[number];
+
+function cachedBands(ground: ReadonlyArray<PlacedModel>, layout: TrackDrawing): SupportBandAt {
+  const source = bandsOver(ground, layout);
+  const made = new Map<string, SupportBand>();
+  return (lowPlates, highPlates, reach) => {
+    const key = `${lowPlates}:${highPlates}`;
+    const known = made.get(key) ?? source(lowPlates, highPlates, reach);
+    made.set(key, known);
+    return known;
+  };
+}
+
+function pendingAs(bands: SupportBandAt, pending: boolean): SupportBandAt {
+  return pending ? (low, high, reach) => ({ ...bands(low, high, reach), pending: true }) : bands;
+}
+
+function standingModel(box: WorldBox) {
+  const rect = Float64Array.of(box.minX, box.minZ, box.maxX, box.maxZ);
+  const heightLdu = box.maxY - box.minY;
+  return (bottomLdu: number, bandTopLdu: number) => {
+    const meets = 0 < bandTopLdu && bottomLdu < heightLdu;
+    return { rects: rect, floats: meets ? rect.length : 0 };
+  };
+}
+
+function heightsInUse(layout: TrackDrawing, held: ReadonlyArray<{ yPlates: number }>): number[] {
+  const heights = new Set(held.map((piece) => piece.yPlates));
+  for (let p = 0; p < layout.pieceCount; p++) {
+    const { yPlates, rise } = layout.laidPiece(p);
+    heights.add(yPlates).add(yPlates + rise);
+  }
+  return [...heights].toSorted((a, b) => a - b);
+}
+
+it(
+  "judges support and reports ends, raised pieces and low clearance as a freshly built drawing would, after every step of generated lays, lifts, throws, ramps, carried track, band swaps and returns, and support swaps",
+  async () => {
+    const bundle = await trackAndRoadBundle();
+    const colors = new ColorTable(bundle);
+    const [baseplate, brick] = await Promise.all([
+      loosePart(GROUND_BASEPLATE),
+      fixtureModel(CUSTOM_BRICK),
+    ]);
+    const brickSamples = placeGround(
+      BRICK_SAMPLE_SPOTS.map(([x, z]) => ({ placeable: brick, x: x * STUD_LDU, z: z * STUD_LDU })),
+    ).map((model) => standingModel(model.box));
+    const seen = {
+      appeared: 0,
+      disappeared: 0,
+      brickBlocks: 0,
+      rampsResting: 0,
+      rampsTilted: 0,
+      pending: 0,
+      groundsRevisited: 0,
+      throws: 0,
+      runFrameHeld: 0,
+      supportSwaps: 0,
+    };
+    for (const seed of SIBLING_SEEDS) {
+      const random = seeded(seed);
+      const pick = <T>(values: ReadonlyArray<T>, fallback: T): T =>
+        values[Math.floor(random() * values.length)] ?? fallback;
+      const live = new TrackDrawing(bundle, bundle.parts, colors);
+      const supports = [await kitSupport(live), await kitSupport(live)];
+      const straight = placeableIndex(live, NINE_VOLT_STRAIGHT);
+      const curve = placeableIndex(live, NINE_VOLT_CURVE);
+      const switchPiece = placeableIndex(live, RIGHT_SWITCH);
+      const randomGround = () => {
+        const floorX = Math.floor((random() - 0.5) * FLOOR_HALF_STUDS);
+        const floorZ = Math.floor((random() - 0.5) * FLOOR_HALF_STUDS);
+        return placeGround([
+          {
+            placeable: baseplate,
+            x: (Math.floor(random() * 3) - 1) * GROUND_SPREAD_STUDS * STUD_LDU,
+            z: 0,
+          },
+          ...brickFloor(brick, [
+            studPose(floorX - FLOOR_HALF_STUDS, floorZ - FLOOR_HALF_STUDS, 0),
+            studPose(floorX + FLOOR_HALF_STUDS, floorZ + FLOOR_HALF_STUDS, 0),
+          ]),
+          ...Array.from({ length: 1 + Math.floor(random() * MOST_BRICKS) }, () => ({
+            placeable: brick,
+            x: 2 * Math.floor((random() - 0.5) * GROUND_SPREAD_STUDS) * STUD_LDU,
+            z: 2 * Math.floor((random() - 0.5) * GROUND_SPREAD_STUDS) * STUD_LDU,
+            yPlates: pick(TRACK_HEIGHTS, 0),
+          })),
+        ]);
+      };
+      let support = supports[0] ?? (await kitSupport(live));
+      let ground = randomGround();
+      let pending = false;
+      let groundBands = cachedBands(ground, live);
+      let previousGround = { ground, groundBands };
+      let bands = groundBands;
+      let held: ReadonlyArray<FramedTrackPiece> = [];
+      let carriers: ReadonlyArray<TrackCarrier> = [];
+      let previousUnsupported = -1;
+      const lifted: Array<ReturnType<TrackDrawing["laidPiece"]>> = [];
+      live.setSupport(support);
+      live.setTallestTrain(MY_TRAIN);
+      live.setBands(bands);
+      for (let step = 0; step < SIBLING_STEPS; step++) {
+        const kind: SiblingStep = live.pieceCount === 0 ? "lay" : pick(SIBLING_STEP_KINDS, "lay");
+        const ends = live.endPoses();
+        const end = Math.floor(random() * ends.length);
+        const at = ends[end] ?? studPose(0, 0, 0);
+        const atPlates = ends.length === 0 ? 0 : live.endHeight(end);
+        switch (kind) {
+          case "lay": {
+            const piece = pick([straight, curve, switchPiece], straight);
+            live.applyTrack(live.pieceChange(piece, at, atPlates));
+            break;
+          }
+          case "ramp": {
+            const rise = pick(
+              RAMP_RISES.filter((r) => atPlates + r >= 0),
+              2,
+            );
+            live.applyTrack({
+              lift: [],
+              lay: [
+                {
+                  index: live.pieceCount,
+                  piece: pick([straight, curve], straight),
+                  pose: at,
+                  yPlates: atPlates,
+                  rise,
+                },
+              ],
+            });
+            break;
+          }
+          case "raised": {
+            const pose = studPose(
+              Math.floor((random() - 0.5) * GROUND_SPREAD_STUDS),
+              Math.floor((random() - 0.5) * GROUND_SPREAD_STUDS),
+              Math.floor(random() * 4) * 4,
+            );
+            live.applyTrack(
+              live.pieceChange(pick([straight, curve], straight), pose, pick(TRACK_HEIGHTS, 0)),
+            );
+            break;
+          }
+          case "lift": {
+            const piece = live.laidPiece(Math.floor(random() * live.pieceCount));
+            live.applyTrack({ lift: [piece], lay: [] });
+            lifted.push(piece);
+            break;
+          }
+          case "relay": {
+            const piece = lifted.pop();
+            if (piece) {
+              live.applyTrack({
+                lift: [],
+                lay: [{ ...piece, index: Math.min(piece.index, live.pieceCount) }],
+              });
+            }
+            break;
+          }
+          case "throw": {
+            for (let p = 0; p < live.pieceCount; p++) {
+              const thrown = live.switchThrow(p);
+              if (!thrown) continue;
+              live.applyTrack(thrown.change);
+              seen.throws++;
+              break;
+            }
+            break;
+          }
+          case "held": {
+            const count = Math.floor(random() * MOST_HELD);
+            held = Array.from({ length: count }, (_, instance) => ({
+              catalogIndex: pick([straight, curve], straight),
+              placement: studPose(
+                Math.floor(random() * HELD_SPREAD_STUDS) - HELD_SPREAD_STUDS / 2,
+                Math.floor(random() * HELD_SPREAD_STUDS) - HELD_SPREAD_STUDS / 2,
+                Math.floor(random() * 4) * 4,
+              ),
+              yPlates: pick(TRACK_HEIGHTS, 0),
+              instance,
+              frame: random() < 0.5 ? WORLD_TRACK_FRAME : RUN_FRAME,
+            }));
+            carriers = count === 0 ? [] : [carrierAtOrigin(count)];
+            live.syncHeld(held, carriers);
+            seen.runFrameHeld += held.filter((piece) => piece.frame === RUN_FRAME).length;
+            break;
+          }
+          case "bands": {
+            const current = { ground, groundBands };
+            if (random() < REVISIT_CHANCE) {
+              ({ ground, groundBands } = previousGround);
+              seen.groundsRevisited++;
+            } else {
+              ground = randomGround();
+              groundBands = cachedBands(ground, live);
+            }
+            previousGround = current;
+            bands = pendingAs(groundBands, pending);
+            live.setBands(bands);
+            break;
+          }
+          case "pending": {
+            pending = !pending;
+            bands = pendingAs(groundBands, pending);
+            live.setBands(bands);
+            break;
+          }
+          case "support": {
+            support = support === supports[0] ? (supports[1] ?? support) : (supports[0] ?? support);
+            live.setSupport(support);
+            seen.supportSwaps++;
+            break;
+          }
+          default: {
+            const unplanned: never = kind;
+            throw new Error(`unplanned step ${String(unplanned)}`);
+          }
+        }
+        const fresh = new TrackDrawing(bundle, bundle.parts, colors);
+        fresh.setSupport(support);
+        fresh.setTallestTrain(MY_TRAIN);
+        fresh.setBands(bands);
+        fresh.applyTrack({
+          lift: [],
+          lay: Array.from({ length: live.pieceCount }, (_, p) => live.laidPiece(p)),
+        });
+        fresh.syncHeld(held, carriers);
+        const heights = heightsInUse(live, held);
+        const observe = (layout: TrackDrawing) => ({
+          unsupported: layout.unsupportedPieces(),
+          openEnds: layout.openEnds(),
+          endPoses: layout.endPoses(),
+          gaps: layout.gaps(),
+          levers: layout.switchLevers(),
+          raised: layout.raisedCount(),
+          lowClearances: layout.lowClearances(),
+          pieceBlocks: heights.flatMap((yPlates) =>
+            SAMPLE_POSES.map((pose) => layout.pieceBlock(straight, pose, yPlates)),
+          ),
+          modelBlocks: brickSamples.map((sample) =>
+            layout.modelBlocker(sample, [], new Set(), new Set()),
+          ),
+        });
+        const now = observe(live);
+        expect(now, `seed ${seed}, step ${step}, ${kind}`).toEqual(observe(fresh));
+
+        const unsupported = now.unsupported;
+        if (unsupported === null) seen.pending++;
+        else {
+          if (previousUnsupported >= 0 && unsupported.length > previousUnsupported) seen.appeared++;
+          if (previousUnsupported >= 0 && unsupported.length < previousUnsupported)
+            seen.disappeared++;
+          previousUnsupported = unsupported.length;
+          const listed = new Set(unsupported.map(({ piece }) => piece));
+          seen.rampsTilted += unsupported.filter(({ tilted }) => tilted).length;
+          for (let p = 0; p < live.pieceCount; p++) {
+            if (live.laidPiece(p).rise !== 0 && !listed.has(p)) seen.rampsResting++;
+          }
+        }
+        seen.brickBlocks += now.pieceBlocks.filter(
+          (block) => block?.kind === "model" && block.label === CUSTOM_BRICK,
+        ).length;
+      }
+    }
+
+    expect(Object.entries(seen).filter(([, count]) => count === 0)).toEqual([]);
+  },
+  SWEEP_TIMEOUT_MS,
+);
