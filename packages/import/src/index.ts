@@ -45,6 +45,13 @@ export {
   type BlueBrickNotes,
 } from "./bluebrick-notes.ts";
 export {
+  relayBlueBrickTrack,
+  type BlueBrickTrack,
+  type BlueBrickTrackComponent,
+  type BlueBrickTrackIssue,
+  type BlueBrickTrackPiece,
+} from "./bluebrick-track.ts";
+export {
   importStudioFile,
   MirrorPartExists,
   prepareStudioImport,
