@@ -2,8 +2,10 @@ import type {
   BillOfMaterials,
   BomScope,
   CatalogBom,
+  HiddenLayerParts,
   IBomService,
   IBomSource,
+  ILayerService,
   IPlanService,
   IOwnedParts,
   PlacementRegion,
@@ -13,6 +15,7 @@ import { useState } from "react";
 import { usePlanVersion } from "./use-plan-version.ts";
 import { OwnVsBuy } from "./own-vs-buy.tsx";
 import { PartsListDownloads } from "./parts-list-downloads.tsx";
+import { useLayers } from "./use-layers.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -23,6 +26,33 @@ interface BomPanelProps {
   readonly region: PlacementRegion | null;
   readonly selectionLabel: string | null;
   readonly plans: IPlanService | null;
+  readonly layers: ILayerService | null;
+}
+
+function HiddenLayersOption({
+  layers,
+  hidden,
+  onChange,
+}: {
+  readonly layers: ILayerService;
+  readonly hidden: HiddenLayerParts;
+  readonly onChange: (hidden: HiddenLayerParts) => void;
+}) {
+  const { table } = useLayers(layers);
+  const count = table.layers.filter((layer) => layer.kind === "parts" && !layer.visible).length;
+  return (
+    <label
+      className="bom-hidden-layers"
+      title="Hidden layers still hold real parts; leave them out to list only what's shown"
+    >
+      <input
+        type="checkbox"
+        checked={hidden === "include"}
+        onChange={(event) => onChange(event.currentTarget.checked ? "include" : "exclude")}
+      />
+      Include hidden layers ({count} hidden)
+    </label>
+  );
 }
 
 const REGION_FIELDS = ["minX", "minZ", "maxX", "maxZ"] as const;
@@ -54,7 +84,7 @@ function regionOf(draft: RegionDraft): PlacementRegion | string {
   return { minX, minZ, maxX, maxZ };
 }
 
-function fileStem(bom: BillOfMaterials): string {
+function scopeStem(bom: BillOfMaterials): string {
   const { scope } = bom;
   switch (scope.kind) {
     case "world":
@@ -70,6 +100,11 @@ function fileStem(bom: BillOfMaterials): string {
       throw new Error(`unhandled scope ${String(unhandled)}`);
     }
   }
+}
+
+function fileStem(bom: BillOfMaterials): string {
+  const stem = scopeStem(bom);
+  return bom.hiddenLayers === "exclude" ? `${stem}.shown-layers` : stem;
 }
 
 function catalogText(catalog: CatalogBom): string {
@@ -137,12 +172,14 @@ export function BomPanel({
   region,
   selectionLabel,
   plans,
+  layers,
 }: BomPanelProps) {
   usePlanVersion(plans);
   const plan = activePlanOf(plans);
   const [chosenKind, setScopeKind] = useState<BomScope["kind"]>(region ? "region" : "world");
   const scopeKind = chosenKind === "plan" && !plan ? "world" : chosenKind;
   const [draft, setDraft] = useState<RegionDraft>(() => draftOf(region));
+  const [hidden, setHidden] = useState<HiddenLayerParts>("include");
   const [bom, setBom] = useState<BillOfMaterials | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -153,7 +190,9 @@ export function BomPanel({
       setError(scope);
       return;
     }
-    service.billOfMaterials(source, scope).then(setBom, (e: unknown) => setError(String(e)));
+    service
+      .billOfMaterials(source, scope, hidden)
+      .then(setBom, (e: unknown) => setError(String(e)));
   };
 
   return (
@@ -221,6 +260,7 @@ export function BomPanel({
         </div>
       )}
       <div className="bom-controls">
+        {layers && <HiddenLayersOption layers={layers} hidden={hidden} onChange={setHidden} />}
         <button type="button" onClick={build}>
           Build parts list
         </button>
@@ -231,7 +271,10 @@ export function BomPanel({
           <dl>
             <div>
               <dt>Placements</dt>
-              <dd>{integer.format(bom.placements)}</dd>
+              <dd>
+                {integer.format(bom.placements)}
+                {bom.hiddenLayers === "exclude" ? " (hidden layers left out)" : ""}
+              </dd>
             </div>
             <div>
               <dt>Parts (LDraw part × colour lines)</dt>

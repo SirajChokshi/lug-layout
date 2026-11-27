@@ -8,6 +8,7 @@ import {
   HOTBAR,
   IMPORT_SCENE,
   LAYOUT_SIZE,
+  LAYER_SERVICE,
   mainThreadModules,
   MODEL_SCENE,
   OWNED_PARTS,
@@ -154,6 +155,7 @@ function root(): ReactNode {
         scaleBar={container.get(SCALE_BAR)}
         plans={container.get(PLAN_SERVICE)}
         annotations={container.get(ANNOTATION_SERVICE)}
+        layers={container.get(LAYER_SERVICE)}
         sheets={container.get(PLAN_SHEET_SERVICE)}
         sheetSets={container.get(SHEET_SETS)}
         events={container.get(EVENT_DETAILS)}

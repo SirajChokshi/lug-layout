@@ -12,6 +12,7 @@ import {
   type IEventDetails,
   type IHotbar,
   type ILayoutSize,
+  type ILayerService,
   type IOwnedParts,
   type IPalette,
   type IPanelLayout,
@@ -32,6 +33,7 @@ import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import { EditorFooter, EditorHud, PlacementToolbar, SelectionPanel } from "./editor-panels.tsx";
 import { EventPanel } from "./event-panel.tsx";
+import { LayersPanel } from "./layers-panel.tsx";
 import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
@@ -68,6 +70,7 @@ interface EditorAppProps {
   readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
   readonly annotations: IAnnotationService;
+  readonly layers: ILayerService;
   readonly sheets: IPlanSheetService;
   readonly sheetSets: ISheetSets;
   readonly events: IEventDetails;
@@ -165,6 +168,7 @@ export function EditorApp({
   scaleBar,
   plans,
   annotations,
+  layers,
   sheets,
   sheetSets,
   events,
@@ -265,9 +269,11 @@ export function EditorApp({
         <SelectionPanel
           editor={editor}
           snapshot={snapshot}
+          layers={layers}
           play={playSnapshot}
           onEditorAction={runAction}
         />
+        <LayersPanel editor={editor} layers={layers} contents={editor.layerContents()} />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}
@@ -302,6 +308,7 @@ export function EditorApp({
             region={null}
             selectionLabel={selectionLabel(snapshot.selection)}
             plans={plans}
+            layers={layers}
           />
         )}
         <EditorHud editor={editor} snapshot={snapshot} panels={panels} />

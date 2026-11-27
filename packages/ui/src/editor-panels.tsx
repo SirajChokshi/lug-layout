@@ -11,6 +11,7 @@ import {
   type EditorActionId,
   type EditorSnapshot,
   type IEditor,
+  type ILayerService,
   type IPanelLayout,
   type LatencySample,
   type MeshCounts,
@@ -26,6 +27,7 @@ import {
 } from "@brr/client";
 import { PLATFORM, shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
+import { MoveToLayerField } from "./layers-panel.tsx";
 import { useId, useRef, useState, type FormEvent } from "react";
 import { TrackPanel } from "./track-panel.tsx";
 import { isCompactLayout } from "./use-compact-layout.ts";
@@ -560,9 +562,11 @@ function selectionMeta(selection: SelectionView, size: string, items: string): s
 export function SelectionPanel({
   editor,
   snapshot,
+  layers,
   play,
   onEditorAction,
 }: PanelProps & {
+  readonly layers: ILayerService;
   readonly play: PlaySnapshot;
   readonly onEditorAction: (id: EditorActionId, eventTimeMs: number) => void;
 }) {
@@ -619,6 +623,12 @@ export function SelectionPanel({
               </output>
             </label>
           </div>
+          <MoveToLayerField
+            editor={editor}
+            layers={layers}
+            members={members}
+            enabled={poseEditable}
+          />
           <span className="selection-field-label" aria-hidden="true">
             Rotation
           </span>
