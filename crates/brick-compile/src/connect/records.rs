@@ -10,6 +10,7 @@ use super::{
 };
 
 const FREE_AXIS: i64 = -1;
+const NO_ROLL: i64 = -1;
 
 pub const CONNECTIVITY_LICENSE: &str = "CC BY-SA 4.0";
 
@@ -141,6 +142,7 @@ pub(super) fn standing(face: &MatingFace) -> (u8, bool, u8) {
 
 pub(super) fn same_receptor(a: &MatingFace, b: &MatingFace) -> bool {
     a.gender == b.gender
+        && a.roll == b.roll
         && a.sections == b.sections
         && a.caps == b.caps
         && a.slide == b.slide
@@ -330,7 +332,7 @@ pub fn record_json(part: &str, license: &str, record: &TierRecord) -> Value {
             section_length.push(section.length);
         }
     }
-    json!({
+    let mut file = json!({
         "part": part,
         "license": license,
         "faces": {
@@ -355,5 +357,13 @@ pub fn record_json(part: &str, license: &str, record: &TierRecord) -> Value {
             "axis": free_axis,
         },
         "unreadable": record.unreadable.iter().copied().map(unreadable_name).collect::<Vec<_>>(),
-    })
+    });
+    if faces.iter().any(|face| face.roll.is_some()) {
+        let roll: Vec<i64> = faces
+            .iter()
+            .map(|face| face.roll.map_or(NO_ROLL, i64::from))
+            .collect();
+        file["faces"]["roll"] = json!(roll);
+    }
+    file
 }

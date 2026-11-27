@@ -2,8 +2,8 @@ use crate::affine::Vec3;
 use crate::identify::sixteenths;
 
 use super::{
-    column, direction_code, Bounding, Connector, Gender, GenericMatch, SectionShape, Shape, Source,
-    Status,
+    column, direction_code, Bounding, Connector, Gender, GenericMatch, Mirror, SectionShape, Shape,
+    Source, Status,
 };
 
 pub const CAP_ROOT: u8 = 1;
@@ -16,6 +16,7 @@ pub const FLARE_JOINS_PREVIOUS: u8 = 3;
 pub const FLARE_JOINS_NEXT: u8 = 4;
 pub const MALE_FINGER: u8 = 5;
 pub const FEMALE_FINGER: u8 = 6;
+pub const BOX: u8 = 7;
 pub const FINGER_RADIUS_UNSTATED: f64 = 0.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -35,6 +36,7 @@ pub struct MatingFace {
     pub axis: Vec3,
     pub sixteenths: Option<[i32; 3]>,
     pub direction: Option<u8>,
+    pub roll: Option<u8>,
     pub sections: Vec<FaceSection>,
     pub caps: u8,
     pub slide: bool,
@@ -117,6 +119,7 @@ impl Cylinder<'_> {
             axis,
             sixteenths: on_grid(origin),
             direction: direction_code(axis),
+            roll: None,
             sections,
             caps,
             slide: self.slide,
@@ -163,7 +166,12 @@ fn on_grid(origin: Vec3) -> Option<[i32; 3]> {
     Some([steps(origin[0])?, steps(origin[1])?, steps(origin[2])?])
 }
 
-fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<MatingFace> {
+fn contact_faces(
+    connector: &Connector,
+    gender: Gender,
+    section: FaceSection,
+    roll: Option<u8>,
+) -> Vec<MatingFace> {
     let direction = column(&connector.placement, 1);
     let axis = match gender {
         Gender::Male => direction,
@@ -183,16 +191,34 @@ fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<Mati
             axis,
             sixteenths: on_grid(origin),
             direction: direction_code(axis),
-            sections: vec![FaceSection {
-                code: ROUND,
-                size: radius,
-                length: 0.0,
-            }],
+            roll,
+            sections: vec![section],
             caps: 0,
             slide: false,
             piece: connector.piece(),
         })
         .collect()
+}
+
+fn box_faces(
+    connector: &Connector,
+    gender: Gender,
+    mirror: Mirror,
+) -> Result<Vec<MatingFace>, Unreadable> {
+    if connector.placement.determinant() < 0.0 {
+        match mirror {
+            Mirror::None => return Ok(Vec::new()),
+            Mirror::CorZ => {}
+            Mirror::Cor | Mirror::CorX | Mirror::CorY => return Err(Unreadable::Generic),
+        }
+    }
+    let roll = direction_code(column(&connector.placement, 0)).ok_or(Unreadable::Generic)?;
+    let section = FaceSection {
+        code: BOX,
+        size: 0.0,
+        length: 0.0,
+    };
+    Ok(contact_faces(connector, gender, section, Some(roll)))
 }
 
 pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable> {
@@ -251,9 +277,22 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
             bounding: Bounding::Cylinder { radius, length },
             matching: Some(GenericMatch::Group),
             free_placement: false,
+            ..
         } if connector.group.is_some() && *length == 0.0 => {
-            return Ok(contact_faces(connector, *gender, *radius))
+            let section = FaceSection {
+                code: ROUND,
+                size: *radius,
+                length: 0.0,
+            };
+            return Ok(contact_faces(connector, *gender, section, None));
         }
+        Shape::Generic {
+            gender,
+            bounding: Bounding::Box { .. },
+            matching: None | Some(GenericMatch::Group),
+            free_placement: false,
+            mirror,
+        } if connector.group.is_some() => return box_faces(connector, *gender, *mirror),
         Shape::Generic { .. } => return Err(Unreadable::Generic),
     };
     let cylinders: Vec<Cylinder> = genders

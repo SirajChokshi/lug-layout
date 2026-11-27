@@ -1,5 +1,5 @@
 use super::{
-    FaceSection, MatingFace, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED,
+    FaceSection, MatingFace, AXLE, BOX, CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED,
     FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 use crate::identify::SIXTEENTHS_PER_LDU;
@@ -366,6 +366,13 @@ impl<'s> Mate<'s> {
     }
 
     fn fit(male: &SnapSection, female: &SnapSection, shared: f64, compares_radii: bool) -> Fit {
+        if male.male.code == BOX || female.female.code == BOX {
+            return if male.male.code == female.female.code {
+                Fit::Touching
+            } else {
+                Fit::Misfit
+            };
+        }
         if interleaves(male.male.code, female.female.code) {
             let exact = shared == male.span && shared == female.span;
             let radii = !compares_radii || radii_agree(male.male.size, female.female.size);

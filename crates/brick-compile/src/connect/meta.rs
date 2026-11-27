@@ -4,8 +4,8 @@ use crate::affine::{Affine, Vec3};
 use crate::pieces::NO_PIECE;
 
 use super::{
-    Bounding, Caps, Connector, Gender, GenericMatch, Grid, Scaling, Section, SectionShape, Shape,
-    Source, Status,
+    Bounding, Caps, Connector, Gender, GenericMatch, Grid, Mirror, Scaling, Section, SectionShape,
+    Shape, Source, Status,
 };
 
 const META_PREFIX: &str = "!LDCAD";
@@ -262,6 +262,20 @@ fn parse_matching(params: &mut Params) -> Result<Option<GenericMatch>, MetaError
     }
 }
 
+fn parse_mirror(params: &mut Params) -> Result<Mirror, MetaError> {
+    let Some(value) = params.take("mirror") else {
+        return Ok(Mirror::None);
+    };
+    match value.to_ascii_lowercase().as_str() {
+        "none" => Ok(Mirror::None),
+        "cor" => Ok(Mirror::Cor),
+        "corx" => Ok(Mirror::CorX),
+        "cory" => Ok(Mirror::CorY),
+        "corz" => Ok(Mirror::CorZ),
+        _ => Err(params.malformed("mirror", &value)),
+    }
+}
+
 fn parse_free_placement(params: &mut Params) -> Result<bool, MetaError> {
     match params.take("placement") {
         None => Ok(false),
@@ -330,6 +344,7 @@ fn meta(params: &mut Params) -> Result<Option<Meta>, MetaError> {
                 bounding: parse_bounding(params)?,
                 matching: parse_matching(params)?,
                 free_placement: parse_free_placement(params)?,
+                mirror: parse_mirror(params)?,
             };
             snap(params, shape)?
         }
@@ -475,6 +490,41 @@ mod tests {
                 slide: true,
                 scaling: Scaling::Fixed,
             }
+        );
+    }
+
+    #[test]
+    fn a_generic_snap_reads_ldcads_mirror_tokens_and_refuses_any_other() {
+        let mirror_of = |line: &str| match only(line).expect("parses").meta {
+            Meta::Snap(Connector {
+                shape: Shape::Generic { mirror, .. },
+                ..
+            }) => mirror,
+            other => panic!("a generic snap, not {other:?}"),
+        };
+        let generic =
+            "0 !LDCAD SNAP_GEN [group=winTrain] [gender=F] [bounding=box 5 32 24] [match=group]";
+        assert_eq!(mirror_of(generic), Mirror::None);
+        for (token, mirror) in [
+            ("none", Mirror::None),
+            ("cor", Mirror::Cor),
+            ("corX", Mirror::CorX),
+            ("corY", Mirror::CorY),
+            ("corZ", Mirror::CorZ),
+        ] {
+            assert_eq!(
+                mirror_of(&format!("{generic} [mirror={token}]")),
+                mirror,
+                "{token}"
+            );
+        }
+        assert_eq!(
+            only(&format!("{generic} [mirror=flip]")),
+            Err(MetaError::Malformed {
+                kind: "SNAP_GEN".to_string(),
+                key: "mirror".to_string(),
+                value: "flip".to_string(),
+            })
         );
     }
 

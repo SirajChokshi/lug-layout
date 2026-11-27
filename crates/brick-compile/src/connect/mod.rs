@@ -21,7 +21,7 @@ use crate::pieces::NO_PIECE;
 
 pub use covered::CoveredFloor;
 pub use faces::{
-    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
+    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, BOX, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
     FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 pub use inferred::{
@@ -115,6 +115,15 @@ pub enum GenericMatch {
     Group,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Mirror {
+    None,
+    Cor,
+    CorX,
+    CorY,
+    CorZ,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Cylinder {
@@ -142,6 +151,7 @@ pub enum Shape {
         bounding: Bounding,
         matching: Option<GenericMatch>,
         free_placement: bool,
+        mirror: Mirror,
     },
 }
 
@@ -761,6 +771,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                         axis: [0.0; 3],
                         sixteenths: None,
                         direction: None,
+                        roll: None,
                         sections: Vec::new(),
                         caps: 0,
                         slide: false,

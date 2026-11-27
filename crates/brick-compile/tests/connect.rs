@@ -7,12 +7,12 @@ use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::compile::stud_primitives_from_table;
 use brick_compile::connect::{
-    mating_faces, Caps, Connector, ConnectorExtractor, CoveredFloor, EntranceClosure, FaceSection,
-    Gender, Grid, IncludeRefusal, InferredFeatures, Issue, MatingFace, MetaError, Openness,
-    PartRecords, PrimitiveConnectors, PrimitiveTable, Section, SectionShape, SectionVocabulary,
-    ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable, Withholding,
-    CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT,
-    FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
+    mating_faces, published_faces, record_json, Caps, Connector, ConnectorExtractor, CoveredFloor,
+    EntranceClosure, Extraction, FaceSection, Gender, Grid, IncludeRefusal, InferredFeatures,
+    Issue, MatingFace, MetaError, Openness, PartRecords, PrimitiveConnectors, PrimitiveTable,
+    Section, SectionShape, SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status,
+    TierRecord, Uninferred, Unreadable, Withholding, BOX, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
+    FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
@@ -2348,6 +2348,184 @@ fn a_group_matched_disc_generic_reads_as_one_contact_face_per_gender() {
             );
         }
     }
+}
+
+type FacePose = (Gender, Option<[i32; 3]>, Option<u8>, Option<u8>);
+
+const PANE_SEAT: &str =
+    "0 !LDCAD SNAP_GEN [group=pane] [gender=F] [bounding=box 5 32 24] [match=group] [pos=4 36 30]";
+
+fn box_faces(connectors: &[Connector]) -> Vec<MatingFace> {
+    faces_of(connectors)
+        .into_iter()
+        .filter(|face| face.sections.iter().any(|section| section.code == BOX))
+        .collect()
+}
+
+fn seat_through(reference: &str, seat: &str) -> Vec<Connector> {
+    let door = format!("0 Door\n1 16 0 0 0 {reference} s\\seat.dat\n");
+    let library = memory(&[("parts/door.dat", &door), ("parts/s/seat.dat", "0 Seat\n")]);
+    let shadow = memory(&[("parts/s/seat.dat", seat)]);
+    ShadowSnaps::new(&library, &shadow)
+        .snaps("parts/door.dat")
+        .connectors
+}
+
+fn only_seat_through(reference: &str, seat: &str) -> Connector {
+    let mut connectors = seat_through(reference, seat);
+    assert_eq!(connectors.len(), 1, "{seat}");
+    connectors.remove(0)
+}
+
+#[test]
+fn a_grouped_box_generic_reads_as_one_contact_face_whose_roll_is_its_frame_x_axis() {
+    let library = pinned("ldraw");
+    let shadow = pinned("ldcad-shadow-bundle");
+    let mut snaps = ShadowSnaps::new(&library, &shadow);
+    let [glass, left_door, right_door] = ["parts/4183.dat", "parts/4181.dat", "parts/4182.dat"]
+        .map(|part| box_faces(&snaps.snaps(part).connectors));
+    let pose = |faces: &[MatingFace]| -> Vec<FacePose> {
+        faces
+            .iter()
+            .map(|face| (face.gender, face.sixteenths, face.direction, face.roll))
+            .collect()
+    };
+    const UP: u8 = 2;
+    const DOWN: u8 = 3;
+    const PLUS_X: u8 = 0;
+    const MINUS_X: u8 = 1;
+    assert_eq!(
+        pose(&glass),
+        vec![(Gender::Male, Some([64, -576, -480]), Some(UP), Some(PLUS_X))]
+    );
+    assert_eq!(
+        pose(&left_door),
+        vec![(
+            Gender::Female,
+            Some([64, -576, -480]),
+            Some(DOWN),
+            Some(PLUS_X)
+        )]
+    );
+    assert_eq!(
+        pose(&right_door),
+        vec![(
+            Gender::Female,
+            Some([-64, -576, -480]),
+            Some(DOWN),
+            Some(MINUS_X)
+        )]
+    );
+    for face in glass.iter().chain(&left_door).chain(&right_door) {
+        assert_eq!(
+            face.sections,
+            vec![FaceSection {
+                code: BOX,
+                size: 0.0,
+                length: 0.0
+            }]
+        );
+        assert_eq!((face.caps, face.slide), (0, false));
+        assert_eq!(face.group.as_deref(), Some("winTrain"));
+    }
+}
+
+#[test]
+fn a_box_generic_is_refused_wherever_its_pose_or_pairing_has_no_exact_reading() {
+    const UNMIRRORED: &str = "1 0 0 0 1 0 0 0 1";
+    const MIRRORED: &str = "-1 0 0 0 1 0 0 0 1";
+    for refused in [
+        PANE_SEAT.replace("[group=pane] ", ""),
+        PANE_SEAT.replace("[match=group]", "[match=size]"),
+        PANE_SEAT.replace("[match=group]", "[match=group] [placement=free]"),
+        format!("{PANE_SEAT} [ori=0.92718385 0 -0.37460659 0 1 0 0.37460659 0 0.92718385]"),
+    ] {
+        assert_eq!(
+            mating_faces(&only_seat_through(UNMIRRORED, &refused)),
+            Err(Unreadable::Generic),
+            "{refused}"
+        );
+    }
+    for mirror in ["cor", "corX", "corY"] {
+        let seat = format!("{PANE_SEAT} [mirror={mirror}]");
+        assert_eq!(
+            mating_faces(&only_seat_through(MIRRORED, &seat)),
+            Err(Unreadable::Generic),
+            "{mirror}"
+        );
+    }
+    for seat in [PANE_SEAT.to_string(), format!("{PANE_SEAT} [mirror=none]")] {
+        assert_eq!(
+            mating_faces(&only_seat_through(MIRRORED, &seat)),
+            Ok(Vec::new()),
+            "{seat}"
+        );
+    }
+    let corrected = box_faces(&seat_through(
+        MIRRORED,
+        &format!("{PANE_SEAT} [mirror=corZ]"),
+    ));
+    assert_eq!(
+        corrected
+            .iter()
+            .map(|face| (face.sixteenths, face.roll))
+            .collect::<Vec<_>>(),
+        vec![(Some([-64, -576, -480]), Some(1))]
+    );
+    let shape_matched = box_faces(&seat_through(
+        UNMIRRORED,
+        &PANE_SEAT.replace(" [match=group]", ""),
+    ));
+    assert_eq!(shape_matched.len(), 1);
+}
+
+#[test]
+fn box_faces_keep_their_roll_through_free_poses_merging_and_the_record() {
+    const UNMIRRORED: &str = "1 0 0 0 1 0 0 0 1";
+    let off_grid = box_faces(&seat_through(
+        UNMIRRORED,
+        &PANE_SEAT.replace("pos=4 36 30", "pos=4.3 36 30"),
+    ));
+    assert_eq!(
+        off_grid
+            .iter()
+            .map(|face| (face.sixteenths, face.direction, face.roll))
+            .collect::<Vec<_>>(),
+        vec![(None, Some(3), Some(0))]
+    );
+    let turned = format!("{PANE_SEAT} [ori=0 0 1 0 1 0 -1 0 0]");
+    let extraction = |seats: &[&str]| Extraction {
+        connectors: seat_through(UNMIRRORED, &seats.join("\n")),
+        ..Extraction::default()
+    };
+    assert_eq!(
+        published_faces(&extraction(&[PANE_SEAT, PANE_SEAT])).len(),
+        1
+    );
+    assert_eq!(published_faces(&extraction(&[PANE_SEAT, &turned])).len(), 2);
+    let record = |faces: Vec<MatingFace>| {
+        record_json(
+            "parts/door.dat",
+            "CC BY-SA 4.0",
+            &TierRecord {
+                faces,
+                unreadable: Vec::new(),
+            },
+        )
+    };
+    let seat = box_faces(&seat_through(UNMIRRORED, PANE_SEAT));
+    let written = record([seat, off_grid].concat());
+    assert_eq!(written["faces"]["roll"], json!([0, 0]));
+    assert_eq!(written["faces"]["axis"], json!([3, -1]));
+    let disc = faces_of(
+        &ShadowSnaps::new(
+            &memory(&[("parts/casing.dat", "0 Casing\n")]),
+            &memory(&[("parts/casing.dat", FACE_PAIR_AT_PLUS_Z)]),
+        )
+        .snaps("parts/casing.dat")
+        .connectors,
+    );
+    assert_eq!(record(disc)["faces"].get("roll"), None);
 }
 
 fn hub_ring(y: i32, outer: i32, inner: i32) -> String {
