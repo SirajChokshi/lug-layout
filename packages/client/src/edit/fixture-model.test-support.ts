@@ -38,15 +38,24 @@ const fixtureBundleRoot = new URL(
   "../../../../tools/asset-pipeline/fixture-bundle/",
   import.meta.url,
 );
+const builtBundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
-export function fixtureBundleFetcher(): IAssetFetcher {
+function directoryFetcher(root: URL): IAssetFetcher {
   return {
     async bytes(path) {
-      const buffer = await readFile(new URL(path, fixtureBundleRoot));
+      const buffer = await readFile(new URL(path, root));
       return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
     },
-    text: (path) => readFile(new URL(path, fixtureBundleRoot), "utf8"),
+    text: (path) => readFile(new URL(path, root), "utf8"),
   };
+}
+
+export function fixtureBundleFetcher(): IAssetFetcher {
+  return directoryFetcher(fixtureBundleRoot);
+}
+
+export function builtBundleFetcher(): IAssetFetcher {
+  return directoryFetcher(builtBundleRoot);
 }
 
 export function fixtureBundleLoader(): IPartBundleLoader {

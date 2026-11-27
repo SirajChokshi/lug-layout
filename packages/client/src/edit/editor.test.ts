@@ -2310,7 +2310,7 @@ describe("groups", () => {
 });
 
 function storingEditor(factory: IDBFactory) {
-  return startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+  return startEditor([USER_BRICK], new BundleDirectoryFetcher(), [USER_BRICK], (bound) => {
     bound
       .rebind(MODEL_IMPORTER)
       .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
@@ -2325,9 +2325,11 @@ function clickGround(editor: IEditor, backend: AimedBackend, x: number, z: numbe
 }
 
 describe("kits", () => {
-  it("saves a user's own baseplate, model and laid track as a kit, places it as one new group in one undo step at its saved relative poses with its track joining the laid run end to end, refuses it where its own parts would overlap or when its models are held up only from outside, and reopens with the kit's group kept", async () => {
+  it("saves a user's own baseplate, models and laid track as a kit, places it as one new group in one undo step at its saved relative poses with its track joining the laid run end to end, refuses it where its own parts would overlap or when its models are held up only from outside, and reopens with the kit's group kept", async () => {
     const factory = new IDBFactory();
-    const { editor, backend } = await storingEditor(factory);
+    const { editor, backend, catalog } = await storingEditor(factory);
+    await loadCatalogItem(catalog, HELD_BRICK);
+    const brick = HELD_BRICK;
     const baseplate = await importUserFile(
       editor,
       "my-baseplate.ldr",
@@ -2340,8 +2342,8 @@ describe("kits", () => {
     );
     const place = placer(editor, backend);
     await place(baseplate, 0, 1280);
-    await place(cottage, 0, 1280);
-    await place(cottage, 200, 1280);
+    await place(cottage, -200, 1280);
+    for (const x of [0, 200, 0, 200]) await place(brick, x, 1280);
     editor.chooseItem(TRACK_ITEM_ID);
     dragTrack(editor, backend, [-40 * STUD, 0], [40 * STUD, 0]);
     const laid = editor.dump().laidTrack.length;
@@ -2350,22 +2352,23 @@ describe("kits", () => {
       .trackEnds.map((end) => end.xLdu)
       .toSorted((a, b) => a - b);
     if (west === undefined || east === undefined) throw new Error("the run has no two open ends");
+    const start = layeredPoses(editor);
 
     selectAt(editor, backend, 0, 1280);
     toggleAt(editor, backend, [200, 1280]);
-    const outside = await editor.saveKit("Two cottages", "personal");
+    const stackedOnly = selectedItems(editor);
+    const outside = await editor.saveKit("Two bricks", "personal");
     const outsideError = editor.snapshot().fileError;
     const boxed = boxSelect(editor, backend, [-1000, -400], [1000, 1800]).selected;
     const pivot = editor.snapshot().selection?.pivotStuds;
     if (!pivot) throw new Error("the selection has no pivot");
-    expect(await editor.saveKit("Cottage siding", "personal")).not.toBeNull();
+    expect(await editor.saveKit("Brick siding", "personal")).not.toBeNull();
     const [kit] = editor.snapshot().kits;
     if (!kit) throw new Error("the kit wasn't listed");
-    const start = groupedPoses(editor);
 
     expect(await editor.placeKit(kit.id)).toBe(true);
     clickGround(editor, backend, pivot.x * STUD, pivot.z * STUD);
-    const overlap = { refusal: editor.snapshot().selectionRefusal, poses: groupedPoses(editor) };
+    const overlap = { refusal: editor.snapshot().selectionRefusal, poses: layeredPoses(editor) };
     const run = east - west;
     clickGround(editor, backend, pivot.x * STUD + run, pivot.z * STUD);
     const placed = {
@@ -2379,48 +2382,52 @@ describe("kits", () => {
       groups: editor.dump().groups,
       selected: groupedSelection(editor),
     };
+    const copies = layeredPoses(editor).filter((pose) => !start.includes(pose));
     editor.undo(0);
-    const undone = { poses: groupedPoses(editor), track: laidGroups(editor).length };
-    const undoneGroups = editor.dump().groups;
+    const undone = {
+      poses: layeredPoses(editor),
+      track: laidGroups(editor).length,
+      groups: editor.dump().groups,
+    };
     editor.redo(0);
-    await vi.waitFor(() => expect(editor.snapshot().world?.save).toBe("saved"));
+    await vi.waitFor(() =>
+      expect(editor.snapshot().world).toMatchObject({ save: "saved", placements: 12 }),
+    );
     const reopened = await storingEditor(factory);
-    await vi.waitFor(() => expect(reopened.editor.snapshot().placements).toBe(6));
-    selectAt(reopened.editor, reopened.backend, run + 200, 1280);
+    await vi.waitFor(() => expect(reopened.editor.snapshot().placements).toBe(12), {
+      timeout: 60_000,
+    });
+    selectAt(reopened.editor, reopened.backend, run - 200, 1280);
 
-    const copy = (x: number) => x + run;
-    expect({ kit, outside, outsideError }).toEqual({
-      kit: { id: kit.id, name: "Cottage siding", library: "personal", placements: 3, track: laid },
+    const shifted = (pose: string) =>
+      pose.replace(/ (-?\d+),/u, (_, x: string) => ` ${Number(x) + run},`);
+    expect({ kit, stackedOnly, outside, outsideError }).toEqual({
+      kit: { id: kit.id, name: "Brick siding", library: "personal", placements: 6, track: laid },
+      stackedOnly: [brick, brick],
       outside: null,
-      outsideError: `saving the kit failed: ${cottage}: isn't joined to the kit's other models and doesn't stand on the table, so placing the kit couldn't check what holds it up. Take in what it rests on, or save it as a kit of its own`,
+      outsideError: `saving the kit failed: ${USER_BRICK}: isn't joined to the kit's other models and doesn't stand on the table, so placing the kit couldn't check what holds it up. Take in what it rests on, or save it as a kit of its own`,
     });
     expect(overlap.poses).toEqual(start);
     expect(overlap.refusal).toMatch(/^Can't place the kit here\. /u);
-    expect(placed).toEqual({
+    expect({ copies: copies.toSorted(), ...placed, poses: placed.poses.length }).toEqual({
+      copies: start.map(shifted).toSorted(),
       label: "place",
-      poses: [
-        ...start,
-        `${baseplate} ${copy(0)},1280 in 0`,
-        `${cottage} ${copy(0)},1280 in 0`,
-        `${cottage} ${copy(200)},1280 in 0`,
-      ].toSorted(),
+      poses: 12,
       track: [
         ...Array.from({ length: laid }, () => null),
         ...Array.from({ length: laid }, () => 0),
       ],
       ends: [west, east + run],
-      groups: [{ id: 0, name: "Cottage siding" }],
-      selected: { selected: boxed, groups: ["Cottage siding"], loose: 0, refusal: null },
+      groups: [{ id: 0, name: "Brick siding" }],
+      selected: { selected: boxed, groups: ["Brick siding"], loose: 0, refusal: null },
     });
-    expect({ undone, undoneGroups }).toEqual({
-      undone: { poses: start, track: laid },
-      undoneGroups: [],
-    });
+    expect(placed.poses.filter((pose) => pose.endsWith(" in 0"))).toHaveLength(6);
+    expect(undone).toEqual({ poses: start, track: laid, groups: [] });
     expect({
       poses: groupedPoses(reopened.editor),
       groups: reopened.editor.dump().groups,
       clicked: groupedSelection(reopened.editor).groups,
-    }).toEqual({ poses: placed.poses, groups: placed.groups, clicked: ["Cottage siding"] });
+    }).toEqual({ poses: placed.poses, groups: placed.groups, clicked: ["Brick siding"] });
   }, 240_000);
 });
 

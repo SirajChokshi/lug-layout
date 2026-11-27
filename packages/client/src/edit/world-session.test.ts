@@ -64,7 +64,7 @@ import type {
   WorldContents,
 } from "./world-session.ts";
 import { silentPeers } from "../catalog/silent-peers.test-support.ts";
-import { fixtureBundleFetcher } from "./fixture-model.test-support.ts";
+import { builtBundleFetcher } from "./fixture-model.test-support.ts";
 import { MemoryKits } from "./memory-kits.test-support.ts";
 
 const BASEPLATE = "ldraw:3811";
@@ -489,7 +489,7 @@ async function sessionOnIndexedDb() {
   container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
   container.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
   container.rebind(PERSISTENT_STORAGE).toConstantValue(null);
-  container.rebind(ASSET_FETCHER).toConstantValue(fixtureBundleFetcher());
+  container.rebind(ASSET_FETCHER).toConstantValue(builtBundleFetcher());
   const session = container.get(WORLD_SESSION);
   const repository = container.get(WORLD_REPOSITORY);
   const layers = container.get(LAYER_SERVICE);
