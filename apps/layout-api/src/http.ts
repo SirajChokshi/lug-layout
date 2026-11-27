@@ -1,5 +1,5 @@
 import { issueText, type Issue } from "@brr/schema/decode";
-import type { ErrorResponse } from "@brr/schema/layout-api";
+import { SHARE_TOKEN_HEADER, type ErrorResponse } from "@brr/schema/layout-api";
 import type * as v from "valibot";
 
 export const NO_STORE = "no-store";
@@ -10,7 +10,7 @@ const MS_PER_SECOND = 1000;
 const corsHeaders: Readonly<Record<string, string>> = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",
-  "access-control-allow-headers": "Authorization, Content-Type, If-None-Match",
+  "access-control-allow-headers": `Authorization, ${SHARE_TOKEN_HEADER}, Content-Type, If-None-Match`,
   "access-control-expose-headers": "ETag, Retry-After, Location",
   "access-control-max-age": "86400",
 };
@@ -70,6 +70,10 @@ export function retryAfterSeconds(retryAt: number, now: number): number {
 
 export function unauthorized(message: string): Response {
   return problem(401, message, { "www-authenticate": 'Bearer realm="brick-railroad"' });
+}
+
+export function signInFirst(): Response {
+  return unauthorized("sign in first, then send Authorization: Bearer <session token>");
 }
 
 export function versionEtag(sha256: string): string {

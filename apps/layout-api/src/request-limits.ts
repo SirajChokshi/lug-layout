@@ -1,6 +1,7 @@
 export interface IRequestLimits {
   allowSignIn(clientAddress: string): Promise<boolean>;
   allowAccount(accountId: string): Promise<boolean>;
+  allowAnonymous(clientAddress: string): Promise<boolean>;
 }
 
 export class RateLimitBindings implements IRequestLimits {
@@ -15,5 +16,9 @@ export class RateLimitBindings implements IRequestLimits {
 
   async allowAccount(accountId: string): Promise<boolean> {
     return (await this.account.limit({ key: accountId })).success;
+  }
+
+  async allowAnonymous(clientAddress: string): Promise<boolean> {
+    return (await this.account.limit({ key: `anonymous:${clientAddress}` })).success;
   }
 }

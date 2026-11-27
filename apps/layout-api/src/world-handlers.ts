@@ -1,21 +1,27 @@
 import {
+  CreateShareLinkRequest,
   CreateWorldRequest,
   MAX_IMPORT_BYTES,
   MAX_SHARD_BYTES,
   SaveVersionRequest,
+  WORLD_ROLES,
   type MissingFilesResponse,
+  type RecordId,
   type SaveVersionResponse,
   type Sha256,
+  type ShareLinkListResponse,
+  type ShareLinkResponse,
   type StoredFileResponse,
   type VersionListResponse,
   type VersionPageParams,
   type VersionResponse,
   type WorldListResponse,
   type WorldResponse,
+  type WorldRole,
 } from "@brr/schema/layout-api";
 import type * as v from "valibot";
 import type { AccountRecord } from "./accounts.ts";
-import { versionBody, worldBody } from "./bodies.ts";
+import { shareLinkBody, versionBody, worldBody } from "./bodies.ts";
 import {
   IMMUTABLE_PRIVATE,
   contentAddressed,
@@ -25,10 +31,13 @@ import {
   noContent,
   notModified,
   problem,
+  signInFirst,
+  unauthorized,
   versionEtag,
 } from "./http.ts";
 import { readBytes, readJson } from "./request-body.ts";
 import { versionListHref, type WorldRoute } from "./routes.ts";
+import { SHARE_LINK_LIMIT, type IShareLinks, type ShareLinkRecord } from "./share-links.ts";
 import { WORLD_LIMIT, type IWorldDirectory } from "./world-directory.ts";
 import {
   FILE_CONTENT_TYPE,
@@ -40,7 +49,36 @@ import {
 import type { IWorldHistory } from "./world-history.ts";
 import type { WorldRecord } from "./world-record.ts";
 
+export interface Caller {
+  readonly account: AccountRecord | undefined;
+  readonly link: ShareLinkRecord | undefined;
+}
+
 type RouteInWorld = Exclude<WorldRoute, { kind: "world-list" } | { kind: "world-create" }>;
+type ReadRoute = Extract<
+  RouteInWorld,
+  { kind: "world" | "shard" | "import" | "version-list" | "version" }
+>;
+type SignedInWorldRoute = Exclude<RouteInWorld, ReadRoute>;
+
+const NEEDED_ROLE: Readonly<Record<SignedInWorldRoute["kind"], WorldRole>> = {
+  "world-delete": "owner",
+  "shard-put": "editor",
+  "import-put": "editor",
+  "version-save": "editor",
+  "share-link-list": "owner",
+  "share-link-create": "owner",
+  "share-link-revoke": "owner",
+};
+
+function roleIn(world: WorldRecord, caller: Caller): WorldRole | undefined {
+  if (caller.account?.id === world.ownerId) return "owner";
+  return caller.link?.worldId === world.id ? caller.link.role : undefined;
+}
+
+function grants(role: WorldRole, needed: WorldRole): boolean {
+  return WORLD_ROLES.indexOf(role) >= WORLD_ROLES.indexOf(needed);
+}
 
 function overQuota(usage: number): Response {
   return problem(
@@ -54,18 +92,22 @@ export class WorldHandlers {
     private readonly directory: IWorldDirectory,
     private readonly files: IWorldFiles,
     private readonly history: IWorldHistory,
+    private readonly shareLinks: IShareLinks,
   ) {}
 
-  async handle(route: WorldRoute, account: AccountRecord, request: Request): Promise<Response> {
+  async handle(route: WorldRoute, caller: Caller, request: Request): Promise<Response> {
     switch (route.kind) {
       case "world-list":
-        return this.list(account);
+        return caller.account === undefined ? signInFirst() : this.list(caller.account);
       case "world-create":
-        return this.create(account, request);
+        return caller.account === undefined ? signInFirst() : this.create(caller.account, request);
       default: {
-        const world = await this.directory.find(account.id, route.world);
-        if (world === undefined) return problem(404, `this account has no world ${route.world}`);
-        return this.handleInWorld(route, world, account, request);
+        const world = await this.directory.find(route.world);
+        const role = world === undefined ? undefined : roleIn(world, caller);
+        if (world === undefined || role === undefined) {
+          return problem(404, `no world ${route.world} is open to you`);
+        }
+        return this.handleInWorld(route, world, role, caller.account, request);
       }
     }
   }
@@ -73,12 +115,49 @@ export class WorldHandlers {
   private handleInWorld(
     route: RouteInWorld,
     world: WorldRecord,
-    account: AccountRecord,
+    role: WorldRole,
+    account: AccountRecord | undefined,
     request: Request,
   ): Promise<Response> {
     switch (route.kind) {
       case "world":
-        return Promise.resolve(this.describe(world));
+        return Promise.resolve(this.describe(world, role));
+      case "shard":
+        return this.readFile(request, route.sha256, JSON_CONTENT_TYPE, () =>
+          this.files.readShard(world.id, route.sha256),
+        );
+      case "import":
+        return this.readFile(request, route.sha256, FILE_CONTENT_TYPE, () =>
+          this.files.readImport(world.id, route.sha256),
+        );
+      case "version-list":
+        return this.listVersions(world, route.page, request);
+      case "version":
+        return this.readVersion(world, route.version);
+      default: {
+        const needed = NEEDED_ROLE[route.kind];
+        if (!grants(role, needed)) {
+          return Promise.resolve(
+            problem(403, `this world is shared with you as ${role}; this needs ${needed}`),
+          );
+        }
+        if (account === undefined) {
+          return Promise.resolve(
+            unauthorized("sign in first: without signing in, a share link only lets you view"),
+          );
+        }
+        return this.handleSignedIn(route, world, account, request);
+      }
+    }
+  }
+
+  private handleSignedIn(
+    route: SignedInWorldRoute,
+    world: WorldRecord,
+    account: AccountRecord,
+    request: Request,
+  ): Promise<Response> {
+    switch (route.kind) {
       case "world-delete":
         return this.remove(world);
       case "shard-put":
@@ -89,20 +168,14 @@ export class WorldHandlers {
         return this.putFile(request, route.sha256, MAX_IMPORT_BYTES, (body) =>
           this.files.putImport(world, route.sha256, body),
         );
-      case "shard":
-        return this.readFile(request, route.sha256, JSON_CONTENT_TYPE, () =>
-          this.files.readShard(world.id, route.sha256),
-        );
-      case "import":
-        return this.readFile(request, route.sha256, FILE_CONTENT_TYPE, () =>
-          this.files.readImport(world.id, route.sha256),
-        );
       case "version-save":
         return this.save(world, account, request);
-      case "version-list":
-        return this.listVersions(world, route.page, request);
-      case "version":
-        return this.readVersion(world, route.version);
+      case "share-link-list":
+        return this.listShareLinks(world);
+      case "share-link-create":
+        return this.createShareLink(world, request);
+      case "share-link-revoke":
+        return this.revokeShareLink(world, route.link);
       default: {
         const exhaustive: never = route;
         throw new Error(`unhandled world route ${String(exhaustive)}`);
@@ -122,7 +195,10 @@ export class WorldHandlers {
     const outcome = await this.directory.create(account.id, body.value.name);
     switch (outcome.kind) {
       case "created": {
-        const created: v.InferInput<typeof WorldResponse> = { world: worldBody(outcome.world) };
+        const created: v.InferInput<typeof WorldResponse> = {
+          world: worldBody(outcome.world),
+          role: "owner",
+        };
         return json(created, 201, {
           location: `${new URL(request.url).origin}/v1/worlds/${outcome.world.id}`,
         });
@@ -136,8 +212,8 @@ export class WorldHandlers {
     }
   }
 
-  private describe(world: WorldRecord): Response {
-    const body: v.InferInput<typeof WorldResponse> = { world: worldBody(world) };
+  private describe(world: WorldRecord, role: WorldRole): Response {
+    const body: v.InferInput<typeof WorldResponse> = { world: worldBody(world), role };
     return json(body, 200);
   }
 
@@ -244,5 +320,41 @@ export class WorldHandlers {
       snapshot: read.snapshot,
     };
     return json(body, 200, { "cache-control": IMMUTABLE_PRIVATE });
+  }
+
+  private async listShareLinks(world: WorldRecord): Promise<Response> {
+    const links = await this.shareLinks.list(world.id);
+    const body: v.InferInput<typeof ShareLinkListResponse> = {
+      shareLinks: links.map(shareLinkBody),
+    };
+    return json(body, 200);
+  }
+
+  private async createShareLink(world: WorldRecord, request: Request): Promise<Response> {
+    const body = await readJson(request, CreateShareLinkRequest);
+    if (!body.ok) return body.response;
+    const outcome = await this.shareLinks.create(world.id, body.value.role);
+    switch (outcome.kind) {
+      case "created": {
+        const created: v.InferInput<typeof ShareLinkResponse> = {
+          shareLink: shareLinkBody(outcome.link),
+          url: outcome.url,
+        };
+        return json(created, 201);
+      }
+      case "limit-reached":
+        return problem(507, `this world already has its limit of ${SHARE_LINK_LIMIT} share links`);
+      default: {
+        const exhaustive: never = outcome;
+        throw new Error(`unhandled share link outcome ${String(exhaustive)}`);
+      }
+    }
+  }
+
+  private async revokeShareLink(world: WorldRecord, link: RecordId): Promise<Response> {
+    if (!(await this.shareLinks.revoke(world.id, link))) {
+      return problem(404, `world ${world.id} has no share link ${link}`);
+    }
+    return noContent();
   }
 }

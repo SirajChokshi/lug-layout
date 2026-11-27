@@ -25,7 +25,10 @@ export type WorldRoute =
   | { readonly kind: "import"; readonly world: RecordId; readonly sha256: Sha256 }
   | { readonly kind: "version-save"; readonly world: RecordId }
   | { readonly kind: "version-list"; readonly world: RecordId; readonly page: VersionPageParams }
-  | { readonly kind: "version"; readonly world: RecordId; readonly version: number };
+  | { readonly kind: "version"; readonly world: RecordId; readonly version: number }
+  | { readonly kind: "share-link-list"; readonly world: RecordId }
+  | { readonly kind: "share-link-create"; readonly world: RecordId }
+  | { readonly kind: "share-link-revoke"; readonly world: RecordId; readonly link: RecordId };
 
 export type RouteResult =
   | { readonly kind: "public"; readonly route: PublicRoute }
@@ -144,6 +147,23 @@ const RULES: ReadonlyArray<PathRule> = [
         kind: "version",
         ...inWorld(groups),
         version: Number(captured(groups, 1)),
+      })),
+    },
+  },
+  {
+    path: path(`/v1/worlds/${ID}/share-links`),
+    methods: {
+      GET: worldRoute((groups) => ({ kind: "share-link-list", ...inWorld(groups) })),
+      POST: worldRoute((groups) => ({ kind: "share-link-create", ...inWorld(groups) })),
+    },
+  },
+  {
+    path: path(`/v1/worlds/${ID}/share-links/${ID}`),
+    methods: {
+      DELETE: worldRoute((groups) => ({
+        kind: "share-link-revoke",
+        ...inWorld(groups),
+        link: captured(groups, 1),
       })),
     },
   },

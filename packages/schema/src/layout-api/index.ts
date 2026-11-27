@@ -19,6 +19,9 @@ export const TOKEN_PATTERN = `[A-Za-z0-9_-]{${TOKEN_CHARACTERS}}`;
 export const EMAIL_MAX_LENGTH = 254;
 export const IMPORT_NAME_MAX_LENGTH = 255;
 export const SIGN_IN_FRAGMENT_KEY = "sign-in";
+export const WORLD_FRAGMENT_KEY = "world";
+export const SHARE_FRAGMENT_KEY = "share";
+export const SHARE_TOKEN_HEADER = "Brr-Share-Token";
 export const SNAPSHOT_FORMAT = "brr.world-snapshot";
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 export const MEBIBYTE = 1024 * 1024;
@@ -134,6 +137,18 @@ export function signInLink(appOrigin: string, token: Token): string {
   return `${appOrigin}/#${SIGN_IN_FRAGMENT_KEY}=${token}`;
 }
 
+export function shareLink(appOrigin: string, world: RecordId, token: Token): string {
+  return `${appOrigin}/#${WORLD_FRAGMENT_KEY}=${world}&${SHARE_FRAGMENT_KEY}=${token}`;
+}
+
+export const SHARE_ROLES = ["viewer", "commenter", "editor"] as const;
+export const ShareRole = v.picklist(SHARE_ROLES, `must be one of ${SHARE_ROLES.join(", ")}`);
+export type ShareRole = v.InferOutput<typeof ShareRole>;
+
+export const WORLD_ROLES = [...SHARE_ROLES, "owner"] as const;
+export const WorldRole = v.picklist(WORLD_ROLES);
+export type WorldRole = v.InferOutput<typeof WorldRole>;
+
 export const SignInLinkRequest = v.strictObject({ email: EmailAddress }, strictMessage);
 export type SignInLinkRequest = v.InferOutput<typeof SignInLinkRequest>;
 
@@ -175,8 +190,23 @@ export const WorldSummary = v.object({
 });
 export type WorldSummary = v.InferOutput<typeof WorldSummary>;
 
-export const WorldResponse = v.object({ world: WorldSummary });
+export const WorldResponse = v.object({ world: WorldSummary, role: WorldRole });
 export type WorldResponse = v.InferOutput<typeof WorldResponse>;
+
+export const CreateShareLinkRequest = v.strictObject({ role: ShareRole }, strictMessage);
+export type CreateShareLinkRequest = v.InferOutput<typeof CreateShareLinkRequest>;
+
+export const ShareLinkSummary = v.object({ id: RecordId, role: ShareRole, createdAt: Timestamp });
+export type ShareLinkSummary = v.InferOutput<typeof ShareLinkSummary>;
+
+export const ShareLinkResponse = v.object({
+  shareLink: ShareLinkSummary,
+  url: v.pipe(v.string(), v.url()),
+});
+export type ShareLinkResponse = v.InferOutput<typeof ShareLinkResponse>;
+
+export const ShareLinkListResponse = v.object({ shareLinks: v.array(ShareLinkSummary) });
+export type ShareLinkListResponse = v.InferOutput<typeof ShareLinkListResponse>;
 
 export const WorldListResponse = v.object({ worlds: v.array(WorldSummary) });
 export type WorldListResponse = v.InferOutput<typeof WorldListResponse>;
@@ -293,6 +323,14 @@ export const WorldRow = v.object({
   head: v.nullable(Integer),
 });
 export type WorldRow = v.InferOutput<typeof WorldRow>;
+
+export const ShareLinkRow = v.object({
+  id: RecordId,
+  world_id: RecordId,
+  role: ShareRole,
+  created_at: Integer,
+});
+export type ShareLinkRow = v.InferOutput<typeof ShareLinkRow>;
 
 export const StoredFileRow = v.object({ sha256: Sha256, bytes: Integer });
 export type StoredFileRow = v.InferOutput<typeof StoredFileRow>;

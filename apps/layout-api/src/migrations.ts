@@ -76,4 +76,17 @@ export const LAYOUT_MIGRATIONS: ReadonlyArray<Migration> = [
       ) STRICT, WITHOUT ROWID`,
     ],
   },
+  {
+    version: 2,
+    statements: [
+      `CREATE TABLE share_links (
+        id TEXT PRIMARY KEY,
+        world_id TEXT NOT NULL REFERENCES worlds (id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      ) STRICT`,
+      "CREATE INDEX share_links_by_world ON share_links (world_id, created_at)",
+    ],
+  },
 ];

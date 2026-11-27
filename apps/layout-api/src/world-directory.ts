@@ -14,7 +14,7 @@ export type CreateWorldOutcome =
 export interface IWorldDirectory {
   list(ownerId: RecordId): Promise<ReadonlyArray<WorldRecord>>;
   create(ownerId: RecordId, name: string): Promise<CreateWorldOutcome>;
-  find(accountId: RecordId, worldId: RecordId): Promise<WorldRecord | undefined>;
+  find(worldId: RecordId): Promise<WorldRecord | undefined>;
   remove(world: WorldRecord): Promise<void>;
   removeOwnedBy(ownerId: RecordId): Promise<void>;
 }
@@ -64,10 +64,10 @@ export class WorldDirectory implements IWorldDirectory {
     return row === null ? { kind: "limit-reached" } : { kind: "created", world: worldRecord(row) };
   }
 
-  async find(accountId: RecordId, worldId: RecordId): Promise<WorldRecord | undefined> {
+  async find(worldId: RecordId): Promise<WorldRecord | undefined> {
     const row = await this.db
-      .prepare(`SELECT ${WORLD_COLUMNS} FROM worlds WHERE id = ?1 AND owner_id = ?2`)
-      .bind(worldId, accountId)
+      .prepare(`SELECT ${WORLD_COLUMNS} FROM worlds WHERE id = ?1`)
+      .bind(worldId)
       .first();
     return row === null ? undefined : worldRecord(row);
   }
