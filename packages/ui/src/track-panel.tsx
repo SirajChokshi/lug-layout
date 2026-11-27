@@ -3,23 +3,28 @@ import {
   heightText,
   libraryPieceEndText,
   lowClearanceText,
+  studsText,
   trackBlockText,
   unjoinedText,
   type CrossingView,
   type EditorSnapshot,
   type IEditor,
+  type LoopClosureView,
   type TrackBlockView,
   type TrackChoiceView,
   type TrackDragView,
+  type TrackEndView,
   type TrackExtendView,
   type TrackGapView,
   type TrackHeightView,
+  type TrackLoopsView,
   type TrackPieceView,
   type TrackView,
 } from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const LISTED_GAPS = 8;
+const LISTED_LOOPS = 6;
 
 const studs = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const tenths = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -444,6 +449,103 @@ export function TrackHeightPanel({
         Page Up and Page Down change the height (Shift for a brick). New runs start at this height;
         runs from an open end ramp toward it. Raised pieces get brick piers where their anti-studs
         meet studs.
+      </p>
+    </section>
+  );
+}
+
+function piecesText(count: number): string {
+  return `${integer.format(count)} ${count === 1 ? "piece" : "pieces"}`;
+}
+
+function endAt(end: TrackEndView): string {
+  return `${studsText(end.xLdu)}, ${studsText(end.zLdu)}`;
+}
+
+function climbText(closure: LoopClosureView): string | null {
+  const rise = closure.to.yPlates - closure.from.yPlates;
+  if (rise === 0) return null;
+  const plates = Math.abs(rise);
+  return `${rise > 0 ? "climbs" : "drops"} ${plates} ${plates === 1 ? "plate" : "plates"} on the way`;
+}
+
+function loopText(closure: LoopClosureView): string {
+  const parts = closure.parts
+    .map((line) => `${integer.format(line.count)} × ${line.part} ${line.title}`)
+    .join(", ");
+  const ends = `joins the open ends at studs ${endAt(closure.from)} and ${endAt(closure.to)}, ${studsText(closure.gapLdu)} studs apart`;
+  const climb = climbText(closure);
+  return `${sentence(parts)} It ${ends}${climb === null ? "" : `, and ${climb}`}.`;
+}
+
+function checkingText(loops: TrackLoopsView): string {
+  if (loops.pairs === null) return "Looking for open ends that face each other…";
+  return `Checking pairs of open ends: ${integer.format(loops.checked)} of ${integer.format(loops.pairs)}…`;
+}
+
+export function TrackLoopsPanel({
+  editor,
+  snapshot,
+}: {
+  readonly editor: IEditor;
+  readonly snapshot: EditorSnapshot;
+}) {
+  const track = snapshot.track;
+  if (snapshot.mode !== "track" || snapshot.readOnly || !track || track.openEnds < 2) return null;
+  const { loops } = track;
+  const scanning = loops.pairs === null || loops.checked < loops.pairs;
+  const closable = track.held === null && track.drag === null;
+  const unlisted = loops.closures.length - LISTED_LOOPS;
+  return (
+    <section
+      className="inspector track-loops-panel"
+      aria-label="Close gaps"
+      data-closures={loops.closures.length}
+      data-scanning={scanning ? "true" : "false"}
+      data-waiting={loops.waiting}
+      data-previewed={loops.previewed ?? ""}
+    >
+      <h2>Close gaps</h2>
+      {loops.closures.length > 0 && (
+        <ol aria-label="Gaps that close exactly">
+          {loops.closures.slice(0, LISTED_LOOPS).map((closure) => (
+            <li
+              key={closure.key}
+              data-pieces={closure.pieces}
+              data-previewed={closure.key === loops.previewed ? "true" : "false"}
+            >
+              <button
+                type="button"
+                disabled={!closable}
+                onPointerEnter={() => editor.previewTrackLoop(closure.key)}
+                onPointerLeave={() => editor.previewTrackLoop(null)}
+                onFocus={() => editor.previewTrackLoop(closure.key)}
+                onBlur={() => editor.previewTrackLoop(null)}
+                onClick={(event) => editor.closeTrackLoop(closure.key, event.timeStamp)}
+              >
+                {`Close with ${piecesText(closure.pieces)}`}
+              </button>
+              <p>{loopText(closure)}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+      {unlisted > 0 && (
+        <p>{`${integer.format(unlisted)} more ${unlisted === 1 ? "gap closes" : "gaps close"} farther apart.`}</p>
+      )}
+      {scanning && <p role="status">{checkingText(loops)}</p>}
+      {!scanning && loops.waiting > 0 && (
+        <p role="status">{`${integer.format(loops.waiting)} ${loops.waiting === 1 ? "pair waits" : "pairs wait"} for a model's studs to be checked, and ${loops.waiting === 1 ? "is" : "are"} checked again once they are.`}</p>
+      )}
+      {!scanning && loops.waiting === 0 && loops.closures.length === 0 && (
+        <p>
+          No pair of open ends facing each other nearby closes exactly with this kit's straights and
+          curves without crossing track, a model or itself.
+        </p>
+      )}
+      <p className="toolbar-hint">
+        Point at a Close button to preview its run. O closes the nearest gap. Each close is one undo
+        step.
       </p>
     </section>
   );

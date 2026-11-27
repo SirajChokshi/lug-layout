@@ -380,6 +380,9 @@ export type {
   TrackEndView,
   TrackGapView,
   TrackRouteView,
+  LoopClosureView,
+  LoopPartCount,
+  TrackLoopsView,
 } from "./edit/track-drawing.ts";
 export { MM_PER_CM, cmText, heightText, studsText } from "./edit/size-labels.ts";
 export type { LabelKind, LabelView } from "./edit/size-labels.ts";

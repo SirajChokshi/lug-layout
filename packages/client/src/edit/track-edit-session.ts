@@ -20,6 +20,7 @@ import {
   type TrackDragView,
   type TrackDrawing,
   type TrackGapView,
+  type TrackLoopsView,
   type KitPart,
   type TrackSystemView,
 } from "./track-drawing.ts";
@@ -80,6 +81,7 @@ export interface TrackView {
   readonly held: TrackPieceView | null;
   readonly drag: TrackDragView | null;
   readonly extend: TrackExtendView | null;
+  readonly loops: TrackLoopsView;
   readonly lastCommit: TrackCommitResult | null;
   readonly lastBlock: TrackBlockView | null;
   readonly lastWithheld: JoinWithheld | null;
@@ -144,6 +146,7 @@ export type LayOrigin =
       readonly end: Pose16;
       readonly firstLaid: number;
     }
+  | { readonly kind: "loop"; readonly goal: Pose16; readonly firstLaid: number }
   | { readonly kind: "held"; readonly joinsBefore: number; readonly firstLaid: number };
 
 export interface TrackLayRequest {
@@ -172,6 +175,10 @@ export type HeldPlacement =
 export type ExtensionAttempt =
   | { readonly kind: "none" }
   | { readonly kind: "blocked" }
+  | { readonly kind: "lay"; readonly lay: TrackLayRequest };
+
+export type LoopAttempt =
+  | { readonly kind: "none" }
   | { readonly kind: "lay"; readonly lay: TrackLayRequest };
 
 export type SwitchAttempt =
@@ -216,6 +223,9 @@ export interface ITrackEditSession {
   cycleChoice(step: 1 | -1): TrackEditView | null;
   selectChoice(index: number): TrackEditView | null;
   dropExtension(): boolean;
+  scanLoops(deadlineMs: number): TrackEditView | null;
+  previewLoop(key: string | null): TrackEditView | null;
+  closeLoop(key: string | null): LoopAttempt;
   placeHeld(latticeX: number, latticeZ: number): HeldPlacement;
   throwSwitchAt(hitX: number, hitZ: number): SwitchAttempt;
   throwSwitch(piece: number, hitX: number, hitZ: number): SwitchAttempt;
@@ -316,6 +326,7 @@ export class TrackEditSession implements ITrackEditSession {
   private held: HeldPiece | null = null;
   private trackPress: { readonly x: number; readonly z: number } | null = null;
   private previewVersion: number | null = null;
+  private loopsVersion: number | null = null;
   private lastCommit: TrackCommitResult | null = null;
   private lastBlock: TrackBlockView | null = null;
   private lastWithheld: JoinWithheld | null = null;
@@ -344,6 +355,7 @@ export class TrackEditSession implements ITrackEditSession {
   private trackLastUnsupported: TrackUnsupportedView | null = null;
   private trackDrag: TrackDragView | null = null;
   private trackExtend: TrackExtendView | null = null;
+  private trackLoops: TrackLoopsView | null = null;
   private trackSolve: TrackSolveStats | null = null;
   private trackPiers = false;
   private trackLowCount: number | null = null;
@@ -501,6 +513,7 @@ export class TrackEditSession implements ITrackEditSession {
 
   repaint(trackMode: boolean, hovering: boolean, hitX: number, hitZ: number): TrackEditView | null {
     this.previewVersion = null;
+    this.loopsVersion = null;
     return this.refreshPreview(trackMode, hovering, hitX, hitZ);
   }
 
@@ -647,6 +660,42 @@ export class TrackEditSession implements ITrackEditSession {
     return this.trackWorld.drawing()?.extension.drop() ?? false;
   }
 
+  scanLoops(deadlineMs: number): TrackEditView | null {
+    const track = this.trackWorld.drawing();
+    if (!track?.closer.scanning || track.isDragging() || this.worldSession.view().readOnly) {
+      return null;
+    }
+    this.trackWorld.ensureObstacles();
+    if (!track.closer.advance(deadlineMs)) return null;
+    return this.paint(track) ?? this.view();
+  }
+
+  previewLoop(key: string | null): TrackEditView | null {
+    const track = this.trackWorld.drawing();
+    if (!track || (key !== null && (this.held || track.isDragging()))) return null;
+    return track.closer.preview(key) ? this.paint(track) : null;
+  }
+
+  closeLoop(key: string | null): LoopAttempt {
+    const track = this.trackWorld.drawing();
+    if (!track || this.held || this.worldSession.view().readOnly) return NOTHING;
+    const plan = track.loopPlan(key);
+    if (!plan) return NOTHING;
+    track.closer.preview(null);
+    this.lastBlock = null;
+    this.lastWithheld = null;
+    this.lastUnsupported = null;
+    this.lastLow = null;
+    return {
+      kind: "lay",
+      lay: {
+        change: plan.change,
+        sample: null,
+        origin: { kind: "loop", goal: plan.closure.goal, firstLaid: track.pieceCount },
+      },
+    };
+  }
+
   placeHeld(latticeX: number, latticeZ: number): HeldPlacement {
     const track = this.trackWorld.drawing();
     const held = this.held;
@@ -730,6 +779,11 @@ export class TrackEditSession implements ITrackEditSession {
         this.lastLow = this.trackWorld.lowClearanceSince(origin.firstLaid);
         track.extension.laid(origin.run, origin.end);
         return;
+      case "loop":
+        this.lastCommit = track.joinsAt(origin.goal) ? "joined" : "laid";
+        this.lastUnsupported = this.trackWorld.unsupportedSince(origin.firstLaid);
+        this.lastLow = this.trackWorld.lowClearanceSince(origin.firstLaid);
+        return;
       case "held":
         this.lastCommit = track.joinedPairs() > origin.joinsBefore ? "joined" : "laid";
         this.lastUnsupported = this.trackWorld.unsupportedSince(origin.firstLaid);
@@ -750,6 +804,7 @@ export class TrackEditSession implements ITrackEditSession {
         this.lastWithheld = origin.withheld;
         return;
       case "extension":
+      case "loop":
         return;
       case "held": {
         const held = this.held;
@@ -835,11 +890,14 @@ export class TrackEditSession implements ITrackEditSession {
   }
 
   private paint(track: TrackDrawing): TrackEditView | null {
-    const { extension } = track;
-    if (extension.version === this.previewVersion) return null;
+    const { extension, closer } = track;
+    if (extension.version === this.previewVersion && closer.version === this.loopsVersion) {
+      return null;
+    }
     this.previewVersion = extension.version;
+    this.loopsVersion = closer.version;
     this.showTrackGhost(track);
-    this.targetTrackEnds(extension.highlighted());
+    this.targetTrackEnds(closer.previewed()?.ends ?? extension.highlighted());
     return this.view();
   }
 
@@ -994,6 +1052,7 @@ export class TrackEditSession implements ITrackEditSession {
     const unsupported = this.trackWorld.unsupportedCount();
     const drag = track.dragView();
     const extend = this.held ? null : track.extension.view();
+    const loops = track.loops();
     const solve = track.solveStats();
     const lowClearance = this.trackWorld.lowClearanceCount();
     const last = this.lastTrack;
@@ -1011,6 +1070,7 @@ export class TrackEditSession implements ITrackEditSession {
       this.lastUnsupported === this.trackLastUnsupported &&
       drag === this.trackDrag &&
       extend === this.trackExtend &&
+      loops === this.trackLoops &&
       solve === this.trackSolve &&
       this.placingPiers === this.trackPiers &&
       lowClearance === this.trackLowCount &&
@@ -1036,6 +1096,7 @@ export class TrackEditSession implements ITrackEditSession {
       held: this.heldView(track),
       drag,
       extend,
+      loops,
       lastCommit: this.lastCommit,
       lastBlock: this.lastBlock,
       lastWithheld: this.lastWithheld,
@@ -1068,6 +1129,7 @@ export class TrackEditSession implements ITrackEditSession {
     this.trackLastUnsupported = this.lastUnsupported;
     this.trackDrag = drag;
     this.trackExtend = extend;
+    this.trackLoops = loops;
     this.trackSolve = solve;
     this.trackPiers = this.placingPiers;
     this.trackLowCount = lowClearance;

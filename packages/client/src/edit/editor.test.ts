@@ -48,6 +48,7 @@ import {
   type PartMeshUpdate,
   type PartPalette,
   type RebaseEvent,
+  type TrackEndMarker,
 } from "@brr/render";
 import {
   CandidatePoses,
@@ -423,7 +424,10 @@ class HeadlessBackend implements ISceneBackend {
   }
   setPlanOverlays(): void {}
   setMarkers(): void {}
-  setTrackEnds(): void {}
+  trackEnds: ReadonlyArray<TrackEndMarker> = [];
+  setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
+    this.trackEnds = markers;
+  }
   setGround(): void {}
   readonly vehicles = new Map<number, ReadonlyArray<number>>();
   readonly vehicleModels = new Map<number, ChunkInstances>();
@@ -8991,6 +8995,115 @@ it("lays a switch clicked in the library on the end drawn from a user's own trac
     ref: first?.ref,
     heading: ((first?.heading ?? 0) + ZETA16_ORDER / 2) % ZETA16_ORDER,
   });
+}, 120_000);
+
+const PASSING_LOOP_SCENE = new URL(
+  "../../../../docs/verified-facts/scenes/passing-loop.ldr",
+  import.meta.url,
+);
+const SCENE_STRAIGHT = "74746.dat";
+const LOOP_SCAN_FRAMES = 1_000;
+
+async function userRunWithAGap(name: string): Promise<Uint8Array> {
+  const straights = (await readFile(PASSING_LOOP_SCENE, "utf8")).split(/\r?\n/u).filter((line) => {
+    const fields = line.trim().split(/\s+/u);
+    return fields[0] === "1" && fields[4] === "0" && fields[14] === SCENE_STRAIGHT;
+  });
+  const first = straights[0];
+  const last = straights.at(-1);
+  if (!first || !last || straights.length < 3) {
+    throw new Error("the passing loop has no run of straights with a middle to leave out");
+  }
+  return new TextEncoder().encode(
+    [
+      `0 ${name}, a user's own model`,
+      `0 Name: ${name}`,
+      "0 Author: lug-layout test",
+      `0 !LICENSE ${CC_BY_4}`,
+      first,
+      last,
+      "",
+    ].join("\n"),
+  );
+}
+
+async function scannedLoops(editor: IEditor, frame: () => Promise<void>) {
+  for (let frames = 0; frames < LOOP_SCAN_FRAMES; frames++) {
+    const loops = editor.snapshot().track?.loops;
+    if (loops && loops.pairs !== null && loops.checked === loops.pairs) return loops;
+    await frame();
+  }
+  throw new Error(`the loop closer is still scanning after ${LOOP_SCAN_FRAMES} frames`);
+}
+
+function trackTally(editor: IEditor) {
+  const { track, history } = editor.snapshot();
+  return {
+    pieces: track?.pieces,
+    openEnds: track?.openEnds,
+    joins: track?.joins,
+    lastCommit: track?.lastCommit,
+    undoLabel: history.undoLabel,
+  };
+}
+
+it("offers the gap in a user's own track file as a one-click close naming its pieces, previews it on its two ends, lays it as one undo step, and O closes it again after an undo", async () => {
+  const { editor, backend, container, frame } = await startImportingEditor();
+  const camera = container.get(EDITOR_CAMERA);
+  const file = "my-run-with-a-gap.ldr";
+  const item = await importUserFile(editor, file, await userRunWithAGap(file));
+  await placer(editor, backend)(item, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  const modelEnds = editor.dump().trackEnds.toSorted((a, b) => a.xLdu - b.xLdu);
+  const facing = [modelEnds[1], modelEnds[2]].map((end) => [end?.xLdu, end?.zLdu]);
+  const offered = await scannedLoops(editor, frame);
+  const [gap] = offered.closures;
+  if (!gap) throw new Error(`nothing closes the gap in ${file}: ${JSON.stringify(offered)}`);
+
+  editor.previewTrackLoop(gap.key);
+  const previewed = {
+    key: editor.snapshot().track?.loops.previewed,
+    ghost: backend.ghostInstances,
+    targets: backend.trackEnds
+      .filter((end) => end.kind === "target")
+      .map((end) => [end.xLdu, end.zLdu])
+      .toSorted((a, b) => (a[0] ?? 0) - (b[0] ?? 0)),
+  };
+  editor.previewTrackLoop(null);
+  const ghostAfterPreview = backend.ghostInstances;
+  const enabledOffered = commandEnabled("close-track-loop", editor.snapshot());
+  editor.closeTrackLoop(gap.key, 0);
+  const closed = trackTally(editor);
+  const laid = editor.dump().laidTrack;
+  const left = await scannedLoops(editor, frame);
+  const enabledClosed = commandEnabled("close-track-loop", editor.snapshot());
+  editor.undo(0);
+  const undone = { laid: editor.dump().laidTrack, ends: editor.dump().trackEnds.length };
+  const reoffered = await scannedLoops(editor, frame);
+  runEditorAction(editor, camera, "close-track-loop", 0);
+
+  expect(modelEnds).toHaveLength(4);
+  expect([gap.from, gap.to].map((end) => [end.xLdu, end.zLdu]).toSorted()).toEqual(
+    facing.toSorted(),
+  );
+  expect(gap).toMatchObject({ pieces: 2, parts: [{ part: "74746", count: 2 }] });
+  expect(previewed).toEqual({ key: gap.key, ghost: gap.pieces, targets: facing });
+  expect(ghostAfterPreview).toBe(0);
+  expect(left.closures).toEqual([]);
+  expect([enabledOffered, enabledClosed]).toEqual([true, false]);
+  expect(closed).toEqual({
+    pieces: 2,
+    openEnds: 2,
+    joins: 3,
+    lastCommit: "joined",
+    undoLabel: "lay 2 pieces",
+  });
+  expect(undone).toEqual({ laid: [], ends: 4 });
+  expect(reoffered.closures.map((closure) => closure.key)).toEqual(
+    offered.closures.map((closure) => closure.key),
+  );
+  expect(editor.dump().laidTrack).toEqual(laid);
+  expect(trackTally(editor)).toEqual(closed);
 }, 120_000);
 
 function overlapIssues(issues: ReadonlyArray<string>): number {

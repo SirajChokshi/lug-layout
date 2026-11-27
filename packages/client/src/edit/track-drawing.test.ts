@@ -18,6 +18,7 @@ import {
   runMoves,
   solveClosure,
   type TrackSegment,
+  type TurnSign,
 } from "@brr/domain";
 import {
   addZeta16,
@@ -53,6 +54,7 @@ import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
 import {
   TrackDrawing,
   type ClosureState,
+  type LoopClosureView,
   type TrackBlockView,
   type TrackDragView,
   type TrackEndView,
@@ -60,6 +62,7 @@ import {
   type TrackRefusal,
   type TrackRouteView,
 } from "./track-drawing.ts";
+import { LoopCloser } from "./loop-closer.ts";
 import { carrierAtOrigin } from "./track-carrier.test-support.ts";
 import {
   EVERY_MODEL,
@@ -1058,7 +1061,7 @@ it.each<
     80,
   ],
 ])(
-  "names why the open end ahead can't be joined when it is %s, and suggests a single piece instead",
+  "names why the open end ahead can't be joined when it is %s, suggests a single piece instead, and offers no close between the two ends",
   async (_, starts, obstacle, refusal, studs) => {
     const bundle = await trackAndRoadBundle();
     const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
@@ -1066,7 +1069,12 @@ it.each<
       layRun(layout, studPose(x, z, 0), [{ kind: "straight", count: 3 }]);
     const rect = obstacle(bundle.parts);
     if (rect) layout.setBands(everyBand(plateObstacles(rect)));
-    focusEnd(layout, endAt(layout, 48, 0));
+    const [, facing] = starts;
+    if (!facing) throw new Error("the case lays no second run");
+    const from = endAt(layout, 48, 0);
+    const to = endAt(layout, facing[0], facing[1]);
+    focusEnd(layout, from);
+    layout.closer.advance(Number.POSITIVE_INFINITY);
 
     const view = layout.extension.view();
 
@@ -1076,8 +1084,171 @@ it.each<
     expect(view?.choices.some((choice) => choice.kind === "join" && choice.curves === 0)).toBe(
       false,
     );
+    expect(layout.closer.checked).toBeGreaterThan(0);
+    expect(offerBetween(layout, from, to)).toBeUndefined();
   },
 );
+
+function offerBetween(
+  layout: TrackDrawing,
+  a: TrackEndView,
+  b: TrackEndView,
+): LoopClosureView | undefined {
+  return layout
+    .loops()
+    .closures.find(
+      (offer) =>
+        (sameEnd(offer.from, a) && sameEnd(offer.to, b)) ||
+        (sameEnd(offer.from, b) && sameEnd(offer.to, a)),
+    );
+}
+
+const GAP_STRAIGHTS = 2;
+const STRAIGHT_STUDS = 16;
+const SCAN_DEADLINE_MS = 1;
+const EAST = 0;
+const WEST = 8;
+
+function uTurn(sign: TurnSign): Run {
+  return [
+    { kind: "straight", count: 2 },
+    { kind: "turn", sign, curves: HALF_TURN_CURVES },
+    { kind: "straight", count: 2 },
+  ];
+}
+
+async function openOval(): Promise<() => TrackDrawing> {
+  const bundle = await trackAndRoadBundle();
+  return () => {
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    layRun(layout, studPose(0, 0, EAST), uTurn(1));
+    layRun(layout, studPose(-GAP_STRAIGHTS * STRAIGHT_STUDS, 0, WEST), uTurn(-1));
+    return layout;
+  };
+}
+
+function layOffer(layout: TrackDrawing, key: string) {
+  const plan = layout.loopPlan(key);
+  if (!plan) throw new Error(`nothing is offered as ${key}`);
+  const openEnds = layout.openEnds().length;
+  const joins = layout.joinedPairs();
+  layout.applyTrack(plan.change);
+  return {
+    joinsGoal: layout.joinsAt(plan.closure.goal),
+    endsClosed: openEnds - layout.openEnds().length,
+    joinsAdded: layout.joinedPairs() - joins,
+    laid: plan.change.lay.length,
+  };
+}
+
+it("offers every pair of open ends it can close exactly, nearest first with the pieces each would lay, and each offer laid joins its two ends, so two clicks close an oval", async () => {
+  const opened = await openOval();
+  const layout = opened();
+  layout.closer.advance(Number.POSITIVE_INFINITY);
+  const { closures } = layout.loops();
+  const laid = closures.map((offer) => {
+    const fresh = opened();
+    fresh.closer.advance(Number.POSITIVE_INFINITY);
+    return layOffer(fresh, offer.key);
+  });
+  const oval = opened();
+  const clicks = [0, 1].map(() => {
+    oval.closer.advance(Number.POSITIVE_INFINITY);
+    const [nearest] = oval.closer.closures();
+    if (!nearest) throw new Error("the oval has no gap left to close");
+    return layOffer(oval, nearest.key);
+  });
+
+  expect(closures.map((offer) => offer.gapLdu)).toEqual(
+    closures.map((offer) => offer.gapLdu).toSorted((a, b) => a - b),
+  );
+  expect(
+    closures.slice(0, 2).map((offer) => ({
+      gapStuds: offer.gapLdu / STUD_LDU,
+      pieces: offer.pieces,
+      parts: offer.parts.map((line) => [line.part, line.count]),
+    })),
+  ).toEqual(
+    Array.from({ length: 2 }, () => ({
+      gapStuds: GAP_STRAIGHTS * STRAIGHT_STUDS,
+      pieces: GAP_STRAIGHTS,
+      parts: [[NINE_VOLT_STRAIGHT.replace("ldraw:", ""), GAP_STRAIGHTS]],
+    })),
+  );
+  expect(laid).toEqual(
+    closures.map((offer) => ({
+      joinsGoal: true,
+      endsClosed: 2,
+      joinsAdded: offer.pieces + 1,
+      laid: offer.pieces,
+    })),
+  );
+  expect(clicks.map((click) => click.joinsGoal)).toEqual([true, true]);
+  expect(oval.openEnds()).toHaveLength(0);
+  expect(oval.joinedPairs()).toBe(oval.pieceCount);
+});
+
+it("scans at least one pair of ends per slice, stops each slice at its deadline, and finds the same closes as a scan run to the end at once", async () => {
+  const layout = (await openOval())();
+  let now = 0;
+  const sliced = new LoopCloser(layout, () => now);
+  now = SCAN_DEADLINE_MS;
+  const checkedAfterEachSlice: number[] = [];
+  while (sliced.advance(SCAN_DEADLINE_MS)) checkedAfterEachSlice.push(sliced.checked);
+  const whole = new LoopCloser(layout, () => 0);
+  const wholeAdvanced = whole.advance(SCAN_DEADLINE_MS);
+
+  expect(wholeAdvanced).toBe(true);
+  expect(whole.scanning).toBe(false);
+  expect(whole.advance(SCAN_DEADLINE_MS)).toBe(false);
+  expect(whole.checked).toBe(whole.pairCount);
+  expect(checkedAfterEachSlice).toEqual(
+    Array.from({ length: whole.checked }, (_, slice) => slice + 1),
+  );
+  expect(sliced.closures().map((offer) => offer.key)).toEqual(
+    whole.closures().map((offer) => offer.key),
+  );
+});
+
+it("holds back every close while a model's studs are still being checked, says how many pairs wait, and offers them once the checked studs land", async () => {
+  const layout = (await openOval())();
+  layout.setBands(() => ({ obstacles: NO_TRACK_OBSTACLES, pending: true }));
+  layout.closer.advance(Number.POSITIVE_INFINITY);
+  const pending = layout.loops();
+  layout.setBands(() => ({ obstacles: NO_TRACK_OBSTACLES, pending: false }));
+  layout.closer.advance(Number.POSITIVE_INFINITY);
+  const checked = layout.loops();
+
+  expect(pending.closures).toEqual([]);
+  expect(pending.waiting).toBe(pending.pairs);
+  expect(checked.waiting).toBe(0);
+  expect(checked.closures.length).toBeGreaterThanOrEqual(2);
+});
+
+it("drops its offers and the preview while the ends change, offers again once a rescan finds the same ends, previewing the same pair, and drops the preview of a pair it closed", async () => {
+  const layout = (await openOval())();
+  layout.closer.advance(Number.POSITIVE_INFINITY);
+  const [offer] = layout.closer.closures();
+  if (!offer) throw new Error("the open oval offers nothing to close");
+  layout.closer.preview(offer.key);
+  const shown = { ghost: layout.ghost()?.instances.count, key: layout.loops().previewed };
+  layPiece(layout, placeableIndex(layout, NINE_VOLT_STRAIGHT), studPose(0, 400, 0));
+  const changed = {
+    offers: layout.loops().closures.length,
+    ghost: layout.ghost(),
+    key: layout.loops().previewed,
+  };
+  layout.closer.advance(Number.POSITIVE_INFINITY);
+  const rescanned = { ghost: layout.ghost()?.instances.count, key: layout.loops().previewed };
+  layOffer(layout, offer.key);
+  layout.closer.advance(Number.POSITIVE_INFINITY);
+
+  expect(shown).toEqual({ ghost: offer.moves.length, key: offer.key });
+  expect(changed).toEqual({ offers: 0, ghost: null, key: null });
+  expect(rescanned).toEqual(shown);
+  expect(layout.loops().previewed).toBeNull();
+  expect(layout.ghost()).toBeNull();
+});
 
 const RIGHT_SWITCH = "ldraw:75541-f1";
 const NINE_VOLT_CURVE = "ldraw:74747";
