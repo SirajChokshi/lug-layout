@@ -1586,6 +1586,16 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return this.worldOutline(piece, shape);
   }
 
+  recordOutline({ ref, heading, position }: TrackRecordV1): PlacedOutline {
+    const part = this.byPieceId.get(ref);
+    const shape = part && this.crossingShapes.get(part.catalogIndex);
+    if (!shape) throw new Error(`"${ref}" isn't a placeable track piece`);
+    return PlacedOutline.ofTrackPiece(
+      shape.planOutline,
+      pose16(decodeTrackPosition(position), heading),
+    );
+  }
+
   private worldOutline(p: number, shape: CrossingShape): PlacedOutline {
     const pose = this.combined.pose(p);
     const key = crossingOutlineKey(this.combined.piece(p), pose);

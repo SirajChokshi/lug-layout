@@ -25,6 +25,7 @@ import {
   type WorldHeader,
   type WorldIndexEntry,
   type WorldShardV2,
+  type WorldVersionEntry,
 } from "@brr/schema/world";
 import {
   INDEXED_DB,
@@ -152,6 +153,8 @@ class BaseplateWorld implements IEditedWorld {
     return [{ path: "plan", message: "is not opened in this test" }];
   }
 
+  async showDiff(): Promise<void> {}
+
   bomInput(): BomInput {
     throw new Error("this test counts no parts");
   }
@@ -253,6 +256,18 @@ class FailingSaveRepository implements IWorldRepository {
 
   async importedFile(sha256: string): Promise<ImportedFile | undefined> {
     return this.imports.get(sha256);
+  }
+
+  async saveVersion(): Promise<never> {
+    throw new Error("this test saves no versions");
+  }
+
+  async versions(): Promise<ReadonlyArray<WorldVersionEntry>> {
+    return [];
+  }
+
+  async readVersion(): Promise<Decoded<StoredWorld>> {
+    return { ok: false, issues: [{ path: "version", message: "is not saved in this test" }] };
   }
 
   async shardFiles(): Promise<never[]> {

@@ -344,6 +344,13 @@ export {
   type ShardChange,
 } from "./world-shards.ts";
 export {
+  diffWorlds,
+  type MovedRecord,
+  type RecordChanges,
+  type WorldDiff,
+  type WorldRecords,
+} from "./world-diff.ts";
+export {
   BomCounter,
   byPartThenColor,
   PartTally,

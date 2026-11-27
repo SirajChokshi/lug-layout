@@ -4,6 +4,7 @@ import {
   DEFAULT_WORLD_DOCUMENT,
   canonicalJson,
   importRef,
+  noteShardEntry,
   noteShards,
   shardEntry,
   worldManifest,
@@ -342,4 +343,57 @@ it("refuses to save a placement on a layer the header doesn't list, or a note on
   ).rejects.toThrow("note shard 0_0.notes.0.layer: names layer 0, a parts layer, not a notes one");
   const unchanged = await worlds.read(id);
   expect(unchanged.ok && [unchanged.value.shards, unchanged.value.notes]).toEqual([[], []]);
+});
+
+it("keeps each named version as it was saved through later edits, refuses a blank name, and deletes versions with their world", async () => {
+  const worlds = repositoryOn(new IDBFactory());
+  const model = await modelFile(
+    "my wagons.ldr",
+    "0 Wagons\n1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n",
+  );
+  const ref = importRef(model.sha256);
+  const first = worldShards([{ ref, color: 0, x: 0, z: 0, yPlates: 0, rot: 0 }], []);
+  const notes = noteShards([{ ...ZONE, outline: ZONE.outline.map(([x, z]) => [x, z]) }]);
+  const later = worldShards(
+    [
+      { ref, color: 0, x: 640, z: 0, yPlates: 0, rot: 1 },
+      { ref: "ldraw:3811", color: 2, x: 1280, z: 0, yPlates: 0, rot: 0 },
+    ],
+    [],
+  );
+  const { id } = await worlds.create(NOTES_HEADER, first, notes);
+
+  await worlds.saveVersion(id, "BW 2027 v1");
+  await worlds.save(id, {
+    header: NOTES_HEADER,
+    put: later,
+    drop: [],
+    putNotes: [],
+    dropNotes: notes.map((shard) => shard.superChunk),
+  });
+  await worlds.saveVersion(id, "BW 2027 v2");
+  await expect(worlds.saveVersion(id, "   ")).rejects.toThrow("the version wasn't saved");
+
+  expect(
+    (await worlds.versions(id)).map(({ version, name, placements }) => ({
+      version,
+      name,
+      placements,
+    })),
+  ).toEqual([
+    { version: 1, name: "BW 2027 v1", placements: 1 },
+    { version: 2, name: "BW 2027 v2", placements: 2 },
+  ]);
+  expect(await worlds.readVersion(id, 1)).toEqual({
+    ok: true,
+    value: {
+      id,
+      manifest: worldManifest(NOTES_HEADER, first.map(shardEntry), notes.map(noteShardEntry)),
+      shards: first,
+      notes,
+    },
+  });
+  expect(await worlds.readVersion(id, 2)).toEqual(await worlds.read(id));
+  await worlds.remove(id);
+  expect(await worlds.versions(id)).toEqual([]);
 });

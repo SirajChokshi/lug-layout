@@ -3,15 +3,17 @@ import type {
   IEditor,
   IStarterWorlds,
   ModelImportView,
+  VersionComparison,
   WorldFileView,
 } from "@brr/client";
-import type { WorldIndexEntry } from "@brr/schema/world";
+import type { WorldIndexEntry, WorldVersionEntry } from "@brr/schema/world";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { downloadBlob } from "./download.ts";
 import { ImportReportDetails } from "./import-report.tsx";
 import { LAYOUT_FILE_ACCEPT, MODEL_FILE_ACCEPT, importModelFiles } from "./model-files.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const savedAt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" });
 
 interface WorldMenuProps {
   readonly editor: IEditor;
@@ -88,6 +90,112 @@ function WorldRow({
         Delete
       </button>
     </li>
+  );
+}
+
+function VersionRow({
+  editor,
+  version,
+  comparing,
+  disabled,
+}: {
+  readonly editor: IEditor;
+  readonly version: WorldVersionEntry;
+  readonly comparing: boolean;
+  readonly disabled: boolean;
+}) {
+  return (
+    <li className={comparing ? "world-row current" : "world-row"} data-version={version.version}>
+      <span className="world-row-name">
+        {version.name} <span>({savedAt.format(version.savedAt)})</span>
+      </span>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-pressed={comparing}
+        onClick={() => void editor.compareWithVersion(comparing ? null : version.version)}
+      >
+        {comparing ? "Stop" : "Compare"}
+      </button>
+    </li>
+  );
+}
+
+function DiffLegend({ comparison }: { readonly comparison: VersionComparison }) {
+  return (
+    <p
+      className="version-diff"
+      data-added={comparison.added}
+      data-removed={comparison.removed}
+      data-moved={comparison.moved}
+    >
+      Since “{comparison.name}”:{" "}
+      <span className="diff-key" data-change="added">
+        {integer.format(comparison.added)} added
+      </span>{" "}
+      <span className="diff-key" data-change="removed">
+        {integer.format(comparison.removed)} removed
+      </span>{" "}
+      <span className="diff-key" data-change="moved">
+        {integer.format(comparison.moved)} moved
+      </span>
+    </p>
+  );
+}
+
+function Versions({
+  editor,
+  snapshot,
+  ready,
+}: {
+  readonly editor: IEditor;
+  readonly snapshot: EditorSnapshot;
+  readonly ready: boolean;
+}) {
+  const [name, setName] = useState("");
+  const { versions, comparison, readOnly } = snapshot;
+  const nameIssue = editor.worldNameIssue(name);
+  const onSave = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    if (nameIssue !== null) return;
+    void editor.saveVersion(name).then((saved) => {
+      if (saved) setName("");
+    });
+  };
+  return (
+    <section className="world-versions" aria-label="Versions">
+      <h3>Versions</h3>
+      <form className="world-new" onSubmit={onSave}>
+        <input
+          type="text"
+          value={name}
+          maxLength={editor.worldNameMaxLength}
+          placeholder={`Version ${versions.length + 1}`}
+          aria-label="Version name"
+          aria-invalid={nameIssue !== null}
+          disabled={!ready || readOnly}
+          onChange={(event) => setName(event.currentTarget.value)}
+        />
+        <button type="submit" disabled={!ready || readOnly || nameIssue !== null}>
+          Save version
+        </button>
+      </form>
+      {nameIssue !== null && <p className="world-name-issue">The name {nameIssue}.</p>}
+      {versions.length > 0 && (
+        <ul className="world-list">
+          {versions.toReversed().map((version) => (
+            <VersionRow
+              key={version.version}
+              editor={editor}
+              version={version}
+              comparing={comparison?.version === version.version}
+              disabled={!ready}
+            />
+          ))}
+        </ul>
+      )}
+      {comparison && <DiffLegend comparison={comparison} />}
+    </section>
   );
 }
 
@@ -361,6 +469,7 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
           onChange={onImportLayout}
         />
       </div>
+      {stored && <Versions editor={editor} snapshot={snapshot} ready={ready} />}
       {modelImport && <ModelImportStatus view={modelImport} />}
       {snapshot.fileError !== null && <p className="error">{snapshot.fileError}</p>}
       {snapshot.catalogError !== null && <p className="error">{snapshot.catalogError}</p>}

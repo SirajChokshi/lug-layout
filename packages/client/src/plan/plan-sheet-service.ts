@@ -11,7 +11,7 @@ import {
 } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import type { IBomSource } from "../bom/bom-service.ts";
-import { ringsBounds } from "../sheets/plan-drawing.ts";
+import { rectRings, ringsBounds } from "../sheets/plan-drawing.ts";
 import type { ISheetComposer } from "../sheets/sheet-composer.ts";
 import {
   pageFilePrefix,
@@ -69,21 +69,6 @@ function flaggedKeys(issues: ReadonlyArray<PlanIssue>): ReadonlySet<string> {
   return flagged;
 }
 
-function boxRings(rows: PlanPlacementsView, row: number): ReadonlyArray<OutlineRing> {
-  const minX = rows.minX(row);
-  const minZ = rows.minZ(row);
-  const maxX = rows.maxX(row);
-  const maxZ = rows.maxZ(row);
-  return [
-    [
-      [minX, minZ],
-      [maxX, minZ],
-      [maxX, maxZ],
-      [minX, maxZ],
-    ],
-  ];
-}
-
 function partsListOf(source: IBomSource, planId: string): SheetPartsList {
   const bom = source.bomInput({ kind: "plan", planId });
   return {
@@ -102,7 +87,12 @@ function ringsOf(
   const segment = rows.segmentOf(row);
   switch (segment) {
     case "model":
-      return boxRings(rows, row);
+      return rectRings({
+        minX: rows.minX(row),
+        minZ: rows.minZ(row),
+        maxX: rows.maxX(row),
+        maxZ: rows.maxZ(row),
+      });
     case "track":
       return shapes.trackOutlineOf(rows.sourceOf(row));
     default: {

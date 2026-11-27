@@ -167,4 +167,4 @@ export {
   type WorldArchive,
   type WorldFiles,
 } from "./archive.ts";
-export { WorldIndexEntry } from "./world-index.ts";
+export { WorldIndexEntry, WorldVersionEntry } from "./world-index.ts";

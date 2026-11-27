@@ -39,6 +39,7 @@ import {
   type WorldHeader,
   type NoteShardV2,
   type WorldIndexEntry,
+  type WorldVersionEntry,
 } from "@brr/schema/world";
 import {
   WORLD_REPOSITORY,
@@ -281,6 +282,18 @@ class MemoryRepository implements IWorldRepository {
 
   async importedFile(): Promise<ImportedFile | undefined> {
     return undefined;
+  }
+
+  async saveVersion(): Promise<never> {
+    throw new Error("this test saves no versions");
+  }
+
+  async versions(): Promise<ReadonlyArray<WorldVersionEntry>> {
+    return [];
+  }
+
+  async readVersion(): Promise<Decoded<StoredWorld>> {
+    return { ok: false, issues: [{ path: "version", message: "is not saved in this test" }] };
   }
 }
 

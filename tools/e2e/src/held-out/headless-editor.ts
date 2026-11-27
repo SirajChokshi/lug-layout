@@ -44,6 +44,7 @@ import {
   type WorldHeader,
   type WorldIndexEntry,
   type WorldShardV2,
+  type WorldVersionEntry,
 } from "@brr/schema/world";
 import {
   WORLD_REPOSITORY,
@@ -268,6 +269,21 @@ class MemoryWorldRepository implements IWorldRepository {
 
   async importedFile(sha256: string): Promise<ImportedFile | undefined> {
     return this.files.get(sha256);
+  }
+
+  async saveVersion(): Promise<never> {
+    throw new Error("the held-out harness saves no versions");
+  }
+
+  async versions(): Promise<ReadonlyArray<WorldVersionEntry>> {
+    return [];
+  }
+
+  async readVersion(): Promise<Decoded<StoredWorld>> {
+    return {
+      ok: false,
+      issues: [{ path: "version", message: "isn't saved by the held-out harness" }],
+    };
   }
 }
 

@@ -109,6 +109,17 @@ export function ringsBounds(rings: ReadonlyArray<OutlineRing>): LduRect {
   return { minX, minZ, maxX, maxZ };
 }
 
+export function rectRings({ minX, minZ, maxX, maxZ }: LduRect): ReadonlyArray<OutlineRing> {
+  return [
+    [
+      [minX, minZ],
+      [maxX, minZ],
+      [maxX, maxZ],
+      [minX, maxZ],
+    ],
+  ];
+}
+
 export function drawableRings(rings: ReadonlyArray<OutlineRing>): boolean {
   return rings.length > 0 && isFiniteRect(ringsBounds(rings));
 }
