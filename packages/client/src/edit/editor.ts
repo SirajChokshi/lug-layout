@@ -5480,8 +5480,13 @@ export class Editor implements IEditor, IEditedWorld {
     if (models.length + pieces.length === 0) {
       return [{ path: name, message: "holds no parts or track" }];
     }
+    const targets = {
+      modelPoses: models.map(({ pose }) => pose),
+      piecePoses: pieces.map(({ pose }) => pose),
+    };
+    const pivot = latticeCentre(unionBox(this.placedBoxes(pieces, targets)));
     this.chooseItem(null);
-    this.holdCopied(stored.value, name);
+    this.holdCopied({ models, pieces, pivot }, name);
     return [];
   }
 
@@ -6412,7 +6417,9 @@ export class Editor implements IEditor, IEditedWorld {
     return { models, pieces };
   }
 
-  private async storedMembers(shards: ReadonlyArray<WorldShardV2>): Promise<Decoded<Copied>> {
+  private async storedMembers(
+    shards: ReadonlyArray<WorldShardV2>,
+  ): Promise<Decoded<Omit<Copied, "pivot">>> {
     await this.ensureStoredPlaceables({ shards, consists: [] });
     const poses = shardPoses(shards, (ref, color) => this.catalog.resolveRef(ref, color));
     if (!poses.ok) return poses;
@@ -6443,9 +6450,7 @@ export class Editor implements IEditor, IEditedWorld {
       layer,
       group,
     }));
-    const targets = { modelPoses: poses.value, piecePoses: pieces.map((piece) => piece.pose) };
-    const pivot = latticeCentre(unionBox(this.placedBoxes(pieces, targets)));
-    return { ok: true, value: { models, pieces, pivot } };
+    return { ok: true, value: { models, pieces } };
   }
 
   async addPlan({ plan, shards }: StoredPlan): Promise<ReadonlyArray<Issue>> {
