@@ -1983,6 +1983,90 @@ it("never road-snaps a dragged road plate into a user's brick standing at the fl
   expect(placedXs(editor)).toEqual([320, 500, 680]);
 }, 120_000);
 
+function startConnectingImporter() {
+  return startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    const loader = bound.get(PART_BUNDLE_LOADER);
+    const records = { read: (partId: string) => loader.readPartConnectors("standard", partId) };
+    bound.rebind(MODEL_IMPORTER).toConstantValue(new InThreadModelImporter(loader, records));
+  });
+}
+
+const OBSTACLES = [
+  {
+    obstacle: "stack of three 2×4 bricks",
+    lines: [0, -24, -48].map((y) => `1 4 0 ${y} 0 0 0 1 0 1 0 -1 0 0 3001.dat`),
+    at: [500, 320],
+  },
+  {
+    obstacle: "1×6×5 brick",
+    lines: ["1 4 0 0 0 0 0 1 0 1 0 -1 0 0 3754.dat"],
+    at: [510, 320],
+  },
+  {
+    obstacle: "tower of 1×1 bricks",
+    lines: [-24, -48, -72].map((y) => `1 4 0 ${y} 0 1 0 0 0 1 0 0 0 1 3005.dat`),
+    at: [510, 330],
+  },
+] as const;
+
+it.each(
+  OBSTACLES.flatMap((obstacle) => [
+    { ...obstacle, surface: "the bare table", onBaseplate: false },
+    { ...obstacle, surface: "a user's own baseplate", onBaseplate: true },
+  ]),
+)(
+  "road snap never moves a held plate into a non-road model, though the join would keep its joints: a user's $obstacle beside the flush pose, on $surface",
+  async ({ lines, at: [x, z], onBaseplate }) => {
+    const { editor, backend, frame } = await startConnectingImporter();
+    const place = placer(editor, backend);
+    if (onBaseplate) {
+      const baseplate = userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]);
+      await place(await importUserFile(editor, "my-baseplate.ldr", baseplate), 320, 320);
+    }
+    await place(RECESSED_ROAD_PLATE, 320, 320);
+    const file = userRoadFile("my-obstacle.ldr", lines);
+    await place(await importUserFile(editor, "my-obstacle.ldr", file), x, z);
+    await chosen(editor, RECESSED_ROAD_PLATE);
+    const settled = await settledAt(editor, backend, frame, 680, 320);
+    const joints = editor.snapshot().hover?.placement?.joints ?? 0;
+    expect({ pose: settled.pose, snapped: settled.snap === "snapped", mated: joints > 0 }).toEqual({
+      pose: [680, 320],
+      snapped: false,
+      mated: onBaseplate,
+    });
+  },
+  120_000,
+);
+
+it.each([
+  {
+    surface: "on a user's own baseplate",
+    onBaseplate: true,
+    settles: { pose: [660, 660], snap: "free" },
+  },
+  {
+    surface: "on the bare table",
+    onBaseplate: false,
+    settles: { pose: [720, 640], snap: "snapped" },
+  },
+] as const)(
+  "road snap never moves a held user's road plate to a join mating fewer studs than where the assist settled, and does where it settled with none: $surface",
+  async ({ onBaseplate, settles }) => {
+    const { editor, backend, frame } = await startConnectingImporter();
+    const place = placer(editor, backend);
+    if (onBaseplate) {
+      const baseplate = userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]);
+      await place(await importUserFile(editor, "my-baseplate.ldr", baseplate), 320, 320);
+    }
+    const road = userRoadFile("my-road-plate.ldr", ["1 72 0 0 0 1 0 0 0 1 0 0 0 1 69958.dat"]);
+    const roadPlate = await importUserFile(editor, "my-road-plate.ldr", road);
+    await place(roadPlate, 720, 320);
+    await chosen(editor, roadPlate);
+    expect(await settledAt(editor, backend, frame, 660, 660)).toEqual(settles);
+  },
+  120_000,
+);
+
 it.each([
   { baseplateZ: 320, landsAt: 160 },
   { baseplateZ: -20, landsAt: 140 },
