@@ -115,8 +115,8 @@ describe("SvgSheetWriter", () => {
       title: "Show",
       pages: [page("cover", []), page("A1", []), page("B1", [])],
     };
-    const single = writer.write(one, "Show.plan-fit-a4");
-    const tiled = writer.write(many, "Show.plan-tiled-a4-1to1");
+    const single = await writer.write(one, "Show.plan-fit-a4");
+    const tiled = await writer.write(many, "Show.plan-tiled-a4-1to1");
     const zip = await readZip(tiled.bytes);
     expect({ name: single.fileName, type: single.mimeType, pages: single.pages }).toEqual({
       name: "Show.plan-fit-a4.svg",
@@ -130,6 +130,8 @@ describe("SvgSheetWriter", () => {
       pages: 3,
     });
     expect(zip.ok && [...zip.value.keys()]).toEqual(["01-cover.svg", "02-A1.svg", "03-B1.svg"]);
-    expect(writer.write(many, "Show").bytes).toEqual(writer.write(many, "Show").bytes);
+    expect((await writer.write(many, "Show")).bytes).toEqual(
+      (await writer.write(many, "Show")).bytes,
+    );
   });
 });

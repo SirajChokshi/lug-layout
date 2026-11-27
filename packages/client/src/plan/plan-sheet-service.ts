@@ -28,6 +28,7 @@ import type { ISvgSheetWriter } from "../sheets/svg-sheet-writer.ts";
 import {
   PDF_SHEET_WRITER,
   PLAN_SERVICE,
+  PNG_SHEET_WRITER,
   SHEET_COMPOSER,
   SVG_SHEET_WRITER,
   TRADEMARK_DISCLAIMER,
@@ -49,13 +50,13 @@ export interface IPlanSheetSource extends IBomSource {
 
 export interface IPlanSheetService {
   printable(source: IPlanSheetSource, planId: string): string;
-  download(source: IPlanSheetSource, planId: string, request: SheetRequest): SheetFile;
+  download(source: IPlanSheetSource, planId: string, request: SheetRequest): Promise<SheetFile>;
   downloadAll(
     source: IPlanSheetSource,
     planId: string,
     requests: ReadonlyArray<SheetRequest>,
     format: SheetFormat,
-  ): SheetFile;
+  ): Promise<SheetFile>;
 }
 
 function keyText(key: PlacementKey): string {
@@ -119,6 +120,7 @@ export class PlanSheetService implements IPlanSheetService {
     @inject(SHEET_COMPOSER) private readonly composer: ISheetComposer,
     @inject(SVG_SHEET_WRITER) private readonly svg: ISvgSheetWriter,
     @inject(PDF_SHEET_WRITER) private readonly pdf: ISheetWriter,
+    @inject(PNG_SHEET_WRITER) private readonly png: ISheetWriter,
   ) {}
 
   printable(source: IPlanSheetSource, planId: string): string {
@@ -128,19 +130,23 @@ export class PlanSheetService implements IPlanSheetService {
     return this.svg.pageSvg(page, sheet.name);
   }
 
-  download(source: IPlanSheetSource, planId: string, request: SheetRequest): SheetFile {
+  async download(
+    source: IPlanSheetSource,
+    planId: string,
+    request: SheetRequest,
+  ): Promise<SheetFile> {
     const sheet = this.sheetOf(source, planId);
     const document = this.composer.compose(sheet, request.layout, request.selection);
     const base = sheetFileBase(sheet.name, request.selection.name, request.layout);
     return this.writer(request.format).write(document, base);
   }
 
-  downloadAll(
+  async downloadAll(
     source: IPlanSheetSource,
     planId: string,
     requests: ReadonlyArray<SheetRequest>,
     format: SheetFormat,
-  ): SheetFile {
+  ): Promise<SheetFile> {
     const sheet = this.sheetOf(source, planId);
     const document: SheetDocument = {
       title: sheet.name,
@@ -160,6 +166,8 @@ export class PlanSheetService implements IPlanSheetService {
         return this.svg;
       case "pdf":
         return this.pdf;
+      case "png":
+        return this.png;
       default: {
         const unhandled: never = format;
         throw new Error(`unhandled sheet format ${String(unhandled)}`);

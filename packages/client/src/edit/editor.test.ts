@@ -8985,7 +8985,7 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   expect(svg).toContain('class="roadway"');
   expect(sheetPaths(svg, "ramp")).toHaveLength(4);
 
-  const tiled = container.get(PLAN_SHEET_SERVICE).download(editor, planId, {
+  const tiled = await container.get(PLAN_SHEET_SERVICE).download(editor, planId, {
     selection: { name: "Main plan", content: "placements", layers: MAIN_PLAN_LAYERS },
     format: "svg",
     layout: { kind: "tiled", paper: "a4", orientation: "auto", denominator: 1, overlapMm: 10 },
@@ -9014,10 +9014,12 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
     .get(SHEET_SETS)
     .sets(planId)
     .map(({ layout, ...selection }) => ({ selection, layout, format: selection.format }));
-  const pack = await readZip(sheets.downloadAll(editor, planId, requests, "svg").bytes);
+  const pack = await readZip((await sheets.downloadAll(editor, planId, requests, "svg")).bytes);
   const packPages = [...(pack.ok ? pack.value.keys() : [])];
-  const pdfPack = sheets.downloadAll(editor, planId, requests, "pdf");
-  const separately = requests.map((request) => sheets.download(editor, planId, request).pages);
+  const pdfPack = await sheets.downloadAll(editor, planId, requests, "pdf");
+  const separately = await Promise.all(
+    requests.map(async (request) => (await sheets.download(editor, planId, request)).pages),
+  );
   expect(packPages[0]).toBe("01-main-plan-cover.svg");
   expect(packPages.filter((name) => /^\d+-table-plan-/u.test(name))).toEqual([
     `${String((separately[0] ?? 0) + 1).padStart(2, "0")}-table-plan-sheet.svg`,

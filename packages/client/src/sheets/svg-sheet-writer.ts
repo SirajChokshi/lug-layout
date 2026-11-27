@@ -1,4 +1,3 @@
-import { writeStoredZip } from "@brr/storage/zip";
 import { inject, injectable } from "inversify";
 import { SHEET_TYPEFACE } from "../tokens.ts";
 import {
@@ -11,18 +10,23 @@ import {
   type Similarity,
   type TextItem,
 } from "./draw-list.ts";
-import type { ISheetWriter, SheetDocument, SheetFile, SheetPage } from "./sheet-document.ts";
+import {
+  packedSheetFile,
+  type ISheetWriter,
+  type SheetDocument,
+  type SheetFile,
+  type SheetPage,
+} from "./sheet-document.ts";
 import { PAPER } from "./sheet-paints.ts";
 import type { ISheetTypeface } from "./sheet-typeface.ts";
 
 export interface ISvgSheetWriter extends ISheetWriter {
-  pageSvg(page: SheetPage, title: string): string;
+  pageSvg(page: SheetPage, title: string, pixelsPerMm?: number): string;
 }
 
 const DECIMALS = 1000;
 const SCALE_DIGITS = 12;
 const HALO_MM = 0.8;
-const PAGE_NUMBER_DIGITS = 2;
 const FIRST_PRINTABLE = 0x20;
 const XML_WHITESPACE = new Set([0x09, 0x0a, 0x0d]);
 
@@ -95,12 +99,17 @@ class SvgPage {
 
   constructor(private readonly typeface: ISheetTypeface) {}
 
-  page(page: SheetPage, title: string): string {
-    const width = svgNumber(page.size.widthMm);
-    const height = svgNumber(page.size.heightMm);
+  page(page: SheetPage, title: string, pixelsPerMm?: number): string {
+    const { widthMm, heightMm } = page.size;
+    const width = svgNumber(widthMm);
+    const height = svgNumber(heightMm);
+    const size =
+      pixelsPerMm === undefined
+        ? `width="${width}mm" height="${height}mm"`
+        : `width="${svgNumber(widthMm * pixelsPerMm)}" height="${svgNumber(heightMm * pixelsPerMm)}"`;
     this.out.push(
       `<?xml version="1.0" encoding="UTF-8"?>`,
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}" font-family="${this.typeface.svgFontFamily}">`,
+      `<svg xmlns="http://www.w3.org/2000/svg" ${size} viewBox="0 0 ${width} ${height}" font-family="${this.typeface.svgFontFamily}">`,
       `<title>${escaped(title)}</title>`,
     );
     this.items(page.items, 1);
@@ -221,32 +230,21 @@ const utf8 = new TextEncoder();
 export class SvgSheetWriter implements ISvgSheetWriter {
   constructor(@inject(SHEET_TYPEFACE) private readonly typeface: ISheetTypeface) {}
 
-  pageSvg(page: SheetPage, title: string): string {
-    return new SvgPage(this.typeface).page(page, title);
+  pageSvg(page: SheetPage, title: string, pixelsPerMm?: number): string {
+    return new SvgPage(this.typeface).page(page, title, pixelsPerMm);
   }
 
-  write(document: SheetDocument, baseName: string): SheetFile {
-    const pages = document.pages;
-    const [only] = pages;
-    if (only && pages.length === 1) {
-      return {
-        fileName: `${baseName}.svg`,
-        mimeType: "image/svg+xml",
-        bytes: utf8.encode(this.pageSvg(only, document.title)),
-        pages: 1,
-        notes: [],
-      };
-    }
-    const entries = pages.map((page, i) => ({
-      name: `${String(i + 1).padStart(PAGE_NUMBER_DIGITS, "0")}-${page.name}.svg`,
-      bytes: utf8.encode(this.pageSvg(page, `${document.title} · ${page.name}`)),
+  async write(document: SheetDocument, baseName: string): Promise<SheetFile> {
+    const { pages } = document;
+    const entries = pages.map((page) => ({
+      name: page.name,
+      bytes: utf8.encode(
+        this.pageSvg(
+          page,
+          pages.length === 1 ? document.title : `${document.title} · ${page.name}`,
+        ),
+      ),
     }));
-    return {
-      fileName: `${baseName}.svg.zip`,
-      mimeType: "application/zip",
-      bytes: writeStoredZip(entries),
-      pages: pages.length,
-      notes: [],
-    };
+    return packedSheetFile(baseName, "svg", "image/svg+xml", entries, pages.length);
   }
 }

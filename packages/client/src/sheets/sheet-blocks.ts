@@ -63,6 +63,7 @@ export interface TitleContent {
   readonly name: string;
   readonly lines: ReadonlyArray<TitleLine>;
   readonly denominator: number;
+  readonly pixelsPerMm?: number;
 }
 
 export function verdictText({ verdict }: PlanSheet): string {
@@ -111,19 +112,21 @@ export class SheetBlocks {
       }
     }
     y += BLOCK_PADDING_MM;
-    const bar = this.checkBar(content.denominator, widthMm);
+    const bar = this.checkBar(content.denominator, widthMm, content.pixelsPerMm);
     items.push(placed("check", bar, [0, y]));
     y += bar.height + BLOCK_PADDING_MM;
     items.push(rule([0, y], [widthMm, y]));
     return { width: widthMm, height: y + BLOCK_PADDING_MM, items };
   }
 
-  checkBar(denominator: number, widthMm: number): Block {
+  checkBar(denominator: number, widthMm: number, pixelsPerMm?: number): Block {
     const barY = TICK_MM;
-    const studs = CHECK_BAR_STUDS * denominator;
+    const length = lengthText(CHECK_BAR_STUDS * denominator * STUD_LDU);
     const scale = denominator === 1 ? "" : ` at ${scaleText(denominator)}`;
     const label = this.typeface.fitted(
-      `this bar measures ${CHECK_BAR_MM} mm at 100%: ${lengthText(studs * STUD_LDU)}${scale}`,
+      pixelsPerMm === undefined
+        ? `this bar measures ${CHECK_BAR_MM} mm at 100%: ${length}${scale}`
+        : `this bar is ${CHECK_BAR_MM * pixelsPerMm} px: ${length}`,
       SMALL_MM,
       widthMm - CHECK_BAR_MM - CHECK_LABEL_GAP_MM,
     );

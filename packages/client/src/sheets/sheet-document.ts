@@ -1,3 +1,5 @@
+import { MM_PER_STUD } from "@brr/math";
+import { writeStoredZip } from "@brr/storage/zip";
 import type { DrawItem } from "./draw-list.ts";
 import { TILED_SCALE_DENOMINATORS } from "./drawing-scale.ts";
 import type { OrientationChoice, PageSize, PaperId } from "./paper.ts";
@@ -23,11 +25,54 @@ export interface SheetFile {
 }
 
 export interface ISheetWriter {
-  write(document: SheetDocument, baseName: string): SheetFile;
+  write(document: SheetDocument, baseName: string): Promise<SheetFile>;
+}
+
+export interface SheetEntry {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
+const PAGE_NUMBER_DIGITS = 2;
+
+export function packedSheetFile(
+  baseName: string,
+  extension: string,
+  mimeType: string,
+  entries: ReadonlyArray<SheetEntry>,
+  pages: number,
+  notes: ReadonlyArray<string> = [],
+): SheetFile {
+  const [only] = entries;
+  if (only && entries.length === 1) {
+    return { fileName: `${baseName}.${extension}`, mimeType, bytes: only.bytes, pages, notes };
+  }
+  return {
+    fileName: `${baseName}.${extension}.zip`,
+    mimeType: "application/zip",
+    bytes: writeStoredZip(
+      entries.map((entry, i) => ({
+        name: `${String(i + 1).padStart(PAGE_NUMBER_DIGITS, "0")}-${entry.name}.${extension}`,
+        bytes: entry.bytes,
+      })),
+    ),
+    pages,
+    notes,
+  };
+}
+
+export const IMAGE_PIXELS_PER_MM = 4;
+export const MIN_PIXELS_PER_STUD = 1;
+export const MAX_PIXELS_PER_STUD = MM_PER_STUD * IMAGE_PIXELS_PER_MM;
+export const DEFAULT_PIXELS_PER_STUD = 8;
+
+export function imageDenominator(pixelsPerStud: number): number {
+  return MAX_PIXELS_PER_STUD / pixelsPerStud;
 }
 
 export type SheetLayout =
   | { readonly kind: "whole" }
+  | { readonly kind: "image"; readonly pixelsPerStud: number }
   | {
       readonly kind: "fit";
       readonly paper: PaperId;
@@ -50,6 +95,14 @@ export function sheetLayoutProblems(layout: SheetLayout): ReadonlyArray<string> 
     case "whole":
     case "fit":
       return [];
+    case "image":
+      return Number.isInteger(layout.pixelsPerStud) &&
+        layout.pixelsPerStud >= MIN_PIXELS_PER_STUD &&
+        layout.pixelsPerStud <= MAX_PIXELS_PER_STUD
+        ? []
+        : [
+            `An image is ${MIN_PIXELS_PER_STUD} to ${MAX_PIXELS_PER_STUD} whole pixels per stud; at ${MAX_PIXELS_PER_STUD} it draws the plan at 1:1.`,
+          ];
     case "tiled": {
       const problems: string[] = [];
       if (!TILED_SCALE_DENOMINATORS.includes(layout.denominator)) {
@@ -75,7 +128,7 @@ export function sheetLayoutProblems(layout: SheetLayout): ReadonlyArray<string> 
   }
 }
 
-export type SheetFormat = "svg" | "pdf";
+export type SheetFormat = "svg" | "pdf" | "png";
 
 export type SheetContent = "placements" | "tables";
 
@@ -106,6 +159,8 @@ export function sheetFileBase(planName: string, sheetName: string, layout: Sheet
   switch (layout.kind) {
     case "whole":
       return `${plan}.${sheet}`;
+    case "image":
+      return `${plan}.${sheet}-${layout.pixelsPerStud}px-per-stud`;
     case "fit":
       return `${plan}.${sheet}-fit-${layout.paper}`;
     case "tiled":

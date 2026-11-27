@@ -232,7 +232,7 @@ class PdfPageContent {
 export class PdfSheetWriter implements ISheetWriter {
   constructor(@inject(SHEET_TYPEFACE) private readonly typeface: ISheetTypeface) {}
 
-  write(document: SheetDocument, baseName: string): SheetFile {
+  async write(document: SheetDocument, baseName: string): Promise<SheetFile> {
     const file = new PdfFile();
     const catalog = file.reserve();
     const pageTree = file.reserve();

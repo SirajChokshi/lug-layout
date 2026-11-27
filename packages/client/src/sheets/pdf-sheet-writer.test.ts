@@ -197,7 +197,7 @@ const SHEET: PlanSheet = {
 };
 
 describe("PdfSheetWriter", () => {
-  it("writes a PDF whose cross-reference table finds every object, with exact stream lengths and one page per sheet page", () => {
+  it("writes a PDF whose cross-reference table finds every object, with exact stream lengths and one page per sheet page", async () => {
     const tiled = composer.compose(
       SHEET,
       {
@@ -209,7 +209,7 @@ describe("PdfSheetWriter", () => {
       },
       WHOLE_PLAN_SELECTION,
     );
-    const file = writer.write(tiled, "Club-show.plan-tiled-a4-1to5");
+    const file = await writer.write(tiled, "Club-show.plan-tiled-a4-1to5");
     const pdf = parse(file.bytes);
     const pageObjects = [...pdf.objects.values()].filter((body) =>
       body.startsWith("<< /Type /Page "),
@@ -225,7 +225,7 @@ describe("PdfSheetWriter", () => {
     expect(pdf.text).toContain(`/Count ${tiled.pages.length} >>`);
   });
 
-  it("sizes each page from the paper at 72 points per inch and draws a 64 mm bar 64 mm long, through nested scales", () => {
+  it("sizes each page from the paper at 72 points per inch and draws a 64 mm bar 64 mm long, through nested scales", async () => {
     const document: SheetDocument = {
       title: "Bars",
       pages: [
@@ -239,7 +239,7 @@ describe("PdfSheetWriter", () => {
         ]),
       ],
     };
-    const pdf = parse(writer.write(document, "bars").bytes);
+    const pdf = parse((await writer.write(document, "bars")).bytes);
     const [stream] = pdf.streams;
     const lengths = strokedSegments(stream ?? "").map(([x1, y1, x2, y2]) =>
       Math.hypot(x2 - x1, y2 - y1),
@@ -260,9 +260,9 @@ describe("PdfSheetWriter", () => {
     );
   });
 
-  it("places middle- and end-anchored text by Courier's fixed advance and writes it in WinAnsi, printing characters outside it as ? with a note", () => {
+  it("places middle- and end-anchored text by Courier's fixed advance and writes it in WinAnsi, printing characters outside it as ? with a note", async () => {
     const style = textStyle(3, { anchor: "middle" });
-    const file = writer.write(
+    const file = await writer.write(
       {
         title: "Text",
         pages: [
@@ -289,8 +289,10 @@ describe("PdfSheetWriter", () => {
     ]);
   });
 
-  it("names the standard Courier fonts in WinAnsi and keeps the full title in the document information", () => {
-    const pdf = parse(writer.write({ title: "Attic ⟨east⟩", pages: [page([])] }, "attic").bytes);
+  it("names the standard Courier fonts in WinAnsi and keeps the full title in the document information", async () => {
+    const pdf = parse(
+      (await writer.write({ title: "Attic ⟨east⟩", pages: [page([])] }, "attic")).bytes,
+    );
     const fonts = [...pdf.objects.values()].filter((body) => body.includes("/Type /Font"));
     expect(fonts).toEqual([
       "<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>",
@@ -299,7 +301,7 @@ describe("PdfSheetWriter", () => {
     expect(pdf.text).toContain("/Title <FEFF00410074007400690063002027E8006500610073007427E9>");
   });
 
-  it("writes the same bytes for the same sheets and a different file identifier for different sheets", () => {
+  it("writes the same bytes for the same sheets and a different file identifier for different sheets", async () => {
     const one = composer.compose(
       SHEET,
       { kind: "fit", paper: "a4", orientation: "auto" },
@@ -310,15 +312,15 @@ describe("PdfSheetWriter", () => {
       { kind: "fit", paper: "a4", orientation: "auto" },
       WHOLE_PLAN_SELECTION,
     );
-    const first = writer.write(one, "show").bytes;
-    const again = writer.write(one, "show").bytes;
+    const first = (await writer.write(one, "show")).bytes;
+    const again = (await writer.write(one, "show")).bytes;
     expect(again).toEqual(first);
     expect(fileId(first)).toBeDefined();
-    expect(fileId(writer.write(other, "show").bytes)).not.toBe(fileId(first));
+    expect(fileId((await writer.write(other, "show")).bytes)).not.toBe(fileId(first));
   });
 
-  it("never writes a non-finite number", () => {
-    expect(() =>
+  it("never writes a non-finite number", async () => {
+    await expect(
       writer.write(
         {
           title: "Broken",
@@ -328,6 +330,6 @@ describe("PdfSheetWriter", () => {
         },
         "broken",
       ),
-    ).toThrow(RangeError);
+    ).rejects.toThrow(RangeError);
   });
 });
