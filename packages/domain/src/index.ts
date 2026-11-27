@@ -332,6 +332,7 @@ export {
   outlinesOverlap,
   placedOutline,
   placedOutlineInto,
+  poseLdu,
   rotateOutline,
   studlessTopBlocker,
   studlessTopOf,

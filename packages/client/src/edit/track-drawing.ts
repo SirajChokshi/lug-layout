@@ -45,6 +45,7 @@ import {
   outlineContains,
   placedOutline,
   placedOutlineInto,
+  poseLdu,
   studlessTopBlocker,
   PlacedOutline,
   OutlineEdges,
@@ -119,7 +120,13 @@ import {
 import { OBSTACLE_RECT_FLOATS, cellKey, type StudSeats } from "./track-obstacles.ts";
 import type { TrackSupport } from "./track-support.ts";
 import { writeChunkSquares } from "./plan-reach.ts";
-import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from "./track-bands.ts";
+import {
+  TrackBands,
+  type BandPieces,
+  type HeightSpan,
+  type LayingBand,
+  type SupportBandAt,
+} from "./track-bands.ts";
 import { heightText, type LabelView } from "./size-labels.ts";
 import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
@@ -437,6 +444,24 @@ export interface PieceSnap {
 export interface SwitchThrow {
   readonly change: TrackChange;
   readonly lever: Lever;
+}
+
+export type PieceSwap =
+  | { readonly kind: "swap"; readonly lay: TrackPieceAt }
+  | { readonly kind: "unmatched"; readonly placement: number }
+  | { readonly kind: "blocked"; readonly placement: number; readonly block: TrackBlockView };
+
+const SWAPPED_TRACK: TrackBlockView = { kind: "track" };
+
+interface SwappedInField {
+  readonly mark: number;
+  readonly span: HeightSpan;
+  readonly ids: Map<number, number>;
+  seen: number;
+}
+
+function swapping(swaps: ReadonlyArray<PieceSwap>): ReadonlyArray<TrackPieceAt> {
+  return swaps.flatMap((swap) => (swap.kind === "swap" ? [swap.lay] : []));
 }
 
 export interface TrackPieceHit {
@@ -913,16 +938,24 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     );
   }
 
+  private spanOf(catalogIndex: number, yPlates: number, rise: number): HeightSpan {
+    const [bottom, top] = this.pieceRanges.get(catalogIndex) ?? this.verticalRange();
+    return {
+      bottomLdu: bottom + Math.min(yPlates, yPlates + rise) * PLATE_LDU,
+      topLdu: top + Math.max(yPlates, yPlates + rise) * PLATE_LDU,
+    };
+  }
+
   private measureSpan(placement: number): void {
     const layout = this.combined;
-    const [bottom, top] = this.pieceRanges.get(layout.piece(placement)) ?? this.verticalRange();
+    const piece = layout.piece(placement);
     const yPlates = layout.yPlates(placement);
-    const end = yPlates + layout.rise(placement);
-    const low = Math.min(yPlates, end) * PLATE_LDU;
-    const high = Math.max(yPlates, end) * PLATE_LDU;
-    this.spanBottom[placement] = bottom + low;
-    this.spanTop[placement] = top + high;
-    this.spanRailTop[placement] = this.railTopOf(layout.piece(placement)) + high;
+    const rise = layout.rise(placement);
+    const span = this.spanOf(piece, yPlates, rise);
+    this.spanBottom[placement] = span.bottomLdu;
+    this.spanTop[placement] = span.topLdu;
+    this.spanRailTop[placement] =
+      this.railTopOf(piece) + Math.max(yPlates, yPlates + rise) * PLATE_LDU;
   }
 
   get drawingPlates(): number {
@@ -2418,6 +2451,117 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
 
   removal(placement: number): TrackChange {
     return { lift: [this.laidPiece(placement)], lay: [] };
+  }
+
+  placementsOf(catalogIndex: number): ReadonlyArray<number> {
+    const found: number[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      if (this.layout.piece(p) === catalogIndex) found.push(p);
+    }
+    return found;
+  }
+
+  swaps(placements: ReadonlyArray<number>, catalogIndex: number): ReadonlyArray<PieceSwap> {
+    const part = this.pieceByIndex(catalogIndex);
+    let swaps = placements.map((placement): PieceSwap => {
+      const lay = this.composedSwap(placement, part);
+      return lay ? { kind: "swap", lay } : { kind: "unmatched", placement };
+    });
+    let blocks = this.swapBlocks(swapping(swaps));
+    while (blocks.size > 0) {
+      const blocked = blocks;
+      swaps = swaps.map((swap): PieceSwap => {
+        if (swap.kind !== "swap") return swap;
+        const block = blocked.get(swap.lay.index);
+        return block ? { kind: "blocked", placement: swap.lay.index, block } : swap;
+      });
+      blocks = this.swapBlocks(swapping(swaps));
+    }
+    return swaps;
+  }
+
+  private composedSwap(placement: number, part: KitPart): TrackPieceAt | null {
+    const laid = this.laidPiece(placement);
+    const ends = this.pieceByIndex(laid.piece).def.connectors.map((local) =>
+      composePose16(laid.pose, local),
+    );
+    const own = part.def.connectors;
+    const [first] = own;
+    if (!first || own.length !== ends.length) return null;
+    for (const end of ends) {
+      const pose = attachPose16(first, pose16(end.position, end.heading + HALF_TURN_16));
+      const matched = own.map((local) => {
+        const at = composePose16(pose, local);
+        return ends.findIndex((other) => pose16Equals(other, at));
+      });
+      if (matched.includes(NO_END)) continue;
+      const [yPlates = laid.yPlates, high = yPlates] = matched.map((connector) =>
+        this.layout.endYPlates(placement, connector),
+      );
+      return { index: placement, piece: part.catalogIndex, pose, yPlates, rise: high - yPlates };
+    }
+    return null;
+  }
+
+  private swapBlocks(laying: ReadonlyArray<TrackPieceAt>): ReadonlyMap<number, TrackBlockView> {
+    const moving = new Set(laying.map((at) => at.index));
+    const fields = new Map<DragField, SwappedInField>();
+    const accepted: TrackPieceAt[] = [];
+    const blocks = new Map<number, TrackBlockView>();
+    try {
+      for (const at of laying) {
+        const low = Math.min(at.yPlates, at.yPlates + at.rise);
+        const high = Math.max(at.yPlates, at.yPlates + at.rise);
+        const { field } = this.bands.laying(low, high);
+        const shown = fields.get(field) ?? {
+          mark: field.clearance.count,
+          span: this.bands.span(low, high),
+          ids: new Map<number, number>(),
+          seen: 0,
+        };
+        fields.set(field, shown);
+        this.showSwapped(field, shown, accepted);
+        const joined = this.partnersOf(at.index).map((partner) =>
+          moving.has(partner) ? (shown.ids.get(partner) ?? NO_OBSTACLE) : field.pieceOwner(partner),
+        );
+        const { outline, box } = this.headingOutline(this.pieceByIndex(at.piece), at.pose.heading);
+        const { x, z } = poseLdu(at.pose);
+        const skipped = this.skippedIds(field, moving, NO_OWNERS);
+        const hit = field.clearance.blockerExcept(outline, box, x, z, joined, skipped);
+        if (hit === NO_OBSTACLE) accepted.push(at);
+        else blocks.set(at.index, (hit < shown.mark ? field.describe(hit) : null) ?? SWAPPED_TRACK);
+      }
+    } finally {
+      for (const [field, { mark }] of fields) field.clearance.truncate(mark);
+    }
+    return blocks;
+  }
+
+  private showSwapped(
+    field: DragField,
+    shown: SwappedInField,
+    accepted: ReadonlyArray<TrackPieceAt>,
+  ): void {
+    while (shown.seen < accepted.length) {
+      const at = accepted[shown.seen++];
+      if (!at) continue;
+      const span = this.spanOf(at.piece, at.yPlates, at.rise);
+      if (span.bottomLdu >= shown.span.topLdu || shown.span.bottomLdu >= span.topLdu) continue;
+      const { x, z } = poseLdu(at.pose);
+      const outline = this.pieceByIndex(at.piece).outline;
+      shown.ids.set(at.index, field.clearance.addRotated(outline, at.pose.heading, x, z));
+    }
+  }
+
+  private partnersOf(placement: number): ReadonlyArray<number> {
+    const graph = this.graph;
+    const partners: number[] = [];
+    const last = graph.endStart[placement + 1] ?? 0;
+    for (let end = graph.endStart[placement] ?? 0; end < last; end++) {
+      const partner = graph.endPartner[end] ?? NO_END;
+      if (partner !== NO_END) partners.push(graph.endPlacement[partner] ?? NO_END);
+    }
+    return partners;
   }
 
   laidPiece(placement: number): TrackPieceAt {

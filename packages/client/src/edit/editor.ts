@@ -648,6 +648,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   dropTrackEnd(): boolean;
   previewTrackLoop(key: string | null): void;
   closeTrackLoop(key: string | null, eventTimeMs: number): void;
+  replaceTrackPieces(from: string, to: string, eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
   removeTrain(index: number, eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
@@ -1198,6 +1199,8 @@ function editLabel(edit: EditSummary | null): string | null {
       return `fill (${counted(edit.placements, "placement", "placements")})`;
     case "lay-track":
       return `lay ${counted(edit.pieces, "piece", "pieces")}`;
+    case "replace-track":
+      return `replace ${counted(edit.pieces, "piece", "pieces")}`;
     case "throw-switch":
       return "throw switch";
     case "plan":
@@ -2393,12 +2396,9 @@ export class Editor implements IEditor, IEditedWorld {
       ready &&
       raised.every((piece) => track.seated(piece)) &&
       rampEnds.every((rest) => track.rampEndSeated(rest));
+    const kind = lay.origin.kind === "replace" ? "replace-track" : "lay-track";
     if ((raised.length === 0 && rampEnds.length === 0 && !rampsWaiting) || allSeated) {
-      this.show(
-        this.history.commit("lay-track", [], lay.change),
-        eventTimeMs,
-        lay.sample ?? undefined,
-      );
+      this.show(this.history.commit(kind, [], lay.change), eventTimeMs, lay.sample ?? undefined);
       this.tracks.finishLay(lay);
       return;
     }
@@ -2420,7 +2420,7 @@ export class Editor implements IEditor, IEditedWorld {
         }
         const requests = piers.map((to) => ({ placement: null, to }));
         this.show(
-          this.history.commit("lay-track", requests, lay.change),
+          this.history.commit(kind, requests, lay.change),
           eventTimeMs,
           lay.sample ?? undefined,
         );
@@ -2540,6 +2540,13 @@ export class Editor implements IEditor, IEditedWorld {
     if (!lay) return;
     this.commitLay(lay, eventTimeMs);
     this.repaintTrackPreview();
+  }
+
+  replaceTrackPieces(from: string, to: string, eventTimeMs: number): void {
+    if (this.state.readOnly || this.gesture || this.tracks.piering()) return;
+    const lay = this.tracks.replacePieces(from, to);
+    if (lay) this.commitLay(lay, eventTimeMs);
+    this.update(this.tracks.view());
   }
 
   private enterRoadMode(id: string): void {

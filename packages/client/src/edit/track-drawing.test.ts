@@ -3145,3 +3145,66 @@ it("plays the rails on the graph of exactly the layout it hands them, after ever
   expect(seen.lifted).toBeGreaterThan(0);
   expect(seen.relaid).toBeGreaterThan(0);
 });
+
+const PLASTIC_CURVE = "ldraw:53400";
+const RIGHT_SWITCH_THROWN = "ldraw:75541-f2";
+const LEFT_SWITCH = "ldraw:75542-f1";
+const CROSSING = "ldraw:32087";
+const OFF_GRID_PLACEMENT = pose16(zeta16([3n, 1n, 0n, -2n, 5n, 0n, 1n, 0n]), 3);
+const SWAP_RAISED_PLATES = 2;
+
+function endKeys(layout: TrackDrawing): ReadonlyArray<string> {
+  return layout
+    .openEnds()
+    .map((end) => `${end.xLdu},${end.zLdu},${end.yPlates},${end.heading}`)
+    .toSorted();
+}
+
+it.each([
+  { from: NINE_VOLT_STRAIGHT, to: PLASTIC_STRAIGHT, rise: 0, swaps: true },
+  { from: PLASTIC_STRAIGHT, to: NINE_VOLT_STRAIGHT, rise: 1, swaps: true },
+  { from: NINE_VOLT_CURVE, to: PLASTIC_CURVE, rise: -1, swaps: true },
+  { from: PLASTIC_CURVE, to: NINE_VOLT_CURVE, rise: 0, swaps: true },
+  { from: RIGHT_SWITCH, to: RIGHT_SWITCH_THROWN, rise: 0, swaps: true },
+  { from: RIGHT_SWITCH, to: LEFT_SWITCH, rise: 0, swaps: false },
+  { from: NINE_VOLT_STRAIGHT, to: NINE_VOLT_CURVE, rise: 0, swaps: false },
+  { from: CROSSING, to: NINE_VOLT_STRAIGHT, rise: 0, swaps: false },
+])(
+  "swaps a laid $from rising $rise plates for $to only if each of its ends lands exactly on one of the laid ends at that end's height (swaps: $swaps)",
+  async ({ from, to, rise, swaps }) => {
+    const bundle = await trackAndRoadBundle();
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const laid = placeableIndex(layout, from);
+    const wanted = placeableIndex(layout, to);
+    layout.applyTrack({
+      lift: [],
+      lay: [{ index: 0, piece: laid, pose: OFF_GRID_PLACEMENT, yPlates: SWAP_RAISED_PLATES, rise }],
+    });
+    const ends = endKeys(layout);
+    const [swap] = layout.swaps([0], wanted);
+    if (swap?.kind === "swap") layout.applyTrack({ lift: [layout.laidPiece(0)], lay: [swap.lay] });
+
+    expect({ kind: swap?.kind, piece: layout.laidPiece(0).piece, ends: endKeys(layout) }).toEqual({
+      kind: swaps ? "swap" : "unmatched",
+      piece: swaps ? wanted : laid,
+      ends,
+    });
+  },
+);
+
+it("never swaps a piece into an overlap, judging the swapped pieces against each other and against the pieces that stay", async () => {
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  layPiece(layout, straight, studPose(0, 0, 0));
+  layPiece(layout, straight, studPose(8, -8, QUARTER_TURN_STEPS));
+  layPiece(layout, straight, studPose(64, 0, 0));
+
+  const swaps = layout.swaps([0, 1, 2], placeableIndex(layout, PLASTIC_STRAIGHT));
+
+  expect(swaps.map((swap) => (swap.kind === "blocked" ? swap.block : swap.kind))).toEqual([
+    { kind: "track" },
+    { kind: "track" },
+    "swap",
+  ]);
+});
