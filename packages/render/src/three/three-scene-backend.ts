@@ -132,6 +132,8 @@ import {
   type StudLookups,
 } from "./plastic-materials.ts";
 import { NO_MATCH, RowSpheres, type SphereReuse } from "./row-spheres.ts";
+import { SceneBounds } from "./scene-bounds.ts";
+import { ShadowRange } from "./shadow-range.ts";
 import { StudBasisTable } from "./stud-basis-table.ts";
 import { isInstanced, StudMesh, studGeometry } from "./stud-mesh.ts";
 import { skyEnvironment } from "./sky-environment.ts";
@@ -161,7 +163,6 @@ const SHADOW_LIGHT_MARGIN_LDU = 4000;
 const SHADOW_BIAS = -0.0005;
 const SHADOW_NORMAL_BIAS = 1.5;
 const SHADOW_MIN_FAR_LDU = 2000;
-const SHADOW_FAR_HYSTERESIS = 1.25;
 const STUD_PITCH_LDU = 20;
 const NEAR_MIN_STUD_PITCH_PX = 12;
 const MID_MIN_STUD_PITCH_PX = 3;
@@ -725,7 +726,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private pipeline: LookPipeline | undefined;
   private readonly sun = new DirectionalLight(0xffffff, SUN_INTENSITY);
   private shadowNode: CSMShadowNode | undefined;
-  private shadowFar = 0;
+  private readonly shadowRange = new ShadowRange();
   private readonly orthographic = new OrthographicCamera(
     -1,
     1,
@@ -827,10 +828,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private atY = 0;
   private atZ = 0;
   private changed = true;
-  private sceneMinX = Number.POSITIVE_INFINITY;
-  private sceneMaxX = Number.NEGATIVE_INFINITY;
-  private sceneMinZ = Number.POSITIVE_INFINITY;
-  private sceneMaxZ = Number.NEGATIVE_INFINITY;
+  private readonly sceneBounds = new SceneBounds();
   private frame = 0;
   private readonly rebases: RebaseEvent[] = [];
   private rebaseCount = 0;
@@ -1240,10 +1238,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.chunks.set(key, record);
     this.chunkList.push(record);
     this.chunkHolders.add(record.group, key);
-    this.sceneMinX = Math.min(this.sceneMinX, record.minX);
-    this.sceneMaxX = Math.max(this.sceneMaxX, record.maxX);
-    this.sceneMinZ = Math.min(this.sceneMinZ, record.minZ);
-    this.sceneMaxZ = Math.max(this.sceneMaxZ, record.maxZ);
+    this.sceneBounds.extend(record);
   }
 
   setVehicle(vehicle: number, model: ChunkInstances): void {
@@ -1379,6 +1374,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     existing.dispose();
     this.chunks.delete(key);
     this.chunkList = this.chunkList.filter((record) => record !== existing);
+    this.sceneBounds.invalidate();
   }
 
   setGhost(model: ChunkInstances | null): void {
@@ -2232,20 +2228,24 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     camera.updateMatrixWorld();
   }
 
-  private fitShadowRange(): void {
+  private fitShadowRange(): boolean {
     const shadowNode = this.shadowNode;
-    if (!shadowNode || this.chunkList.length === 0) return;
-    const dx = Math.max(Math.abs(this.sceneMinX - this.eyeX), Math.abs(this.sceneMaxX - this.eyeX));
-    const dz = Math.max(Math.abs(this.sceneMinZ - this.eyeZ), Math.abs(this.sceneMaxZ - this.eyeZ));
-    const needed = Math.max(Math.hypot(dx, dz, this.eyeY), SHADOW_MIN_FAR_LDU);
-    const fits = needed <= this.shadowFar && needed * SHADOW_FAR_HYSTERESIS >= this.shadowFar;
-    if (fits) return;
-    this.shadowFar = needed * SHADOW_FAR_HYSTERESIS;
-    shadowNode.maxFar = this.shadowFar;
-    const depthRange = SHADOW_LIGHT_MARGIN_LDU + 2 * this.shadowFar;
+    if (!shadowNode || this.chunkList.length === 0) return true;
+    this.sceneBounds.refresh(this.chunkList);
+    const reach = this.sceneBounds.reachFrom(this.eyeX, this.eyeY, this.eyeZ);
+    const needed = Math.max(reach, SHADOW_MIN_FAR_LDU);
+    if (this.shadowRange.fit(needed)) this.applyShadowRange(shadowNode, this.shadowRange.far);
+    return this.shadowRange.atRest;
+  }
+
+  private applyShadowRange(shadowNode: CSMShadowNode, far: number): void {
+    shadowNode.maxFar = far;
+    const depthRange = SHADOW_LIGHT_MARGIN_LDU + 2 * far;
     this.sun.shadow.camera.far = depthRange;
-    for (const cascade of shadowNode.lights) {
-      if (cascade.shadow) cascade.shadow.camera.far = depthRange;
+    const cascades = shadowNode.lights;
+    for (let i = 0; i < cascades.length; i++) {
+      const shadow = cascades[i]?.shadow;
+      if (shadow) shadow.camera.far = depthRange;
     }
     if (shadowNode.camera !== null) shadowNode.updateFrustums();
   }
@@ -2553,7 +2553,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const renderer = this.renderer;
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
     this.throwIfFailed();
-    this.fitShadowRange();
+    const shadowsAtRest = this.fitShadowRange();
     this.readTierStats(out);
     this.showFarModels();
     renderer.info.reset();
@@ -2565,7 +2565,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     out.renderOriginChunkZ = this.renderOriginZ / CHUNK_LDU;
     out.rebaseCount = this.rebaseCount;
     this.frame++;
-    this.changed = false;
+    this.changed = !shadowsAtRest;
   }
 
   needsFrame(): boolean {

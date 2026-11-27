@@ -14,6 +14,7 @@ import {
   Vector3,
   type BufferGeometry,
   type MeshStandardNodeMaterial,
+  type WebGPURenderer,
 } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -21,6 +22,7 @@ import type {
   ChunkTier,
   EdgeMarker,
   FarModelPlacement,
+  FrameStats,
   NeededMeshListener,
   PartPalette,
   PlanOverlay,
@@ -1080,4 +1082,103 @@ it("keeps the sign of a zero in a rebuilt chunk's bounding sphere, whether the s
     computed: [true, true],
     reused: [true, true],
   });
+});
+
+const SHADOWS_ONLY = {
+  plastic: false,
+  gtao: false,
+  outlines: false,
+  bevel: false,
+  shadows: true,
+  oit: false,
+} as const;
+
+function frameStats(): FrameStats {
+  return {
+    drawCalls: 0,
+    triangles: 0,
+    nearChunks: 0,
+    midChunks: 0,
+    farChunks: 0,
+    nearestStudPitchPx: 0,
+    renderOriginChunkX: 0,
+    renderOriginChunkZ: 0,
+    rebaseCount: 0,
+  };
+}
+
+function shadowedBackend(
+  chunkOrigins: ReadonlyArray<readonly [number, number]>,
+): ThreeSceneBackend {
+  const { backend } = tieredBackend();
+  const renderer = {
+    shadowMap: { enabled: false },
+    info: { reset: () => undefined, render: { drawCalls: 0, triangles: 0 } },
+    render: () => undefined,
+  } as unknown as WebGPURenderer;
+  backend["renderer"] = renderer;
+  backend["light"](renderer, SHADOWS_ONLY);
+  chunkOrigins.forEach(([originX, originZ], key) =>
+    backend.setChunk(key, { ...chunkOf(0), originX, originZ }),
+  );
+  return backend;
+}
+
+function viewedAlong(backend: ThreeSceneBackend, eyeHeights: ReadonlyArray<number>): void {
+  const stats = frameStats();
+  for (const eyeY of eyeHeights) {
+    backend.setView(0, eyeY, 0, 0, 0, 1);
+    backend.renderFrame(stats);
+  }
+}
+
+function restedRange(backend: ThreeSceneBackend): { asked: number; far: number } {
+  let asked = 0;
+  while (backend.needsFrame()) {
+    asked++;
+    backend.renderFrame(frameStats());
+  }
+  return { asked, far: backend["shadowNode"]?.maxFar ?? 0 };
+}
+
+const SPREAD_CHUNKS = [
+  [0, 0],
+  [19_200, 12_800],
+] as const;
+const RESTING_EYE_LDU = 12_000;
+
+it.each([
+  {
+    path: "from close in, holding a range it outgrew",
+    eyeHeights: [2_000, 6_000, RESTING_EYE_LDU],
+    asked: 1,
+  },
+  {
+    path: "from far away, refitting on its last step",
+    eyeHeights: [90_000, 60_000, 30_000, RESTING_EYE_LDU],
+    asked: 0,
+  },
+])(
+  "asks for frames after the view stops only until the shadow range rests, and rests at one range whichever way the view came: $path",
+  ({ eyeHeights, asked }) => {
+    const backend = shadowedBackend(SPREAD_CHUNKS);
+    viewedAlong(backend, eyeHeights);
+
+    const fresh = shadowedBackend(SPREAD_CHUNKS);
+    viewedAlong(fresh, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
+    expect(restedRange(backend)).toEqual({ asked, far: restedRange(fresh).far });
+  },
+);
+
+it("rests at the shadow range the live chunks need once a chunk is deleted", () => {
+  const backend = shadowedBackend(SPREAD_CHUNKS);
+  viewedAlong(backend, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
+  const before = restedRange(backend).far;
+  backend.deleteChunk(1);
+  viewedAlong(backend, [RESTING_EYE_LDU]);
+
+  const live = shadowedBackend(SPREAD_CHUNKS.slice(0, 1));
+  viewedAlong(live, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
+  const after = restedRange(backend).far;
+  expect({ shrank: after < before, after }).toEqual({ shrank: true, after: restedRange(live).far });
 });
