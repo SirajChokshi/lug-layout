@@ -122,12 +122,14 @@ export class GroundPlane {
   private readonly underlayCorner = uniform(new Vector2());
   private readonly underlaySize = uniform(new Vector2(1, 1));
   private readonly underlayOpacity = uniform(0);
+  private readonly underlayOnGround = uniform(1);
   private underlay: GroundUnderlay | null = null;
   private picture: UnderlayPicture | null = null;
   private decoding: Blob | null = null;
   private renderOriginX = 0;
   private renderOriginZ = 0;
   private topYLdu = 0;
+  private roomFloors = false;
 
   constructor(
     parent: Object3D,
@@ -144,7 +146,7 @@ export class GroundPlane {
       fog: false,
     });
     material.colorNode = mix(
-      this.gridded(this.underlaid(GROUND_COLOR)),
+      this.gridded(this.underlaidWhere(GROUND_COLOR, this.underlayOnGround)),
       linearRgb(horizonColor),
       smoothstep(this.fogStart, this.fogEnd, positionWorld.distance(cameraPosition)),
     );
@@ -176,10 +178,19 @@ export class GroundPlane {
   }
 
   underlaid(baseSrgb: number): Node<"vec3"> {
+    return this.underlaidWhere(baseSrgb, float(1));
+  }
+
+  private underlaidWhere(baseSrgb: number, shown: Node<"float">): Node<"vec3"> {
     const at = positionWorld.xz.sub(this.underlayCorner).div(this.underlaySize);
     const inside = step(0, at.x).mul(step(at.x, 1)).mul(step(0, at.y)).mul(step(at.y, 1));
     const picture = this.underlayMap.sample(at);
-    return mix(linearRgb(baseSrgb), picture.rgb, picture.a.mul(inside).mul(this.underlayOpacity));
+    const alpha = picture.a.mul(inside).mul(this.underlayOpacity).mul(shown);
+    return mix(linearRgb(baseSrgb), picture.rgb, alpha);
+  }
+
+  setRoomFloors(present: boolean): void {
+    this.roomFloors = present;
   }
 
   configure(settings: GroundSettings | null): void {
@@ -246,6 +257,7 @@ export class GroundPlane {
     );
     this.fogStart.value = fogEnd * FOG_START_SHARE_OF_END;
     this.fogEnd.value = fogEnd;
+    this.underlayOnGround.value = this.roomFloors ? 0 : 1;
     this.place(centreX, centreZ, fogEnd + eyeDistanceLdu);
   }
 
@@ -257,6 +269,7 @@ export class GroundPlane {
   ): void {
     this.fogStart.value = this.farPlaneLdu * NO_FOG_FAR_PLANES;
     this.fogEnd.value = this.farPlaneLdu * (NO_FOG_FAR_PLANES + 1);
+    this.underlayOnGround.value = 1;
     this.place(
       centreX,
       centreZ,

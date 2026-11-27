@@ -70,7 +70,7 @@ export function UnderlayCalibrator({
   readonly onApply: (calibration: UnderlayCalibration) => void;
   readonly onCancel: () => void;
 }) {
-  const dialog = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const [size, setSize] = useState<PixelSize | null>(null);
   const [points, setPoints] = useState<ReadonlyArray<PixelPoint>>(
     initial ? [initial.from, initial.to] : [],
@@ -79,102 +79,90 @@ export function UnderlayCalibrator({
     initial ? String(initial.distanceMm / MM_PER_UNIT.m) : "",
   );
   const [unit, setUnit] = useState<DistanceUnit>("m");
-  useEffect(() => dialog.current?.focus(), []);
+  useEffect(() => dialog.current?.showModal(), []);
   const ready = calibration(points, distance, unit);
   const [from, to] = points;
   const apply = (): void => {
     if (ready) onApply(ready);
   };
   return (
-    <div
-      className="overlay"
-      onPointerDown={(event) => event.target === event.currentTarget && onCancel()}
+    <dialog
+      ref={dialog}
+      className="underlay-calibrator"
+      aria-labelledby="underlay-calibrator-title"
+      onKeyDown={(event) => event.stopPropagation()}
+      onCancel={(event) => {
+        event.preventDefault();
+        onCancel();
+      }}
     >
-      <section
-        ref={dialog}
-        className="underlay-calibrator"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="underlay-calibrator-title"
-        tabIndex={-1}
-        onKeyDown={(event) => event.key === "Escape" && onCancel()}
-      >
-        <header>
-          <h2 id="underlay-calibrator-title">Scale the floor plan</h2>
-          <button type="button" className="overlay-close" onClick={onCancel}>
-            Cancel <kbd>Esc</kbd>
-          </button>
-        </header>
-        <p>
-          Click two points whose distance apart you know, such as the ends of the scale bar or of a
-          wall, then type that distance. A third click starts again.
-        </p>
-        <div
-          className="underlay-picture"
-          data-points={points.map(([x, y]) => `${x},${y}`).join(" ")}
-        >
-          <img
-            src={imageUrl}
-            alt="The floor plan"
-            draggable={false}
-            onLoad={(event) =>
-              setSize({
-                width: event.currentTarget.naturalWidth,
-                height: event.currentTarget.naturalHeight,
-              })
-            }
-            onClick={(event) => {
-              const point = pixelAt(event);
-              setPoints((held) => {
-                const [first] = held;
-                return held.length === 1 && first ? [first, point] : [point];
-              });
-            }}
+      <header>
+        <h2 id="underlay-calibrator-title">Scale the floor plan</h2>
+        <button type="button" className="overlay-close" onClick={onCancel}>
+          Cancel <kbd>Esc</kbd>
+        </button>
+      </header>
+      <p>
+        Click two points whose distance apart you know, such as the ends of the scale bar or of a
+        wall, then type that distance. A third click starts again.
+      </p>
+      <div className="underlay-picture" data-points={points.map(([x, y]) => `${x},${y}`).join(" ")}>
+        <img
+          src={imageUrl}
+          alt="The floor plan"
+          draggable={false}
+          onLoad={(event) =>
+            setSize({
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            })
+          }
+          onClick={(event) => {
+            const point = pixelAt(event);
+            setPoints((held) => {
+              const [first] = held;
+              return held.length === 1 && first ? [first, point] : [point];
+            });
+          }}
+        />
+        {size && <Markers points={points} size={size} />}
+      </div>
+      <div className="underlay-distance">
+        <span>
+          {from ? `First point ${from[0]}, ${from[1]} px` : "Click the first point"}
+          {from && (to ? ` · second ${to[0]}, ${to[1]} px` : " · click the second point")}
+        </span>
+        <label>
+          Distance between them
+          <input
+            type="number"
+            min="0"
+            step="any"
+            name="underlay-distance"
+            value={distance}
+            onChange={(event) => setDistance(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && apply()}
           />
-          {size && <Markers points={points} size={size} />}
-        </div>
-        <div className="underlay-distance">
-          <span>
-            {from ? `First point ${from[0]}, ${from[1]} px` : "Click the first point"}
-            {from && (to ? ` · second ${to[0]}, ${to[1]} px` : " · click the second point")}
-          </span>
-          <label>
-            Distance between them
-            <input
-              type="number"
-              min="0"
-              step="any"
-              name="underlay-distance"
-              value={distance}
-              onChange={(event) => setDistance(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && apply()}
-            />
-          </label>
-          <select
-            name="underlay-unit"
-            aria-label="Distance unit"
-            value={unit}
-            onChange={(event) => {
-              const picked = DISTANCE_UNITS.find((name) => name === event.target.value);
-              if (picked) setUnit(picked);
-            }}
-          >
-            {DISTANCE_UNITS.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            data-action="apply-underlay-scale"
-            disabled={!ready}
-            onClick={apply}
-          >
-            Apply
-          </button>
-        </div>
-      </section>
-    </div>
+        </label>
+        <select
+          name="underlay-unit"
+          aria-label="Distance unit"
+          value={unit}
+          onChange={(event) => {
+            const picked = DISTANCE_UNITS.find((name) => name === event.target.value);
+            if (picked) setUnit(picked);
+          }}
+        >
+          {DISTANCE_UNITS.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <button type="button" data-action="apply-underlay-scale" disabled={!ready} onClick={apply}>
+          Apply
+        </button>
+      </div>
+    </dialog>
   );
 }

@@ -1621,6 +1621,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.positionAnchored(anchored);
       this.planOverlayGroup.add(anchored.object);
     }
+    this.ground.setRoomFloors(overlays.length > 0);
+    this.aimGround();
   }
 
   private tableMaterial(srgb: number): MeshStandardNodeMaterial {
