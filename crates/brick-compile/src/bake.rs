@@ -10,6 +10,7 @@ use crate::cover::{
     ProbeCache, StudShape,
 };
 use crate::flatten::{Library, Lod, StudReference};
+use crate::glyph::{Glyph, GlyphBaker, GlyphError, GlyphInstance, StudMeshes};
 use crate::lattice::{
     model_lattice, AxisPose, LatticeError, LatticeInstance, LatticeReceptor, ModelLattice,
 };
@@ -52,6 +53,7 @@ pub enum BakeError {
         part: String,
     },
     Lattice(LatticeError),
+    Glyph(GlyphError),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -135,6 +137,7 @@ impl std::fmt::Display for BakeError {
                 )
             }
             BakeError::Lattice(error) => write!(f, "{error}"),
+            BakeError::Glyph(error) => write!(f, "{error}"),
         }
     }
 }
@@ -184,6 +187,7 @@ struct PartReceptors {
 pub struct ModelBaker<'a, L: Library> {
     library: &'a L,
     options: CompileOptions,
+    stud_meshes: StudMeshes,
     stud_shape: StudShape,
     stud_fit: StudFit,
     translucent: HashSet<u32>,
@@ -199,6 +203,7 @@ pub struct ModelBaker<'a, L: Library> {
 
 pub struct KeptParts {
     options: CompileOptions,
+    stud_meshes: StudMeshes,
     stud_shape: StudShape,
     stud_fit: StudFit,
     translucent: HashSet<u32>,
@@ -245,10 +250,16 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             unofficial_allowlist,
             technic: TechnicPrimitives::default(),
         };
-        let stud_shape = measured_stud_shape(library, &options)?;
+        let stud_meshes = StudMeshes::compile(
+            library,
+            &options.stud_primitives,
+            &options.unofficial_allowlist,
+        )?;
+        let stud_shape = measured_stud_shape(&stud_meshes, &options.stud_primitives)?;
         let stud_fit = StudFit::measured(&stud_shape).map_err(BakeError::StudSection)?;
         Ok(ModelBaker {
             library,
+            stud_meshes,
             stud_shape,
             stud_fit,
             opacity: Opacity::new(translucent.iter().copied()),
@@ -272,6 +283,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
     pub fn resume(library: &'a L, kept: KeptParts) -> Self {
         let KeptParts {
             options,
+            stud_meshes,
             stud_shape,
             stud_fit,
             translucent,
@@ -286,6 +298,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         ModelBaker {
             library,
             options,
+            stud_meshes,
             stud_shape,
             stud_fit,
             translucent,
@@ -303,6 +316,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
     pub fn keep(self) -> KeptParts {
         let ModelBaker {
             options,
+            stud_meshes,
             stud_shape,
             stud_fit,
             translucent,
@@ -317,6 +331,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         } = self;
         KeptParts {
             options,
+            stud_meshes,
             stud_shape,
             stud_fit,
             translucent,
@@ -523,6 +538,23 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         detect_vehicles_with_bounds(self.library, drawn, signatures, rails, recorded)
     }
 
+    pub fn glyph(&mut self, drawn: &[ModelInstance]) -> Result<Glyph, BakeError> {
+        let slots = self.slots(drawn)?;
+        let instances: Vec<GlyphInstance> = drawn
+            .iter()
+            .zip(&slots)
+            .map(|(instance, &slot)| GlyphInstance {
+                mesh: self.sources[slot].mesh(),
+                studs: self.sources[slot].studs(),
+                color: instance.color,
+                matrix: &instance.matrix,
+            })
+            .collect();
+        GlyphBaker::new(&self.stud_meshes, &self.translucent)
+            .model(&instances)
+            .map_err(BakeError::Glyph)
+    }
+
     pub fn voxels(
         &mut self,
         drawn: &[ModelInstance],
@@ -555,26 +587,20 @@ pub enum FarVoxels {
     Omitted(VoxelError),
 }
 
-fn measured_stud_shape<L: Library>(
-    library: &L,
-    options: &CompileOptions,
-) -> Result<StudShape, BakeError> {
-    let bare = CompileOptions {
-        stud_primitives: Vec::new(),
-        ..options.clone()
-    };
+fn measured_stud_shape(meshes: &StudMeshes, primitives: &[String]) -> Result<StudShape, BakeError> {
     let mut shape = StudShape {
         height: 0.0,
         radius: 0.0,
         inscribed_radius: f64::INFINITY,
     };
-    for name in &options.stud_primitives {
-        let compiled = compile_part(library, name, &bare)?;
-        let [min, max] = compiled
-            .mesh
+    for name in primitives {
+        let mesh = meshes
+            .mesh(name)
+            .ok_or_else(|| BakeError::StudPrimitiveEmpty { name: name.clone() })?;
+        let [min, max] = mesh
             .bounds()
             .ok_or_else(|| BakeError::StudPrimitiveEmpty { name: name.clone() })?;
-        let inscribed = inscribed_radius(&compiled.mesh)
+        let inscribed = inscribed_radius(mesh)
             .ok_or_else(|| BakeError::StudPrimitiveWithoutWall { name: name.clone() })?;
         shape.height = shape.height.max(f64::from(max[1]));
         shape.radius = shape

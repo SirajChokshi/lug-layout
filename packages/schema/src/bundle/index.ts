@@ -1271,6 +1271,11 @@ export function authoredLinesFit(
   );
 }
 
+export const CompilerGlyphInputs = v.strictObject({
+  translucentColors: v.pipe(v.array(Count), v.readonly()),
+});
+export type CompilerGlyphInputs = v.InferOutput<typeof CompilerGlyphInputs>;
+
 export const CompilerRequest = v.variant("op", [
   v.strictObject({
     op: v.literal("readModel"),
@@ -1289,6 +1294,7 @@ export const CompilerRequest = v.variant("op", [
       v.readonly(),
     ),
     records: v.exactOptional(v.boolean()),
+    glyphs: v.exactOptional(CompilerGlyphInputs),
   }),
   v.strictObject({
     op: v.literal("bakeNeeds"),
@@ -1305,6 +1311,7 @@ export const CompilerRequest = v.variant("op", [
     shard: v.exactOptional(BakeShard),
     keepParts: v.exactOptional(v.boolean()),
     omrAuthoringIdentification: v.exactOptional(v.boolean()),
+    glyph: v.exactOptional(v.boolean()),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -1385,6 +1392,8 @@ export const CompilerCompile = v.object({
         ...Reference,
         glb: ByteRange,
         record: v.nullable(ByteRange),
+        glyph: v.nullable(ByteRange),
+        glyphIssue: v.exactOptional(v.string()),
         file: v.string(),
         header: ModelSection,
         files: Count,
@@ -1457,6 +1466,8 @@ export const CompilerBaked = v.object({
   }),
   vehicles: v.exactOptional(v.array(CompilerVehicle)),
   vehicleIssue: v.exactOptional(v.string()),
+  glyph: v.exactOptional(ByteRange),
+  glyphIssue: v.exactOptional(v.string()),
   phases: CompilerBakePhases,
   blobs: CompilerBlobs,
 });
@@ -1943,3 +1954,5 @@ export {
   MilsSurfaceFeature,
   MilsTemplate,
 } from "./mils-profile.ts";
+
+export { decodePlanGlyph, PLAN_GLYPH_MAGIC, type PlanGlyph } from "./glyph.ts";

@@ -78,6 +78,95 @@ pub fn shadow_texts(root: &Path) -> Vec<String> {
     out
 }
 
+pub const PART_FOLDER: &str = "parts";
+pub const PART_EXTENSION: &str = ".dat";
+
+pub struct DirectoryLibrary {
+    files: HashMap<String, PathBuf>,
+    read: RefCell<HashMap<String, Option<&'static str>>>,
+}
+
+impl DirectoryLibrary {
+    pub fn new(root: &Path) -> Result<Self, String> {
+        let mut files = HashMap::new();
+        let mut folders = vec![root.to_path_buf()];
+        while let Some(folder) = folders.pop() {
+            for entry in fs::read_dir(&folder).map_err(|e| format!("{}: {e}", folder.display()))? {
+                let path = entry.map_err(|e| e.to_string())?.path();
+                if path.is_dir() {
+                    folders.push(path);
+                    continue;
+                }
+                let key = path
+                    .strip_prefix(root)
+                    .map_err(|e| e.to_string())?
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_lowercase();
+                files.entry(key).or_insert(path);
+            }
+        }
+        Ok(DirectoryLibrary {
+            files,
+            read: RefCell::new(HashMap::new()),
+        })
+    }
+}
+
+impl Library for DirectoryLibrary {
+    fn source(&self, path: &str) -> Option<&str> {
+        if let Some(&text) = self.read.borrow().get(path) {
+            return text;
+        }
+        let text = self
+            .files
+            .get(path)
+            .and_then(|file| fs::read(file).ok())
+            .map(|bytes| {
+                let text: &'static str = Box::leak(
+                    String::from_utf8_lossy(&bytes)
+                        .into_owned()
+                        .into_boxed_str(),
+                );
+                text
+            });
+        self.read.borrow_mut().insert(path.to_string(), text);
+        text
+    }
+}
+
+pub fn library_parts(library: &DirectoryLibrary) -> Vec<String> {
+    let prefix = format!("{PART_FOLDER}/");
+    let mut parts: Vec<String> = library
+        .files
+        .keys()
+        .filter_map(|path| path.strip_prefix(&prefix))
+        .filter(|name| !name.contains('/') && name.ends_with(PART_EXTENSION))
+        .map(str::to_string)
+        .collect();
+    parts.sort();
+    parts
+}
+
+pub fn strings(palette: &serde_json::Value, key: &str) -> Result<Vec<String>, String> {
+    palette[key]
+        .as_array()
+        .ok_or(format!("palette.{key} must be an array"))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or(format!("palette.{key} holds a non-string"))
+        })
+        .collect()
+}
+
+pub fn read_json(path: &Path) -> Result<serde_json::Value, String> {
+    let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 pub fn read_section_vocabulary(path: &Path) -> Result<SectionVocabulary, String> {
     let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let value: serde_json::Value =

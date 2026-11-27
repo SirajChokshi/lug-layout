@@ -8,6 +8,7 @@ use brick_compile::bake::{KeptParts, LatticeShape, ModelBaker, RecordShelf};
 use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
+use brick_compile::glyph::{GlyphBaker, StudMeshes};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model_with, submodel_index, BakeOptions, ModelInstance};
@@ -19,6 +20,7 @@ use brick_compile::{
 };
 
 const BAKE_RECORD_LOD: &str = "bake records exist only at the standard LOD";
+const GLYPH_LOD: &str = "plan glyphs exist only at the standard LOD";
 const MS_PER_SECOND: f64 = 1000.0;
 
 fn ms(elapsed: Duration) -> f64 {
@@ -33,7 +35,7 @@ use crate::reply::{
     AuthoredIdentification, BakePhases, BogieHeader, Cover, Failure, InlineOutcome, InlinePair,
     Lattice, LooseGeometry, PartOutcome, Reply, Section, VehicleHeader,
 };
-use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
+use crate::request::{GlyphInputs, InlineCheck, Operation, Range, VehicleInputs};
 use crate::tracking::TrackingLibrary;
 
 #[derive(Default)]
@@ -77,6 +79,44 @@ struct BakeInputs<'a> {
     vehicles: Option<&'a VehicleInputs>,
     shard: CoverShard,
     receptors: Option<DrawnReceptors>,
+    glyph: bool,
+}
+
+struct PartGlyphs {
+    studs: StudMeshes,
+    translucent: HashSet<u32>,
+}
+
+impl PartGlyphs {
+    fn compile(
+        library: &TrackingLibrary,
+        stud_primitives: &[String],
+        unofficial_allowlist: &[String],
+        inputs: &GlyphInputs,
+    ) -> Result<Self, CompileError> {
+        Ok(PartGlyphs {
+            studs: StudMeshes::compile(library, stud_primitives, unofficial_allowlist)?,
+            translucent: inputs.translucent_colors.iter().copied().collect(),
+        })
+    }
+
+    fn encoded(&self, part: &CompiledPart) -> Result<Vec<u8>, String> {
+        let glyph = GlyphBaker::new(&self.studs, &self.translucent)
+            .part(&part.mesh, &part.studs)
+            .map_err(|e| e.to_string())?;
+        glyph.encode().map_err(|e| e.to_string())
+    }
+}
+
+fn placed_glyph(
+    body: &mut Body,
+    encoded: Option<Result<Vec<u8>, String>>,
+) -> (Option<Range>, Option<String>) {
+    match encoded {
+        None => (None, None),
+        Some(Ok(bytes)) => (Some(body.bytes(&bytes)), None),
+        Some(Err(issue)) => (None, Some(issue)),
+    }
 }
 
 impl Session {
@@ -114,12 +154,34 @@ impl Session {
                 parts,
                 inline_checks,
                 records,
+                glyphs,
             } => {
                 if *records && Lod::from(*lod) != Lod::Standard {
                     return Err(BAKE_RECORD_LOD.to_string());
                 }
+                if glyphs.is_some() && Lod::from(*lod) != Lod::Standard {
+                    return Err(GLYPH_LOD.to_string());
+                }
                 let rolling_mode = rolling_mode_from_studs(&self.library, stud_primitives);
+                let part_glyphs = glyphs.as_ref().map(|inputs| {
+                    PartGlyphs::compile(
+                        &self.library,
+                        stud_primitives,
+                        unofficial_allowlist,
+                        inputs,
+                    )
+                });
                 let stud_needs = self.library.take_requested();
+                let part_glyphs = match part_glyphs {
+                    None => None,
+                    Some(Ok(glyphs)) => Some(glyphs),
+                    Some(Err(_)) if !stud_needs.is_empty() => None,
+                    Some(Err(error)) => {
+                        return Err(format!(
+                            "the stud primitives don't compile for glyphs: {error}"
+                        ))
+                    }
+                };
                 let options = CompileOptions {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
@@ -141,6 +203,7 @@ impl Session {
                         stud_needs: &stud_needs,
                         inference: &inference,
                         records: *records,
+                        glyphs: part_glyphs.as_ref(),
                     },
                     &model,
                     body,
@@ -176,6 +239,7 @@ impl Session {
                 shard,
                 keep_parts,
                 omr_authoring_identification,
+                glyph,
             } => {
                 let drawn = drawn_instances(
                     &request.text("source")?,
@@ -198,6 +262,7 @@ impl Session {
                     vehicles: vehicles.as_ref(),
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
                     receptors,
+                    glyph: *glyph,
                 };
                 let decoded = std::mem::take(&mut self.decoded_since_bake);
                 let offered = self.offered_references();
@@ -359,6 +424,7 @@ struct CompileWork<'a> {
     stud_needs: &'a [String],
     inference: &'a ConnectorInference<'a>,
     records: bool,
+    glyphs: Option<&'a PartGlyphs>,
 }
 
 fn compiled_part(
@@ -389,6 +455,7 @@ fn compile(
         stud_needs,
         inference,
         records,
+        glyphs,
     } = work;
     let mut parts = Vec::with_capacity(references.len());
     for reference in references {
@@ -415,20 +482,26 @@ fn compile(
                 reference,
                 paths: requested,
             },
-            Ok((compiled, record)) => PartOutcome::Compiled {
-                glb: body.bytes(&compiled.to_glb()),
-                record: match record {
-                    Some(record) => {
-                        Some(body.bytes(&record.encode().map_err(|e| format!("{reference}: {e}"))?))
-                    }
-                    None => None,
-                },
-                reference,
-                file: compiled.path.clone(),
-                header: Section::from(&compiled.flattened_files[0].header),
-                files: compiled.flattened_files.len(),
-                connectors,
-            },
+            Ok((compiled, record)) => {
+                let (glyph, glyph_issue) =
+                    placed_glyph(body, glyphs.map(|glyphs| glyphs.encoded(&compiled)));
+                PartOutcome::Compiled {
+                    glb: body.bytes(&compiled.to_glb()),
+                    record: match record {
+                        Some(record) => Some(
+                            body.bytes(&record.encode().map_err(|e| format!("{reference}: {e}"))?),
+                        ),
+                        None => None,
+                    },
+                    glyph,
+                    glyph_issue,
+                    reference,
+                    file: compiled.path.clone(),
+                    header: Section::from(&compiled.flattened_files[0].header),
+                    files: compiled.flattened_files.len(),
+                    connectors,
+                }
+            }
             Err(error) => PartOutcome::Failed {
                 reference,
                 failure: Failure::from(&error),
@@ -617,6 +690,15 @@ fn bake_drawn(
         .iter()
         .map(|instance| &shapes[instance.part.as_str()].1)
         .collect();
+    let (glyph, glyph_issue) = placed_glyph(
+        body,
+        inputs.glyph.then(|| {
+            baker
+                .glyph(drawn)
+                .map_err(|e| e.to_string())
+                .and_then(|glyph| glyph.encode().map_err(|e| e.to_string()))
+        }),
+    );
     if inputs.receptors.is_none() {
         let covering = Instant::now();
         let cover = baker
@@ -633,6 +715,8 @@ fn bake_drawn(
             cover: Cover::from(&cover),
             vehicles: None,
             vehicle_issue: None,
+            glyph,
+            glyph_issue,
             phases,
             blobs: body.take_blobs(),
         };
@@ -668,6 +752,8 @@ fn bake_drawn(
         cover: Cover::from(&cover),
         vehicles,
         vehicle_issue,
+        glyph,
+        glyph_issue,
         phases,
         blobs: body.take_blobs(),
     };

@@ -1,4 +1,9 @@
-import { SectionVocabularyFile } from "@brr/schema/bundle";
+import {
+  decodePlanGlyph,
+  SectionVocabularyFile,
+  type CompilerGlyphInputs,
+  type PlanGlyph,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
@@ -95,7 +100,11 @@ async function hold(
   }
 }
 
-async function compileAll(lod: CompileLod, records: boolean): Promise<CompileOutput> {
+async function compileAll(
+  lod: CompileLod,
+  records: boolean,
+  glyphs: CompilerGlyphInputs | null = null,
+): Promise<CompileOutput> {
   const { manifest, compiler, vocabulary } = await bundleCompiler();
   const paths = await libraryPaths();
   const library: HeldLibrary = { key: "records", files: new Map(), absent: new Set() };
@@ -114,6 +123,7 @@ async function compileAll(lod: CompileLod, records: boolean): Promise<CompileOut
     model: "",
     inlineChecks: [],
     records,
+    ...(glyphs === null ? {} : { glyphs }),
   };
   let output = compiler.compile(request, library);
   for (;;) {
@@ -322,6 +332,69 @@ it(
     for (const bake of bakes) {
       expect(bake).toEqual({ ...bakes[0], recordedParts: bake.recordedParts, phases: bake.phases });
     }
+  },
+  COMPILE_TIMEOUT_MS,
+);
+
+function readGlyph(bytes: Uint8Array | null): PlanGlyph {
+  if (bytes === null) throw new Error("no plan glyph came back");
+  const decoded = decodePlanGlyph(bytes);
+  if (!decoded.ok) throw new Error(decoded.issues.map((issue) => issue.message).join("; "));
+  return decoded.value;
+}
+
+it(
+  "a compile and a bake asked for plan glyphs return glyphs the schema reads, and a bake from records draws the glyph a compile draws",
+  async () => {
+    const compiled = await compileAll("standard", true, { translucentColors: [] });
+    const outcomeOf = (
+      part: string,
+    ): { readonly glyph: Uint8Array | null; readonly record: Uint8Array } => {
+      const outcome = compiled.parts[PARTS.indexOf(part)];
+      if (outcome?.status !== "compiled" || outcome.record === null) {
+        throw new Error(`${part} did not compile`);
+      }
+      return { glyph: outcome.glyph, record: outcome.record };
+    };
+    const brick = readGlyph(outcomeOf("3001.dat").glyph);
+    expect([brick.originX, brick.originZ, brick.width, brick.depth]).toEqual([-16, -8, 32, 16]);
+    expect([...brick.colors]).toEqual([16]);
+    expect(brick.coverage.every((count) => count === 16)).toBe(true);
+    expect([...brick.vertices]).toEqual([0, 0, 128, 0, 128, 64, 0, 64]);
+
+    const records: RecordFiles = {
+      key: "pinned",
+      files: new Map(["3001.dat", "3040b.dat"].map((part) => [part, outcomeOf(part).record])),
+    };
+    const { manifest, compiler } = await bundleCompiler();
+    const paths = await libraryPaths();
+    const library: HeldLibrary = { key: "glyph", files: new Map(), absent: new Set() };
+    const request: PlacementBakeRequest = {
+      source: STACKED_BESIDE_A_SLOPE,
+      drawn: new Uint8Array([1, 1, 1]),
+      receptors: bakeReceptors(new Uint32Array(3), [null]),
+      studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
+      unofficialAllowlist: [],
+      translucentColors: [],
+      tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
+      vehicles: null,
+      glyph: true,
+    };
+    const fromRecords = await baked(compiler, request, library, paths, records);
+    const fromCompiles = await baked(compiler, request, library, paths, null);
+    expect(fromRecords.recordedParts).toBe(2);
+    expect(fromRecords.glyph).toEqual(fromCompiles.glyph);
+    expect([...readGlyph(fromRecords.glyph).colors]).toEqual([1, 2]);
+  },
+  COMPILE_TIMEOUT_MS,
+);
+
+it(
+  "plan glyphs are refused at any LOD but the standard one",
+  async () => {
+    await expect(compileAll("low", false, { translucentColors: [] })).rejects.toThrow(
+      "standard LOD",
+    );
   },
   COMPILE_TIMEOUT_MS,
 );
