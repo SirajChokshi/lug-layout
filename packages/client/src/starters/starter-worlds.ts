@@ -5,7 +5,7 @@ import {
   starterFilePath,
   type StarterV1,
 } from "@brr/schema/starters";
-import { MANIFEST_FILE, WorldManifestV1, parseJsonText } from "@brr/schema/world";
+import { MANIFEST_FILE, decodeWorldManifest, parseJsonText } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import type { IEditor } from "../edit/editor.ts";
 import { errorText } from "../edit/error-text.ts";
@@ -161,7 +161,7 @@ export class StarterWorlds implements IStarterWorlds {
   private async starterView(starter: StarterV1): Promise<StarterWorldView> {
     const path = starterFilePath(starter.world, MANIFEST_FILE);
     const manifest = decodedOrThrow(
-      decode(WorldManifestV1, await this.json(path), path),
+      decodeWorldManifest(await this.json(path), path),
       `the starter ${starter.world} can't be read`,
     );
     return {

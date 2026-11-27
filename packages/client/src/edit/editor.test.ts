@@ -69,15 +69,17 @@ import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
+  noteShardEntry,
   shardEntry,
   shardName,
   worldManifest,
   type ConsistRecordV1,
   type ImportedFile,
+  type NoteShardV2,
   type WorldArchive,
   type WorldHeader,
   type WorldIndexEntry,
-  type WorldShardV1,
+  type WorldShardV2,
 } from "@brr/schema/world";
 import {
   WORLD_LOCKS,
@@ -1528,7 +1530,8 @@ it("offers every baseplate and road plate in exactly the produced colours the bu
 
 interface MemoryWorld {
   header: WorldHeader;
-  readonly shards: Map<string, WorldShardV1>;
+  readonly shards: Map<string, WorldShardV2>;
+  readonly notes: Map<string, NoteShardV2>;
 }
 
 class MemoryRepository implements IWorldRepository {
@@ -1583,27 +1586,36 @@ class MemoryRepository implements IWorldRepository {
     return [...this.worlds].map(([id, world]) => this.entry(id, world));
   }
 
-  async create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
+  async create(
+    header: WorldHeader,
+    shards: ReadonlyArray<WorldShardV2>,
+    notes: ReadonlyArray<NoteShardV2>,
+  ): Promise<WorldIndexEntry> {
     const id = `world-${this.nextId++}`;
-    this.worlds.set(id, { header, shards: new Map() });
-    return this.save(id, { header, put: shards, drop: [] });
+    this.worlds.set(id, { header, shards: new Map(), notes: new Map() });
+    return this.save(id, { header, put: shards, drop: [], putNotes: notes, dropNotes: [] });
   }
 
   async read(id: string): Promise<Decoded<StoredWorld>> {
     const world = this.worlds.get(id);
     if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
     const shards = [...world.shards.values()];
-    return {
-      ok: true,
-      value: { id, manifest: worldManifest(world.header, shards.map(shardEntry)), shards },
-    };
+    const notes = [...world.notes.values()];
+    const manifest = worldManifest(world.header, shards.map(shardEntry), notes.map(noteShardEntry));
+    return { ok: true, value: { id, manifest, shards, notes } };
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
-    const world = this.worlds.get(id) ?? { header: change.header, shards: new Map() };
+    const world = this.worlds.get(id) ?? {
+      header: change.header,
+      shards: new Map(),
+      notes: new Map(),
+    };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
     for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
+    for (const superChunk of change.dropNotes) world.notes.delete(shardName(superChunk));
+    for (const shard of change.putNotes) world.notes.set(shardName(shard.superChunk), shard);
     this.worlds.set(id, world);
     return this.entry(id, world);
   }
@@ -1615,7 +1627,7 @@ class MemoryRepository implements IWorldRepository {
   async copyWith(
     id: string,
     name: string,
-    extra: (placements: WorldShardV1["placements"]) => WorldShardV1["placements"],
+    extra: (placements: WorldShardV2["placements"]) => WorldShardV2["placements"],
   ): Promise<string> {
     const world = this.worlds.get(id);
     if (!world) throw new Error(`world ${id} is not stored`);
@@ -1623,7 +1635,7 @@ class MemoryRepository implements IWorldRepository {
       ...shard,
       placements: [...shard.placements, ...extra(shard.placements)],
     }));
-    return (await this.create({ ...world.header, name }, shards)).id;
+    return (await this.create({ ...world.header, name }, shards, [...world.notes.values()])).id;
   }
 
   async shardFiles(): Promise<never[]> {

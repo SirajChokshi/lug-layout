@@ -18,23 +18,32 @@ import {
   type PlanRecordV1,
 } from "@brr/schema/plan";
 import {
+  DEFAULT_WORLD_DOCUMENT,
   WORLD_NAME_MAX_LENGTH,
   WorldName,
+  migrateShardV1,
+  noteShardEntry,
   referencedImports,
   shardEntry,
+  shardName,
+  worldDocument,
   worldHeader,
   worldManifest,
   worldShards,
+  worldShardsV1,
   type ConsistRecordV1,
   type ImportedFile,
+  type NoteShardV2,
   type PlacementRecordV1,
   type SavedViewV1,
   type TrackRecordV1,
+  type TrackRecordV2,
+  type WorldDocument,
   type WorldFiles,
   type WorldHeader,
   type WorldIndexEntry,
-  type WorldManifestV1,
-  type WorldShardV1,
+  type WorldManifestV2,
+  type WorldShardV2,
 } from "@brr/schema/world";
 import {
   WORLD_LOCKS,
@@ -96,12 +105,12 @@ export interface WorldSessionView {
 export interface WorldContents {
   readonly world: World;
   readonly refs: ReadonlyArray<string>;
-  readonly track: ReadonlyArray<TrackRecordV1>;
+  readonly track: ReadonlyArray<TrackRecordV2>;
   readonly consists: ReadonlyArray<ConsistRecordV1>;
 }
 
 export interface StoredContents {
-  readonly shards: ReadonlyArray<WorldShardV1>;
+  readonly shards: ReadonlyArray<WorldShardV2>;
   readonly consists: ReadonlyArray<ConsistRecordV1>;
 }
 
@@ -121,7 +130,7 @@ export interface PlanContents {
 
 export interface StoredPlan {
   readonly plan: PlanRecordV1;
-  readonly shards: ReadonlyArray<WorldShardV1>;
+  readonly shards: ReadonlyArray<WorldShardV2>;
 }
 
 export interface IEditedWorld extends IPlanSheetSource {
@@ -169,9 +178,35 @@ const CAMERA_SAVE_DELAY_MS = 500;
 const UNSEEN = Number.NaN;
 const FIRST_WORLD_NAME = "World 1";
 const NOTHING_STORED: StoredContents = { shards: [], consists: [] };
+const UNKEPT_TAGS =
+  "is on a layer, in a group or owned by a contributor, which this editor can't keep yet";
 
-function storedContents(manifest: WorldManifestV1, shards: ReadonlyArray<WorldShardV1>) {
+function storedContents(manifest: WorldManifestV2, shards: ReadonlyArray<WorldShardV2>) {
   return { shards, consists: manifest.consists ?? [] };
+}
+
+interface TaggedRecord {
+  readonly layer?: number;
+  readonly owner?: number;
+  readonly group?: number;
+}
+
+function tagged(record: TaggedRecord): boolean {
+  return record.layer !== undefined || record.owner !== undefined || record.group !== undefined;
+}
+
+function unkeptTagIssues(shards: ReadonlyArray<WorldShardV2>): Issue[] {
+  return shards.flatMap((shard) => {
+    const path = `shard ${shardName(shard.superChunk)}`;
+    return [
+      ...shard.placements.flatMap((placement, i) =>
+        tagged(placement) ? [{ path: `${path}.placements.${i}`, message: UNKEPT_TAGS }] : [],
+      ),
+      ...shard.track.flatMap((piece, i) =>
+        tagged(piece) ? [{ path: `${path}.track.${i}`, message: UNKEPT_TAGS }] : [],
+      ),
+    ];
+  });
 }
 
 function planRecord(region: PlanRegion): PlanRecordV1 {
@@ -208,6 +243,8 @@ interface OpenWorld {
   readonly name: string;
   readonly pinnedBundleVersion: string;
   readonly openMs: number;
+  readonly document: WorldDocument;
+  readonly notes: ReadonlyArray<NoteShardV2>;
 }
 
 class ViewRecord implements SavedViewV1 {
@@ -291,6 +328,7 @@ export class WorldSession implements IWorldSession {
       view: this.camera.savedView(),
       disclaimer: this.disclaimer,
       ...(consists.length > 0 ? { consists: [...consists] } : {}),
+      ...worldDocument(current.document),
     };
   }
 
@@ -377,6 +415,8 @@ export class WorldSession implements IWorldSession {
         header: this.header(current),
         put: change.put,
         drop: change.drop,
+        putNotes: [],
+        dropNotes: [],
       });
       this.current = { ...current, pinnedBundleVersion: this.bundleVersion };
       const unsaved = this.dirty.size > 0 || this.cameraDirty || this.consistsDirty;
@@ -466,11 +506,13 @@ export class WorldSession implements IWorldSession {
   }
 
   private async startWithoutStorage(reason: string): Promise<void> {
-    const current = {
+    const current: OpenWorld = {
       id: null,
       name: FIRST_WORLD_NAME,
       pinnedBundleVersion: this.bundleVersion,
       openMs: 0,
+      document: DEFAULT_WORLD_DOCUMENT,
+      notes: [],
     };
     await this.loadEditedWorld(current.name, NOTHING_STORED);
     this.finishOpen(null, current);
@@ -537,15 +579,19 @@ export class WorldSession implements IWorldSession {
         bundleVersion: this.bundleVersion,
         view: new ViewCamera(CAMERA_FOV_DEGREES).savedView(),
         disclaimer: this.disclaimer,
+        ...DEFAULT_WORLD_DOCUMENT,
       },
+      [],
       [],
     );
     await this.takeLease(summary.id);
-    const current = {
+    const current: OpenWorld = {
       id: summary.id,
       name,
       pinnedBundleVersion: this.bundleVersion,
       openMs: performance.now() - started,
+      document: DEFAULT_WORLD_DOCUMENT,
+      notes: [],
     };
     await this.loadEditedWorld(name, NOTHING_STORED);
     this.finishOpen(null, current);
@@ -553,6 +599,8 @@ export class WorldSession implements IWorldSession {
   }
 
   private async loadEditedWorld(name: string, stored: StoredContents): Promise<void> {
+    const unkept = unkeptTagIssues(stored.shards);
+    if (unkept.length > 0) throw new Error(`world "${name}" can't be opened: ${issueText(unkept)}`);
     const issues = await this.editedWorld().load(stored);
     if (issues.length > 0) {
       throw new Error(`world "${name}" can't be opened: ${issueText(issues)}`);
@@ -561,16 +609,18 @@ export class WorldSession implements IWorldSession {
 
   private async loadShards(
     id: string | null,
-    manifest: WorldManifestV1,
-    shards: ReadonlyArray<WorldShardV1>,
+    stored: Omit<WorldFiles, "imports">,
     started: number,
   ): Promise<void> {
+    const { manifest, shards, notes } = stored;
     await this.loadEditedWorld(manifest.name, storedContents(manifest, shards));
-    const opened = {
+    const opened: OpenWorld = {
       id,
       name: manifest.name,
       pinnedBundleVersion: manifest.bundleVersion,
       openMs: performance.now() - started,
+      document: worldDocument(manifest),
+      notes,
     };
     this.finishOpen(manifest.view, opened);
     this.setWorldView(opened, {
@@ -588,7 +638,7 @@ export class WorldSession implements IWorldSession {
     await this.ensureImports(storedContents(stored.value.manifest, stored.value.shards), (sha256) =>
       this.repository.importedFile(sha256),
     );
-    await this.loadShards(id, stored.value.manifest, stored.value.shards, started);
+    await this.loadShards(id, stored.value, started);
   }
 
   private async ensureImports(
@@ -696,7 +746,12 @@ export class WorldSession implements IWorldSession {
       );
       const contents = edited.contents();
       const shards = worldShards(worldPlacements(contents.world, contents.refs), contents.track);
-      const manifest = worldManifest(this.header(current), shards.map(shardEntry));
+      const notes = current.notes;
+      const manifest = worldManifest(
+        this.header(current),
+        shards.map(shardEntry),
+        notes.map(noteShardEntry),
+      );
       const imports = [...referencedImports(shards, contents.consists)].map((sha256) => {
         const file = this.importedFiles.get(sha256);
         if (!file) throw new Error(`the imported file with sha256 ${sha256} isn't loaded`);
@@ -704,7 +759,7 @@ export class WorldSession implements IWorldSession {
       });
       return {
         fileName: exportFileName(current.name),
-        bytes: this.repository.packArchive({ manifest, shards, credits, imports }),
+        bytes: this.repository.packArchive({ manifest, shards, notes, credits, imports }),
       };
     });
   }
@@ -761,7 +816,7 @@ export class WorldSession implements IWorldSession {
     const credits = this.credits.exportText(
       creditsForPlan(await this.loadCredits(), placed, credited),
     );
-    const shards = worldShards(placements, track);
+    const shards = worldShardsV1(placements, track);
     const manifest = planManifest(
       {
         bundleVersion: this.bundleVersion,
@@ -792,7 +847,8 @@ export class WorldSession implements IWorldSession {
         }
         const archive = await this.repository.readPlanArchive(bytes);
         if (!archive.ok) throw new Error(issueText(archive.issues));
-        const { manifest, shards, imports } = archive.value;
+        const { manifest, imports } = archive.value;
+        const shards = archive.value.shards.map(migrateShardV1);
         const carried = new Map(imports.map((file) => [file.sha256, file]));
         await this.ensureImports({ shards, consists: [] }, async (sha256) => carried.get(sha256));
         const issues = await this.editedWorld().addPlan({ plan: manifest.plan, shards });
@@ -834,8 +890,10 @@ export class WorldSession implements IWorldSession {
       const started = performance.now();
       const archive = await read();
       if (!archive.ok) throw new Error(issueText(archive.issues));
-      const { manifest, shards, imports } = archive.value;
+      const { manifest, shards, notes, imports } = archive.value;
       const stored = storedContents(manifest, shards);
+      const unkept = unkeptTagIssues(shards);
+      if (unkept.length > 0) throw new Error(issueText(unkept));
       const carried = new Map(imports.map((file) => [file.sha256, file]));
       await this.ensureImports(stored, async (sha256) => carried.get(sha256));
       if (this.state.storageError === null) {
@@ -844,10 +902,10 @@ export class WorldSession implements IWorldSession {
       const issues = this.editedWorld().validate(stored);
       if (issues.length > 0) throw new Error(issueText(issues));
       if (this.state.storageError !== null) {
-        await this.loadShards(null, manifest, shards, started);
+        await this.loadShards(null, archive.value, started);
         return;
       }
-      const summary = await this.repository.create(worldHeader(manifest), shards);
+      const summary = await this.repository.create(worldHeader(manifest), shards, notes);
       await this.openStored(summary.id);
       await this.refreshWorlds();
     });

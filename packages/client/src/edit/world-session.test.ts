@@ -9,15 +9,18 @@ import {
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
+  DEFAULT_WORLD_DOCUMENT,
+  noteShardEntry,
   shardEntry,
   shardName,
   worldManifest,
   type ImportedFile,
+  type NoteShardV2,
   type SavedViewV1,
   type WorldArchive,
   type WorldHeader,
   type WorldIndexEntry,
-  type WorldShardV1,
+  type WorldShardV2,
 } from "@brr/schema/world";
 import {
   WORLD_REPOSITORY,
@@ -151,7 +154,8 @@ class BaseplateWorld implements IEditedWorld {
 
 interface MemoryWorld {
   header: WorldHeader;
-  readonly shards: Map<string, WorldShardV1>;
+  readonly shards: Map<string, WorldShardV2>;
+  readonly notes: Map<string, NoteShardV2>;
 }
 
 class FailingSaveRepository implements IWorldRepository {
@@ -182,7 +186,11 @@ class FailingSaveRepository implements IWorldRepository {
 
   seed(header: WorldHeader): WorldIndexEntry {
     const id = `world-${this.nextId++}`;
-    const world = { header, shards: new Map<string, WorldShardV1>() };
+    const world = {
+      header,
+      shards: new Map<string, WorldShardV2>(),
+      notes: new Map<string, NoteShardV2>(),
+    };
     this.worlds.set(id, world);
     return this.entry(id, world);
   }
@@ -191,28 +199,37 @@ class FailingSaveRepository implements IWorldRepository {
     return [...this.worlds].map(([id, world]) => this.entry(id, world));
   }
 
-  async create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
+  async create(
+    header: WorldHeader,
+    shards: ReadonlyArray<WorldShardV2>,
+    notes: ReadonlyArray<NoteShardV2>,
+  ): Promise<WorldIndexEntry> {
     const id = `world-${this.nextId++}`;
-    this.worlds.set(id, { header, shards: new Map() });
-    return this.save(id, { header, put: shards, drop: [] });
+    this.worlds.set(id, { header, shards: new Map(), notes: new Map() });
+    return this.save(id, { header, put: shards, drop: [], putNotes: notes, dropNotes: [] });
   }
 
   async read(id: string): Promise<Decoded<StoredWorld>> {
     const world = this.worlds.get(id);
     if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
     const shards = [...world.shards.values()];
-    return {
-      ok: true,
-      value: { id, manifest: worldManifest(world.header, shards.map(shardEntry)), shards },
-    };
+    const notes = [...world.notes.values()];
+    const manifest = worldManifest(world.header, shards.map(shardEntry), notes.map(noteShardEntry));
+    return { ok: true, value: { id, manifest, shards, notes } };
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
     if (this.failSaves) throw new Error("QuotaExceededError");
-    const world = this.worlds.get(id) ?? { header: change.header, shards: new Map() };
+    const world = this.worlds.get(id) ?? {
+      header: change.header,
+      shards: new Map(),
+      notes: new Map(),
+    };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
     for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
+    for (const superChunk of change.dropNotes) world.notes.delete(shardName(superChunk));
+    for (const shard of change.putNotes) world.notes.set(shardName(shard.superChunk), shard);
     this.worlds.set(id, world);
     return this.entry(id, world);
   }
@@ -306,6 +323,7 @@ describe("unsaved edits after a failed save", () => {
       bundleVersion: "test",
       view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0, pitch: 0.75 },
       disclaimer: "disclaimer",
+      ...DEFAULT_WORLD_DOCUMENT,
     });
 
     expect(await session.openWorld(other.id)).toBe(false);
@@ -364,6 +382,7 @@ describe("camera saving", () => {
       bundleVersion: "test",
       view: { targetX: 640, targetY: 0, targetZ: 640, distance: 2600, yaw: 1, pitch: 0.75 },
       disclaimer: "disclaimer",
+      ...DEFAULT_WORLD_DOCUMENT,
     });
     expect(await session.openWorld(other.id)).toBe(true);
     const afterOpen = saves();
