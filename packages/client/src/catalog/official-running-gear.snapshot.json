@@ -147,7 +147,7 @@
     "fixedAxles": 0,
     "wheelsets": 4,
     "seated": 4,
-    "body": 33,
+    "body": 49,
     "endCandidates": [
      0,
      0
@@ -254,7 +254,7 @@
     "fixedAxles": 0,
     "wheelsets": 4,
     "seated": 4,
-    "body": 297,
+    "body": 344,
     "endCandidates": [
      0,
      0
@@ -276,7 +276,7 @@
     "fixedAxles": 2,
     "wheelsets": 2,
     "seated": 2,
-    "body": 9,
+    "body": 21,
     "endCandidates": [
      0,
      0
@@ -291,7 +291,7 @@
     "fixedAxles": 2,
     "wheelsets": 2,
     "seated": 2,
-    "body": 9,
+    "body": 21,
     "endCandidates": [
      0,
      0
@@ -316,7 +316,7 @@
     "fixedAxles": 0,
     "wheelsets": 4,
     "seated": 4,
-    "body": 88,
+    "body": 103,
     "endCandidates": [
      0,
      0
