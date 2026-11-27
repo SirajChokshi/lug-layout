@@ -9,13 +9,17 @@ import {
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
+  BASE_LAYER,
   DEFAULT_WORLD_DOCUMENT,
   noteShardEntry,
+  noteShards,
   shardEntry,
   shardName,
   worldManifest,
+  worldShards,
   type ImportedFile,
   type NoteShardV2,
+  type PlacementRecordV2,
   type SavedViewV1,
   type WorldArchive,
   type WorldHeader,
@@ -23,11 +27,14 @@ import {
   type WorldShardV2,
 } from "@brr/schema/world";
 import {
+  INDEXED_DB,
+  PERSISTENT_STORAGE,
   WORLD_REPOSITORY,
   type IWorldRepository,
   type StoredWorld,
   type WorldChange,
 } from "@brr/storage";
+import { IDBFactory } from "fake-indexeddb";
 import { Container } from "inversify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
@@ -44,7 +51,7 @@ import type {
 } from "./world-session.ts";
 import { silentPeers } from "../catalog/silent-peers.test-support.ts";
 
-const BASEPLATE = "ldraw:3811@2";
+const BASEPLATE = "ldraw:3811";
 const BASEPLATE_LDU = 640;
 
 class StubSceneBackend implements ISceneBackend {
@@ -406,5 +413,92 @@ describe("camera saving", () => {
       settledView: cameraWhenSettled,
       afterRestoredView: afterOpen,
     });
+  });
+});
+
+describe("schema v2 document data", () => {
+  const SHOW: WorldHeader = {
+    name: "Show",
+    bundleVersion: "test",
+    view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0, pitch: 0.75 },
+    disclaimer: "disclaimer",
+    layers: [
+      { id: 1, name: "Labels", kind: "notes", visible: true, locked: false, opacity: 80 },
+      { ...BASE_LAYER, name: "Plates", locked: true },
+    ],
+    contributors: [{ id: 3, name: "Ada", color: "#1f77b4" }],
+    event: { title: "Show layout", startDate: "2027-03-12", endDate: "2027-03-14" },
+  };
+  const LABELS = noteShards([
+    {
+      kind: "text",
+      index: 0,
+      layer: 1,
+      owner: 3,
+      text: "Station",
+      x: 0,
+      z: 0,
+      rot: 0,
+      heightStuds: 4,
+      color: "#000000",
+    },
+  ]);
+  const PLATE: PlacementRecordV2 = { ref: BASEPLATE, color: 2, x: 0, z: 0, yPlates: 0, rot: 0 };
+
+  async function sessionOnIndexedDb() {
+    const container = new Container();
+    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+    container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
+    container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
+    container.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+    container.rebind(PERSISTENT_STORAGE).toConstantValue(null);
+    const session = container.get(WORLD_SESSION);
+    const repository = container.get(WORLD_REPOSITORY);
+    const edited = new BaseplateWorld();
+    await session.start(edited, "test");
+    return { session, repository, edited };
+  }
+
+  function showArchive(repository: IWorldRepository, placements: ReadonlyArray<PlacementRecordV2>) {
+    const shards = worldShards(placements, []);
+    return repository.packArchive({
+      manifest: worldManifest(SHOW, shards.map(shardEntry), LABELS.map(noteShardEntry)),
+      shards,
+      notes: LABELS,
+      credits: "credits",
+      imports: [],
+    });
+  }
+
+  it("keeps an imported world's layers, roster, event and notes through the saves of its edits", async () => {
+    const { session, repository, edited } = await sessionOnIndexedDb();
+    expect(await session.importWorld(showArchive(repository, [PLATE]))).toBe(true);
+    const id = session.view().world?.id ?? "";
+
+    session.placementsEdited(edited.place(1));
+    await vi.waitFor(() => expect(session.view().world?.placements).toBe(2));
+    const stored = await repository.read(id);
+    if (!stored.ok) throw new Error("the edited world didn't reopen");
+
+    const { layers, contributors, event } = stored.value.manifest;
+    expect({ layers, contributors, event, notes: stored.value.notes }).toEqual({
+      layers: SHOW.layers,
+      contributors: SHOW.contributors,
+      event: SHOW.event,
+      notes: LABELS,
+    });
+  });
+
+  it("refuses a world whose placements carry an owner, rather than dropping it on the next save", async () => {
+    const { session, repository } = await sessionOnIndexedDb();
+    const before = await repository.list();
+
+    expect(await session.importWorld(showArchive(repository, [{ ...PLATE, owner: 3 }]))).toBe(
+      false,
+    );
+    expect(session.view().fileError).toBe(
+      "import failed: shard 0_0.placements.0: is on a layer, in a group or owned by a contributor, which this editor can't keep yet",
+    );
+    expect(await repository.list()).toEqual(before);
   });
 });
