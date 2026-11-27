@@ -2038,6 +2038,33 @@ it.each(
   120_000,
 );
 
+it("road snap checks a join at the height the held plate rests at: beside a road plate on a user's raised platform, it snaps flush on the platform", async () => {
+  const { editor, backend, frame } = await startConnectingImporter();
+  const place = placer(editor, backend);
+  const legs = [-280, 280].flatMap((x) =>
+    [-280, 280].map((z) => `1 4 ${x} 0 ${z} 1 0 0 0 1 0 0 0 1 3001.dat`),
+  );
+  const platform = userRoadFile("my-platform.ldr", [
+    "1 2 0 -24 0 1 0 0 0 1 0 0 0 1 3811.dat",
+    ...legs,
+  ]);
+  await place(await importUserFile(editor, "my-platform.ldr", platform), 320, 320);
+  await place(RECESSED_ROAD_PLATE, 160, 320);
+  const { refs, placements } = editor.dump();
+  const roadPlate = placements.refId.findIndex((ref) => refs[ref] === RECESSED_ROAD_PLATE);
+  const platformTop = placements.yPlates[roadPlate];
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  const outcomes = [];
+  for (const x of [500, 520]) {
+    const settled = await settledAt(editor, backend, frame, x, 320);
+    outcomes.push({ ...settled, yPlates: editor.snapshot().hover?.placement?.pose.yPlates });
+  }
+  expect(platformTop).toBeGreaterThan(0);
+  expect(outcomes).toEqual(
+    [500, 520].map(() => ({ pose: [480, 320], snap: "snapped", yPlates: platformTop })),
+  );
+}, 120_000);
+
 it.each([
   {
     surface: "on a user's own baseplate",
