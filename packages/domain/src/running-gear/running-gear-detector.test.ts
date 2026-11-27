@@ -988,6 +988,50 @@ function shiftedOrnamentCar(z: number): Scenario {
   };
 }
 
+const LOOSE = (extents: { readonly min: Vec; readonly max: Vec }): Part => ({
+  connectors: [],
+  extents,
+});
+const WAGON_ON_RAILS: Part = { ...WAGON, extents: { min: [-50, -5, -40], max: [50, 5, 40] } };
+const SECOND_WAGON_X = 140;
+
+function wagonsWithLoads(): Scenario {
+  return {
+    parts: {
+      ...PARTS,
+      wagon: WAGON_ON_RAILS,
+      roof: LOOSE({ min: [-25, 0, -40], max: [25, 4, 40] }),
+      lamp: LOOSE({ min: [-5, 0, -5], max: [5, 8, 5] }),
+      plank: LOOSE({ min: [-40, 0, -10], max: [40, 2, 10] }),
+      figure: LOOSE({ min: [-5, 0, -5], max: [5, 30, 5] }),
+    },
+    placed: [
+      ...wagons(SECOND_WAGON_X),
+      { part: "roof", at: [0, 35, 0] },
+      { part: "lamp", at: [0, 39, 0] },
+      { part: "plank", at: [SECOND_WAGON_X / 2, 35, 0] },
+      { part: "figure", at: [0, 0, 80] },
+      { part: "roof", at: [SECOND_WAGON_X, 35.0625, 0] },
+    ],
+    mates: WAGON_AXLES,
+  };
+}
+
+function bogieCarWithStep(): Scenario {
+  const car = bogieCar();
+  return {
+    ...car,
+    parts: {
+      ...PARTS,
+      body: { ...BODY, extents: { min: [-100, -2, -40], max: [100, 10, 40] } },
+      frame: { ...FRAME, extents: { min: [-30, -10, -40], max: [30, 0, 40] } },
+      step: LOOSE({ min: [-5, 0, -5], max: [5, 4, 5] }),
+      crate: LOOSE({ min: [-20, 0, -20], max: [20, 20, 20] }),
+    },
+    placed: [...car.placed, { part: "step", at: [80, 20, 0] }, { part: "crate", at: [0, 40, 0] }],
+  };
+}
+
 function withEveryMateDoubled(scenario: Scenario): Scenario {
   return { ...scenario, mates: scenario.mates.flatMap((mate) => [mate, mate]) };
 }
@@ -1722,5 +1766,26 @@ describe("RunningGearDetector", () => {
       { instance: 0, connector: 4 },
     ]);
     expect(gear.vehicles[0]?.rearEndCandidates).toEqual([{ instance: 0, connector: 5 }]);
+  });
+
+  it("lets a sub-assembly resting exactly from above on one car ride in its body, and what rests on that too, while one beside the car, one across two cars and one a sixteenth above its car stay", () => {
+    const gear = run(wagonsWithLoads());
+
+    expect(gear.vehicles.map((vehicle) => vehicle.body)).toEqual([
+      [0, 1, 2, 6, 7],
+      [3, 4, 5],
+    ]);
+  });
+
+  it("credits a sub-assembly resting only on a bogie to that bogie, and one resting on the body to the body", () => {
+    const [vehicle] = run(bogieCarWithStep()).vehicles;
+
+    expect({ body: vehicle?.body, bogies: vehicle?.bogies.map((b) => b.instances) }).toEqual({
+      body: [0, 8],
+      bogies: [
+        [1, 2, 3, 7],
+        [4, 5, 6],
+      ],
+    });
   });
 });

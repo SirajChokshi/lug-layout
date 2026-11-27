@@ -30,6 +30,7 @@ import type { BogieDetector, DetectedBogie, RunningGearPartition } from "./bogie
 import { clearance, type ClearanceWheelset } from "./clearance.ts";
 import type { PartExtents } from "./part-extents.ts";
 import type { PartRollingTable } from "./part-rolling.ts";
+import { NO_VEHICLE, ON_BODY, restingCredits } from "./resting-ride.ts";
 import { AxleHeights } from "./support-plane.ts";
 import type { DetectedWheelset, WheelsetDetector } from "./wheelset-detector.ts";
 
@@ -294,13 +295,30 @@ export class RunningGearDetector {
     const resolved = gears.filter((gear) => !excluded.has(gear.body));
     const vehicleOf = new Map(resolved.map((gear, index) => [gear.body, index]));
     const bodies = resolved.map((gear) => this.bodyInstances(gear, partition, attachedTo));
-    const vehicleOfInstance = new Int32Array(instances.count).fill(-1);
-    resolved.forEach((gear, v) => {
+    const bogieMembers = resolved.map((gear) =>
+      gear.bogies.map((bogie) => bogieInstances(bogie, partition)),
+    );
+    const vehicleOfInstance = new Int32Array(instances.count).fill(NO_VEHICLE);
+    const bogieOfInstance = new Int32Array(instances.count).fill(ON_BODY);
+    resolved.forEach((_, v) => {
       for (const instance of bodies[v] ?? []) vehicleOfInstance[instance] = v;
-      for (const bogie of gear.bogies) {
-        for (const instance of bogieInstances(bogie, partition)) vehicleOfInstance[instance] = v;
-      }
+      bogieMembers[v]?.forEach((members, b) => {
+        for (const instance of members) {
+          vehicleOfInstance[instance] = v;
+          bogieOfInstance[instance] = b;
+        }
+      });
     });
+    const riders = { vehicleOf: vehicleOfInstance, bogieOf: bogieOfInstance };
+    for (const credit of restingCredits(frames, instances, extents, mates, riders)) {
+      const members =
+        credit.bogie === ON_BODY
+          ? bodies[credit.vehicle]
+          : bogieMembers[credit.vehicle]?.[credit.bogie];
+      members?.push(...credit.instances);
+      for (const instance of credit.instances) vehicleOfInstance[instance] = credit.vehicle;
+    }
+    for (const members of [...bodies, ...bogieMembers.flat()]) members.sort((a, b) => a - b);
     const ends = this.endCandidates(exposed, resolved, vehicleOfInstance);
     const vehicles = resolved.map((gear, v) =>
       this.vehicleRecord(
@@ -308,6 +326,7 @@ export class RunningGearDetector {
         partition,
         wheelsets,
         bodies[v] ?? [],
+        bogieMembers[v] ?? [],
         ends[v] ?? { front: [], rear: [] },
         frames,
         instances,
@@ -516,6 +535,7 @@ export class RunningGearDetector {
     partition: RunningGearPartition,
     wheelsets: ReadonlyArray<DetectedWheelset>,
     bodyInstances: ReadonlyArray<number>,
+    bogieMembers: ReadonlyArray<ReadonlyArray<number>>,
     ends: EndCandidates,
     frames: SubmodelFrames,
     instances: PartInstances,
@@ -546,7 +566,7 @@ export class RunningGearDetector {
         g?.wheelset === null || g?.wheelset === undefined ? null : (local.get(g.wheelset) ?? null),
     });
     const bogies: VehicleBogie[] = gear.bogies.map((bogie, index) => ({
-      instances: bogieInstances(bogie, partition),
+      instances: [...(bogieMembers[index] ?? [])],
       pivot: [0, 1, 2].map((row) =>
         this.pivotPosition(bogie.pivotMates[0] ?? 0, row, frames, instances, connectors, mates),
       ) as [number, number, number],
