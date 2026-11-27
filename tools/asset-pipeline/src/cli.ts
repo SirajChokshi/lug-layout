@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import * as v from "valibot";
+import { renderBlueBrickAttribution } from "./bluebrick-attribution.ts";
 import { BUNDLE_DATA_DIRECTORIES, BUNDLE_DATA_FILES, FIXTURES_DIRECTORY } from "./bundle-data.ts";
 import { bundleInputKey, remoteManifestFile } from "./bundle-key.ts";
 import {
@@ -215,6 +216,7 @@ async function writeAttribution(lock: InputLock, palette: Palette): Promise<void
       await readOmrErrata(omrErrataPath),
     ),
     await renderTestDataAttribution(repoRoot, TEST_DATA_DIRECTORIES),
+    await renderBlueBrickAttribution(repoRoot),
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
 }

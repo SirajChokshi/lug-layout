@@ -1,0 +1,44 @@
+{
+  "maps": [
+    {
+      "file": "fordyce-2026.bbm",
+      "sha256": "18c8bb76e4f5ed96e1d9ada7b7d36731953c661b2731e769783b7f2a44811d9d",
+      "author": "Aaron Kimbrell (ArkLUG)",
+      "license": "AGPL-3.0 (the repository's LICENSE; its fixtures README says GPL-3.0)",
+      "licenseText": "licenses/AGPL-3.0.txt",
+      "source": "https://github.com/collaborative-brick-layout-designer/web/blob/73b6e6948f204556d3571b53deafa2ac8209501c/packages/bbm/tests/fixtures/fordyce-2026.bbm"
+    },
+    {
+      "file": "queue.bbm",
+      "sha256": "686d74bba8ccaf17c92c0529cb9af2cd6a74b572a27ec03f1a1e30bbe8d8abf8",
+      "author": "mirabilos (Thorsten Glaser), licensor Deutsche Telekom LLCTO",
+      "license": "GPL-2.0 (the repository's COPYING; janz/ is \"GPLv2, same as the Linux kernel\")",
+      "licenseText": "licenses/GPL-2.0.txt",
+      "source": "https://github.com/qvest-digital/sch_jens/blob/8a216612cb1ec77eb5346c53bec8ad296d0dcb90/janz/queue.bbm"
+    },
+    {
+      "file": "sample_track01.bbm",
+      "sha256": "38ec8312f232fdeb7e48881cd71f8040aa4568135d3915fb91165e6a5f597445",
+      "author": "Shin Kuboaki",
+      "license": "MIT (Copyright (c) 2022 Shin Kuboaki)",
+      "licenseText": "licenses/MIT-ev3_train.txt",
+      "source": "https://github.com/kuboaki/ev3_train/blob/b935c07e07f831ea5e004dca33aaf3eb769002f5/images/parts_wrk/sample_track01.bbm"
+    },
+    {
+      "file": "synthetic-yard.bbm",
+      "sha256": "0248d194b504015938b0d5f08303b8e347fef1c70c18a8cabe9f77ae9c744fd0",
+      "author": "Brick Railroad",
+      "license": "this repository's terms",
+      "licenseText": null,
+      "source": "written for this repository from LDraw part numbers 3811, 53400 and 53401"
+    },
+    {
+      "file": "tight-corner.bbm",
+      "sha256": "ab8fc5496966d8106c72d758139e2f6b41a48a238da067297a06e16524ebfe90",
+      "author": "Aaron Kimbrell",
+      "license": "AGPL-3.0 (the repository's LICENSE; its fixtures README says GPL-3.0)",
+      "licenseText": "licenses/AGPL-3.0.txt",
+      "source": "https://github.com/collaborative-brick-layout-designer/web/blob/73b6e6948f204556d3571b53deafa2ac8209501c/packages/bbm/tests/fixtures/tight-corner.bbm"
+    }
+  ]
+}
