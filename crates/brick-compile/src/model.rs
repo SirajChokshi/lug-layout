@@ -162,6 +162,12 @@ pub struct SubmodelInstance {
     pub matrix: Affine,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WrittenTransforms {
+    pub instances: Vec<String>,
+    pub placements: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct BakedModel {
     pub sections: Vec<Header>,
@@ -170,6 +176,7 @@ pub struct BakedModel {
     pub inline_parts: Vec<InlinePart>,
     pub loose_geometry: Vec<LooseGeometry>,
     pub authored_identification: Option<AuthoredIdentification>,
+    pub written_transforms: WrittenTransforms,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -359,6 +366,7 @@ pub fn bake_model_with(source: &str, options: BakeOptions) -> Result<BakedModel,
         reached,
         loose,
         authored,
+        written,
     } = out;
     for instance in &mut instances {
         instance.matrix = y_up(&instance.matrix);
@@ -392,6 +400,7 @@ pub fn bake_model_with(source: &str, options: BakeOptions) -> Result<BakedModel,
             })
             .collect(),
         authored_identification: authored,
+        written_transforms: written,
     })
 }
 
@@ -409,6 +418,7 @@ struct WalkOutput {
     reached: BTreeSet<usize>,
     loose: BTreeMap<usize, usize>,
     authored: Option<AuthoredIdentification>,
+    written: WrittenTransforms,
 }
 
 impl WalkOutput {
@@ -482,6 +492,7 @@ fn walk(
             color: line_color,
             matrix: line_matrix,
             printed_translation,
+            written,
             reference,
         } = line
         else {
@@ -508,6 +519,7 @@ fn walk(
                 let official = official_reference(&model.names[child]);
                 out.inline_parts
                     .insert(model.names[child].clone(), official.clone());
+                out.written.instances.push(written.clone());
                 out.instances.push(ModelInstance {
                     part: official,
                     inline: Some(model.names[child].clone()),
@@ -517,6 +529,7 @@ fn walk(
                 });
             }
             Some(&child) => {
+                out.written.placements.push(written.clone());
                 out.submodels.push(SubmodelInstance {
                     parent: holder,
                     matrix: child_matrix,
@@ -532,13 +545,16 @@ fn walk(
                     out,
                 )?;
             }
-            None => out.instances.push(ModelInstance {
-                part: reference.clone(),
-                inline: None,
-                color: child_color,
-                matrix: child_matrix,
-                submodel: holder,
-            }),
+            None => {
+                out.written.instances.push(written.clone());
+                out.instances.push(ModelInstance {
+                    part: reference.clone(),
+                    inline: None,
+                    color: child_color,
+                    matrix: child_matrix,
+                    submodel: holder,
+                });
+            }
         }
     }
     Ok(())
@@ -729,6 +745,27 @@ mod tests {
             (columns.excluded_line, columns.excluded_line_kind),
             (vec![1], vec!["instance"])
         );
+    }
+
+    #[test]
+    fn written_transforms_keep_every_type_1_line_as_written_in_instance_and_placement_order() {
+        let source = "0 FILE main.ldr\n0 !LDRAW_ORG Model\n\
+            1 16 40.02 -8 0 0.6 0 0.8 0 1 0 -0.8 0 0.6 sub.ldr\n\
+            1 16 10.02 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n\
+            0 FILE sub.ldr\n\
+            1 16 .5 +5. 1e-3 1 0 0 0 1 0 0 0 1 3001.dat\n";
+        let expected = WrittenTransforms {
+            instances: vec![
+                ".5 +5. 1e-3 1 0 0 0 1 0 0 0 1".to_string(),
+                "10.02 0 0 1 0 0 0 1 0 0 0 1".to_string(),
+            ],
+            placements: vec!["40.02 -8 0 0.6 0 0.8 0 1 0 -0.8 0 0.6".to_string()],
+        };
+        let plain = bake_model(source).unwrap_or_else(|e| panic!("bakes: {e}"));
+        let identified = bake_model_with(source, OMR).unwrap_or_else(|e| panic!("bakes: {e}"));
+        assert_eq!(identified.instances[1].matrix.m[3], 10.0);
+        assert_eq!(plain.written_transforms, expected);
+        assert_eq!(identified.written_transforms, expected);
     }
 
     #[test]

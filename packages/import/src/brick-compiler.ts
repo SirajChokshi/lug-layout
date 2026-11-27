@@ -3,6 +3,7 @@ import { modelPartCells } from "@brr/catalog/model-part-cells";
 import type { BakeReceptors } from "./bake-receptors.ts";
 import {
   type AuthoredIdentification,
+  type WrittenTransforms,
   CompilerBake,
   CompilerBakeNeeds,
   CompilerCompile,
@@ -51,6 +52,7 @@ export interface ModelRead {
   readonly submodelParent: Int32Array;
   readonly submodelMatrix: Float64Array;
   readonly authoredIdentification: AuthoredIdentification | null;
+  readonly writtenTransforms: WrittenTransforms | null;
 }
 
 export interface ModelBakeOptions {
@@ -377,6 +379,7 @@ export class BrickCompiler {
       submodelParent: new Int32Array(bytesOf(body, read.blobs, "submodelParent")),
       submodelMatrix: new Float64Array(bytesOf(body, read.blobs, "submodelMatrix")),
       authoredIdentification: read.authoredIdentification ?? null,
+      writtenTransforms: read.writtenTransforms ?? null,
     };
   }
 

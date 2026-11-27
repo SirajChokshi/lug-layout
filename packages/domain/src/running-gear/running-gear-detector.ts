@@ -34,6 +34,7 @@ import type { PartRollingTable } from "./part-rolling.ts";
 import { NO_VEHICLE, ON_BODY, restingCredits, type Riders } from "./resting-ride.ts";
 import { shedding } from "./shedding.ts";
 import { AxleHeights } from "./support-plane.ts";
+import type { WrittenTransforms } from "./written-transforms.ts";
 import type { DetectedWheelset, WheelsetDetector } from "./wheelset-detector.ts";
 
 const SIXTEENTHS_PER_LDU = 16;
@@ -58,6 +59,7 @@ export interface RunningGearInput {
   readonly connectors: ReadonlyArray<ConnectorTable | null>;
   readonly mates: MatePairs;
   readonly exposed: ExposedConnectors;
+  readonly written: WrittenTransforms | null;
 }
 
 export interface RunningGear {

@@ -1463,6 +1463,17 @@ export const AuthoredIdentification = v.object({
 });
 export type AuthoredIdentification = v.InferOutput<typeof AuthoredIdentification>;
 
+export const WrittenTransforms = v.pipe(
+  v.object({
+    instance: v.array(v.string()),
+    placement: v.array(v.string()),
+  }),
+  v.description(
+    "each type 1 line's twelve numbers exactly as the file writes them (x y z a b c d e f g h i, LDraw axes), one string per drawn instance line and per sub-model placement line, in the order of the instance and sub-model columns",
+  ),
+);
+export type WrittenTransforms = v.InferOutput<typeof WrittenTransforms>;
+
 export function authoredLinesFit(
   lines: AuthoredLines,
   instanceCount: number,
@@ -1544,6 +1555,7 @@ export const CompilerModelRead = v.object({
   ),
   instances: Count,
   authoredIdentification: v.optional(AuthoredIdentification),
+  writtenTransforms: v.optional(WrittenTransforms),
   blobs: CompilerBlobs,
 });
 export type CompilerModelRead = v.InferOutput<typeof CompilerModelRead>;
@@ -1789,6 +1801,7 @@ export const ModelFile = v.pipe(
     partTransforms: v.array(Finite),
     submodels: SubmodelTree,
     authoredIdentification: v.optional(AuthoredIdentification),
+    writtenTransforms: v.optional(WrittenTransforms),
   }),
   v.check(
     ({ parts, instances, partTransforms }) =>
@@ -1809,6 +1822,13 @@ export const ModelFile = v.pipe(
         authoredLinesFit(lines, instances.part.length, submodels.parent.length),
       ),
     "authored identification names an instance or placement the model doesn't have",
+  ),
+  v.check(
+    ({ instances, submodels, writtenTransforms }) =>
+      writtenTransforms === undefined ||
+      (writtenTransforms.instance.length === instances.part.length &&
+        writtenTransforms.placement.length === submodels.parent.length),
+    "written transforms don't follow the model's instances and sub-model placements",
   ),
   v.check(
     ({ parts, shapes }) =>

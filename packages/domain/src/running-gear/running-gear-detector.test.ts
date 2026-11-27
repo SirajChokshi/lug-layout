@@ -34,6 +34,7 @@ import { measuredRail } from "./measured-rail.ts";
 import type { PartExtents } from "./part-extents.ts";
 import { PartRollingTable } from "./part-rolling.ts";
 import { RunningGearDetector, type ExposedConnectors } from "./running-gear-detector.ts";
+import type { WrittenTransforms } from "./written-transforms.ts";
 import { WheelsetDetector } from "./wheelset-detector.ts";
 
 const shapes = new SnapShapes();
@@ -151,6 +152,44 @@ interface Scenario {
   readonly submodels?: ReadonlyArray<Vec>;
   readonly submodelParents?: ReadonlyArray<number>;
   readonly submodelRotations?: ReadonlyArray<ReadonlyArray<number>>;
+  readonly written?: WrittenTransforms | null;
+}
+
+const LDRAW_SIGNS = [1, -1, -1] as const;
+
+function ldrawSign(row: number): number {
+  return LDRAW_SIGNS[row] ?? 1;
+}
+
+function writtenLine(rotation: ReadonlyArray<number>, at: Vec): string {
+  const sign = ldrawSign;
+  const translation = [0, 1, 2].map((r) => sign(r) * (at[r] ?? 0));
+  const entries = [0, 1, 2].flatMap((r) =>
+    [0, 1, 2].map((c) => sign(r) * sign(c) * (rotation[3 * r + c] ?? 0)),
+  );
+  return [...translation, ...entries].map((v) => String(v + 0)).join(" ");
+}
+
+function transposed(rotation: ReadonlyArray<number>): number[] {
+  return [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => rotation[3 * c + r] ?? 0));
+}
+
+function writtenScenario(scenario: Scenario): WrittenTransforms {
+  const frames = scenario.submodels ?? [];
+  const rotationOf = (s: number) => scenario.submodelRotations?.[s] ?? UPRIGHT;
+  return {
+    instance: scenario.placed.map((p) => writtenLine(p.rotation ?? UPRIGHT, p.at)),
+    placement: frames.map((at, s) => {
+      const parent = scenario.submodelParents?.[s] ?? MODEL_ROOT;
+      if (parent === MODEL_ROOT) return writtenLine(rotationOf(s), at);
+      const back = transposed(rotationOf(parent));
+      const offset = [0, 1, 2].map((d) => (at[d] ?? 0) - (frames[parent]?.[d] ?? 0));
+      return writtenLine(
+        composed(back, rotationOf(s)),
+        rotated(back, [offset[0] ?? 0, offset[1] ?? 0, offset[2] ?? 0]),
+      );
+    }),
+  };
 }
 
 function translated(offset: Vec, at: Vec): Vec {
@@ -252,6 +291,7 @@ function run(scenario: Scenario) {
     connectors: parts.map((part) => (part ? connectors(part.connectors) : null)),
     mates: graph,
     exposed,
+    written: scenario.written === undefined ? writtenScenario(scenario) : scenario.written,
   });
 }
 

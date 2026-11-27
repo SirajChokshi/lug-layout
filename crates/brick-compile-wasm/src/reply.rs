@@ -102,6 +102,12 @@ impl From<AuthoredColumns> for AuthoredIdentification {
 }
 
 #[derive(Serialize)]
+pub struct WrittenTransforms {
+    pub instance: Vec<String>,
+    pub placement: Vec<String>,
+}
+
+#[derive(Serialize)]
 #[serde(tag = "status", rename_all_fields = "camelCase")]
 pub enum Reply {
     #[serde(rename = "read")]
@@ -113,6 +119,7 @@ pub enum Reply {
         instances: usize,
         #[serde(skip_serializing_if = "Option::is_none")]
         authored_identification: Option<AuthoredIdentification>,
+        written_transforms: WrittenTransforms,
         blobs: Blobs,
     },
     #[serde(rename = "read")]
