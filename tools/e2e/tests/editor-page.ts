@@ -221,6 +221,7 @@ export interface PlanRegion {
   readonly originChunkX: number;
   readonly originChunkZ: number;
   readonly maxOverhangMm: number;
+  readonly maxReachMm: number;
   readonly footprint: {
     readonly roomWidthMm: number;
     readonly roomDepthMm: number;
@@ -340,6 +341,19 @@ export class EditorPage {
           requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
         }),
     );
+  }
+
+  async saved(): Promise<void> {
+    await expect(this.root).toHaveAttribute("data-unsaved", "0");
+    await expect(this.root).toHaveAttribute("data-save", "saved");
+  }
+
+  async reload(): Promise<void> {
+    await this.page.reload();
+    await expect(this.root).toHaveAttribute("data-status", SETTLED_STATUS, {
+      timeout: READY_TIMEOUT_MS,
+    });
+    expect(await this.root.getAttribute("data-status")).toBe("ready");
   }
 
   async waitForFarTierAndMeshesSettled(): Promise<void> {
