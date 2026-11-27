@@ -154,6 +154,32 @@ function isMovable(members: ReadonlyArray<SelectionMember>): boolean {
   return members.length > 0 && members.every((member) => member.kind !== "train");
 }
 
+function firstSighting<T>(seen: Set<T>, key: T): boolean {
+  if (seen.has(key)) return false;
+  seen.add(key);
+  return true;
+}
+
+function distinctMembers(members: ReadonlyArray<SelectionMember>): SelectionMember[] {
+  const models = new Set<PlacedModel>();
+  const pieces = new Set<number>();
+  const trains = new Set<ConsistHandle>();
+  return members.filter((member) => {
+    switch (member.kind) {
+      case "model":
+        return firstSighting(models, member.model);
+      case "track":
+        return firstSighting(pieces, member.placement);
+      case "train":
+        return firstSighting(trains, member.train);
+      default: {
+        const unhandled: never = member;
+        throw new Error(`unhandled selection member ${String(unhandled)}`);
+      }
+    }
+  });
+}
+
 function isLive(member: SelectionMember): boolean {
   if (member.kind === "model") return member.model.handle.live;
   if (member.kind === "train") return member.train.live;
@@ -193,9 +219,7 @@ export class Selection {
   }
 
   replace(members: ReadonlyArray<SelectionMember>, pivot: LatticePoint | null): void {
-    const unique = members.filter(
-      (member, index) => members.findIndex((other) => sameMember(other, member)) === index,
-    );
+    const unique = distinctMembers(members);
     const train = unique.findLast((member) => member.kind === "train");
     this.picked = train ? [train] : unique;
     this.pivot = pivot;
@@ -246,11 +270,7 @@ export class Selection {
   }
 
   turnPivot(views: SelectionViews): LatticePoint | null {
-    const [only, second] = this.picked;
-    if (!only || !this.movable) return null;
-    if (this.pivot) return this.pivot;
-    if (only.kind === "model" && !second) return { x: only.model.handle.x, z: only.model.handle.z };
-    return latticeCentre(unionBox(this.boxes(views)));
+    return this.pivotWithin(() => unionBox(this.boxes(views)));
   }
 
   boxes(views: SelectionViews): ReadonlyArray<WorldBox> {
@@ -261,14 +281,23 @@ export class Selection {
     const members = itemViewsOf(this.picked, views);
     const primary = members.at(-1);
     if (!primary) return null;
-    const pivot = this.turnPivot(views);
+    const box = unionBox(members.map((member) => member.box));
+    const pivot = this.pivotWithin(() => box);
     return {
       primary,
       members,
-      box: unionBox(members.map((member) => member.box)),
+      box,
       tally: tallyOf(this.picked),
       movable: isMovable(this.picked),
       pivotStuds: pivot && { x: pivot.x / STUD_LDU + 0, z: pivot.z / STUD_LDU + 0 },
     };
+  }
+
+  private pivotWithin(box: () => WorldBox): LatticePoint | null {
+    const [only, second] = this.picked;
+    if (!only || !this.movable) return null;
+    if (this.pivot) return this.pivot;
+    if (only.kind === "model" && !second) return { x: only.model.handle.x, z: only.model.handle.z };
+    return latticeCentre(box());
   }
 }

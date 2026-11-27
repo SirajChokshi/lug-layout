@@ -108,6 +108,7 @@ test("double-clicking a laid piece selects its run up to the switch in a user's 
   const west = await editor.dragTrack(along(points, 0), along(points, runLdu));
   const east = await editor.dragTrack(along(main, 0), along(main, runLdu));
   await editor.escape();
+  await editor.escape();
   const counts = { west: west.pieces, east: east.pieces - west.pieces };
   await editor.waitForFarTierAndMeshesSettled();
 
