@@ -1,5 +1,7 @@
 export const GROUND_RENDER_ORDER = -1;
+export const PART_RENDER_ORDER = 0;
 export const SELECTION_RENDER_ORDER = 1;
+export const EDGE_MARKER_RENDER_ORDER = (PART_RENDER_ORDER + SELECTION_RENDER_ORDER) / 2;
 export const ISSUE_RENDER_ORDER = 2;
 export const GHOST_OUTLINE_RENDER_ORDER = 2;
 export const GUIDE_RENDER_ORDER = 3;

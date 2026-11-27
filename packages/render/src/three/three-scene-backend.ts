@@ -48,7 +48,6 @@ import {
   type BufferMemory,
   type ChunkInstances,
   type EdgeMarker,
-  type MarkerKind,
   type ChunkTier,
   type FarModelPlacement,
   type GeometrySet,
@@ -112,6 +111,7 @@ import {
 } from "./render-orders.ts";
 import { KeyOrderedChildren, opaqueSort, transparentSort } from "./tie-order.ts";
 import { TrackEndArrows } from "./track-end-arrows.ts";
+import { EdgeMarkers } from "./edge-markers.ts";
 import { GHOST_EDGE_SLOT, chunkEdgeSlot, vehicleEdgeSlot, writeEdgeId } from "./edge-ids.ts";
 import {
   MESH_KIND_BODY,
@@ -202,11 +202,6 @@ const GHOST_HIT_OPACITY = 0.9;
 const GHOST_PRECISE_COLOR = 0x00b8ff;
 const SELECTION_COLOR = 0xff8c00;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
-const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
-  joined: 0x1fbf4a,
-  open: 0xffb000,
-  mismatch: 0xe0202a,
-};
 const FLOOR_COLOR = 0xd8d2c8;
 const INACTIVE_FLOOR_COLOR = 0xe6e2dc;
 const ROOM_OUTLINE_COLOR = 0x3a3a3a;
@@ -734,13 +729,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   );
   private readonly ghostBox = new Float64Array(BOUNDS_FLOATS);
   private ghostPrecise = false;
-  private readonly markerBox = new BoxGeometry(1, 1, 1);
-  private readonly markerMaterials: Readonly<Record<MarkerKind, MeshBasicNodeMaterial>> = {
-    joined: new MeshBasicNodeMaterial({ color: MARKER_COLORS.joined }),
-    open: new MeshBasicNodeMaterial({ color: MARKER_COLORS.open }),
-    mismatch: new MeshBasicNodeMaterial({ color: MARKER_COLORS.mismatch }),
-  };
-  private readonly markerGroup = new Group();
+  private readonly edgeMarkers = new EdgeMarkers();
   private markers: ReadonlyArray<EdgeMarker> = [];
   private readonly trackEndArrows = new TrackEndArrows();
   private trackEnds: ReadonlyArray<TrackEndMarker> = [];
@@ -844,8 +833,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.ghostHit.matrixAutoUpdate = false;
     this.ghostHit.renderOrder = GHOST_HIT_RENDER_ORDER;
     this.scene.add(this.ghostHit);
-    this.markerGroup.matrixAutoUpdate = false;
-    this.scene.add(this.markerGroup);
+    this.scene.add(this.edgeMarkers.group);
     this.scene.add(this.trackEndArrows.group);
     this.scene.add(this.guides.lines);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
@@ -1481,32 +1469,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
     if (markers === this.markers) return;
     this.changed = true;
-    this.markerGroup.clear();
     this.markers = markers;
-    for (const marker of markers) {
-      const mesh = new Mesh(this.markerBox, this.markerMaterials[marker.kind]);
-      mesh.matrixAutoUpdate = false;
-      this.markerGroup.add(mesh);
-    }
-    this.positionMarkers();
-  }
-
-  private positionMarkers(): void {
-    const meshes = this.markerGroup.children;
-    for (let i = 0; i < meshes.length; i++) {
-      const mesh = meshes[i];
-      const marker = this.markers[i];
-      if (!mesh || !marker) continue;
-      const { box } = marker;
-      mesh.position.set(
-        (box.minX + box.maxX) / 2 - this.renderOriginX,
-        (box.minY + box.maxY) / 2,
-        (box.minZ + box.maxZ) / 2 - this.renderOriginZ,
-      );
-      mesh.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
-      mesh.updateMatrix();
-    }
-    this.markerGroup.updateMatrixWorld(true);
+    this.edgeMarkers.set(markers, this.renderOriginX, this.renderOriginZ);
   }
 
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
@@ -2230,7 +2194,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     for (const anchored of this.selectionObjects) this.positionAnchored(anchored);
     this.positionAnchored(this.ghostHitAnchor);
     for (const record of this.vehicles.values()) this.placeVehicle(record);
-    this.positionMarkers();
+    this.edgeMarkers.place(this.renderOriginX, this.renderOriginZ);
     this.trackEndArrows.place(this.renderOriginX, this.renderOriginZ);
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);

@@ -8,6 +8,7 @@ import { CHUNK_LDU } from "@brr/math";
 import {
   InstancedBufferGeometry,
   InstancedMesh,
+  InterleavedBufferAttribute,
   Matrix3,
   Matrix4,
   Mesh,
@@ -282,43 +283,84 @@ function trackEnd(xLdu: number, zLdu = 0): TrackEndMarker {
   return { xLdu, yLdu: 0, zLdu, headingRadians: 0, kind: "open" };
 }
 
-function edgeMarker(minX: number): EdgeMarker {
-  return { kind: "open", box: { minX, minY: 0, minZ: 0, maxX: minX + 20, maxY: 8, maxZ: 20 } };
+function edgeMarker(minX: number, minZ = 0): EdgeMarker {
+  return {
+    kind: "open",
+    box: { minX, minY: 0, minZ, maxX: minX + 20, maxY: 8, maxZ: minZ + 20 },
+  };
 }
 
-it.each([
-  {
-    payload: "ghost",
-    show: (backend: ThreeSceneBackend, x: number) =>
-      backend.setGhost({ ...chunkOf(0), originX: x }),
-    resend: (backend: ThreeSceneBackend) => backend.setGhost(backend["ghostModel"]),
-    shown: (backend: ThreeSceneBackend): unknown => backend["ghost"],
-  },
-  {
-    payload: "edge markers",
-    show: (backend: ThreeSceneBackend, x: number) => backend.setMarkers([edgeMarker(x)]),
-    resend: (backend: ThreeSceneBackend) => backend.setMarkers(backend["markers"]),
-    shown: (backend: ThreeSceneBackend): unknown => backend["markerGroup"].children[0],
-  },
-])(
-  "keeps the $payload it shows, asking for no frame, when sent the same object again, and rebuilds them for another",
-  ({ show, resend, shown }) => {
-    const { backend, listener } = tieredBackend();
-    show(backend, 0);
-    const before = shown(backend);
-    listener.take();
-    frameDrawn(backend);
+it("keeps the ghost it shows, asking for no frame, when sent the same model again, and rebuilds it for another", () => {
+  const { backend, listener } = tieredBackend();
+  backend.setGhost(chunkOf(0));
+  const before: unknown = backend["ghost"];
+  listener.take();
+  frameDrawn(backend);
 
-    resend(backend);
-    expect(shown(backend)).toBe(before);
-    expect(listener.take()).toEqual([]);
-    expect(backend.needsFrame()).toBe(false);
+  backend.setGhost(backend["ghostModel"]);
+  expect(backend["ghost"]).toBe(before);
+  expect(listener.take()).toEqual([]);
+  expect(backend.needsFrame()).toBe(false);
 
-    show(backend, 0);
-    expect(shown(backend)).not.toBe(before);
-    expect(backend.needsFrame()).toBe(true);
-  },
-);
+  backend.setGhost(chunkOf(0));
+  expect(backend["ghost"]).not.toBe(before);
+  expect(backend.needsFrame()).toBe(true);
+});
+
+function drawnEdgeMarkers(backend: ThreeSceneBackend): string[] {
+  const mesh = backend["edgeMarkers"].group.children[0];
+  if (!(mesh instanceof Mesh) || !(mesh.geometry instanceof InstancedBufferGeometry)) {
+    throw new Error("no edge marker mesh");
+  }
+  const translation = mesh.geometry.getAttribute("slotWorld3");
+  const slots = translation instanceof InterleavedBufferAttribute ? translation.data : undefined;
+  return Array.from(
+    { length: mesh.geometry.instanceCount },
+    (_, slot) =>
+      `at x ${translation.getX(slot)}, z ${translation.getZ(slot)}, upload ${slots?.version ?? -1}`,
+  );
+}
+
+it("draws the same edge markers, asking for no frame and uploading nothing, when sent the same markers again, and the new ones for others", () => {
+  const { backend } = tieredBackend();
+  const markers = [edgeMarker(0)];
+  backend.setMarkers(markers);
+  const before = drawnEdgeMarkers(backend);
+  frameDrawn(backend);
+
+  backend.setMarkers(markers);
+  const resent = { frame: backend.needsFrame(), drawn: drawnEdgeMarkers(backend) };
+  backend.setMarkers([edgeMarker(40)]);
+
+  expect({
+    before,
+    resent,
+    other: { frame: backend.needsFrame(), drawn: drawnEdgeMarkers(backend) },
+  }).toEqual({
+    before: ["at x 10, z 10, upload 1"],
+    resent: { frame: false, drawn: ["at x 10, z 10, upload 1"] },
+    other: { frame: true, drawn: ["at x 50, z 10, upload 2"] },
+  });
+});
+
+it("draws the edge markers from the render origin, moving them when the eye rebases it and placing new ones from it", () => {
+  const { backend } = tieredBackend();
+  const chunkX = 20;
+  const chunkZ = -13;
+  const originX = chunkX * CHUNK_LDU;
+  const originZ = chunkZ * CHUNK_LDU;
+  backend.setView(0, VIEW_EYE_HEIGHT_LDU, 0, 0, 0, 1);
+  backend.setMarkers([edgeMarker(originX + 10, originZ + 30)]);
+
+  backend.setView(originX + 10, VIEW_EYE_HEIGHT_LDU, originZ + 30, originX + 10, 0, originZ + 31);
+  const rebased = drawnEdgeMarkers(backend);
+  backend.setMarkers([edgeMarker(originX + 50, originZ + 70)]);
+
+  expect({ rebased, placedAfter: drawnEdgeMarkers(backend) }).toEqual({
+    rebased: ["at x 20, z 40, upload 2"],
+    placedAfter: ["at x 60, z 80, upload 3"],
+  });
+});
 
 function drawnTrackEnds(backend: ThreeSceneBackend): string[] {
   const arrows = backend["trackEndArrows"];
