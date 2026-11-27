@@ -346,8 +346,28 @@ export class WorldSession implements IWorldSession {
     @inject(PLAN_SHEET_SERVICE) private readonly sheets: IPlanSheetService,
     @inject(BOM_SERVICE) private readonly boms: IBomService,
     @inject(EVENT_DETAILS) private readonly events: Pick<IEventDetails, "event" | "restore">,
-    @inject(LAYER_SERVICE) private readonly layers: Pick<ILayerService, "table" | "reset">,
-  ) {}
+    @inject(LAYER_SERVICE)
+    private readonly layers: Pick<ILayerService, "table" | "reset" | "guardRemoval">,
+  ) {
+    layers.guardRemoval((layer) => this.savedDocumentRefusal(layer));
+  }
+
+  private savedDocumentRefusal(layer: number): string | null {
+    const current = this.current;
+    if (!current) return null;
+    let notes = 0;
+    for (const shard of current.notes) {
+      for (const note of shard.notes) if (note.layer === layer) notes++;
+    }
+    const plans = (current.document.plans ?? []).filter((plan) => plan.layer === layer).length;
+    const held = [
+      notes > 0 ? `${notes} ${notes === 1 ? "note" : "notes"}` : null,
+      plans > 0 ? `${plans} ${plans === 1 ? "plan region" : "plan regions"}` : null,
+    ].filter((text) => text !== null);
+    return held.length === 0
+      ? null
+      : `holds ${held.join(" and ")} saved with this world, which this editor can't move yet`;
+  }
 
   view(): WorldSessionView {
     return this.state;

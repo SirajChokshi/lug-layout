@@ -18,8 +18,10 @@ import {
   worldManifest,
   worldShards,
   type ImportedFile,
+  type LayerRecordV2,
   type NoteShardV2,
   type PlacementRecordV2,
+  type PlanRegionRecordV2,
   type SavedViewV1,
   type WorldArchive,
   type WorldHeader,
@@ -597,6 +599,65 @@ describe("schema v2 document data", () => {
       ],
       planLayer: "Tables",
       fileError: null,
+    });
+  });
+
+  it("refuses to remove a layer the world's saved notes or plan regions sit on, and saves the table without a layer it removes", async () => {
+    const { session, repository, layers } = await sessionOnIndexedDb();
+    const tables: LayerRecordV2 = {
+      id: 4,
+      name: "Tables",
+      kind: "plan",
+      visible: true,
+      locked: false,
+      opacity: 100,
+    };
+    const floor: PlanRegionRecordV2 = {
+      name: "Show floor",
+      originChunkX: 0,
+      originChunkZ: 0,
+      maxOverhangMm: 0,
+      maxReachMm: 700,
+      footprint: { roomWidthMm: 4800, roomDepthMm: 3000, tables: [], obstacles: [] },
+      layer: 4,
+    };
+    const shards = worldShards([PLATE], []);
+    const archive = repository.packArchive({
+      manifest: worldManifest(
+        { ...SHOW, layers: [...SHOW.layers, tables], plans: [floor, { ...floor, name: "Hall" }] },
+        shards.map(shardEntry),
+        LABELS.map(noteShardEntry),
+      ),
+      shards,
+      notes: LABELS,
+      credits: "credits",
+      imports: [],
+    });
+    expect(await session.importWorld(archive)).toBe(true);
+    const id = session.view().world?.id ?? "";
+
+    const refused = { labels: layers.remove(1), tables: layers.remove(4) };
+    expect(layers.remove(2)).toEqual([]);
+    session.layersEdited();
+    const storedLayers = async () => {
+      const stored = await repository.read(id);
+      return stored.ok ? stored.value.manifest.layers.map((layer) => layer.id) : null;
+    };
+    await vi.waitFor(async () => expect(await storedLayers()).toEqual([1, 0, 4]));
+
+    expect(refused).toEqual({
+      labels: [
+        {
+          path: "layer 1",
+          message: "holds 1 note saved with this world, which this editor can't move yet",
+        },
+      ],
+      tables: [
+        {
+          path: "layer 4",
+          message: "holds 2 plan regions saved with this world, which this editor can't move yet",
+        },
+      ],
     });
   });
 

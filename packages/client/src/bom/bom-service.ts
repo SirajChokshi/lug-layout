@@ -88,8 +88,10 @@ export function notDrawnItems(
   });
 }
 
+export type HiddenLayerParts = "include" | "exclude";
+
 export interface IBomSource {
-  bomInput(scope: BomScope): BomInput;
+  bomInput(scope: BomScope, hidden?: HiddenLayerParts): BomInput;
 }
 
 export interface BomFiles {
@@ -101,6 +103,7 @@ export interface BomFiles {
 export interface BillOfMaterials {
   readonly name: string;
   readonly scope: BomScope;
+  readonly hiddenLayers: HiddenLayerParts;
   readonly lod: BundleLod;
   readonly placements: number;
   readonly parts: number;
@@ -122,7 +125,11 @@ export interface OwnVsBuyReport {
 }
 
 export interface IBomService {
-  billOfMaterials(source: IBomSource, scope: BomScope): Promise<BillOfMaterials>;
+  billOfMaterials(
+    source: IBomSource,
+    scope: BomScope,
+    hidden?: HiddenLayerParts,
+  ): Promise<BillOfMaterials>;
   ownVsBuy(bom: BillOfMaterials, owned: OwnedParts): Promise<OwnVsBuyReport>;
 }
 
@@ -161,13 +168,18 @@ export class BomService implements IBomService {
     return { crosswalk, disclaimer };
   }
 
-  async billOfMaterials(source: IBomSource, scope: BomScope): Promise<BillOfMaterials> {
-    const input = source.bomInput(scope);
+  async billOfMaterials(
+    source: IBomSource,
+    scope: BomScope,
+    hidden: HiddenLayerParts = "include",
+  ): Promise<BillOfMaterials> {
+    const input = source.bomInput(scope, hidden);
     const { crosswalk, disclaimer } = await this.crosswalkOf(input.lod);
     const ldraw = input.counter.lines();
     return {
       name: input.name,
       scope,
+      hiddenLayers: hidden,
       lod: input.lod,
       placements: input.placements,
       parts: input.counter.total(),
