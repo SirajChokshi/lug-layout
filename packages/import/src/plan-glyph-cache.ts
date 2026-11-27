@@ -4,7 +4,7 @@ import { sha256Hex, type IByteCache } from "./verified-files.ts";
 const KEY_PREFIX = "plan-glyph/";
 const utf8 = new TextEncoder();
 
-export type GlyphBakeInputs = Pick<
+type GlyphBakeInputs = Pick<
   BakeInputs,
   "source" | "drawn" | "studPrimitives" | "unofficialAllowlist" | "translucentColors"
 >;
@@ -20,11 +20,7 @@ export class PlanGlyphCache {
     private readonly cache: IByteCache,
   ) {}
 
-  async entry(
-    library: string,
-    bake: GlyphBakeInputs,
-    ownFiles: ReadonlyMap<string, string>,
-  ): Promise<CachedGlyph> {
+  async entry(library: string, bake: GlyphBakeInputs): Promise<CachedGlyph> {
     const named = utf8.encode(
       JSON.stringify([
         this.compiler,
@@ -32,7 +28,6 @@ export class PlanGlyphCache {
         bake.studPrimitives,
         bake.unofficialAllowlist,
         bake.translucentColors,
-        [...ownFiles],
         bake.source,
       ]),
     );

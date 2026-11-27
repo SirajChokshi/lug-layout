@@ -635,7 +635,7 @@ it("infers at import, for a custom brick with 3001's geometry, official 3001's p
   });
 });
 
-it("reads a custom part's shadow files through the shadow library the request names, and keeps them in the asset cache for a later worker that can't reach it", async () => {
+it("reads a custom part's shadow files through the shadow library the request names, and keeps them and the file's plan glyph in the asset cache for a later worker that can't reach it", async () => {
   const context = await (await bundleLoader()).importContext(LOD);
   const { repo, commit, root } = context.source;
   mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
@@ -692,6 +692,9 @@ it("reads a custom part's shadow files through the shadow library the request na
   expect(first.report.parts.map((part) => part.kind)).toEqual(["custom"]);
   expect(table?.source).toContain(CONNECTOR_SOURCE.shadow);
   expect(later.connectors).toEqual(first.connectors);
+  expect([first, later].map((result) => result.report.glyphFromCache)).toEqual([false, true]);
+  expect(first.bake?.glyph).toBeInstanceOf(Uint8Array);
+  expect(later.bake?.glyph).toEqual(first.bake?.glyph);
 });
 
 const standardBundleRoot = new URL(

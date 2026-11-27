@@ -422,7 +422,6 @@ interface CustomPass {
   readonly parts: ReadonlyArray<PartResolution>;
   readonly compiled: ReadonlyMap<string, CustomCompiled>;
   readonly bakeSource: string;
-  readonly ownFiles: ReadonlyMap<string, string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly rounds: number;
 }
@@ -733,7 +732,6 @@ export class ModelImportEngine {
         parts,
         compiled: new Map(),
         bakeSource: job.text,
-        ownFiles: new Map(),
         unofficialAllowlist: job.unofficialAllowlist,
         rounds: 0,
       };
@@ -754,13 +752,15 @@ export class ModelImportEngine {
       if (closure.kind === "cycle") resolved[index] = cyclicRefusal(part, origin, closure);
       else candidates.push({ index, origin, closure });
     }
-    const ownFiles = new Map(candidates.flatMap(({ closure }) => [...closure.files]));
-    for (const [path, text] of ownFiles) {
-      library.files.set(path, text);
-      for (const directory of RESOLVER_DIRECTORIES) library.absent.add(`${directory}${path}`);
+    for (const { closure } of candidates) {
+      for (const [path, text] of closure.files) {
+        library.files.set(path, text);
+        for (const directory of RESOLVER_DIRECTORIES) library.absent.add(`${directory}${path}`);
+      }
     }
     const references = candidates.map((candidate) => candidate.closure.path);
-    const unofficialAllowlist = [...job.unofficialAllowlist, ...ownFiles.keys()];
+    const usersOwnFiles = candidates.flatMap((candidate) => [...candidate.closure.files.keys()]);
+    const unofficialAllowlist = [...job.unofficialAllowlist, ...usersOwnFiles];
     const inference =
       references.length === 0 ? NOT_INFERRED : await this.connectorInference(job, spent);
     const outcomes = await this.compileClosure(
@@ -820,7 +820,6 @@ export class ModelImportEngine {
       parts: resolved,
       compiled,
       bakeSource: renameReferences(job.text, renames),
-      ownFiles,
       unofficialAllowlist,
       rounds: outcomes.rounds,
     };
@@ -884,11 +883,7 @@ export class ModelImportEngine {
     library: ImportLibrary,
     drawn: DrawnInstances,
     records: RecordFiles | null,
-    {
-      bakeSource,
-      ownFiles,
-      unofficialAllowlist,
-    }: Pick<CustomPass, "bakeSource" | "ownFiles" | "unofficialAllowlist">,
+    { bakeSource, unofficialAllowlist }: Pick<CustomPass, "bakeSource" | "unofficialAllowlist">,
     spent: TimeSpent,
     announce: (placement: BakedModel) => Promise<void>,
   ): Promise<BakeRounds> {
@@ -914,7 +909,7 @@ export class ModelImportEngine {
       tableDepthLdu: job.tableDepthLdu,
       vehicles: job.vehicles,
     };
-    const cached = (await this.glyphs?.entry(library.key, inputs, ownFiles)) ?? UNCACHED_GLYPH;
+    const cached = (await this.glyphs?.entry(library.key, inputs)) ?? UNCACHED_GLYPH;
     const of = HELPER_SLICES * this.helpers.length + PRIMARY_SLICES;
     const visibility = (from: number, slices: number): VisibilityBakeRequest => ({
       ...inputs,

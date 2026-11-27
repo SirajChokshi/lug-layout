@@ -754,10 +754,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     if (refId < 0 || credit === null) {
       throw new Error(`${pending.label} left the catalog before its studs were checked`);
     }
-    const covered = withGlyph({ ...model, studCover: bake.studCover }, bake);
+    const covered = { ...model, studCover: bake.studCover };
     const checked = this.importedPlaceable(pending.id, pending.label, covered, credit);
     this.placeablesByRefId[refId] = checked;
-    this.bakes.set(checked.id, covered);
+    this.bakes.set(checked.id, withGlyph(model, bake));
     return { ...reports, kind: "checked", placeable: checked };
   }
 

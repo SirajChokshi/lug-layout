@@ -3745,6 +3745,7 @@ function importedRecord(
   fileName: string,
   record: ModelRecord,
   connectors: ReadonlyArray<PartConnectors | null> = record.parts.map(() => null),
+  glyph: Uint8Array | null = null,
 ): ImportResult {
   const { model, parts } = record;
   const refused = refusedBake(fileName);
@@ -3767,7 +3768,7 @@ function importedRecord(
       cells: model.cells,
       vehicles: model.vehicles,
       vehicleIssue: null,
-      glyph: null,
+      glyph,
       glyphIssue: null,
     },
   };
@@ -3905,6 +3906,7 @@ async function checkingImport(
   served = PLACEABLE_SET,
   models: ReadonlyArray<string> = [],
   bringsRecords = false,
+  glyph: Uint8Array | null = null,
 ) {
   const importer = new GatedModelImporter();
   const started = await startEditor(models, fetcher, [], (bound) =>
@@ -3916,7 +3918,7 @@ async function checkingImport(
   const connectors = bringsRecords
     ? await Promise.all(record.parts.map((part) => loader.loadPartConnectors("standard", part.id)))
     : undefined;
-  importer.serve(importedRecord("checking.mpd", record, connectors));
+  importer.serve(importedRecord("checking.mpd", record, connectors, glyph));
   const catalog = container.get(PLACEABLE_CATALOG);
   const importedPlaceable = () => {
     const item = editor.snapshot().modelImport?.item ?? null;
@@ -3934,10 +3936,14 @@ async function importChecking(editor: IEditor): Promise<string> {
   return editor.snapshot().modelImport?.item ?? "";
 }
 
-it("keeps an imported train's bake and train model through its stud check", async () => {
+it("keeps an imported train's bake and train model through its stud check, and adds the plan glyph the import brings", async () => {
+  const glyph = new TextEncoder().encode("the import's plan glyph");
   const { editor, importer, importedPlaceable, catalog } = await checkingImport(
     new BundleDirectoryFetcher(),
     "10205-1",
+    [],
+    false,
+    glyph,
   );
   await importChecking(editor);
   const pending = importedPlaceable();
@@ -3950,9 +3956,11 @@ it("keeps an imported train's bake and train model through its stud check", asyn
 
   expect(checked).not.toBe(pending);
   expect(whileChecking.train).not.toBeNull();
-  expect({ bake: catalog.baked(checked), train: catalog.playModel(checked) }).toEqual(
-    whileChecking,
-  );
+  expect(whileChecking.bake?.glyph).toBeUndefined();
+  expect({ bake: catalog.baked(checked), train: catalog.playModel(checked) }).toEqual({
+    ...whileChecking,
+    bake: { ...whileChecking.bake, glyph },
+  });
 }, 120_000);
 
 it("has an import's connector tables before it is announced placeable, and keeps the same tables, never unloaded, through the studs-landed swap", async () => {
