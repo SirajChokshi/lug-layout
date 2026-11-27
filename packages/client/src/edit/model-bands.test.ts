@@ -19,6 +19,7 @@ import {
   trackObstacles,
   type StudSeats,
 } from "./track-obstacles.ts";
+import { RecordingPlanScene } from "./plan-scene.test-support.ts";
 
 const SEEDS = [21, 22, 23, 24];
 const STEPS = 90;
@@ -195,7 +196,7 @@ function liveHandle(
 }
 
 class GeneratedWorld {
-  readonly chunks = new PlacedChunks(new NoSceneBackend());
+  readonly chunks = new PlacedChunks(new NoSceneBackend(), new RecordingPlanScene());
   readonly live: LiveHandle[] = [];
 
   constructor(private readonly placeableOf: (refId: number) => Placeable) {}

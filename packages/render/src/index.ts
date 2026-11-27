@@ -45,5 +45,13 @@ export {
   PROJECTION_FLOATS,
   RAY_FLOATS,
 } from "./scene-backend.ts";
-export { SCENE_BACKEND, THUMBNAIL_RENDERER } from "./tokens.ts";
+export type { IPlanSceneBackend, PlanInstances, PlanPartLines, PlanSprite } from "./plan-scene.ts";
+export {
+  PLAN_POSE_FLOATS,
+  PLAN_POSE_ROT,
+  PLAN_POSE_X,
+  PLAN_POSE_Y,
+  PLAN_POSE_Z,
+} from "./plan-scene.ts";
+export { PLAN_SCENE_BACKEND, SCENE_BACKEND, THUMBNAIL_RENDERER } from "./tokens.ts";
 export { renderModule } from "./render.module.ts";

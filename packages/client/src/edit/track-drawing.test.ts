@@ -85,6 +85,7 @@ import { DragField } from "./track-drag.ts";
 import { FieldClosures } from "./field-closures.ts";
 import { heightText } from "./size-labels.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
+import { RecordingPlanScene } from "./plan-scene.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_TRACK_PARTS = (): ReadonlySet<number> => new Set();
@@ -1357,7 +1358,7 @@ interface GroundItem {
 
 function placeGround(items: ReadonlyArray<GroundItem>): ReadonlyArray<PlacedModel> {
   const history = new EditHistory(new World());
-  const placed = new PlacedChunks(new PlanOnlyBackend());
+  const placed = new PlacedChunks(new PlanOnlyBackend(), new RecordingPlanScene());
   const refs = items.map((item) => item.placeable);
   const refOf = (refId: number): Placeable => {
     const placeable = refs[refId];
