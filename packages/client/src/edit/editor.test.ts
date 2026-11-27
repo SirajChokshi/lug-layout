@@ -9467,8 +9467,8 @@ it("keeps a plan's overlap and support after every edit exactly as reopening the
   const plans = container.get(PLAN_SERVICE);
   const brick = `omr:${userModel}`;
   await loadCatalogItem(catalog, brick);
-  const { planId } = plans.drawTable({ minX: 0, minZ: 0, maxX: 1920, maxZ: 1280 });
   expect(await editor.newWorld("Built")).toBe(true);
+  plans.drawTable({ minX: 0, minZ: 0, maxX: 1920, maxZ: 1280 });
   const built = editor.snapshot().world?.id ?? "";
   const place = placer(editor, backend);
   await place(BASEPLATE, 640, 640);
@@ -9489,6 +9489,7 @@ it("keeps a plan's overlap and support after every edit exactly as reopening the
   });
   let stored = 12;
   const issues = async () => {
+    const planId = plans.activePlanId() ?? "";
     await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
     return plans
       .issues(planId)
