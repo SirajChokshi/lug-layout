@@ -15,6 +15,7 @@ import {
   type ArchiveText,
   type SuperChunk,
 } from "./fields.ts";
+import { InventoryV2, inventoryEntry, inventoryPath, type InventoryEntryV2 } from "./inventory.ts";
 import { NoteShardV2, worldNotes, type NoteShardEntryV2 } from "./notes.ts";
 import { WorldManifestV1, WorldShardV1, type ConsistRecordV1, type ShardEntryV1 } from "./v1.ts";
 import {
@@ -99,6 +100,12 @@ function bySuperChunk<T extends { readonly superChunk: SuperChunk }>(
   return sorted;
 }
 
+function byContributor(inventories: ReadonlyArray<InventoryV2>): InventoryV2[] {
+  const sorted = [...inventories];
+  sorted.sort((a, b) => a.contributor - b.contributor);
+  return sorted;
+}
+
 export function worldArchiveFiles(archive: Omit<WorldArchive, "imports">): ArchiveText[] {
   return [
     { name: MANIFEST_FILE, text: canonicalJson(archive.manifest) },
@@ -109,6 +116,10 @@ export function worldArchiveFiles(archive: Omit<WorldArchive, "imports">): Archi
     ...bySuperChunk(archive.notes).map((shard) => ({
       name: noteShardPath(shard.superChunk),
       text: canonicalJson(shard),
+    })),
+    ...byContributor(archive.inventories).map((inventory) => ({
+      name: inventoryPath(inventory.contributor),
+      text: canonicalJson(inventory),
     })),
     { name: CREDITS_FILE, text: archive.credits },
   ];
@@ -250,6 +261,46 @@ export function readNoteShardFiles(
   return { shards, paths, issues };
 }
 
+const decodeInventory: ShardDecoder<InventoryV2> = (value, path) =>
+  decode(InventoryV2, value, path);
+
+export function inventoryIssues(
+  inventory: InventoryV2,
+  entry: InventoryEntryV2,
+  path: string,
+): Issue[] {
+  const read = inventoryEntry(inventory);
+  const issues: Issue[] = [];
+  if (read.contributor !== entry.contributor) {
+    issues.push({ path, message: `holds contributor ${read.contributor}'s inventory` });
+  }
+  if (read.parts !== entry.parts) {
+    issues.push({ path, message: `holds ${read.parts} parts, the manifest says ${entry.parts}` });
+  }
+  return issues;
+}
+
+function readInventoryFiles(
+  files: ReadonlyMap<string, string>,
+  entries: ReadonlyArray<InventoryEntryV2>,
+): ShardFiles<InventoryV2> {
+  const issues: Issue[] = [];
+  const paths: string[] = [];
+  const shards: InventoryV2[] = [];
+  for (const entry of entries) {
+    const path = inventoryPath(entry.contributor);
+    paths.push(path);
+    const inventory = readJsonFile(files, path, decodeInventory);
+    if (!inventory.ok) {
+      issues.push(...inventory.issues);
+      continue;
+    }
+    issues.push(...inventoryIssues(inventory.value, entry, path));
+    shards.push(inventory.value);
+  }
+  return { shards, paths, issues };
+}
+
 function readWorldFilesV1(
   files: ReadonlyMap<string, string>,
   value: unknown,
@@ -273,10 +324,12 @@ function readWorldFilesV2(
   if (!manifest.ok) return manifest;
   const read = readShardFiles(files, manifest.value.shards, decodeShardV2);
   const notes = readNoteShardFiles(files, manifest.value.noteShards);
+  const inventories = readInventoryFiles(files, manifest.value.inventories ?? []);
   const index = new WorldDocumentIndex(manifest.value);
   const issues = [
     ...read.issues,
     ...notes.issues,
+    ...inventories.issues,
     ...read.shards.flatMap((shard) =>
       shardReferenceIssues(index, shard, shardPath(shard.superChunk)),
     ),
@@ -285,14 +338,19 @@ function readWorldFilesV2(
     ),
     ...unexpectedFiles(
       files,
-      new Set([MANIFEST_FILE, ...read.paths, ...notes.paths]),
+      new Set([MANIFEST_FILE, ...read.paths, ...notes.paths, ...inventories.paths]),
       NOT_PART_OF_A_WORLD,
     ),
   ];
   if (issues.length > 0) return { ok: false, issues };
   return {
     ok: true,
-    value: { manifest: manifest.value, shards: read.shards, notes: notes.shards },
+    value: {
+      manifest: manifest.value,
+      shards: read.shards,
+      notes: notes.shards,
+      inventories: inventories.shards,
+    },
   };
 }
 

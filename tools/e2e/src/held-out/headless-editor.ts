@@ -33,11 +33,13 @@ import {
 import type { Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
+  inventoryEntry,
   noteShardEntry,
   shardEntry,
   shardName,
   worldManifest,
   type ImportedFile,
+  type InventoryV2,
   type NoteShardV2,
   type WorldArchive,
   type WorldFiles,
@@ -168,6 +170,7 @@ interface MemoryWorld {
   header: WorldHeader;
   readonly shards: Map<string, WorldShardV2>;
   readonly notes: Map<string, NoteShardV2>;
+  readonly inventories: Map<number, InventoryV2>;
 }
 
 class MemoryWorldRepository implements IWorldRepository {
@@ -195,10 +198,19 @@ class MemoryWorldRepository implements IWorldRepository {
     header: WorldHeader,
     shards: ReadonlyArray<WorldShardV2>,
     notes: ReadonlyArray<NoteShardV2>,
+    inventories: ReadonlyArray<InventoryV2>,
   ): Promise<WorldIndexEntry> {
     const id = `world-${this.nextId++}`;
-    this.worlds.set(id, { header, shards: new Map(), notes: new Map() });
-    return this.save(id, { header, put: shards, drop: [], putNotes: notes, dropNotes: [] });
+    this.worlds.set(id, { header, shards: new Map(), notes: new Map(), inventories: new Map() });
+    return this.save(id, {
+      header,
+      put: shards,
+      drop: [],
+      putNotes: notes,
+      dropNotes: [],
+      putInventories: inventories,
+      dropInventories: [],
+    });
   }
 
   async read(id: string): Promise<Decoded<StoredWorld>> {
@@ -206,8 +218,14 @@ class MemoryWorldRepository implements IWorldRepository {
     if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
     const shards = [...world.shards.values()];
     const notes = [...world.notes.values()];
-    const manifest = worldManifest(world.header, shards.map(shardEntry), notes.map(noteShardEntry));
-    return { ok: true, value: { id, manifest, shards, notes } };
+    const inventories = [...world.inventories.values()];
+    const manifest = worldManifest(
+      world.header,
+      shards.map(shardEntry),
+      notes.map(noteShardEntry),
+      inventories.map(inventoryEntry),
+    );
+    return { ok: true, value: { id, manifest, shards, notes, inventories } };
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
@@ -215,12 +233,17 @@ class MemoryWorldRepository implements IWorldRepository {
       header: change.header,
       shards: new Map(),
       notes: new Map(),
+      inventories: new Map(),
     };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
     for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
     for (const superChunk of change.dropNotes) world.notes.delete(shardName(superChunk));
     for (const shard of change.putNotes) world.notes.set(shardName(shard.superChunk), shard);
+    for (const contributor of change.dropInventories) world.inventories.delete(contributor);
+    for (const inventory of change.putInventories) {
+      world.inventories.set(inventory.contributor, inventory);
+    }
     this.worlds.set(id, world);
     return this.entry(id, world);
   }

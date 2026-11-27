@@ -28,6 +28,7 @@ import {
   strictMessage,
   trackInside,
 } from "./fields.ts";
+import { InventoryListV2, type InventoryEntryV2, type InventoryV2 } from "./inventory.ts";
 import { NoteShardListV2, type NoteShardEntryV2, type NoteShardV2 } from "./notes.ts";
 import {
   ConsistListV1,
@@ -114,6 +115,7 @@ const WorldManifestFieldsV2 = v.strictObject(
     shards: ShardListV1,
     notes: Count,
     noteShards: NoteShardListV2,
+    inventories: v.exactOptional(InventoryListV2),
     view: SavedViewV1,
     credits: v.literal(CREDITS_FILE, `must be "${CREDITS_FILE}"`),
     disclaimer: v.pipe(v.string(), v.minLength(1, "is empty")),
@@ -152,6 +154,17 @@ export const WorldManifestV2 = v.pipe(
       "must equal the sum of the note shards' notes",
     ),
     ["notes"],
+  ),
+  v.forward(
+    v.partialCheck(
+      [["contributors"], ["inventories"]],
+      (manifest) => {
+        const roster = new Set((manifest.contributors ?? []).map((row) => row.id));
+        return (manifest.inventories ?? []).every((entry) => roster.has(entry.contributor));
+      },
+      "must each name a contributor the manifest lists",
+    ),
+    ["inventories"],
   ),
   v.forward(v.partialCheck([["layers"], ["plans"]], plansOnPlanLayers, PLANS_OFF_PLAN_LAYERS), [
     "plans",
@@ -269,13 +282,17 @@ export function worldManifest(
   header: WorldHeader,
   shards: ReadonlyArray<ShardEntryV1>,
   noteShards: ReadonlyArray<NoteShardEntryV2> = [],
+  inventories: ReadonlyArray<InventoryEntryV2> = [],
 ): WorldManifestV2 {
   const entries = [...shards];
   entries.sort((a, b) => compareSuperChunks(a.superChunk, b.superChunk));
   const noteEntries = [...noteShards];
   noteEntries.sort((a, b) => compareSuperChunks(a.superChunk, b.superChunk));
+  const inventoryEntries = [...inventories];
+  inventoryEntries.sort((a, b) => a.contributor - b.contributor);
   const totals = shardTotals(entries);
   return {
+    ...(inventoryEntries.length > 0 ? { inventories: inventoryEntries } : {}),
     format: WORLD_FORMAT,
     schemaVersion: 2,
     name: header.name,
@@ -315,6 +332,7 @@ export interface WorldContentsV2 {
   readonly manifest: WorldManifestV2;
   readonly shards: ReadonlyArray<WorldShardV2>;
   readonly notes: ReadonlyArray<NoteShardV2>;
+  readonly inventories: ReadonlyArray<InventoryV2>;
 }
 
 export function migrateWorldV1(world: {
@@ -325,6 +343,7 @@ export function migrateWorldV1(world: {
     manifest: migrateManifestV1(world.manifest),
     shards: world.shards.map(migrateShardV1),
     notes: [],
+    inventories: [],
   };
 }
 

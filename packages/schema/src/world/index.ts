@@ -98,6 +98,21 @@ export {
   type LayerKind,
 } from "./document.ts";
 export {
+  INVENTORY_DIRECTORY,
+  INVENTORY_FORMAT,
+  InventoryEntryV2,
+  InventoryListV2,
+  InventoryV2,
+  compareInventoryLines,
+  inventoryEntry,
+  inventoryFile,
+  inventoryLines,
+  inventoryParts,
+  inventoryPath,
+  type InventoryLine,
+  type InventoryLines,
+} from "./inventory.ts";
+export {
   LegendEntryV2,
   LegendNoteV2,
   ModelEndV2,
@@ -151,6 +166,7 @@ export {
   importPath,
   importRef,
   importedSha256,
+  inventoryIssues,
   manifestJson,
   parseImportPath,
   readNoteShardFiles,
