@@ -20,7 +20,7 @@ describe("SceneBounds", () => {
     const bounds = new SceneBounds();
     bounds.extend(MIDDLE);
 
-    expect(bounds.reachFrom(320, 1_000, 1_600)).toBe(Math.hypot(320, 320, 1_000));
+    expect(bounds.reachFrom(100, 1_000, 1_400)).toBe(Math.hypot(540, 520, 1_000));
   });
 
   it("after an invalidation, refreshes to the live extents alone on every side", () => {
