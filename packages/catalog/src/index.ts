@@ -1,5 +1,6 @@
 export { AssetResponseError } from "./asset-response-error.ts";
 export { AssetStalledError } from "./asset-stalled-error.ts";
+export { RetryingAssetFetcher } from "./retrying-asset-fetcher.ts";
 export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
@@ -75,4 +76,5 @@ export {
   LINK_SILENCE_LIMIT_MS,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
+  RETRIED_ASSET_FETCHER,
 } from "./tokens.ts";

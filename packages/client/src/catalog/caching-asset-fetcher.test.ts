@@ -10,11 +10,11 @@ import { ASSET_CACHE, INDEXED_DB } from "@brr/storage";
 import { IDBFactory } from "fake-indexeddb";
 import { Container } from "inversify";
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 
 const utf8 = new TextEncoder();
-const HTTP_UNAVAILABLE = 503;
+const HTTP_SERVER_ERROR = 500;
 const HTTP_NOT_FOUND = 404;
 
 function addressed(stem: string, extension: string, body: string): readonly [string, string] {
@@ -57,6 +57,14 @@ class FakeNetwork implements IAssetFetcher {
     return this.body(path);
   }
 }
+
+function browserOffline(): void {
+  vi.stubGlobal("navigator", { onLine: false });
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function session(network: FakeNetwork, indexedDb?: IDBFactory) {
   const container = new Container();
@@ -111,8 +119,9 @@ describe("caching asset fetcher", () => {
       await online.cache.get(BUNDLE_POINTER_FILE);
       expect(await session(offline, indexedDb).loader.loadManifestFile()).toBe(named);
     }
-    const unavailable = new FakeNetwork([[BUNDLE_POINTER_FILE, HTTP_UNAVAILABLE]]);
-    expect(await session(unavailable, indexedDb).loader.loadManifestFile()).toBe(FALLBACK_MANIFEST);
+    const failing = new FakeNetwork([[BUNDLE_POINTER_FILE, HTTP_SERVER_ERROR]]);
+    expect(await session(failing, indexedDb).loader.loadManifestFile()).toBe(FALLBACK_MANIFEST);
+    browserOffline();
     expect(await session(offline, new IDBFactory()).loader.loadManifestFile()).toBe(
       FALLBACK_MANIFEST,
     );
@@ -127,6 +136,7 @@ describe("caching asset fetcher", () => {
     expect(await first.cache.get(GLB)).toBeUndefined();
     await first.cache.put(MANIFEST, utf8.encode("bytes written behind the cache's back"));
 
+    browserOffline();
     const offline = session(new FakeNetwork([], false), indexedDb).fetcher;
     await expect(offline.bytes(GLB)).rejects.toThrow("Failed to fetch");
     await expect(offline.bytes(MANIFEST)).rejects.toThrow("Failed to fetch");
