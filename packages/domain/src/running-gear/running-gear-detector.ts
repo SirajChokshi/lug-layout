@@ -28,9 +28,11 @@ import {
 import type { MatePairs } from "../connect/mate-pairs.ts";
 import type { BogieDetector, DetectedBogie, RunningGearPartition } from "./bogie-detector.ts";
 import { clearance, type ClearanceWheelset } from "./clearance.ts";
+import { ExactBoxes, modelBoxes } from "./exact-boxes.ts";
 import type { PartExtents } from "./part-extents.ts";
 import type { PartRollingTable } from "./part-rolling.ts";
 import { NO_VEHICLE, ON_BODY, restingCredits, type Riders } from "./resting-ride.ts";
+import { shedding } from "./shedding.ts";
 import { AxleHeights } from "./support-plane.ts";
 import type { DetectedWheelset, WheelsetDetector } from "./wheelset-detector.ts";
 
@@ -272,23 +274,30 @@ export class RunningGearDetector {
       if (v !== NO_VEHICLE) ridingOf[v]?.push(instance);
     });
     const heights = new AxleHeights(frames);
+    const exact = new ExactBoxes(frames, instances, extents);
+    const boxes = modelBoxes(instances, extents);
+    const standing = Array.from(riders.vehicleOf.keys()).filter(
+      (instance) => riders.vehicleOf[instance] === NO_VEHICLE,
+    );
     candidates.forEach((gear, v) => {
       const own = this.ownWheelsets(gear, partition);
       const seated = own.filter((w) => partition.seated[w] === 1);
       const members = new Set(seated.flatMap((w) => [...(wheelsets[w]?.memberInstances ?? [])]));
       const riding = ridingOf[v] ?? [];
-      const failure = clearance(
-        frames,
-        heights,
-        instances,
-        extents,
-        seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
-        riding.filter((instance) => !members.has(instance)),
-      );
+      const checked = riding.filter((instance) => !members.has(instance));
+      const failure =
+        clearance(
+          frames,
+          heights,
+          instances,
+          extents,
+          seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
+          checked,
+        ) ?? shedding(exact, boxes, checked, standing);
       if (!failure) return;
       unresolved.push({
         reason: failure.reason,
-        instances: failure.instances.toSorted((a, b) => a - b),
+        instances: [...failure.instances].toSorted((a, b) => a - b),
         wheelsets: own.flatMap((w) => {
           const wheelset = wheelsets[w];
           return wheelset ? [this.wheelsetRecord(wheelset, partition.seated[w] === 1)] : [];
