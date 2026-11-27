@@ -260,6 +260,7 @@ class GeneratedWorld {
         track: NO_TRACK_CHANGE,
         plan: null,
         notes: null,
+        event: null,
       },
       this.placeableOf,
     );

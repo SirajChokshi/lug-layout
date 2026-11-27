@@ -49,6 +49,7 @@ export {
   type ConsistRef,
   type EditKind,
   type EditSummary,
+  type EventChange,
   type HistoryStep,
   type PlanChange,
   type PlacementFollower,
