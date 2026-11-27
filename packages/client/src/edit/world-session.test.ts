@@ -416,6 +416,20 @@ describe("camera saving", () => {
   });
 });
 
+async function sessionOnIndexedDb() {
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
+  container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
+  container.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+  container.rebind(PERSISTENT_STORAGE).toConstantValue(null);
+  const session = container.get(WORLD_SESSION);
+  const repository = container.get(WORLD_REPOSITORY);
+  const edited = new BaseplateWorld();
+  await session.start(edited, "test");
+  return { session, repository, edited };
+}
+
 describe("schema v2 document data", () => {
   const SHOW: WorldHeader = {
     name: "Show",
@@ -444,20 +458,6 @@ describe("schema v2 document data", () => {
     },
   ]);
   const PLATE: PlacementRecordV2 = { ref: BASEPLATE, color: 2, x: 0, z: 0, yPlates: 0, rot: 0 };
-
-  async function sessionOnIndexedDb() {
-    const container = new Container();
-    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
-    container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
-    container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
-    container.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
-    container.rebind(PERSISTENT_STORAGE).toConstantValue(null);
-    const session = container.get(WORLD_SESSION);
-    const repository = container.get(WORLD_REPOSITORY);
-    const edited = new BaseplateWorld();
-    await session.start(edited, "test");
-    return { session, repository, edited };
-  }
 
   function showArchive(repository: IWorldRepository, placements: ReadonlyArray<PlacementRecordV2>) {
     const shards = worldShards(placements, []);
