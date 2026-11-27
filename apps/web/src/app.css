@@ -1822,3 +1822,23 @@ footer a {
   margin: 0 0 12px;
   color: #b40000;
 }
+
+.print-sheets {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.print-sheets h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-strong);
+  color: var(--text-primary);
+}
+
+.print-sheets select {
+  font: inherit;
+  font-size: var(--text-small);
+  width: 100%;
+  min-width: 0;
+}

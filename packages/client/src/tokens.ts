@@ -38,6 +38,11 @@ import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
+import type { IPlanDrawing } from "./sheets/plan-drawing.ts";
+import type { ISheetComposer } from "./sheets/sheet-composer.ts";
+import type { ISheetTypeface } from "./sheets/sheet-typeface.ts";
+import type { ISvgSheetWriter } from "./sheets/svg-sheet-writer.ts";
+import type { ISheetTiler } from "./sheets/tile-grid.ts";
 import type { IBomService } from "./bom/bom-service.ts";
 import type { IOwnedParts } from "./bom/owned-parts-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -132,6 +137,17 @@ export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.clien
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
 export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
   "brr.client.PlanSheetService",
+);
+export const SHEET_TYPEFACE: ServiceIdentifier<ISheetTypeface> = Symbol.for(
+  "brr.client.SheetTypeface",
+);
+export const SHEET_TILER: ServiceIdentifier<ISheetTiler> = Symbol.for("brr.client.SheetTiler");
+export const PLAN_DRAWING: ServiceIdentifier<IPlanDrawing> = Symbol.for("brr.client.PlanDrawing");
+export const SHEET_COMPOSER: ServiceIdentifier<ISheetComposer> = Symbol.for(
+  "brr.client.SheetComposer",
+);
+export const SVG_SHEET_WRITER: ServiceIdentifier<ISvgSheetWriter> = Symbol.for(
+  "brr.client.SvgSheetWriter",
 );
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",

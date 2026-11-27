@@ -1,0 +1,315 @@
+import { mmRectInWorld, studsInside, type PlanRegion, type TableTop } from "@brr/domain";
+import { Container } from "inversify";
+import { describe, expect, it } from "vitest";
+import { mainThreadModules } from "../client.module.ts";
+import type { PlanSheet, SheetPlacement } from "../plan/plan-sheet.ts";
+import { SHEET_COMPOSER } from "../tokens.ts";
+import {
+  boxesOverlap,
+  composed,
+  IDENTITY,
+  type Box,
+  type DrawItem,
+  type Point,
+  type Similarity,
+} from "./draw-list.ts";
+import type { SheetLayout, SheetPage } from "./sheet-document.ts";
+
+const container = new Container();
+container.load(
+  ...mainThreadModules({
+    bundleBaseUrl: "unused",
+    disclaimer: "Not affiliated with any brick maker.",
+    startSimWorker: () => new MessageChannel().port1,
+  }),
+);
+const composer = container.get(SHEET_COMPOSER);
+
+const REGION: PlanRegion = {
+  id: "plan-1",
+  name: "Club show",
+  originChunkX: 0,
+  originChunkZ: 0,
+  footprint: {
+    roomWidthMm: 3000,
+    roomDepthMm: 1200,
+    tables: [
+      { id: "t1", name: "Front", rect: { x: 200, z: 200, width: 1234, depth: 600 }, heightMm: 800 },
+      { id: "t2", name: "Back", rect: { x: 1500, z: 200, width: 1200, depth: 600 }, heightMm: 900 },
+    ],
+    obstacles: [],
+  },
+  maxOverhangMm: 0,
+  maxReachMm: 700,
+};
+
+function tableTops(region: PlanRegion): TableTop[] {
+  return region.footprint.tables.map((table) => ({
+    id: table.id,
+    name: table.name,
+    heightMm: table.heightMm,
+    surface: mmRectInWorld(region, table.rect),
+    studs: studsInside(region, table.rect),
+  }));
+}
+
+function square(x: number, z: number, side: number): SheetPlacement["rings"] {
+  return [
+    [
+      [x, z],
+      [x + side, z],
+      [x + side, z + side],
+      [x, z + side],
+    ],
+  ];
+}
+
+function sheetWith(placements: ReadonlyArray<SheetPlacement>): PlanSheet {
+  return {
+    name: REGION.name,
+    originX: 0,
+    originZ: 0,
+    room: mmRectInWorld(REGION, { x: 0, z: 0, width: 3000, depth: 1200 }),
+    tables: tableTops(REGION),
+    obstacles: [],
+    roadway: [],
+    ramps: [],
+    placements,
+    partsList: { placements: placements.length, parts: placements.length, lines: 1, uncounted: 0 },
+    verdict: { buildable: true, issues: 0, unmeasured: 0, notChecked: [], unchecked: null },
+    disclaimer: "Not affiliated with any brick maker.",
+  };
+}
+
+const COTTAGE: SheetPlacement = {
+  number: 1,
+  label: "my-cottage.ldr at 6800, 3400",
+  parts: 13,
+  segment: "model",
+  rings: square(6800, 3400, 160),
+  flagged: false,
+};
+
+const SHEET = sheetWith([COTTAGE]);
+
+interface Drawn {
+  readonly item: DrawItem;
+  readonly transform: Similarity;
+  readonly roles: ReadonlyArray<string>;
+}
+
+function walk(
+  items: ReadonlyArray<DrawItem>,
+  transform: Similarity = IDENTITY,
+  roles: ReadonlyArray<string> = [],
+): Drawn[] {
+  return items.flatMap((item) =>
+    item.kind === "group"
+      ? walk(item.items, composed(transform, item.transform), [...roles, item.role])
+      : [{ item, transform, roles }],
+  );
+}
+
+function onPage(point: Point, transform: Similarity): Point {
+  return [point[0] * transform.scale + transform.dx, point[1] * transform.scale + transform.dy];
+}
+
+function frameOf(page: SheetPage): Box {
+  const frame = walk(page.items).find(({ item }) => item.kind === "rect" && item.role === "frame");
+  if (!frame || frame.item.kind !== "rect") throw new Error(`${page.name} has no frame`);
+  return frame.item.box;
+}
+
+function marksOn(page: SheetPage): Point[] {
+  return walk(page.items).flatMap(({ item, transform }) =>
+    item.kind === "circle" && item.role === "registration" ? [onPage(item.center, transform)] : [],
+  );
+}
+
+function tablesOn(page: SheetPage): Box[] {
+  return walk(page.items).flatMap(({ item, transform }) => {
+    if (item.kind !== "rect" || item.role !== "table") return [];
+    const [x, y] = onPage([item.box.x, item.box.y], transform);
+    return [
+      {
+        x,
+        y,
+        width: item.box.width * transform.scale,
+        height: item.box.height * transform.scale,
+      },
+    ];
+  });
+}
+
+function tilePages(layout: SheetLayout, sheet: PlanSheet = SHEET): SheetPage[] {
+  return composer.compose(sheet, layout).pages.filter((page) => /^[A-Z]+\d+$/u.test(page.name));
+}
+
+function titleLines(page: SheetPage): string[] {
+  return walk(page.items).flatMap(({ item, roles }) =>
+    item.kind === "text" && roles.includes("title-block") ? [item.text] : [],
+  );
+}
+
+function sharedMarks(from: SheetPage, to: SheetPage, dx: number, dy: number): number {
+  return marksOn(from).filter(([x, y]) =>
+    marksOn(to).some(
+      ([tx, ty]) => Math.abs(tx - (x - dx)) < 1e-9 && Math.abs(ty - (y - dy)) < 1e-9,
+    ),
+  ).length;
+}
+
+function tileGroup(page: SheetPage): { items: ReadonlyArray<DrawItem>; window: Box } {
+  const group = page.items.find((item) => item.kind === "group" && item.role === "tile");
+  if (!group || group.kind !== "group" || !group.clip) throw new Error(`${page.name} has no tile`);
+  return { items: group.items, window: group.clip };
+}
+
+function cottageOn(page: SheetPage): Drawn | undefined {
+  return walk(tileGroup(page).items).find(
+    ({ item }) => item.kind === "path" && item.role === "model",
+  );
+}
+
+const TILED: SheetLayout = {
+  kind: "tiled",
+  paper: "a4",
+  orientation: "portrait",
+  denominator: 1,
+  overlapMm: 10,
+};
+
+describe("tiled sheets", () => {
+  it("print every page on the paper chosen, with the plan at 0.4 mm per LDU, so a 1234 mm table measures 1234 mm across its pages", () => {
+    const tiles = tilePages(TILED);
+    expect(tiles.length).toBeGreaterThan(1);
+    expect(new Set(tiles.map((page) => `${page.size.widthMm}×${page.size.heightMm}`))).toEqual(
+      new Set(["210×297"]),
+    );
+    const front = tiles.flatMap(tablesOn).filter((table) => Math.abs(table.width - 1234) < 1e-9);
+    expect(front.length).toBeGreaterThan(0);
+    expect(new Set(front.map((table) => table.height.toFixed(9)))).toEqual(
+      new Set(["600.000000000"]),
+    );
+  });
+
+  it("put the marks a page shares with its right and lower neighbours at the same place on both, one window step apart, and never cut a mark off", () => {
+    const tiles = tilePages(TILED);
+    const byName = new Map(tiles.map((page) => [page.name, page]));
+    const a1 = byName.get("A1");
+    const b1 = byName.get("B1");
+    const a2 = byName.get("A2");
+    if (!a1 || !b1 || !a2) throw new Error("the tiling has at least two columns and two rows");
+    const frame = frameOf(a1);
+    const stepX = frame.width - TILED.overlapMm;
+    const stepY = frame.height - TILED.overlapMm;
+    expect(sharedMarks(a1, b1, stepX, 0)).toBeGreaterThanOrEqual(2);
+    expect(sharedMarks(a1, a2, 0, stepY)).toBeGreaterThanOrEqual(2);
+    const reach = TILED.overlapMm * 0.45;
+    for (const page of tiles) {
+      const box = frameOf(page);
+      for (const [x, y] of marksOn(page)) {
+        expect(x - reach).toBeGreaterThanOrEqual(box.x - 1e-9);
+        expect(x + reach).toBeLessThanOrEqual(box.x + box.width + 1e-9);
+        expect(y - reach).toBeGreaterThanOrEqual(box.y - 1e-9);
+        expect(y + reach).toBeLessThanOrEqual(box.y + box.height + 1e-9);
+      }
+    }
+  });
+
+  it("carry each placement only on the pages whose window it reaches", () => {
+    const tiles = tilePages(TILED);
+    const carrying = tiles.filter((page) => cottageOn(page) !== undefined);
+    const [first] = carrying;
+    const drawn = first && cottageOn(first);
+    if (!drawn || drawn.item.kind !== "path") throw new Error("some page carries the cottage");
+    const corners = drawn.item.rings.flat().map((point) => onPage(point, drawn.transform));
+    const xs = corners.map(([x]) => x);
+    const ys = corners.map(([, y]) => y);
+    const stroke = drawn.item.paint.strokeMm / 2;
+    const footprint: Box = {
+      x: Math.min(...xs) - stroke,
+      y: Math.min(...ys) - stroke,
+      width: Math.max(...xs) - Math.min(...xs) + 2 * stroke,
+      height: Math.max(...ys) - Math.min(...ys) + 2 * stroke,
+    };
+    const reached = tiles.filter((page) => boxesOverlap(tileGroup(page).window, footprint));
+    expect(carrying.length).toBeGreaterThan(0);
+    expect(carrying.length).toBeLessThan(tiles.length);
+    expect(carrying.map((page) => page.name)).toEqual(reached.map((page) => page.name));
+  });
+
+  it("shrink the plan by the chosen ISO 5455 scale and need fewer pages at 1:5", () => {
+    const life = tilePages(TILED);
+    const fifth = tilePages({ ...TILED, denominator: 5 });
+    const front = fifth
+      .flatMap(tablesOn)
+      .filter((table) => Math.abs(table.width - 1234 / 5) < 1e-9);
+    expect(front.length).toBeGreaterThan(0);
+    expect(fifth.length).toBeLessThan(life.length);
+  });
+
+  it("turn the paper to the orientation that needs fewer pages when left to choose", () => {
+    const auto = tilePages({ ...TILED, orientation: "auto", denominator: 5 });
+    const portrait = tilePages({ ...TILED, orientation: "portrait", denominator: 5 });
+    const landscape = tilePages({ ...TILED, orientation: "landscape", denominator: 5 });
+    expect(auto.length).toBe(Math.min(portrait.length, landscape.length));
+    expect(auto[0]?.size).toEqual(
+      landscape.length < portrait.length ? landscape[0]?.size : portrait[0]?.size,
+    );
+  });
+
+  it("refuse an overlap the registration marks can't fit in, and a scale off the ISO series", () => {
+    expect(() => composer.compose(SHEET, { ...TILED, overlapMm: 2 })).toThrow(RangeError);
+    expect(() => composer.compose(SHEET, { ...TILED, denominator: 3 })).toThrow(RangeError);
+  });
+});
+
+describe("a sheet fitted to one page", () => {
+  it("draws at the largest ISO 5455 scale whose drawing fits the paper, says so, and stays inside the margins", () => {
+    const [page] = composer.compose(SHEET, { kind: "fit", paper: "a4", orientation: "auto" }).pages;
+    if (!page) throw new Error("a fitted sheet has a page");
+    expect(page.size).toEqual({ widthMm: 297, heightMm: 210 });
+    expect(titleLines(page).join(" ")).toContain("drawn at 1:20 to fit one A4 page (landscape)");
+    const tables = tablesOn(page);
+    expect(tables.map((table) => table.width.toFixed(9))).toEqual(
+      [1234 / 20, 1200 / 20].map((width) => width.toFixed(9)),
+    );
+    for (const { item, transform } of walk(page.items)) {
+      if (item.kind !== "rect" || item.role === "page") continue;
+      const [x, y] = onPage([item.box.x, item.box.y], transform);
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x + item.box.width * transform.scale).toBeLessThanOrEqual(page.size.widthMm);
+      expect(y + item.box.height * transform.scale).toBeLessThanOrEqual(page.size.heightMm);
+    }
+  });
+
+  it("flows a long key onto continuation pages, listing every placement once and in order", () => {
+    const many = Array.from({ length: 150 }, (_, i): SheetPlacement => ({
+      number: i + 1,
+      label: `Train Track 9V Straight #${i + 1}`,
+      parts: 1,
+      segment: "track",
+      rings: square(400 + (i % 30) * 160, 800 + Math.floor(i / 30) * 160, 160),
+      flagged: false,
+    }));
+    const pages = composer.compose(sheetWith(many), {
+      kind: "fit",
+      paper: "a4",
+      orientation: "portrait",
+    }).pages;
+    const listed = pages.flatMap((page) =>
+      walk(page.items).flatMap(({ item, roles }) =>
+        roles.includes("key") &&
+        item.kind === "text" &&
+        item.style.bold &&
+        item.at[0] === 0 &&
+        /^\d+$/u.test(item.text)
+          ? [Number(item.text)]
+          : [],
+      ),
+    );
+    expect(pages.length).toBeGreaterThan(1);
+    expect(listed).toEqual(many.map((placement) => placement.number));
+  });
+});

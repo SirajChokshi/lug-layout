@@ -11,14 +11,12 @@ import {
 } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import type { IBomSource } from "../bom/bom-service.ts";
-import { PLAN_SERVICE, TRADEMARK_DISCLAIMER } from "../tokens.ts";
-import {
-  planSheetSvg,
-  ringsBounds,
-  type SheetPartsList,
-  type SheetPlacement,
-  type SheetVerdict,
-} from "./plan-sheet.ts";
+import { ringsBounds } from "../sheets/plan-drawing.ts";
+import type { ISheetComposer } from "../sheets/sheet-composer.ts";
+import { sheetFileBase, type SheetRequest } from "../sheets/sheet-document.ts";
+import type { ISvgSheetWriter, SheetFile } from "../sheets/svg-sheet-writer.ts";
+import { PLAN_SERVICE, SHEET_COMPOSER, SVG_SHEET_WRITER, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import type { PlanSheet, SheetPartsList, SheetPlacement, SheetVerdict } from "./plan-sheet.ts";
 import type { IPlanService, PlanPlacementsView, PlanRowSegment } from "./plan-service.ts";
 import { buildableAsPlanned, UNCHECKED_PLAN_RULES } from "./plan-verdict.ts";
 
@@ -35,6 +33,7 @@ export interface IPlanSheetSource extends IBomSource {
 
 export interface IPlanSheetService {
   printable(source: IPlanSheetSource, planId: string): string;
+  download(source: IPlanSheetSource, planId: string, request: SheetRequest): SheetFile;
 }
 
 function keyText(key: PlacementKey): string {
@@ -95,9 +94,32 @@ export class PlanSheetService implements IPlanSheetService {
   constructor(
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
+    @inject(SHEET_COMPOSER) private readonly composer: ISheetComposer,
+    @inject(SVG_SHEET_WRITER) private readonly svg: ISvgSheetWriter,
   ) {}
 
   printable(source: IPlanSheetSource, planId: string): string {
+    const sheet = this.sheetOf(source, planId);
+    const [page] = this.composer.compose(sheet, { kind: "whole" }).pages;
+    if (!page) throw new Error("a whole sheet has one page");
+    return this.svg.pageSvg(page, sheet.name);
+  }
+
+  download(source: IPlanSheetSource, planId: string, request: SheetRequest): SheetFile {
+    const sheet = this.sheetOf(source, planId);
+    const document = this.composer.compose(sheet, request.layout);
+    const base = sheetFileBase(sheet.name, request.layout);
+    switch (request.format) {
+      case "svg":
+        return this.svg.write(document, base);
+      default: {
+        const unhandled: never = request.format;
+        throw new Error(`unhandled sheet format ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private sheetOf(source: IPlanSheetSource, planId: string): PlanSheet {
     const plans = this.plans;
     const region = plans.plans().find((plan) => plan.id === planId);
     if (!region) throw new Error(`no plan ${planId}`);
@@ -123,7 +145,7 @@ export class PlanSheetService implements IPlanSheetService {
       });
       if (segment === "model") roadway.push(...shapes.roadwayOf(id));
     }
-    return planSheetSvg({
+    return {
       name: region.name,
       originX: regionOriginX(region),
       originZ: regionOriginZ(region),
@@ -139,7 +161,7 @@ export class PlanSheetService implements IPlanSheetService {
       partsList: unchecked === null ? partsListOf(source, planId) : null,
       verdict: this.verdictOf(planId, unchecked),
       disclaimer: this.disclaimer,
-    });
+    };
   }
 
   private verdictOf(planId: string, unchecked: string | null): SheetVerdict {
