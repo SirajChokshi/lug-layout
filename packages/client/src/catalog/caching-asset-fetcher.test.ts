@@ -121,7 +121,6 @@ describe("caching asset fetcher", () => {
     }
     const failing = new FakeNetwork([[BUNDLE_POINTER_FILE, HTTP_SERVER_ERROR]]);
     expect(await session(failing, indexedDb).loader.loadManifestFile()).toBe(FALLBACK_MANIFEST);
-    browserOffline();
     expect(await session(offline, new IDBFactory()).loader.loadManifestFile()).toBe(
       FALLBACK_MANIFEST,
     );
