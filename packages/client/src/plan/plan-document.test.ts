@@ -6,7 +6,13 @@ import {
 } from "@brr/schema/world";
 import { describe, expect, it } from "vitest";
 import goldenManifest from "../../../test-fixtures/world-schema/v2/manifest.json" with { type: "json" };
-import { NO_PLANS, PLAN_LAYER_NAME, planStateOf, withPlanState } from "./plan-document.ts";
+import {
+  NO_PLANS,
+  PLAN_LAYER_NAME,
+  planRecord,
+  planStateOf,
+  withPlanState,
+} from "./plan-document.ts";
 
 function goldenDocument(): WorldDocument {
   const manifest = decodeWorldManifest(goldenManifest, "manifest");
@@ -33,6 +39,7 @@ const SHOW_FLOOR = {
   footprint: {
     roomWidthMm: 4800,
     roomDepthMm: 3000,
+    rooms: [],
     tables: [
       {
         id: "table-2",
@@ -43,6 +50,7 @@ const SHOW_FLOOR = {
       },
     ],
     obstacles: [],
+    aisles: [],
   },
 };
 
@@ -124,6 +132,22 @@ describe("plan document", () => {
     expect(kept).toEqual({ layers: [BASE_LAYER], tableTypes: [club] });
     expect(planStateOf(kept)).toEqual({ ok: true, value: { ...NO_PLANS, tableTypes: [club] } });
     expect(withPlanState(kept, NO_PLANS)).toEqual(document);
+  });
+
+  it("reads an obstacle with no kind as a pillar, and gives a v1 plan file only the obstacles that block", () => {
+    const state = planStateOf(goldenDocument());
+    const region = state.ok ? state.value.regions[0] : undefined;
+    if (!region) throw new Error("the golden world's plan doesn't read");
+
+    expect(region.footprint.obstacles.map((obstacle) => obstacle.kind)).toEqual([
+      "pillar",
+      "door",
+      "power",
+    ]);
+    expect(planRecord(region).footprint.obstacles.map((obstacle) => obstacle.name)).toEqual([
+      "Pillar",
+      "Fire door",
+    ]);
   });
 
   it("refuses plans that lie on more than one plan layer, which the editor would merge on its next save", () => {

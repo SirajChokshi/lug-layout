@@ -35,6 +35,7 @@ const REGION: PlanRegion = {
   footprint: {
     roomWidthMm: 2999,
     roomDepthMm: 1801,
+    rooms: [],
     tables: [
       {
         id: "table-1",
@@ -45,6 +46,7 @@ const REGION: PlanRegion = {
       },
     ],
     obstacles: [],
+    aisles: [],
   },
   maxOverhangMm: 0,
   maxReachMm: 700,

@@ -1,10 +1,12 @@
 import { lduFromMm } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import type { PlacementFacts } from "./plan-facts.ts";
-import type { LduRect, PlanObstacle, PlanRegion, PlanTable } from "./plan-region.ts";
+import type { LduRect, PlanFootprint, PlanObstacle, PlanRegion, PlanTable } from "./plan-region.ts";
 import { checkPlan, type PlanIssue, type PlanPlacement } from "./plan-rules.ts";
 
 const BRICK_FOOTING = [-40, -20, 40, 20];
+
+type Venue = Partial<Pick<PlanFootprint, "rooms" | "obstacles" | "aisles">>;
 
 function table(name: string, x: number, z: number, width: number, depth: number): PlanTable {
   return { id: name, number: 1, name, rect: { x, z, width, depth }, heightMm: 750 };
@@ -13,14 +15,22 @@ function table(name: string, x: number, z: number, width: number, depth: number)
 function region(
   tables: PlanTable[],
   overrides: Partial<PlanRegion> = {},
-  obstacles: PlanObstacle[] = [],
+  venue: Venue = {},
 ): PlanRegion {
   return {
     id: "plan",
     name: "Test room",
     originChunkX: 0,
     originChunkZ: 0,
-    footprint: { roomWidthMm: 4000, roomDepthMm: 4000, tables, obstacles },
+    footprint: {
+      roomWidthMm: 4000,
+      roomDepthMm: 4000,
+      rooms: [],
+      tables,
+      obstacles: [],
+      aisles: [],
+      ...venue,
+    },
     maxOverhangMm: 0,
     maxReachMm: 700,
     ...overrides,
@@ -139,11 +149,53 @@ describe("reach from the free table edges", () => {
       id: "wall",
       name: "Wall",
       rect: { x: 0, z: 0, width: 500, depth: 3000 },
+      kind: "pillar",
     };
-    const walled = region([table("A", 500, 500, 2000, 2000)], {}, [wall]);
+    const walled = region([table("A", 500, 500, 2000, 2000)], {}, { obstacles: [wall] });
     const nearWall = placed(0, 1100, 1500);
     expect(checkPlan(square, [nearWall]).issues).toEqual([]);
     expect(rulesOf(checkPlan(walled, [nearWall]).issues)).toEqual([["reach", [0]]]);
+    const power = region(
+      [table("A", 500, 500, 2000, 2000)],
+      {},
+      {
+        obstacles: [{ ...wall, kind: "power" }],
+      },
+    );
+    expect(checkPlan(power, [nearWall, placed(1, 400, 1500)]).issues.map((i) => i.rule)).toEqual([
+      "fit",
+    ]);
+  });
+});
+
+describe("reach from crew aisles", () => {
+  const tables = [table("A", 500, 500, 2000, 2000)];
+  const backAisle = { id: "back", name: "Back", rect: { x: 500, z: 0, width: 2000, depth: 500 } };
+  const nearBack = placed(0, 1500, 900);
+  const nearFront = placed(1, 1500, 2300);
+
+  it("measures from crew aisles alone once the plan has one", () => {
+    const crew = region(tables, {}, { aisles: [{ ...backAisle, side: "crew" }] });
+    expect(checkPlan(crew, [nearBack, nearFront]).issues.map((i) => i.message)).toEqual([
+      "brick 1 is out of reach: part of it is more than 700 mm from every crew aisle.",
+    ]);
+  });
+
+  it("keeps measuring from the free table edges beside a public aisle", () => {
+    const viewing = region(tables, {}, { aisles: [{ ...backAisle, side: "public" }] });
+    expect(checkPlan(viewing, [nearBack, nearFront]).issues).toEqual([]);
+  });
+
+  it("measures from the aisle's edge, so a gap before the table counts against the reach", () => {
+    const setBack = {
+      ...backAisle,
+      side: "crew" as const,
+      rect: { ...backAisle.rect, depth: 200 },
+    };
+    const crew = region(tables, {}, { aisles: [setBack] });
+    expect(rulesOf(checkPlan(crew, [placed(0, 1500, 880), placed(1, 1500, 900)]).issues)).toEqual([
+      ["reach", [1]],
+    ]);
   });
 });
 

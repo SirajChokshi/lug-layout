@@ -233,12 +233,16 @@ export interface PlanRegion {
       readonly heightMm: number;
       readonly typeId?: number;
     }>;
-    readonly obstacles: ReadonlyArray<{
-      readonly id: string;
-      readonly name: string;
-      readonly rect: PlanRect;
-    }>;
+    readonly rooms: ReadonlyArray<PlanArea>;
+    readonly obstacles: ReadonlyArray<PlanArea & { readonly kind: string }>;
+    readonly aisles: ReadonlyArray<PlanArea & { readonly side: string }>;
   };
+}
+
+interface PlanArea {
+  readonly id: string;
+  readonly name: string;
+  readonly rect: PlanRect;
 }
 
 export interface PlanRow {

@@ -608,8 +608,11 @@ function worldBox(minX: number, minZ: number, size: number): WorldBox {
 function room(minX: number): PlanOverlay {
   return {
     room: worldBox(minX, 0, 1280),
+    floors: [worldBox(minX, 0, 1280)],
     tables: [{ ...worldBox(minX, 0, 640), srgb: null }],
     obstacles: [],
+    markers: [],
+    aisles: [],
     active: true,
   };
 }

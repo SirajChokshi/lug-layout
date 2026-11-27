@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lduFromMm } from "@brr/math";
+import { AISLE_SIDES, OBSTACLE_KINDS } from "@brr/schema/world";
 import { ExactFrame, exactCoveredWithin, exactGrown, exactUncovered } from "./exact-rect.ts";
 import type { LduRect, PlanRegion } from "./plan-region.ts";
 import {
@@ -497,10 +498,18 @@ function region(next: () => number): PlanRegion {
         rect: { x: mm(), z: mm(), width: 100 + int(2000), depth: 100 + int(2000) },
         heightMm: 750,
       })),
+      rooms: [],
       obstacles: Array.from({ length: int(3) }, (_, i) => ({
         id: `o${i}`,
         name: `o${i}`,
         rect: { x: mm(), z: mm(), width: 100 + int(500), depth: 100 + int(500) },
+        kind: OBSTACLE_KINDS[int(OBSTACLE_KINDS.length)] ?? "pillar",
+      })),
+      aisles: Array.from({ length: int(3) }, (_, i) => ({
+        id: `a${i}`,
+        name: `a${i}`,
+        rect: { x: mm(), z: mm(), width: 100 + int(4000), depth: 100 + int(1000) },
+        side: AISLE_SIDES[int(AISLE_SIDES.length)] ?? "crew",
       })),
     },
     maxOverhangMm: next() < 0.1 ? -int(50) : int(200),

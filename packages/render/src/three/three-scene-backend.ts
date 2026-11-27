@@ -218,6 +218,11 @@ const ROOM_OUTLINE_COLOR = 0x3a3a3a;
 const TABLE_COLOR = 0xb58b5a;
 const OBSTACLE_COLOR = 0xc0392b;
 const OBSTACLE_OPACITY = 0.45;
+const MARKER_COLOR = 0xf1c40f;
+const PUBLIC_AISLE_COLOR = 0x2e86de;
+const CREW_AISLE_COLOR = 0x27ae60;
+const AISLE_OPACITY = 0.4;
+const AISLE_THICKNESS_LDU = 2;
 const ISSUE_COLOR = 0xe0115f;
 const FLOOR_THICKNESS_LDU = 10;
 const GRID_LIFT_LDU = 0.5;
@@ -254,6 +259,10 @@ function lineSegments(positions: number[], color: number): LineSegments {
   const geometry = new LineGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
   return new LineSegments(geometry, new LineBasicNodeMaterial({ color }));
+}
+
+function translucent(color: number, opacity: number): MeshStandardNodeMaterial {
+  return new MeshStandardNodeMaterial({ color, transparent: true, opacity, depthWrite: false });
 }
 
 function boxMesh(
@@ -1643,20 +1652,17 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const z = room.minZ;
     const group = new Group();
     group.matrixAutoUpdate = false;
-    const floor = boxMesh(
-      { ...room, minY: room.minY - FLOOR_THICKNESS_LDU },
-      x,
-      z,
-      new MeshStandardNodeMaterial({
-        color: overlay.active ? FLOOR_COLOR : INACTIVE_FLOOR_COLOR,
-        roughness: 1,
-      }),
-    );
+    const floorMaterial = new MeshStandardNodeMaterial({
+      color: overlay.active ? FLOOR_COLOR : INACTIVE_FLOOR_COLOR,
+      roughness: 1,
+    });
+    for (const floor of overlay.floors) {
+      group.add(boxMesh({ ...floor, minY: floor.minY - FLOOR_THICKNESS_LDU }, x, z, floorMaterial));
+    }
     const outlineY = room.maxY + GRID_LIFT_LDU;
     const w = room.maxX - x;
     const d = room.maxZ - z;
     group.add(
-      floor,
       lineSegments(
         [
           0,
@@ -1694,13 +1700,16 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       tableMaterials.set(srgb, material);
       group.add(boxMesh(table, x, z, material));
     }
-    const obstacleMaterial = new MeshStandardNodeMaterial({
-      color: OBSTACLE_COLOR,
-      transparent: true,
-      opacity: OBSTACLE_OPACITY,
-      depthWrite: false,
-    });
+    const obstacleMaterial = translucent(OBSTACLE_COLOR, OBSTACLE_OPACITY);
     for (const obstacle of overlay.obstacles) group.add(boxMesh(obstacle, x, z, obstacleMaterial));
+    const markerMaterial = new MeshStandardNodeMaterial({ color: MARKER_COLOR, roughness: 0.6 });
+    for (const marker of overlay.markers) group.add(boxMesh(marker, x, z, markerMaterial));
+    const crewMaterial = translucent(CREW_AISLE_COLOR, AISLE_OPACITY);
+    const publicMaterial = translucent(PUBLIC_AISLE_COLOR, AISLE_OPACITY);
+    for (const aisle of overlay.aisles) {
+      const patch = { ...aisle, maxY: aisle.minY + AISLE_THICKNESS_LDU };
+      group.add(boxMesh(patch, x, z, aisle.crew ? crewMaterial : publicMaterial));
+    }
     for (const child of group.children) child.updateMatrix();
     return { object: group, x, z };
   }

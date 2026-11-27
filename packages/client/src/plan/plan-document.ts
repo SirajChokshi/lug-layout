@@ -1,9 +1,10 @@
-import type { PlanRegion, PlanState } from "@brr/domain";
+import { isMarker, type PlanRegion, type PlanState } from "@brr/domain";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { PlanRecordV1 } from "@brr/schema/plan";
 import {
   BASE_LAYER_ID,
   OPACITY_PERCENT_MAX,
+  UNSTATED_OBSTACLE_KIND,
   type LayerRecordV2,
   type PlanRegionRecordV2,
   type WorldDocument,
@@ -28,18 +29,36 @@ export function planRecord(region: PlanRegion): PlanRecordV1 {
       roomWidthMm: footprint.roomWidthMm,
       roomDepthMm: footprint.roomDepthMm,
       tables: footprint.tables.map(({ name, rect, heightMm }) => ({ name, rect, heightMm })),
-      obstacles: footprint.obstacles.map(({ name, rect }) => ({ name, rect })),
+      obstacles: footprint.obstacles
+        .filter((obstacle) => !isMarker(obstacle))
+        .map(({ name, rect }) => ({ name, rect })),
     },
   };
 }
 
 function planRegionRecord(region: PlanRegion, layer: number): PlanRegionRecordV2 {
   const record = planRecord(region);
-  const tables = region.footprint.tables.map(({ id: _id, typeId, ...table }) => ({
-    ...table,
-    ...(typeId === undefined ? {} : { type: typeId }),
-  }));
-  return { ...record, footprint: { ...record.footprint, tables }, layer };
+  const { rooms, tables, obstacles, aisles } = region.footprint;
+  return {
+    ...record,
+    footprint: {
+      ...record.footprint,
+      tables: tables.map(({ id: _id, typeId, ...table }) => ({
+        ...table,
+        ...(typeId === undefined ? {} : { type: typeId }),
+      })),
+      obstacles: obstacles.map(({ name, rect, kind }) => ({
+        name,
+        rect,
+        ...(kind === UNSTATED_OBSTACLE_KIND ? {} : { kind }),
+      })),
+      ...(rooms.length === 0 ? {} : { rooms: rooms.map(({ name, rect }) => ({ name, rect })) }),
+      ...(aisles.length === 0
+        ? {}
+        : { aisles: aisles.map(({ name, rect, side }) => ({ name, rect, side })) }),
+    },
+    layer,
+  };
 }
 
 function savedRegion(record: PlanRegionRecordV2, index: number): PlanRegion {
@@ -53,16 +72,19 @@ function savedRegion(record: PlanRegionRecordV2, index: number): PlanRegion {
     footprint: {
       roomWidthMm: footprint.roomWidthMm,
       roomDepthMm: footprint.roomDepthMm,
+      rooms: (footprint.rooms ?? []).map((room, i) => ({ id: `${id}-room-${i}`, ...room })),
       tables: footprint.tables.map(({ type, ...table }, i) => ({
         id: `${id}-table-${i}`,
         ...table,
         ...(type === undefined ? {} : { typeId: type }),
       })),
-      obstacles: footprint.obstacles.map(({ name, rect }, obstacle) => ({
+      obstacles: footprint.obstacles.map(({ name, rect, kind }, obstacle) => ({
         id: `${id}-obstacle-${obstacle}`,
         name,
         rect,
+        kind: kind ?? UNSTATED_OBSTACLE_KIND,
       })),
+      aisles: (footprint.aisles ?? []).map((aisle, i) => ({ id: `${id}-aisle-${i}`, ...aisle })),
     },
     maxOverhangMm: record.maxOverhangMm,
     maxReachMm: record.maxReachMm,

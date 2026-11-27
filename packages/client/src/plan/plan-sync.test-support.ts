@@ -11,6 +11,8 @@ import {
   FACT_UNMAPPED_BRICKLINK,
   FACT_UNMAPPED_REBRICKABLE,
   FLAG_UNMEASURED,
+  floorRects,
+  isMarker,
   LABEL_NUMBERED,
   lowestFreeTableNumber,
   MODEL_SEGMENT,
@@ -35,6 +37,7 @@ import {
   type PlacementFacts,
 } from "@brr/domain";
 import { CHUNK_LDU, chunkKey, chunkOf, lduFromMm, mmFromLdu } from "@brr/math";
+import { OBSTACLE_KINDS } from "@brr/schema/world";
 import type { BufferMemory, ISceneBackend, PlanOverlay, RebaseEvent, WorldBox } from "@brr/render";
 import { fitAllBox } from "../camera/editor-camera.ts";
 import { overviewOf } from "../camera/overview.ts";
@@ -54,10 +57,10 @@ import {
   DEFAULT_TABLE_HEIGHT_MM,
   PlanService,
   type NewPlan,
-  type ObstacleInput,
   type PlacedForPlan,
   type PlanPatch,
   type TableInput,
+  type VenueInput,
 } from "./plan-service.ts";
 
 interface PlanSnapshot {
@@ -355,8 +358,10 @@ class TodaysPlanService {
       footprint: {
         roomWidthMm: plan.roomWidthMm,
         roomDepthMm: plan.roomDepthMm,
+        rooms: [],
         tables: [],
         obstacles: [],
+        aisles: [],
       },
       maxOverhangMm: DEFAULT_MAX_OVERHANG_MM,
       maxReachMm: DEFAULT_MAX_REACH_MM,
@@ -482,8 +487,8 @@ class TodaysPlanService {
     this.commit({ plans: state.regions, activePlanId: state.activePlanId });
   }
 
-  addObstacle(planId: string, obstacle: ObstacleInput): string {
-    const id = this.newId("obstacle");
+  addVenueItem(planId: string, _list: "obstacles", obstacle: VenueInput<"obstacles">): string {
+    const id = this.newId("obstacles");
     this.replacePlan(planId, (plan) => ({
       ...plan,
       footprint: {
@@ -494,7 +499,12 @@ class TodaysPlanService {
     return id;
   }
 
-  updateObstacle(planId: string, obstacleId: string, patch: Partial<ObstacleInput>): void {
+  updateVenueItem(
+    planId: string,
+    _list: "obstacles",
+    obstacleId: string,
+    patch: Partial<VenueInput<"obstacles">>,
+  ): void {
     this.replacePlan(planId, (plan) => ({
       ...plan,
       footprint: {
@@ -506,7 +516,7 @@ class TodaysPlanService {
     }));
   }
 
-  removeObstacle(planId: string, obstacleId: string): void {
+  removeVenueItem(planId: string, _list: "obstacles", obstacleId: string): void {
     this.replacePlan(planId, (plan) => ({
       ...plan,
       footprint: {
@@ -599,11 +609,14 @@ class TodaysPlanService {
         maxZ: top.surface.maxZ,
         srgb: null,
       }));
-      const obstacles = (check?.obstacles ?? []).map((rect) => ({
-        ...rect,
-        minY: floorY,
-        maxY: tableTopY,
-      }));
+      const obstacles: WorldBox[] = [];
+      const markers: WorldBox[] = [];
+      (check?.obstacles ?? []).forEach((rect, j) => {
+        const obstacle = plan.footprint.obstacles[j];
+        const column = { ...rect, minY: floorY, maxY: tableTopY };
+        (obstacle && isMarker(obstacle) ? markers : obstacles).push(column);
+      });
+      const onFloor = (rect: LduRect) => ({ ...rect, minY: floorY, maxY: floorY });
       const room = check?.room;
       return {
         room: {
@@ -614,8 +627,14 @@ class TodaysPlanService {
           maxY: floorY,
           maxZ: room?.maxZ ?? 0,
         },
+        floors: floorRects(plan).map(onFloor),
         tables,
         obstacles,
+        markers,
+        aisles: plan.footprint.aisles.map((aisle) => ({
+          ...onFloor(mmRectInWorld(plan, aisle.rect)),
+          crew: aisle.side === "crew",
+        })),
         active: plan.id === activePlanId,
       };
     });
@@ -1052,10 +1071,11 @@ export class Pair {
     };
   }
 
-  obstacle(): ObstacleInput {
+  obstacle(): VenueInput<"obstacles"> {
     return {
       name: `Pillar ${this.int(9)}`,
       rect: { x: this.mm(), z: this.mm(), width: 100 + this.int(400), depth: 100 + this.int(400) },
+      kind: this.pick(OBSTACLE_KINDS),
     };
   }
 
@@ -1123,7 +1143,7 @@ export class Pair {
       (s) => s.updatePlan(planId, patch),
       (s) => s.updatePlan(planId, { name }),
       (s) => s.addTable(planId, table),
-      (s) => s.addObstacle(planId, obstacle),
+      (s) => s.addVenueItem(planId, "obstacles", obstacle),
       (s) => s.activatePlan(planId),
       (s) => s.activatePlan(null),
       (s) => s.drawTable(drawn),
@@ -1136,8 +1156,10 @@ export class Pair {
       edits.push((s) => s.placeTable(planId, tableId, drawn));
     }
     if (obstacleId) {
-      edits.push((s) => s.updateObstacle(planId, obstacleId, { rect: obstacle.rect }));
-      edits.push((s) => s.removeObstacle(planId, obstacleId));
+      edits.push((s) =>
+        s.updateVenueItem(planId, "obstacles", obstacleId, { rect: obstacle.rect }),
+      );
+      edits.push((s) => s.removeVenueItem(planId, "obstacles", obstacleId));
     }
     if (this.next() < 0.08) edits.push((s) => s.removePlan(planId));
     this.both(this.pick(edits));
@@ -1446,12 +1468,12 @@ const MANDATORY: ReadonlyArray<MandatoryCase> = [
     run: (p) => {
       const id = withPlan(p);
       const obstacle = p.obstacle();
-      p.both((s) => s.addObstacle(id, obstacle));
+      p.both((s) => s.addVenueItem(id, "obstacles", obstacle));
       const obstacleId = p.firstObstacle(id);
       if (!obstacleId) return;
       const rect = p.obstacle().rect;
-      p.both((s) => s.updateObstacle(id, obstacleId, { rect }));
-      p.both((s) => s.removeObstacle(id, obstacleId));
+      p.both((s) => s.updateVenueItem(id, "obstacles", obstacleId, { rect }));
+      p.both((s) => s.removeVenueItem(id, "obstacles", obstacleId));
     },
   },
   {
@@ -1519,7 +1541,7 @@ const MANDATORY: ReadonlyArray<MandatoryCase> = [
         const table = q.table();
         q.both((s) => s.addTable(id, table));
         const obstacle = q.obstacle();
-        q.both((s) => s.addObstacle(id, obstacle));
+        q.both((s) => s.addVenueItem(id, "obstacles", obstacle));
         q.both((s) => s.updatePlan(id, { name: "While unchecked" }));
         q.both((s) => s.activatePlan(id));
         q.both((s) => s.setTableTopY(16));

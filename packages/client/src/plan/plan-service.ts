@@ -9,11 +9,14 @@ import {
   BOX_STRIDE,
   NO_ROW,
   PlanEvaluation,
+  floorRects,
+  isMarker,
   lowestFreeTableNumber,
   mmRectFromWorld,
   mmRectInWorld,
   MODEL_SEGMENT,
   regionAround,
+  regionAroundEach,
   retypedRegion,
   tableName,
   TRACK_SEGMENT,
@@ -25,20 +28,23 @@ import {
   type PlacementKey,
   type PlanChange,
   type PlanCheck,
+  type PlanArea,
   type PlanDelta,
   type PlanFootprint,
   type PlanIssue,
-  type PlanObstacle,
   type PlanRegion,
   type PlanState,
   type PlanTable,
+  type PlanVenue,
   type PlateHeights,
   type TableTop,
   type TableType,
+  type VenueItems,
+  type VenueList,
 } from "@brr/domain";
 import { chunkOf, lduFromMm } from "@brr/math";
 import { decode, type Decoded, type Issue } from "@brr/schema/decode";
-import { TABLE_TYPE_ID_MAX, TableTypeRecordV2 } from "@brr/schema/world";
+import { TABLE_TYPE_ID_MAX, TableTypeRecordV2, UNSTATED_OBSTACLE_KIND } from "@brr/schema/world";
 import { SCENE_BACKEND, type ISceneBackend, type PlanOverlay, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
 
@@ -101,12 +107,12 @@ export type PlanPatch = Partial<
 
 export type TableInput = Omit<PlanTable, "id" | "number" | "typeId">;
 export type TableTypeInput = Omit<TableType, "id">;
-export type ObstacleInput = Omit<PlanObstacle, "id">;
+export type VenueInput<L extends VenueList> = Omit<VenueItems[L], "id">;
 
 export interface PlanInput extends Omit<PlanRegion, "id" | "footprint"> {
-  readonly footprint: Omit<PlanFootprint, "tables" | "obstacles"> & {
+  readonly footprint: Pick<PlanFootprint, "roomWidthMm" | "roomDepthMm"> & {
     readonly tables: ReadonlyArray<TableInput>;
-    readonly obstacles: ReadonlyArray<ObstacleInput>;
+    readonly obstacles: ReadonlyArray<Omit<PlanArea, "id">>;
   };
 }
 
@@ -159,9 +165,14 @@ export interface IPlanService {
   drawTable(rect: LduRect, typeId?: number): DrawnTable;
   placeTable(planId: string, tableId: string, rect: LduRect): void;
   turnTable(planId: string, tableId: string): void;
-  addObstacle(planId: string, obstacle: ObstacleInput): string;
-  updateObstacle(planId: string, obstacleId: string, patch: Partial<ObstacleInput>): void;
-  removeObstacle(planId: string, obstacleId: string): void;
+  addVenueItem<L extends VenueList>(planId: string, list: L, item: VenueInput<L>): string;
+  updateVenueItem<L extends VenueList>(
+    planId: string,
+    list: L,
+    itemId: string,
+    patch: Partial<VenueInput<L>>,
+  ): void;
+  removeVenueItem(planId: string, list: VenueList, itemId: string): void;
   setTableTopY(y: number): void;
   onEdit(listener: (change: PlanChange) => void): () => void;
   restore(state: PlanState): void;
@@ -206,11 +217,14 @@ function planOverlays(
       maxZ: top.surface.maxZ,
       srgb: tableSrgb(top, types),
     }));
-    const obstacles = (view?.obstacles ?? []).map((rect) => ({
-      ...rect,
-      minY: floorY,
-      maxY: tableTopY,
-    }));
+    const obstacles: WorldBox[] = [];
+    const markers: WorldBox[] = [];
+    (view?.obstacles ?? []).forEach((rect, at) => {
+      const obstacle = plan.footprint.obstacles[at];
+      const column = { ...rect, minY: floorY, maxY: tableTopY };
+      (obstacle && isMarker(obstacle) ? markers : obstacles).push(column);
+    });
+    const onFloor = (rect: LduRect) => ({ ...rect, minY: floorY, maxY: floorY });
     const room = view?.room;
     return {
       room: {
@@ -221,8 +235,14 @@ function planOverlays(
         maxY: floorY,
         maxZ: room?.maxZ ?? 0,
       },
+      floors: floorRects(plan).map(onFloor),
       tables,
       obstacles,
+      markers,
+      aisles: plan.footprint.aisles.map((aisle) => ({
+        ...onFloor(mmRectInWorld(plan, aisle.rect)),
+        crew: aisle.side === "crew",
+      })),
       active: plan.id === activePlanId,
     };
   });
@@ -580,8 +600,10 @@ export class PlanService implements IPlanService {
       footprint: {
         roomWidthMm: plan.roomWidthMm,
         roomDepthMm: plan.roomDepthMm,
+        rooms: [],
         tables: [],
         obstacles: [],
+        aisles: [],
       },
       maxOverhangMm: DEFAULT_MAX_OVERHANG_MM,
       maxReachMm: DEFAULT_MAX_REACH_MM,
@@ -653,6 +675,7 @@ export class PlanService implements IPlanService {
       footprint: {
         roomWidthMm: footprint.roomWidthMm,
         roomDepthMm: footprint.roomDepthMm,
+        rooms: [],
         tables: footprint.tables.map((table, i) => ({
           id: this.newId("table"),
           number: i + 1,
@@ -660,8 +683,10 @@ export class PlanService implements IPlanService {
         })),
         obstacles: footprint.obstacles.map((obstacle) => ({
           id: this.newId("obstacle"),
+          kind: UNSTATED_OBSTACLE_KIND,
           ...obstacle,
         })),
+        aisles: [],
       },
       maxOverhangMm: plan.maxOverhangMm,
       maxReachMm: plan.maxReachMm,
@@ -836,49 +861,45 @@ export class PlanService implements IPlanService {
     this.editRegion(planId, (plan) => withTurnedTable(plan, tableId), true);
   }
 
-  addObstacle(planId: string, obstacle: ObstacleInput): string {
-    const id = this.newId("obstacle");
-    this.editRegion(
-      planId,
-      (plan) => ({
-        ...plan,
-        footprint: {
-          ...plan.footprint,
-          obstacles: [...plan.footprint.obstacles, { ...obstacle, id }],
-        },
-      }),
-      true,
-    );
+  addVenueItem<L extends VenueList>(planId: string, list: L, item: VenueInput<L>): string {
+    const id = this.newId(list);
+    const added = { ...item, id } as VenueItems[L];
+    this.editVenue(planId, list, (items) => [...items, added], true);
     return id;
   }
 
-  updateObstacle(planId: string, obstacleId: string, patch: Partial<ObstacleInput>): void {
-    this.editRegion(
+  updateVenueItem<L extends VenueList>(
+    planId: string,
+    list: L,
+    itemId: string,
+    patch: Partial<VenueInput<L>>,
+  ): void {
+    this.editVenue(
       planId,
-      (plan) => ({
-        ...plan,
-        footprint: {
-          ...plan.footprint,
-          obstacles: plan.footprint.obstacles.map((o) =>
-            o.id === obstacleId ? { ...o, ...patch } : o,
-          ),
-        },
-      }),
+      list,
+      (items) => items.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
       !onlyName(patch),
     );
   }
 
-  removeObstacle(planId: string, obstacleId: string): void {
+  removeVenueItem(planId: string, list: VenueList, itemId: string): void {
+    this.editVenue(planId, list, (items) => items.filter((item) => item.id !== itemId), true);
+  }
+
+  private editVenue<L extends VenueList>(
+    planId: string,
+    list: L,
+    next: (items: ReadonlyArray<VenueItems[L]>) => ReadonlyArray<VenueItems[L]>,
+    geometry: boolean,
+  ): void {
     this.editRegion(
       planId,
-      (plan) => ({
-        ...plan,
-        footprint: {
-          ...plan.footprint,
-          obstacles: plan.footprint.obstacles.filter((o) => o.id !== obstacleId),
-        },
-      }),
-      true,
+      (plan) => {
+        const venue: PlanVenue = plan.footprint;
+        const footprint = { ...plan.footprint, [list]: next(venue[list]) };
+        return regionAroundEach({ ...plan, footprint }, "rooms");
+      },
+      geometry,
     );
   }
 

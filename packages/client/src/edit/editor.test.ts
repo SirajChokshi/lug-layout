@@ -5644,6 +5644,78 @@ it("checks a user's model in a two-table plan on plan sync: across the seam, out
   });
 }, 120_000);
 
+it("measures a user's model's reach from the plan's crew aisles once it has one, each aisle edit one undo step, and grows the plan around a room past it", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const planId = plans.createPlan({
+    name: "Hall",
+    roomWidthMm: 3200,
+    roomDepthMm: 3200,
+    originChunkX: 0,
+    originChunkZ: 0,
+  });
+  plans.addTable(planId, {
+    name: "Bench",
+    rect: { x: 0, z: 1000, width: 2000, depth: 800 },
+    heightMm: 750,
+  });
+  const front = plans.addVenueItem(planId, "aisles", {
+    name: "Front",
+    rect: { x: 0, z: 1800, width: 2000, depth: 1200 },
+    side: "public",
+  });
+  await placer(editor, backend)(brick, 2500, 4400);
+  const venue = async () => {
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    const [plan] = plans.plans();
+    return {
+      issues: plans
+        .issues(planId)
+        .filter((issue) => issue.rule !== "bomMapping")
+        .map((issue) => issue.message),
+      planMm: [plan?.footprint.roomWidthMm, plan?.footprint.roomDepthMm],
+    };
+  };
+
+  const beside = await venue();
+  plans.addVenueItem(planId, "aisles", {
+    name: "Back",
+    rect: { x: 0, z: 0, width: 2000, depth: 1000 },
+    side: "crew",
+  });
+  const fromBack = await venue();
+  plans.updateVenueItem(planId, "aisles", front, { side: "crew" });
+  const fromBoth = await venue();
+  editor.undo(0);
+  const undone = await venue();
+  plans.addVenueItem(planId, "rooms", {
+    name: "Hall",
+    rect: { x: 0, z: 0, width: 3200, depth: 3200 },
+  });
+  plans.addVenueItem(planId, "rooms", {
+    name: "Annex",
+    rect: { x: 3200, z: 0, width: 1600, depth: 1200 },
+  });
+  const annexed = await venue();
+
+  const outOfReach =
+    "brick-2x4 at 2500, 4400 is out of reach: part of it is more than 700 mm from every crew aisle.";
+  expect({ beside, fromBack, fromBoth, undone, annexed }).toEqual({
+    beside: { issues: [], planMm: [3200, 3200] },
+    fromBack: { issues: [outOfReach], planMm: [3200, 3200] },
+    fromBoth: { issues: [], planMm: [3200, 3200] },
+    undone: { issues: [outOfReach], planMm: [3200, 3200] },
+    annexed: { issues: [outOfReach], planMm: [4800, 3200] },
+  });
+}, 120_000);
+
 function placedHeights(backend: HeadlessBackend, partId: string) {
   const heights = new Set<number>();
   let instances = 0;

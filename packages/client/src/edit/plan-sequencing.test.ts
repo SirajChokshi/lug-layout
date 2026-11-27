@@ -95,7 +95,11 @@ function withRegions(plans: PlanService): PlanService {
     rect: { x: 400, z: 300, width: 1200, depth: 900 },
     heightMm: 750,
   });
-  plans.addObstacle(planId, { name: "Pillar", rect: { x: 1700, z: 1500, width: 200, depth: 200 } });
+  plans.addVenueItem(planId, "obstacles", {
+    name: "Pillar",
+    rect: { x: 1700, z: 1500, width: 200, depth: 200 },
+    kind: "pillar",
+  });
   plans.updatePlan(planId, { maxOverhangMm: 40 });
   return plans;
 }
