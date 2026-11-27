@@ -44,7 +44,7 @@ const MS_PER_SECOND = 1000;
 const P50 = 0.5;
 const P95 = 0.95;
 const RENDERER_MAIN = "CrRendererMain";
-const FRAME_START = "FireAnimationFrame";
+const FRAME_START = "BeginMainThreadFrame";
 const JS_EVENTS: ReadonlySet<string> = new Set([
   "FunctionCall",
   "EventDispatch",
@@ -112,7 +112,7 @@ function unionWithin(
 function frameTimes(events: ReadonlyArray<TraceEvent>): FrameTimes {
   const renderer = rendererMain(events);
   const starts = events
-    .filter((event) => event.name === FRAME_START && isComplete(event) && onThread(event, renderer))
+    .filter((event) => event.name === FRAME_START && onThread(event, renderer))
     .map((event) => event.ts)
     .toSorted((a, b) => a - b);
   const js = events
@@ -193,8 +193,8 @@ const WHEEL_STEP = 100;
 const WHEEL_FLIP_MS = 500;
 const GESTURE_TAIL_MS = 500;
 const HOVER_SWEEP_FRACTION = 0.4;
-const EDIT_ZOOM_STEPS = 12;
-const ZOOM_IN_DELTA = -WHEEL_STEP;
+const MAX_EDIT_ZOOM_STEPS = 60;
+const EDIT_LDU_PER_PX = 4;
 const MAP_SAMPLE_PX = 160;
 const AIM_ATTEMPTS = 6;
 const DRAG_STEPS = 10;
@@ -573,7 +573,7 @@ interface ScreenSample {
 class ScreenMap {
   private readonly page: Page;
   private readonly origin: ScreenSample;
-  private readonly lduPerPxX: number;
+  readonly lduPerPxX: number;
   private readonly lduPerPxY: number;
 
   private constructor(page: Page, origin: ScreenSample, lduPerPxX: number, lduPerPxY: number) {
@@ -698,18 +698,23 @@ async function setPrecise(page: Page): Promise<void> {
   if ((await control.getAttribute("data-placement-mode")) !== "precise") await control.click();
 }
 
-async function zoomOnto(page: Page, target: Point): Promise<ScreenMap> {
-  await page.getByLabel("Go to x (LDU)").fill(String(target.x));
-  await page.getByLabel("Go to z (LDU)").fill(String(target.z));
+async function zoomOnto(page: Page, script: EditScript): Promise<ScreenMap> {
+  const x = (script.module.at.x + script.track.to.x) / 2;
+  const z = (script.module.at.z + script.track.to.z) / 2;
+  await page.getByLabel("Go to x (LDU)").fill(String(Math.round(x)));
+  await page.getByLabel("Go to z (LDU)").fill(String(Math.round(z)));
   await page.getByRole("button", { name: "Go to x, z" }).click();
   const { sx, sy } = await canvasCentre(page);
-  await page.mouse.move(sx, sy);
-  for (let step = 0; step < EDIT_ZOOM_STEPS; step++) {
-    await page.mouse.wheel(0, ZOOM_IN_DELTA);
-    await nextFrames(page);
+  for (let step = 0; step < MAX_EDIT_ZOOM_STEPS; step++) {
+    const map = await ScreenMap.fit(page);
+    if (Math.abs(map.lduPerPxX) <= EDIT_LDU_PER_PX) return map;
+    await page.mouse.move(sx, sy);
+    await page.mouse.wheel(0, -WHEEL_STEP);
+    await page.waitForTimeout(GESTURE_TAIL_MS);
   }
-  await page.waitForTimeout(GESTURE_TAIL_MS);
-  return ScreenMap.fit(page);
+  throw new Error(
+    `${MAX_EDIT_ZOOM_STEPS} wheel steps didn't zoom to ${EDIT_LDU_PER_PX} LDU a pixel`,
+  );
 }
 
 async function moduleCycle(
@@ -792,7 +797,7 @@ async function measureEdits(
   repeats: number,
   hoverMs: number,
 ): Promise<EditMeasurement> {
-  const map = await zoomOnto(page, script.module.at);
+  const map = await zoomOnto(page, script);
   await setPrecise(page);
   const log = new LatencyLog(page);
   for (let cycle = 0; cycle < repeats; cycle++) await moduleCycle(page, map, log, script);
