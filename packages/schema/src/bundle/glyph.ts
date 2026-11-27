@@ -1,6 +1,6 @@
 import type { Decoded } from "../decode/index.ts";
 
-export const PLAN_GLYPH_MAGIC = "BRRGLYF1";
+const PLAN_GLYPH_MAGIC = "BRRGLYF1";
 
 export interface PlanGlyph {
   readonly pixelsPerStud: number;

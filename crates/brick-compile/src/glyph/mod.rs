@@ -10,7 +10,6 @@ use crate::flatten::{Library, Lod, StudReference, INHERIT_COLOR};
 use crate::mesh::Mesh;
 use crate::technic::TechnicPrimitives;
 
-pub use self::format::GlyphFormatError;
 use self::raster::{rasterize, PlanTriangles};
 
 pub const GLYPH_MAGIC: &[u8; 8] = b"BRRGLYF1";
@@ -42,19 +41,6 @@ impl Glyph {
             color_index: Vec::new(),
             outline: Vec::new(),
         }
-    }
-
-    pub fn pixel(&self, column: u32, row: u32) -> Option<(u8, u32)> {
-        if column >= self.width || row >= self.depth {
-            return None;
-        }
-        let at = column as usize + self.width as usize * row as usize;
-        let coverage = self.coverage[at];
-        (coverage > 0).then(|| (coverage, self.colors[self.color_index[at] as usize]))
-    }
-
-    pub fn covered_samples(&self) -> u64 {
-        self.coverage.iter().map(|&count| u64::from(count)).sum()
     }
 }
 

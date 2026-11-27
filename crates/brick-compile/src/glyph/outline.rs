@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use rustc_hash::FxHashMap;
 
 const WORD_BITS: usize = u64::BITS as usize;
@@ -44,13 +46,6 @@ impl SampleMask {
     }
 }
 
-pub(super) struct SampleWindow {
-    pub x0: usize,
-    pub z0: usize,
-    pub x1: usize,
-    pub z1: usize,
-}
-
 struct BoundaryEdge {
     from: [u32; 2],
     direction: u8,
@@ -80,15 +75,14 @@ struct Boundary {
 }
 
 impl Boundary {
-    fn of(mask: &SampleMask, window: &SampleWindow) -> Self {
+    fn of(mask: &SampleMask, columns: Range<usize>, rows: Range<usize>) -> Self {
         let mut boundary = Boundary::default();
-        for z in window.z0..window.z1 {
-            for x in window.x0..window.x1 {
+        for z in rows.clone() {
+            for x in columns.clone() {
                 if !mask.covered(x, z) {
                     continue;
                 }
-                let cell = [(x - window.x0) as u32, (z - window.z0) as u32];
-                let [i, j] = cell;
+                let [i, j] = [(x - columns.start) as u32, (z - rows.start) as u32];
                 if !mask.covered_at(x, z, 0, -1) {
                     boundary.push([i, j], EAST);
                 }
@@ -175,6 +169,10 @@ fn turns(origin: [u32; 2], directions: &[u8]) -> Vec<[u16; 2]> {
     vertices.into_iter().map(|(vertex, _)| vertex).collect()
 }
 
-pub(super) fn trace(mask: &SampleMask, window: SampleWindow) -> Vec<Vec<[u16; 2]>> {
-    Boundary::of(mask, &window).loops()
+pub(super) fn trace(
+    mask: &SampleMask,
+    columns: Range<usize>,
+    rows: Range<usize>,
+) -> Vec<Vec<[u16; 2]>> {
+    Boundary::of(mask, columns, rows).loops()
 }

@@ -151,8 +151,8 @@ fn part_glyphs(
         };
         let glyph = baker
             .part(&compiled.mesh, &compiled.studs)
-            .map_err(|e| e.to_string())
-            .and_then(|glyph| glyph.encode().map_err(|e| e.to_string()));
+            .map(|glyph| glyph.encode())
+            .map_err(|e| e.to_string());
         let mut entry = match glyph {
             Ok(bytes) => write_glyph(
                 &args.out,
@@ -206,8 +206,8 @@ fn model_glyph(args: &Args, inputs: &Inputs, index: usize, path: &Path) -> Resul
         .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned());
     let glyph = baker
         .glyph(&instances)
-        .map_err(|e| e.to_string())
-        .and_then(|glyph| glyph.encode().map_err(|e| e.to_string()));
+        .map(|glyph| glyph.encode())
+        .map_err(|e| e.to_string());
     let mut entry = match glyph {
         Ok(bytes) => write_glyph(
             &args.out,

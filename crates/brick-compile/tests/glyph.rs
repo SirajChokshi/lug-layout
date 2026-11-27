@@ -58,10 +58,16 @@ fn table_depth() -> f64 {
         .expect("the table plane has a depth")
 }
 
-fn round_tripped(glyph: Glyph) -> Glyph {
-    let bytes = glyph.encode().expect("the glyph encodes");
-    assert_eq!(Glyph::decode(&bytes), Ok(glyph.clone()));
-    glyph
+fn pixel(glyph: &Glyph, column: u32, row: u32) -> (u8, u32) {
+    let at = (column + glyph.width * row) as usize;
+    (
+        glyph.coverage[at],
+        glyph.colors[glyph.color_index[at] as usize],
+    )
+}
+
+fn covered_samples(glyph: &Glyph) -> u64 {
+    glyph.coverage.iter().map(|&count| u64::from(count)).sum()
 }
 
 struct Glyphs<L: Library> {
@@ -89,23 +95,21 @@ impl<L: Library> Glyphs<L> {
 
     fn placed(&self, part: &str, matrix: &Affine, color: u32) -> Glyph {
         let compiled = compile_part(&self.library, part, &self.options).expect("the part compiles");
-        let glyph = GlyphBaker::new(&self.studs, &self.translucent)
+        GlyphBaker::new(&self.studs, &self.translucent)
             .model(&[GlyphInstance {
                 mesh: &compiled.mesh,
                 studs: &compiled.studs,
                 color,
                 matrix,
             }])
-            .expect("the glyph bakes");
-        round_tripped(glyph)
+            .expect("the glyph bakes")
     }
 
     fn part(&self, part: &str) -> Glyph {
         let compiled = compile_part(&self.library, part, &self.options).expect("the part compiles");
-        let glyph = GlyphBaker::new(&self.studs, &self.translucent)
+        GlyphBaker::new(&self.studs, &self.translucent)
             .part(&compiled.mesh, &compiled.studs)
-            .expect("the glyph bakes");
-        round_tripped(glyph)
+            .expect("the glyph bakes")
     }
 
     fn model(&self, source: &str) -> Glyph {
@@ -118,11 +122,9 @@ impl<L: Library> Glyphs<L> {
             table_depth(),
         )
         .expect("the baker starts");
-        round_tripped(
-            baker
-                .glyph(&model.instances)
-                .expect("the model glyph bakes"),
-        )
+        baker
+            .glyph(&model.instances)
+            .expect("the model glyph bakes")
     }
 }
 
@@ -271,8 +273,8 @@ fn the_highest_opaque_face_colours_a_pixel_and_clear_parts_show_what_lies_beneat
                 _ => TRANS_CLEAR,
             };
             assert_eq!(
-                glyph.pixel(column, row),
-                Some((FULL, expected)),
+                pixel(&glyph, column, row),
+                (FULL, expected),
                 "pixel {column}, {row}"
             );
         }
@@ -298,12 +300,12 @@ fn a_custom_part_from_the_users_file_shows_its_own_faces_sample_by_sample() {
     let glyph = Glyphs::new(library).part("my-slab.dat");
     let slab_samples = 80 * 24;
     let wedge_samples = (1..=32).sum::<u64>();
-    assert_eq!(glyph.covered_samples(), slab_samples + wedge_samples);
+    assert_eq!(covered_samples(&glyph), slab_samples + wedge_samples);
     assert_eq!(glyph.origin, [0, -16]);
     assert_eq!((glyph.width, glyph.depth), (20, 16));
     for row in 10..16 {
         for column in 0..20 {
-            assert_eq!(glyph.pixel(column, row), Some((FULL, MAIN_COLOUR)));
+            assert_eq!(pixel(&glyph, column, row), (FULL, MAIN_COLOUR));
         }
     }
     assert_eq!(glyph.outline.len(), 2);

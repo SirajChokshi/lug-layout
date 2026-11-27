@@ -101,10 +101,10 @@ impl PartGlyphs {
     }
 
     fn encoded(&self, part: &CompiledPart) -> Result<Vec<u8>, String> {
-        let glyph = GlyphBaker::new(&self.studs, &self.translucent)
+        GlyphBaker::new(&self.studs, &self.translucent)
             .part(&part.mesh, &part.studs)
-            .map_err(|e| e.to_string())?;
-        glyph.encode().map_err(|e| e.to_string())
+            .map(|glyph| glyph.encode())
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -695,8 +695,8 @@ fn bake_drawn(
         inputs.glyph.then(|| {
             baker
                 .glyph(drawn)
+                .map(|glyph| glyph.encode())
                 .map_err(|e| e.to_string())
-                .and_then(|glyph| glyph.encode().map_err(|e| e.to_string()))
         }),
     );
     if inputs.receptors.is_none() {

@@ -1,4 +1,4 @@
-import { BrickCompiler, bakeReceptors, type LibraryFiles } from "@brr/import";
+import { BrickCompiler, bakeReceptors } from "@brr/import";
 import {
   decodePlanGlyph,
   PrimitiveConnectorTable,
@@ -62,29 +62,19 @@ interface ShardJob {
 }
 
 interface ShardResult {
-  readonly identicalParts: number;
-  readonly identicalModels: number;
-  readonly decoded: number;
-  readonly glyphBytes: number;
-  readonly mismatches: ReadonlyArray<string>;
+  identicalParts: number;
+  identicalModels: number;
+  decoded: number;
+  glyphBytes: number;
+  readonly mismatches: string[];
 }
 
-class ShardTally {
-  identicalParts = 0;
-  identicalModels = 0;
-  decoded = 0;
-  glyphBytes = 0;
-  readonly mismatches: string[] = [];
-
-  result(): ShardResult {
-    return {
-      identicalParts: this.identicalParts,
-      identicalModels: this.identicalModels,
-      decoded: this.decoded,
-      glyphBytes: this.glyphBytes,
-      mismatches: this.mismatches,
-    };
-  }
+interface Shard {
+  readonly job: ShardJob;
+  readonly compiler: BrickCompiler;
+  readonly paths: ReadonlyMap<string, string>;
+  readonly library: { readonly key: string; files: Map<string, string>; absent: Set<string> };
+  readonly result: ShardResult;
 }
 
 function json(bytes: Uint8Array): unknown {
@@ -105,50 +95,35 @@ async function libraryPaths(root: string): Promise<Map<string, string>> {
   return paths;
 }
 
-class ShardLibrary {
-  readonly files: LibraryFiles = { key: LIBRARY_KEY, files: new Map(), absent: new Set() };
-
-  constructor(private readonly paths: ReadonlyMap<string, string>) {}
-
-  async add(requested: ReadonlyArray<string>): Promise<void> {
-    const files = this.files.files as Map<string, string>;
-    const absent = this.files.absent as Set<string>;
-    for (const path of requested) {
-      const file = this.paths.get(path);
-      if (file === undefined) absent.add(path);
-      else files.set(path, await readFile(file, "utf8"));
-    }
+async function hold(shard: Shard, requested: ReadonlyArray<string>): Promise<void> {
+  for (const path of requested) {
+    const file = shard.paths.get(path);
+    if (file === undefined) shard.library.absent.add(path);
+    else shard.library.files.set(path, await readFile(file, "utf8"));
   }
 }
 
-class GlyphCheck {
-  constructor(
-    private readonly native: string,
-    private readonly tally: ShardTally,
-  ) {}
-
-  async matches(label: string, file: string, glyph: Uint8Array | null): Promise<boolean> {
-    if (glyph === null) {
-      this.tally.mismatches.push(`${label}: WASM has no glyph`);
-      return false;
-    }
-    const decoded = decodePlanGlyph(glyph);
-    if (decoded.ok) this.tally.decoded++;
-    else this.tally.mismatches.push(`${label}: ${issueText(decoded.issues)}`);
-    this.tally.glyphBytes += glyph.length;
-    const same = sameBytes(glyph, await readFile(join(this.native, file)));
-    if (!same) this.tally.mismatches.push(`${label}: glyph bytes differ`);
-    return same && decoded.ok;
+async function matches(
+  { job, result }: Shard,
+  label: string,
+  file: string,
+  glyph: Uint8Array | null,
+): Promise<boolean> {
+  if (glyph === null) {
+    result.mismatches.push(`${label}: WASM has no glyph`);
+    return false;
   }
+  const decoded = decodePlanGlyph(glyph);
+  if (decoded.ok) result.decoded++;
+  else result.mismatches.push(`${label}: ${issueText(decoded.issues)}`);
+  result.glyphBytes += glyph.length;
+  const same = sameBytes(glyph, await readFile(join(job.native, file)));
+  if (!same) result.mismatches.push(`${label}: glyph bytes differ`);
+  return same && decoded.ok;
 }
 
-async function compareParts(
-  job: ShardJob,
-  compiler: BrickCompiler,
-  library: ShardLibrary,
-  check: GlyphCheck,
-  tally: ShardTally,
-): Promise<void> {
+async function compareParts(shard: Shard): Promise<void> {
+  const { job, compiler, library, result } = shard;
   for (let start = 0; start < job.parts.length; start += BATCH_PARTS) {
     const batch = job.parts.slice(start, start + BATCH_PARTS);
     const request = {
@@ -161,46 +136,41 @@ async function compareParts(
       inlineChecks: [],
       glyphs: { translucentColors: job.options.translucentColors },
     };
-    let output = compiler.compile(request, library.files);
+    let output = compiler.compile(request, library);
     for (;;) {
       const requested = output.parts.flatMap((outcome) =>
         outcome.status === "need" ? outcome.paths : [],
       );
       if (requested.length === 0) break;
-      await library.add(requested);
-      output = compiler.compile(request, library.files);
+      await hold(shard, requested);
+      output = compiler.compile(request, library);
     }
     for (const [i, [id, expected]] of batch.entries()) {
       const outcome = output.parts[i];
       if (outcome === undefined) {
-        tally.mismatches.push(`${id}: no outcome`);
+        result.mismatches.push(`${id}: no outcome`);
       } else if ("failed" in expected) {
         if (outcome.status === "failed" && outcome.message === expected.failed)
-          tally.identicalParts++;
+          result.identicalParts++;
         else
-          tally.mismatches.push(
+          result.mismatches.push(
             `${id}: native failed (${expected.failed}), WASM ${outcome.status}`,
           );
       } else if (outcome.status !== "compiled") {
-        tally.mismatches.push(`${id}: WASM ${outcome.status}`);
+        result.mismatches.push(`${id}: WASM ${outcome.status}`);
       } else if ("glyphIssue" in expected) {
         if (outcome.glyph === null && outcome.glyphIssue === expected.glyphIssue)
-          tally.identicalParts++;
-        else tally.mismatches.push(`${id}: native has no glyph (${expected.glyphIssue})`);
-      } else if (await check.matches(id, expected.glyph, outcome.glyph)) {
-        tally.identicalParts++;
+          result.identicalParts++;
+        else result.mismatches.push(`${id}: native has no glyph (${expected.glyphIssue})`);
+      } else if (await matches(shard, id, expected.glyph, outcome.glyph)) {
+        result.identicalParts++;
       }
     }
   }
 }
 
-async function compareModels(
-  job: ShardJob,
-  compiler: BrickCompiler,
-  library: ShardLibrary,
-  check: GlyphCheck,
-  tally: ShardTally,
-): Promise<void> {
+async function compareModels(shard: Shard): Promise<void> {
+  const { job, compiler, library, result } = shard;
   for (const model of job.models) {
     const drawn = Uint8Array.from(model.drawn);
     const drawnCount = model.drawn.filter((kept) => kept === 1).length;
@@ -215,31 +185,34 @@ async function compareModels(
       vehicles: null,
       glyph: true,
     };
-    let baked = compiler.bake(request, library.files);
+    let baked = compiler.bake(request, library);
     while (baked.status === "need") {
-      await library.add(baked.paths);
-      baked = compiler.bake(request, library.files);
+      await hold(shard, baked.paths);
+      baked = compiler.bake(request, library);
     }
     if (baked.status !== "baked") {
-      tally.mismatches.push(`${model.file}: WASM bake ${baked.status}: ${baked.message}`);
+      result.mismatches.push(`${model.file}: WASM bake ${baked.status}: ${baked.message}`);
     } else if (model.glyph === undefined) {
       if (baked.glyph === null && baked.glyphIssue === (model.glyphIssue ?? null))
-        tally.identicalModels++;
-      else tally.mismatches.push(`${model.file}: native has no glyph (${model.glyphIssue})`);
-    } else if (await check.matches(model.file, model.glyph, baked.glyph)) {
-      tally.identicalModels++;
+        result.identicalModels++;
+      else result.mismatches.push(`${model.file}: native has no glyph (${model.glyphIssue})`);
+    } else if (await matches(shard, model.file, model.glyph, baked.glyph)) {
+      result.identicalModels++;
     }
   }
 }
 
 async function compareShard(job: ShardJob): Promise<ShardResult> {
-  const compiler = new BrickCompiler(new WebAssembly.Module(await readFile(job.wasm)));
-  const library = new ShardLibrary(await libraryPaths(job.ldraw));
-  const tally = new ShardTally();
-  const check = new GlyphCheck(job.native, tally);
-  await compareParts(job, compiler, library, check, tally);
-  await compareModels(job, compiler, library, check, tally);
-  return tally.result();
+  const shard: Shard = {
+    job,
+    compiler: new BrickCompiler(new WebAssembly.Module(await readFile(job.wasm))),
+    paths: await libraryPaths(job.ldraw),
+    library: { key: LIBRARY_KEY, files: new Map(), absent: new Set() },
+    result: { identicalParts: 0, identicalModels: 0, decoded: 0, glyphBytes: 0, mismatches: [] },
+  };
+  await compareParts(shard);
+  await compareModels(shard);
+  return shard.result;
 }
 
 async function connectorInputs(

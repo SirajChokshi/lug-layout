@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 
-use super::outline::{trace, SampleMask, SampleWindow};
+use super::outline::{trace, SampleMask};
 use super::{
     resolve_color, Glyph, GlyphError, MAX_COLORS, MAX_PIXELS, MAX_SIDE_PIXELS, PIXELS_PER_STUD,
     SAMPLES_PER_PIXEL_SIDE,
@@ -554,12 +554,8 @@ fn cropped(
         color_index,
         outline: trace(
             mask,
-            SampleWindow {
-                x0: (crop.x0 * SAMPLES) as usize,
-                z0: (crop.z0 * SAMPLES) as usize,
-                x1: ((crop.x1 + 1) * SAMPLES) as usize,
-                z1: ((crop.z1 + 1) * SAMPLES) as usize,
-            },
+            (crop.x0 * SAMPLES) as usize..((crop.x1 + 1) * SAMPLES) as usize,
+            (crop.z0 * SAMPLES) as usize..((crop.z1 + 1) * SAMPLES) as usize,
         ),
     })
 }

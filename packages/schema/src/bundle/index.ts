@@ -1955,4 +1955,4 @@ export {
   MilsTemplate,
 } from "./mils-profile.ts";
 
-export { decodePlanGlyph, PLAN_GLYPH_MAGIC, type PlanGlyph } from "./glyph.ts";
+export { decodePlanGlyph, type PlanGlyph } from "./glyph.ts";
