@@ -443,8 +443,8 @@ describe("sheet sets", () => {
       "Track piece outline",
       "Placement number (see key)",
     ]);
-    const badges = walk(page.items).flatMap(({ item, roles }) =>
-      item.kind === "text" && item.role === "number" && roles.includes("layer-numbers")
+    const badges = walk(page.items).flatMap(({ item, roles: groups }) =>
+      item.kind === "text" && item.role === "number" && groups.includes("layer-numbers")
         ? [item.text]
         : [],
     );
