@@ -4,7 +4,7 @@ import {
   type IAssetFetcher,
   type PartBundle,
 } from "@brr/catalog";
-import { MateReport, ModelConnectors, NO_INSTANCE } from "@brr/domain";
+import { MateReport, ModelConnectors, NO_INSTANCE, ReversingSectionFinder } from "@brr/domain";
 import {
   CERTIFIED_RESIDUAL_LIMIT_LDU,
   STUD_LDU,
@@ -71,7 +71,12 @@ const container = new Container();
 let bundle: PartBundle;
 
 function laid(partIds: ReadonlyArray<string>, start = pose16(STUD_POINT, 0)): TrackDrawing {
-  const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const drawing = new TrackDrawing(
+    bundle,
+    bundle.parts,
+    new ColorTable(bundle),
+    new ReversingSectionFinder(),
+  );
   for (const [partId, placement] of chain(start, partIds)) {
     drawing.applyTrack(
       drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(catalogPiece(partId)), placement, 0),
@@ -140,7 +145,12 @@ function turnedCircle(): Array<readonly [string, Pose16]> {
 }
 
 function inRunFrames(ends: ModelTrackEnds): TrackDrawing {
-  const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const drawing = new TrackDrawing(
+    bundle,
+    bundle.parts,
+    new ColorTable(bundle),
+    new ReversingSectionFinder(),
+  );
   const identity = latticeFrame(0, 0, 0);
   if (!identity) throw new Error("the origin is not a lattice frame");
   const held = heldRuns(ends, identity, 0, 1);
@@ -385,7 +395,12 @@ describe("modelTrackEnds", () => {
     const [run] = ends.runs;
     const first = run?.pieces[0];
     if (!run || !first) throw new Error("no run frame");
-    const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const drawing = new TrackDrawing(
+      bundle,
+      bundle.parts,
+      new ColorTable(bundle),
+      new ReversingSectionFinder(),
+    );
     const identity = latticeFrame(0, 0, 0);
     if (!identity) throw new Error("the origin is not a lattice frame");
     const held = [...heldRuns(ends, identity, 0, 1), ...heldRuns(ends, identity, 0, 2)];

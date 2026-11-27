@@ -138,6 +138,12 @@ export {
   type TrackGraphIssue,
 } from "./track/track-graph.ts";
 export {
+  NO_REVERSING_SECTIONS,
+  ReversingSectionFinder,
+  ReversingSections,
+  type ReversingTopology,
+} from "./track/reversing-sections.ts";
+export {
   NEAR_MISS_RADIUS_LDU,
   WORLD_TRACK_FRAME,
   endGaps,
@@ -234,6 +240,7 @@ export {
   TRACK_OPEN_END,
   TRACK_UNIDENTIFIED,
   TRACK_LAID_UNVERIFIED,
+  TRACK_REVERSING,
   TRACK_UNJOINED_ENDS,
   TRACK_UNVERIFIED,
   TrackIssueRows,

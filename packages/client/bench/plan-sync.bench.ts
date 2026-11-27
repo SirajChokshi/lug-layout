@@ -18,6 +18,7 @@ import {
   type TrackChange,
   type TrackOutline,
   type TrackPieceAt,
+  ReversingSectionFinder,
 } from "@brr/domain";
 import { CHUNK_LDU, STUD_LDU, addZeta16, chunkKey, lduFromMm, pose16, zeta16 } from "@brr/math";
 import type { TrackCatalog } from "@brr/schema/bundle";
@@ -630,7 +631,12 @@ async function loadTrack(): Promise<LoadedTrack> {
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
   return {
-    drawing: new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)),
+    drawing: new TrackDrawing(
+      bundle,
+      bundle.parts,
+      new ColorTable(bundle),
+      new ReversingSectionFinder(),
+    ),
     catalog: bundle.trackCatalog,
   };
 }

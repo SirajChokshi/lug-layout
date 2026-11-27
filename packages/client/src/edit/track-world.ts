@@ -2,6 +2,7 @@ import {
   TrackClearance,
   WORLD_TRACK_FRAME,
   type PlacementHandle,
+  type ReversingSectionFinder,
   type PlanDelta,
   type PlateHeights,
   type PlacedOutline,
@@ -25,7 +26,12 @@ import {
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
 import type { PlanTrackSource } from "../plan/plan-producer.ts";
-import { CONNECTOR_TABLES, PLACEABLE_CATALOG, RAIL_YARD } from "../tokens.ts";
+import {
+  CONNECTOR_TABLES,
+  PLACEABLE_CATALOG,
+  RAIL_YARD,
+  REVERSING_SECTION_FINDER,
+} from "../tokens.ts";
 import type { RailCarrier } from "../trains/rail-track.ts";
 import type { IRailYard } from "../trains/rail-yard.ts";
 import { CrossingRamps, type SuggestedCrossing } from "./crossing-ramps.ts";
@@ -191,6 +197,8 @@ export class TrackWorld implements ITrackWorld {
     private readonly catalog: Pick<IPlaceableCatalog, "parts" | "colors" | "requestMeshes">,
     @inject(CONNECTOR_TABLES) private readonly connectorTables: Pick<IConnectorTables, "load">,
     @inject(RAIL_YARD) private readonly railYard: Pick<IRailYard, "standingFootprints">,
+    @inject(REVERSING_SECTION_FINDER)
+    private readonly reversing: Pick<ReversingSectionFinder, "find">,
   ) {}
 
   start(bundle: TrackBundle, placed: PlacedModels): void {
@@ -637,7 +645,7 @@ export class TrackWorld implements ITrackWorld {
   }
 
   private newDrawing(bundle: TrackBundle): TrackDrawing {
-    return new TrackDrawing(bundle, this.catalog.parts(), this.catalog.colors());
+    return new TrackDrawing(bundle, this.catalog.parts(), this.catalog.colors(), this.reversing);
   }
 
   private supportBand(

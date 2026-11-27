@@ -13,12 +13,16 @@ import {
   LABEL_AT,
   LABEL_NUMBERED,
   TRACK_OPEN_END,
+  TRACK_REVERSING,
   TRACK_SEGMENT,
   TRACK_UNIDENTIFIED,
   TRACK_UNJOINED_ENDS,
   TRACK_UNVERIFIED,
   TRACK_LAID_UNVERIFIED,
+  NO_REVERSING_SECTIONS,
   type PlanDelta,
+  type ReversingSectionFinder,
+  type ReversingSections,
   type TrackIssueRows,
   NEAR_MISS_RADIUS_LDU,
   NO_OBSTACLE,
@@ -734,6 +738,8 @@ export class TrackDrawing implements ExtensionSite {
   private rampRows: ReadonlyArray<RampEndRow> = [];
   private rampRowsGraph: TrackGraph | null = null;
   private rampRowsSupport: TrackSupport | null = null;
+  private reversingGraph: TrackGraph | null = null;
+  private reversingSections: ReversingSections = NO_REVERSING_SECTIONS;
   private laidStart: Pose16 | null = null;
   private laidMoves: ReadonlyArray<TrackMove> | null = null;
   private lastLaid: LaidRunEnd | null = null;
@@ -751,6 +757,7 @@ export class TrackDrawing implements ExtensionSite {
     { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
     private readonly parts: ReadonlyArray<PartShapeAsset>,
     private readonly colors: ColorTable,
+    private readonly reversing: Pick<ReversingSectionFinder, "find">,
   ) {
     this.pieces = catalog.pieces;
     const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));
@@ -2850,6 +2857,7 @@ export class TrackDrawing implements ExtensionSite {
         this.addEndOwner(rows, issue, graph.endPlacement[ends[e] ?? 0] ?? 0);
       }
     }
+    this.addReversingRows(rows);
     const carriers = this.carriers;
     for (let c = 0; c < carriers.length; c++) {
       const carrier = carriers[c];
@@ -2858,6 +2866,29 @@ export class TrackDrawing implements ExtensionSite {
       this.addPartRows(rows, TRACK_UNIDENTIFIED, carrier.unidentified, carrier.model);
     }
     this.addLaidUnverifiedRows(rows);
+  }
+
+  private addReversingRows(rows: TrackIssueRows): void {
+    const graph = this.graph;
+    const sections = this.reversingSectionsOfGraph();
+    for (let s = 0; s < sections.count; s++) {
+      const turning = sections.turningEnd[s] ?? 0;
+      const issue = rows.add(TRACK_REVERSING, "", "");
+      rows.x[issue] = graph.endXLdu[turning] ?? 0;
+      rows.z[issue] = graph.endZLdu[turning] ?? 0;
+      const last = sections.placementStart[s + 1] ?? 0;
+      for (let k = sections.placementStart[s] ?? 0; k < last; k++) {
+        this.addEndOwner(rows, issue, sections.placements[k] ?? 0);
+      }
+    }
+  }
+
+  private reversingSectionsOfGraph(): ReversingSections {
+    if (this.reversingGraph !== this.graph) {
+      this.reversingGraph = this.graph;
+      this.reversingSections = this.reversing.find(this.graph);
+    }
+    return this.reversingSections;
   }
 
   private addLaidUnverifiedRows(rows: TrackIssueRows): void {

@@ -516,6 +516,7 @@ const PLAN_CHECKS = {
   trackJoin: "Track ends that meet join exactly",
   trackUnverified: "Every track part's connector poses are verified",
   trackUnidentified: "Every model's track sits on exact track poses",
+  trackReversing: "No reversing loop or wye, which would short two-rail powered track",
   trackOffTable: "Track, laid or a model's own, stands on the tables, by its outline",
   trackSeam:
     "No track piece's body, laid or a model's own, spans a table seam; a joint may sit on one",

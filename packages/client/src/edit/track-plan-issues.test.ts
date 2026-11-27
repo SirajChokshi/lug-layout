@@ -4,7 +4,15 @@ import {
   type IAssetFetcher,
   type PartBundle,
 } from "@brr/catalog";
-import { emptyFacts, PlanDelta, type PlanIssue, type TrackChange } from "@brr/domain";
+import {
+  emptyFacts,
+  layMoves,
+  PlanDelta,
+  runMoves,
+  solveClosure,
+  type PlanIssue,
+  type TrackChange,
+} from "@brr/domain";
 import {
   CHUNK_LDU,
   STUD_LDU,
@@ -39,7 +47,7 @@ import { writeFullRebuild, writeTrackChange, type PlanModelSource } from "../pla
 import type { IPlanService } from "../plan/plan-service.ts";
 import { RecordingBackend } from "../plan/plan-sync.test-support.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
-import { PLAN_SERVICE } from "../tokens.ts";
+import { PLAN_SERVICE, REVERSING_SECTION_FINDER } from "../tokens.ts";
 import { TrackDrawing, type TrackCarrier } from "./track-drawing.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -117,7 +125,12 @@ function room(widthMm = 4000): Room {
     rect: { x: 0, z: 0, width: widthMm, depth: ROOM_DEPTH_MM },
     heightMm: 750,
   });
-  const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const drawing = new TrackDrawing(
+    bundle,
+    bundle.parts,
+    new ColorTable(bundle),
+    container.get(REVERSING_SECTION_FINDER),
+  );
   return { plans, backend, planId, tableId, drawing, delta: new PlanDelta() };
 }
 
@@ -485,4 +498,116 @@ it("counts a track row only in a plan whose room holds its piece, keeps the plan
   expect(endLabels(at.plans.issues(at.planId))).toEqual(
     Array(3).fill("Train Track 9V Switch Right Branching #1: nothing joins it."),
   );
+});
+
+const ENTRY = 0;
+const STRAIGHT_EXIT = 1;
+const DIVERGING_EXIT = 2;
+const SHORTS =
+  "so each rail runs round into the other. That shorts two-rail powered track such as 9V or 12V.";
+
+function connectorOf(partId: string, connector: number): Pose16 {
+  const pose = catalogPieceOf(bundle, partId).connectors[connector]?.pose;
+  if (!pose) throw new Error(`${partId} has no connector ${connector}`);
+  return pose;
+}
+
+function closingRun(at: Room, from: Pose16, to: Pose16): Array<readonly [string, Pose16]> {
+  const { kit } = at.drawing;
+  const closure = solveClosure(kit, from, to);
+  if (closure.kind !== "exact") throw new Error(`no exact closure: ${closure.kind}`);
+  return layMoves(from, runMoves(kit, closure.run)).placed.map(
+    ({ piece, placement }) => [piece.id, placement] as const,
+  );
+}
+
+function layAt(at: Room, pieces: ReadonlyArray<readonly [string, Pose16]>): TrackChange {
+  const first = at.drawing.pieceCount;
+  return {
+    lift: [],
+    lay: pieces.map(([partId, pose], k) => ({
+      index: first + k,
+      piece: catalogIndex(partId),
+      pose,
+      yPlates: 0,
+      rise: 0,
+    })),
+  };
+}
+
+function throatOfBalloon(): ReadonlyArray<readonly [string, Pose16]> {
+  const turnout = studPose(0n, 0n, 0);
+  return [
+    [RIGHT_SWITCH, turnout],
+    [
+      STRAIGHT,
+      attachPose16(
+        connectorOf(STRAIGHT, 1),
+        composePose16(turnout, connectorOf(RIGHT_SWITCH, ENTRY)),
+      ),
+    ],
+  ];
+}
+
+function listedNames(names: ReadonlyArray<string>): string {
+  return names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
+}
+
+function reversingRows(at: Room) {
+  return rows(at.plans.issues(at.planId)).filter(({ rule }) => rule === "trackReversing");
+}
+
+it("warns once about a reversing loop that laid track closes through the switch a user's own model holds, naming every laid piece of the loop and the model, at the switch's entry, and clears it while any piece of the loop is lifted", () => {
+  const at = room();
+  const throat = userModel("My balloon throat", throatOfBalloon());
+  place(at, throat);
+  const loop = layAt(at, closingRun(at, endFacing(at.drawing, 0), endFacing(at.drawing, 1)));
+  commit(at, loop);
+  const closed = reversingRows(at);
+  const middle = loop.lay[Math.floor(loop.lay.length / 2)];
+  if (!middle) throw new Error("the loop laid nothing");
+  commit(at, { lift: [middle], lay: [] });
+  const broken = reversingRows(at);
+  commit(at, { lift: [], lay: [middle] });
+
+  const laidNames = loop.lay.map(
+    ({ piece, index }) => `${bundle.trackCatalog.pieces[piece]?.title ?? ""} #${index + 1}`,
+  );
+  expect(closed).toEqual([
+    {
+      rule: "trackReversing",
+      severity: "warning",
+      placements: [
+        ...loop.lay.map(({ index }) => at.drawing.footprintAt(index).key),
+        { chunkKey: throat.model.handle.chunkKey, slot: 0 },
+      ],
+      message: `Reversing loop or wye through ${listedNames([...laidNames, `My balloon throat ${MODEL_LABEL_AT}`])}: a train can run through it and come back past ${WEST_END} the other way, ${SHORTS}`,
+    },
+  ]);
+  expect(broken).toEqual([]);
+  expect(reversingRows(at)).toEqual(closed);
+});
+
+it("warns once about a user's own model that holds a whole balloon loop, naming the model once, at its switch's entry", () => {
+  const at = room();
+  const throat = throatOfBalloon();
+  const [turnout] = throat;
+  if (!turnout) throw new Error("no switch");
+  const loop = closingRun(
+    at,
+    composePose16(turnout[1], connectorOf(RIGHT_SWITCH, STRAIGHT_EXIT)),
+    composePose16(turnout[1], connectorOf(RIGHT_SWITCH, DIVERGING_EXIT)),
+  );
+  place(at, userModel("My balloon", [...throat, ...loop]));
+
+  expect(reversingRows(at)).toEqual([
+    {
+      rule: "trackReversing",
+      severity: "warning",
+      placements: [{ chunkKey: chunkKey(chunkOf(MODEL_AT.x), chunkOf(MODEL_AT.z)), slot: 0 }],
+      message: `Reversing loop or wye through My balloon ${MODEL_LABEL_AT}: a train can run through it and come back past ${WEST_END} the other way, ${SHORTS}`,
+    },
+  ]);
 });

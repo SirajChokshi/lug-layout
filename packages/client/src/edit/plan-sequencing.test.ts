@@ -12,6 +12,7 @@ import {
   type PlacementPose,
   type PlacementRef,
   type PlacementRequest,
+  ReversingSectionFinder,
 } from "@brr/domain";
 import { pose16, STUD_LDU, zeta16, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND } from "@brr/render";
@@ -103,7 +104,12 @@ class Sequence {
   readonly next: () => number;
   readonly history = new EditHistory(new World());
   readonly placed = new PlacedChunks(new RecordingBackend());
-  readonly drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  readonly drawing = new TrackDrawing(
+    bundle,
+    bundle.parts,
+    new ColorTable(bundle),
+    new ReversingSectionFinder(),
+  );
   readonly plansBackend = new RecordingBackend();
   readonly plans = withRegions(new PlanService(this.plansBackend));
   readonly delta = new PlanDelta();
