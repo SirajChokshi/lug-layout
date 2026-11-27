@@ -119,6 +119,7 @@ import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from
 import { TrackPlacements, contentOf, type TrackPlacement } from "./track-placements.ts";
 import { PlacementEnds } from "./placement-ends.ts";
 import { PlacementBands, type PlacementBand } from "./placement-bands.ts";
+import { SupportReach } from "./support-reach.ts";
 import { heightText, type LabelView } from "./size-labels.ts";
 import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
@@ -662,6 +663,9 @@ export class TrackDrawing implements ExtensionSite {
   private readonly placements = new TrackPlacements();
   private readonly placementEnds: PlacementEnds;
   private readonly placementBands = new PlacementBands((entry) => this.measureBand(entry));
+  private readonly supportReach = new SupportReach((entry, support) =>
+    this.measureReach(entry, support),
+  );
   private heldStale = false;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
@@ -1330,32 +1334,38 @@ export class TrackDrawing implements ExtensionSite {
     return true;
   }
 
-  private supportBands(support: TrackSupport): ReadonlyMap<number, LayingBand> {
+  private measureReach(entry: TrackPlacement, support: TrackSupport): ReadonlyArray<number> | null {
+    const outline = this.outlines.get(entry.piece);
+    const piece = this.pieces[entry.piece];
+    if (!outline || !piece) return null;
     const box = this.collisionBox;
-    const layout = this.combined;
+    outlineBox(
+      framedOutlineInto(outline, entry.pose, entry.frame, this.framedScratchFor(outline.length)),
+      box,
+      0,
+    );
+    const reach = Array.from(box);
+    const antiStuds = support.antiStudPoints(entry.piece, piece.partFrame, entry.pose, entry.frame);
+    if (antiStuds.length > 0) {
+      outlineBox(antiStuds, box, 0);
+      reach.push(...box);
+    }
+    return reach;
+  }
+
+  private supportBands(support: TrackSupport): ReadonlyMap<number, LayingBand> {
     const reachAt = new Map<number, number[]>();
-    for (let p = 0; p < layout.count; p++) {
-      const catalogIndex = layout.piece(p);
-      const outline = this.outlines.get(catalogIndex);
-      const piece = this.pieces[catalogIndex];
-      if (!outline || !piece) continue;
-      const placement = layout.pose(p);
-      const frame = layout.frame(p);
-      const heights = layout.rise(p) === 0 ? [layout.yPlates(p)] : this.endHeightsOf(p);
-      outlineBox(
-        framedOutlineInto(outline, placement, frame, this.framedScratchFor(outline.length)),
-        box,
-        0,
-      );
-      const outlineReach = Array.from(box);
-      const antiStuds = support.antiStudPoints(catalogIndex, piece.partFrame, placement, frame);
-      if (antiStuds.length > 0) outlineBox(antiStuds, box, 0);
-      for (const yPlates of heights) {
-        const reach = reachAt.get(yPlates) ?? [];
-        reachAt.set(yPlates, reach);
-        reach.push(...outlineReach);
-        if (antiStuds.length > 0) reach.push(...box);
-      }
+    const reachAtHeight = (yPlates: number, boxes: ReadonlyArray<number>): void => {
+      const reach = reachAt.get(yPlates) ?? [];
+      reachAt.set(yPlates, reach);
+      reach.push(...boxes);
+    };
+    for (let p = 0; p < this.combined.count; p++) {
+      const entry = this.placements.at(p);
+      const boxes = this.supportReach.of(entry, support);
+      if (!boxes) continue;
+      if (entry.rise === 0) reachAtHeight(entry.yPlates, boxes);
+      else for (const yPlates of this.endHeightsOf(p)) reachAtHeight(yPlates, boxes);
     }
     const bands = new Map<number, LayingBand>();
     for (const [yPlates, reach] of reachAt) {
