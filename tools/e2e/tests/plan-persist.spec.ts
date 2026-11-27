@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
-import { EditorPage, byPosition, type LatticePoint } from "./editor-page.ts";
+import { EditorPage, byPosition, type LatticePoint, type Pose } from "./editor-page.ts";
 
 const BASEPLATE = "ldraw:3811@2";
 const STATION_FILE = "my-signal-box.ldr";
@@ -24,9 +24,13 @@ const USER_SIGNAL_BOX = [
   "",
 ].join("\n");
 
+function byPositionThenItem(a: Pose, b: Pose): number {
+  return byPosition(a, b) || a.item.localeCompare(b.item);
+}
+
 async function planOf(editor: EditorPage) {
   return {
-    poses: (await editor.poses()).toSorted(byPosition),
+    poses: (await editor.poses()).toSorted(byPositionThenItem),
     plans: (await editor.plans()).map(({ id: _plan, footprint, ...plan }) => ({
       ...plan,
       room: [footprint.roomWidthMm, footprint.roomDepthMm],
