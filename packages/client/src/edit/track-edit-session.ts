@@ -890,7 +890,8 @@ export class TrackEditSession implements ITrackEditSession {
     this.previewVersion = extension.version;
     this.loopsVersion = closer.version;
     this.showTrackGhost(track);
-    this.targetTrackEnds(closer.previewed()?.ends ?? extension.highlighted());
+    const loop = closer.previewed();
+    this.targetTrackEnds(loop ? [loop.from, loop.to] : extension.highlighted());
     return this.view();
   }
 

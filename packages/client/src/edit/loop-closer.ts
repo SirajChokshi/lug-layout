@@ -16,7 +16,6 @@ export interface LoopClosure {
   readonly key: string;
   readonly from: number;
   readonly to: number;
-  readonly ends: readonly [number, number];
   readonly start: Pose16;
   readonly goal: Pose16;
   readonly moves: ReadonlyArray<TrackMove>;
@@ -29,21 +28,15 @@ interface EndPair {
   readonly gapLdu: number;
 }
 
-const NO_CLOSURES: ReadonlyArray<LoopClosure> = [];
-
 function endKey(pose: Pose16, plates: number): string {
   return `${pose.heading}:${pose.position.join(",")}@${plates}`;
-}
-
-function nearestFirst(a: EndPair, b: EndPair): number {
-  return a.gapLdu - b.gapLdu || a.from - b.from || a.to - b.to;
 }
 
 export class LoopCloser {
   private pairs: ReadonlyArray<EndPair> | null = null;
   private next = 0;
   private pendingPairs = 0;
-  private found: ReadonlyArray<LoopClosure> = NO_CLOSURES;
+  private found: ReadonlyArray<LoopClosure> = [];
   private previewKey: string | null = null;
   private changes = 0;
 
@@ -85,7 +78,7 @@ export class LoopCloser {
     this.pairs = null;
     this.next = 0;
     this.pendingPairs = 0;
-    this.found = NO_CLOSURES;
+    this.found = [];
     this.changes++;
   }
 
@@ -127,7 +120,7 @@ export class LoopCloser {
         pairs.push({ from, to, gapLdu: distanceLdu });
       }
     }
-    return pairs.toSorted(nearestFirst);
+    return pairs.toSorted((a, b) => a.gapLdu - b.gapLdu);
   }
 
   private closureOf({ from, to, gapLdu }: EndPair): LoopClosure | null {
@@ -144,7 +137,6 @@ export class LoopCloser {
       key: `${endKey(start, this.site.endHeight(from))}>${endKey(goal, this.site.endHeight(to))}`,
       from,
       to,
-      ends: [from, to],
       start,
       goal,
       moves: runMoves(this.site.kit, result.run),
