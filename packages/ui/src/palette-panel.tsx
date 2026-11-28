@@ -30,6 +30,7 @@ import {
   type PaletteRow,
   type PaletteSection,
   type PaletteTab,
+  type SkippedCatalogModel,
 } from "@brr/client";
 import type { IconName } from "./icons/glyphs.ts";
 import { Icon } from "./icons/icon.tsx";
@@ -380,6 +381,24 @@ function ItemButton({
   );
 }
 
+function UnplaceableItem({ model }: { readonly model: SkippedCatalogModel }) {
+  return (
+    <li className="palette-item-row" data-unplaceable={model.name}>
+      <span className="palette-thumb palette-thumb-empty" aria-hidden="true" />
+      <button type="button" className="catalog-item" disabled>
+        <span className="catalog-name">{model.label}</span>
+      </button>
+      <span
+        className="part-badge"
+        data-badge="not-placeable"
+        title={`Can't be placed yet: ${model.reason}`}
+      >
+        not placeable
+      </span>
+    </li>
+  );
+}
+
 function colorCount(entries: ReadonlyArray<PaletteEntry>): string {
   const items = entries.reduce((sum, entry) => sum + entry.items.length, 0);
   return `${entries.length} ${entries.length === 1 ? "part" : "parts"}, ${items} colours`;
@@ -398,7 +417,6 @@ function TrackSection({
       {tools.map((tool) => {
         const drawing = snapshot.activeItem === tool.id;
         const state = snapshot.trackTools.find((candidate) => candidate.item === tool.id);
-        const noun = tool.shortLabel.toLowerCase();
         return (
           <button
             key={tool.id}
@@ -410,8 +428,7 @@ function TrackSection({
             title={tool.label}
             onClick={() => choosePaletteItem(editor, snapshot, tool)}
           >
-            {drawing ? `Drawing ${noun}` : `Draw ${noun}`}{" "}
-            {state?.active === true && <FirstChord id="draw-track" />}
+            {tool.shortLabel} {state?.active === true && <FirstChord id="draw-track" />}
             {state?.status === "unverified" && (
               <span
                 className="part-badge"
@@ -550,6 +567,9 @@ function CategorySection({
           <ul>
             {items.map((item) => (
               <ItemButton key={item.id} {...props} item={item} />
+            ))}
+            {snapshot.catalogSkipped.map((model) => (
+              <UnplaceableItem key={model.name} model={model} />
             ))}
           </ul>
         </Section>
@@ -915,25 +935,9 @@ export const PalettePanel = memo(function PalettePanel({
                 No favourites yet. Star a part with ☆ to keep it here.
               </p>
             )}
-            {snapshot.catalogSkipped.length > 0 && (
-              <p
-                className="catalog-skipped"
-                data-catalog-skipped={snapshot.catalogSkipped.map((model) => model.name).join(",")}
-              >
-                Not placeable: {skippedText(snapshot)}
-              </p>
-            )}
           </div>
         </nav>
       </ThumbnailsContext>
     </FavoritesContext>
   );
 }, samePaletteInputs);
-
-function skippedText(snapshot: PaletteSnapshot): string {
-  const byReason = new Map<string, string[]>();
-  for (const model of snapshot.catalogSkipped) {
-    byReason.set(model.reason, [...(byReason.get(model.reason) ?? []), model.name]);
-  }
-  return [...byReason].map(([reason, names]) => `${names.join(", ")} (${reason})`).join("; ");
-}

@@ -670,7 +670,11 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   expect(ids).toContain(`omr:${PLACEABLE_SET}`);
   expect(ids).not.toContain(`omr:${STUDLESS_SET}`);
   expect(snapshot.catalogSkipped).toEqual([
-    { name: STUDLESS_SET, reason: "no stud lattice from the bake" },
+    {
+      name: STUDLESS_SET,
+      label: `${STUDLESS_SET} Tanker (2001)`,
+      reason: "no stud lattice from the bake",
+    },
   ]);
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
@@ -2820,7 +2824,7 @@ it("draws road into the level-crossing set's road end with the road tool, joinin
   });
 }, 240_000);
 
-const HITS_THE_SET = /would overlap Baseplate 32 x 32 Road .*'s bounds in 10128-1 /u;
+const HITS_THE_SET = /would overlap Baseplate 32 x 32 Road .* in 10128-1 /u;
 
 it.each([-300, -400])(
   "never road-snaps a road plate off a refusal: aimed at x %i into the level-crossing set, the hover and the click stay refused at the cursor, naming the set's baseplate",
@@ -4765,17 +4769,13 @@ const OVERLAP_REFUSED = {
   outcome: {
     placements: 1,
     refusedClicks: 1,
-    reason: expect.stringContaining(
-      `${OVERLAP} Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32`,
-    ),
+    reason: expect.stringContaining(`${OVERLAP} Baseplate 32 x 32 in 3811 Baseplate 32 x 32`),
   },
   ghostRefusal: expect.stringContaining(OVERLAP),
   ghostTone: "refused",
   hint: {
     tone: "warn",
-    detail: expect.stringContaining(
-      "would overlap Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32",
-    ),
+    detail: expect.stringContaining("would overlap Baseplate 32 x 32 in 3811 Baseplate 32 x 32"),
   },
 };
 const PLACED_BESIDE = {
@@ -6779,7 +6779,7 @@ describe("selection groups", () => {
       },
       overTheCaboose: {
         poses: overCaboose.laid,
-        refusal: expect.stringContaining(`${OVERLAP} Plate 2 x 8's bounds in ${caboose ?? ""}`),
+        refusal: expect.stringContaining(`${OVERLAP} Plate 2 x 8 in ${caboose ?? ""}`),
         undoDepth: overCaboose.laid.length,
         refusedAt: [0, 1200],
       },
@@ -7319,7 +7319,9 @@ describe("selection groups with laid track", () => {
     expect(acrossTrack.gesture).toMatchObject({
       kind: "move",
       pieces: 3,
-      refusal: expect.stringMatching(/ would cross the track laid there\.$/u),
+      refusal: expect.stringMatching(
+        / would cross the track laid there\. Move it clear or turn it\.$/u,
+      ),
     });
     expect({ ...left, refusal: null }).toEqual({ ...onRoadway, refusal: null });
   }, 120_000);
@@ -8916,9 +8918,8 @@ it("skips and reports the tiles a click would refuse, counts the tiles already h
       refused: lastFill?.refused ?? null,
       alreadyThere: lastFill?.alreadyThere ?? null,
       overlap:
-        lastFill?.reason?.includes(
-          "would overlap Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32",
-        ) ?? null,
+        lastFill?.reason?.includes("would overlap Baseplate 32 x 32 in 3811 Baseplate 32 x 32") ??
+        null,
       undo: history.undoLabel,
     };
   };
@@ -9216,9 +9217,11 @@ it("stops a run short at a user's brick model or track it doesn't join and names
   expect(fromOpenEnd).toMatchObject({ lastCommit: "laid", lastBlock: null });
   expect(heldOntoBrick).toMatchObject({
     pieces: fromOpenEnd.pieces,
-    reason: `Train Track 9V Straight would run into ${label}.`,
+    reason: `Train Track 9V Straight would run into ${label}. Move it clear or turn it.`,
   });
-  expect(brickOntoTrack.reason).toBe(`${label} would cross the track laid there.`);
+  expect(brickOntoTrack.reason).toBe(
+    `${label} would cross the track laid there. Move it clear or turn it.`,
+  );
 }, 120_000);
 
 function outwardFrom(
@@ -9758,7 +9761,7 @@ it("fills a user's track container across a road plate's roadway as track the pl
   expect(undone).toMatchObject({ unsupportedTrack: 0, carriersFlagged: 0 });
   expect(acrossTrack).toMatchObject({
     item: carrier,
-    reason: `${label} would cross the track laid there.`,
+    reason: `${label} would cross the track laid there. Move it clear or turn it.`,
   });
   expect(acrossTrack?.refused).toBeGreaterThan(0);
   expect(acrossTrack?.placed).toBeGreaterThan(0);

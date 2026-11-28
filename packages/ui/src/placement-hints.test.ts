@@ -37,8 +37,8 @@ const HELD = "custom-modular-holes.ldr";
 
 function refusalOf(hit: HoverRefusalHit | null): string {
   return hit
-    ? `${HELD} would overlap ${hit.partLabel}'s bounds in ${hit.placed.label} at cell ${hit.cellX}, ${hit.cellZ}`
-    : `${HELD} has nothing to rest on here: none of its connectors mate, and it isn't on the table`;
+    ? `${HELD} would overlap ${hit.partLabel} in ${hit.placed.label} at stud ${hit.cellX}, ${hit.cellZ}. Move it clear or turn it.`
+    : `${HELD} has nothing to rest on here: none of its connectors mate, and it isn't on the table. Move it onto studs or onto the table.`;
 }
 
 const REFUSED: PlacementHover = {
@@ -200,8 +200,8 @@ it("says nothing while an assist search is unsettled, shows the searching cue on
       region: "status off",
       tone: "warn",
       detail:
-        "Magnetic · 0° · custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
-      chip: "custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
+        "Magnetic · 0° · custom-modular-holes.ldr would overlap Baseplate 16 x 16 in custom-modular-pinned.ldr at stud -11, -8. Move it clear or turn it.",
+      chip: "custom-modular-holes.ldr would overlap Baseplate 16 x 16 in custom-modular-pinned.ldr at stud -11, -8. Move it clear or turn it.",
       busy: "false",
       said: "",
     },
@@ -209,10 +209,10 @@ it("says nothing while an assist search is unsettled, shows the searching cue on
       region: "status off",
       tone: "warn",
       detail:
-        "Magnetic · 0° · custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
-      chip: "custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
+        "Magnetic · 0° · custom-modular-holes.ldr would overlap Baseplate 16 x 16 in custom-modular-pinned.ldr at stud -11, -8. Move it clear or turn it.",
+      chip: "custom-modular-holes.ldr would overlap Baseplate 16 x 16 in custom-modular-pinned.ldr at stud -11, -8. Move it clear or turn it.",
       busy: "false",
-      said: "Magnetic, 0°. Refused: custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
+      said: "Magnetic, 0°. Refused: custom-modular-holes.ldr would overlap Baseplate 16 x 16 in custom-modular-pinned.ldr at stud -11, -8. Move it clear or turn it.",
     },
   });
 });
@@ -247,7 +247,7 @@ it("speaks nothing while the pointer sweeps across cells and the verdict where i
   heard.push(verdict.textContent ?? "");
 
   expect(heard.filter((said) => said !== "")).toEqual([
-    "Magnetic, 0°. Refused: custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -6, -8",
+    "Magnetic, 0°. Refused: custom-modular-holes.ldr would overlap Baseplate 16 x 16 in custom-modular-pinned.ldr at stud -6, -8. Move it clear or turn it.",
   ]);
 });
 
@@ -266,7 +266,7 @@ const ROAD_WAIT: Partial<PlacementHover> = {
   },
 };
 const WAITING_LINE = "Waiting for Baseplate 32 x 32 Road 6-Stud Straight's connector data…";
-const QUEUED_LINE = "Queued: placing at -320, 320 when ready";
+const QUEUED_LINE = "Queued: placing at stud -16, 16 when ready";
 const QUEUED = { queuedPlacement: { item: "ldraw:3811@2", x: -320, z: 320, rot: 0 } };
 
 function waitingAt(cellX: number, rot: number): Partial<PlacementHover> {

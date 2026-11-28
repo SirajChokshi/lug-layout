@@ -19,6 +19,7 @@ import {
   type PlacementMode,
   type SectionProfile,
 } from "./placement-hover.ts";
+import { studsText } from "./size-labels.ts";
 
 export type PlacementTone = "fits" | "mates" | "refused" | "pending" | "waiting";
 
@@ -415,7 +416,7 @@ function waitLine({ placed, failed }: HoverWait): PlacementLine {
 }
 
 export function queuedText({ x, z }: QueuedPlacementView): string {
-  return `Queued: placing at ${x}, ${z} when ready`;
+  return `Queued: placing at stud ${studsText(x)}, ${studsText(z)} when ready`;
 }
 
 function heldTone(view: PlacementView, hover: PlacementHoverInput): PlacementTone {

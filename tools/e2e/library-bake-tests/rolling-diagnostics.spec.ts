@@ -23,7 +23,7 @@ function printedRoundBrickModel(): string {
   ].join("\n");
 }
 
-test("an import that takes parts from the library bake fetches no rolling diagnostics until the selection panel asks, then only its bake bucket's file", async ({
+test("an import that takes parts from the library bake fetches no rolling diagnostics until the Stats drawer asks for the selection's, then only its bake bucket's file", async ({
   page,
 }) => {
   const requested: string[] = [];
@@ -46,7 +46,7 @@ test("an import that takes parts from the library bake fetches no rolling diagno
   expect(await editor.select(BAKED_AIM)).toBe(imported.item);
   expect(diagnosticsRequests(), "an import that takes parts from the bake").toEqual([]);
 
-  const panel = page.getByRole("region", { name: "Selection" });
+  const panel = (await editor.openStats()).getByRole("region", { name: "Selection rolling bands" });
   await panel.getByRole("button", { name: "Show unread rolling bands" }).click();
   const bands = panel.getByLabel("Unread rolling bands");
   await expect(bands).toBeVisible();
@@ -58,5 +58,5 @@ test("an import that takes parts from the library bake fetches no rolling diagno
   const brick = bands.locator(".rolling-diagnostics-part", { hasText: PRINTED_ROUND_BRICK });
   await expect(brick.locator("li")).toHaveCount(PRINTED_ROUND_BRICK_ROWS);
   await expect(brick.locator("li", { hasText: /^arcs:/u })).toHaveCount(PRINTED_ROUND_BRICK_ARCS);
-  await panel.screenshot({ path: test.info().outputPath("selection-panel-library-bake.png") });
+  await panel.screenshot({ path: test.info().outputPath("rolling-bands-library-bake.png") });
 });

@@ -1,5 +1,5 @@
 import type { PartAsset, PartShapeAsset } from "@brr/catalog";
-import type { PoseStatus } from "@brr/schema/bundle";
+import type { PoseStatus, TrackSystem } from "@brr/schema/bundle";
 import type { TrackChange } from "@brr/domain";
 import { PLATE_LDU, QUARTER_TURN_16, STUD_LDU, ZETA16_ORDER, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type TrackEndMarker } from "@brr/render";
@@ -7,7 +7,7 @@ import { inject, injectable } from "inversify";
 import type { CatalogItemView, IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { PLACEABLE_CATALOG, RAIL_YARD, TRACK_WORLD, WORLD_SESSION } from "../tokens.ts";
 import type { IRailYard } from "../trains/rail-yard.ts";
-import { trackBlockText } from "./track-drag.ts";
+import { blockRefusalText } from "./placement-hover-view.ts";
 import type { DragTargetView } from "./track-drag.ts";
 import {
   RAMP_RATES,
@@ -269,7 +269,10 @@ function curveRadiusStuds(curve: KitPart | null): number | null {
 export const TRACK_PIECE_PREFIX = "track-piece:";
 const TRACK_PIECE_GROUP = "track-pieces";
 const TRACK_PIECE_GROUP_LABEL = "Track pieces";
-const TRACK_SHORT_LABEL = "Track";
+const TRACK_TOOL_NAMES: Readonly<Record<TrackSystem, string>> = {
+  "lego-9v": "9V track",
+  "lego-plastic": "Plastic track",
+};
 const NO_TOOLS: ReadonlyArray<TrackToolView> = [];
 const TRACK_TITLE_WORDS = ["Train", "Track"];
 const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -703,7 +706,7 @@ export class TrackEditSession implements ITrackEditSession {
       const label = track.pieceByIndex(held.catalogIndex).piece.title;
       this.lastCommit = null;
       this.lastBlock = block;
-      const reason = `${label} would ${trackBlockText(block)}.`;
+      const reason = blockRefusalText(label, block);
       return {
         kind: "refused",
         refusal: { item: trackToolId(track.activeSystem), x: latticeX, z: latticeZ, reason },
@@ -962,7 +965,7 @@ export class TrackEditSession implements ITrackEditSession {
     return {
       id,
       label,
-      shortLabel: system === TRACK_SYSTEM ? TRACK_SHORT_LABEL : `${name} track`,
+      shortLabel: TRACK_TOOL_NAMES[straight.piece.system],
       group: id,
       groupLabel: label,
       color: null,

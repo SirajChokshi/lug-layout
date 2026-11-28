@@ -888,8 +888,7 @@ function ActivePlan({
         </div>
       </PlanEdits>
       <p className="plan-meta">
-        Origin chunk {plan.originChunkX}, {plan.originChunkZ} · {plans.insideCount(plan.id)}{" "}
-        placements in this plan · {plans.sandboxCount()} in the sandbox
+        {plans.insideCount(plan.id)} placements in this plan · {plans.sandboxCount()} in the sandbox
       </p>
       <div className="plan-actions">
         <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>

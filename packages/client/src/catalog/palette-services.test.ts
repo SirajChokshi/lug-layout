@@ -21,7 +21,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import type { IEditor } from "../edit/editor.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "../edit/track-edit-session.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, trackToolId } from "../edit/track-edit-session.ts";
 import { heldItem } from "../edit/held-item.ts";
 import type { MeshCounts } from "../edit/mesh-progress.ts";
 import { loadCatalogItem } from "./catalog-item.test-support.ts";
@@ -617,7 +617,8 @@ describe("palette item labels", () => {
 
     expect(shortLabel(GREEN_BASEPLATE)).toBe("3811 32×32");
     expect(shortLabel(SET)).toBe("7936-1 Level Crossing");
-    expect(shortLabel(TRACK_ITEM_ID)).toBe("Track");
+    expect(shortLabel(TRACK_ITEM_ID)).toBe("9V track");
+    expect(shortLabel(trackToolId("lego-plastic"))).toBe("Plastic track");
     expect(shortLabel(`${TRACK_PIECE_PREFIX}ldraw:74746`)).toBe("Train Track 9V Straight");
     const pieces = catalog.filter((item) => item.id.startsWith(TRACK_PIECE_PREFIX));
     expect(new Set(pieces.map((item) => item.shortLabel)).size).toBe(pieces.length);

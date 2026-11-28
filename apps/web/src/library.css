@@ -360,14 +360,8 @@
   line-height: 1.45;
 }
 
-.palette-note,
-.catalog-skipped {
+.palette-note {
   color: var(--status-warn);
-}
-
-.catalog-skipped {
-  margin: var(--space-5) 0 0;
-  font-size: var(--text-small);
 }
 
 .palette-empty {

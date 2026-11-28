@@ -478,7 +478,15 @@ export class EditorPage {
       .toBe(true);
   }
 
+  async openStats(): Promise<Locator> {
+    const stats = this.page.locator(".editor-hud");
+    if ((await stats.getAttribute("open")) === null) await stats.locator("> summary").click();
+    await expect(stats).toHaveAttribute("open", "");
+    return stats;
+  }
+
   async goTo(target: LatticePoint): Promise<void> {
+    await this.openStats();
     await this.page.getByLabel("Go to x (LDU)").fill(String(target.x));
     await this.page.getByLabel("Go to z (LDU)").fill(String(target.z));
     await this.page.getByRole("button", { name: "Go to x, z" }).click();
