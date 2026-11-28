@@ -42,6 +42,8 @@ import {
   type EventRecordV2,
   type ImportedFile,
   type NoteRecordV2,
+  type KitIndexEntry,
+  type KitLibrary,
   type NoteShardV2,
   type PlacementRecordV1,
   type SavedViewV1,
@@ -110,6 +112,7 @@ export interface ExportedWorld {
 export interface WorldSessionView {
   readonly world: WorldFileView | null;
   readonly worlds: ReadonlyArray<WorldIndexEntry>;
+  readonly kits: ReadonlyArray<KitIndexEntry>;
   readonly fileError: string | null;
   readonly storageError: string | null;
   readonly readOnly: boolean;
@@ -140,11 +143,14 @@ export interface PlanImport {
   readonly customParts: ReadonlyArray<CustomPartCredit>;
 }
 
-export interface PlanContents {
-  readonly region: PlanRegion;
+export interface MemberRecords {
   readonly placements: ReadonlyArray<PlacementRecordV1>;
   readonly track: ReadonlyArray<TrackRecordV1>;
   readonly placed: ReadonlyArray<ModelCredit>;
+}
+
+export interface PlanContents extends MemberRecords {
+  readonly region: PlanRegion;
   readonly imported: ReadonlyArray<PlanImport>;
 }
 
@@ -161,6 +167,8 @@ export interface IEditedWorld extends IPlanSheetSource {
   addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<ModelFileOutcome>;
   planContents(planId: string): Decoded<PlanContents>;
   addPlan(plan: StoredPlan): Promise<ReadonlyArray<Issue>>;
+  selectionContents(): Decoded<MemberRecords>;
+  holdKit(name: string, shards: ReadonlyArray<WorldShardV2>): Promise<ReadonlyArray<Issue>>;
 }
 
 export interface IWorldFiles {
@@ -174,6 +182,11 @@ export interface IWorldFiles {
   importWorld(bytes: Uint8Array): Promise<boolean>;
   exportPlan(planId: string): Promise<ExportedWorld | null>;
   openPlan(bytes: Uint8Array): Promise<boolean>;
+  saveKit(name: string, library: KitLibrary): Promise<ExportedWorld | null>;
+  placeKit(id: string): Promise<boolean>;
+  addKitFile(bytes: Uint8Array): Promise<boolean>;
+  exportKit(id: string): Promise<ExportedWorld | null>;
+  removeKit(id: string): Promise<boolean>;
 }
 
 export interface IWorldSession extends IWorldFiles {
@@ -319,6 +332,7 @@ export class WorldSession implements IWorldSession {
   private state: WorldSessionView = {
     world: null,
     worlds: [],
+    kits: [],
     fileError: null,
     storageError: null,
     readOnly: false,
@@ -381,6 +395,16 @@ export class WorldSession implements IWorldSession {
   private editedWorld(): IEditedWorld {
     if (!this.edited) throw new Error("the world session has no edited world before it starts");
     return this.edited;
+  }
+
+  private freshHeader(name: string): WorldHeader {
+    return {
+      name,
+      bundleVersion: this.bundleVersion,
+      view: new ViewCamera(CAMERA_FOV_DEGREES).savedView(),
+      disclaimer: this.disclaimer,
+      ...DEFAULT_WORLD_DOCUMENT,
+    };
   }
 
   private header(current: OpenWorld): WorldHeader {
@@ -600,7 +624,7 @@ export class WorldSession implements IWorldSession {
 
   private async refreshWorlds(): Promise<void> {
     if (this.state.storageError !== null) return;
-    this.update({ worlds: await this.repository.list() });
+    this.update({ worlds: await this.repository.list(), kits: await this.repository.kits() });
   }
 
   private async openFirstWorld(): Promise<void> {
@@ -706,17 +730,7 @@ export class WorldSession implements IWorldSession {
 
   private async createWorld(name: string): Promise<void> {
     const started = performance.now();
-    const summary = await this.repository.create(
-      {
-        name,
-        bundleVersion: this.bundleVersion,
-        view: new ViewCamera(CAMERA_FOV_DEGREES).savedView(),
-        disclaimer: this.disclaimer,
-        ...DEFAULT_WORLD_DOCUMENT,
-      },
-      [],
-      [],
-    );
+    const summary = await this.repository.create(this.freshHeader(name), [], []);
     await this.takeLease(summary.id);
     const current: OpenWorld = {
       id: summary.id,
@@ -890,15 +904,27 @@ export class WorldSession implements IWorldSession {
         shards.map(shardEntry),
         notes.map(noteShardEntry),
       );
-      const imports = [...referencedImports(shards, contents.consists)].map((sha256) => {
-        const file = this.importedFiles.get(sha256);
-        if (!file) throw new Error(`the imported file with sha256 ${sha256} isn't loaded`);
-        return file;
-      });
       return {
         fileName: exportFileName(current.name),
-        bytes: this.repository.packArchive({ manifest, shards, notes, credits, imports }),
+        bytes: this.repository.packArchive({
+          manifest,
+          shards,
+          notes,
+          credits,
+          imports: this.loadedImports(shards, contents.consists),
+        }),
       };
+    });
+  }
+
+  private loadedImports(
+    shards: ReadonlyArray<WorldShardV2>,
+    consists: ReadonlyArray<ConsistRecordV1>,
+  ): ImportedFile[] {
+    return [...referencedImports(shards, consists)].map((sha256) => {
+      const file = this.importedFiles.get(sha256);
+      if (!file) throw new Error(`the imported file with sha256 ${sha256} isn't loaded`);
+      return file;
     });
   }
 
@@ -980,39 +1006,163 @@ export class WorldSession implements IWorldSession {
     return this.fileAction(
       "opening the plan",
       async () => {
-        if (this.state.readOnly) {
-          throw new Error("this world is open in another tab, so it's read-only here");
-        }
         const archive = await this.repository.readPlanArchive(bytes);
         if (!archive.ok) throw new Error(issueText(archive.issues));
         const { manifest, imports } = archive.value;
         const shards = archive.value.shards.map(migrateShardV1);
-        const carried = new Map(imports.map((file) => [file.sha256, file]));
-        await this.ensureImports({ shards, consists: [] }, async (sha256) => carried.get(sha256));
-        const issues = await this.editedWorld().addPlan({ plan: manifest.plan, shards });
-        if (issues.length > 0) {
-          const pinned =
-            manifest.bundleVersion === this.bundleVersion
-              ? ""
-              : ` (saved with bundle ${manifest.bundleVersion}; this app has bundle ${this.bundleVersion})`;
-          throw new Error(`${issueText(issues)}${pinned}`);
-        }
-        this.update({ fileError: null });
-        await this.storeOpenedImports(imports);
+        await this.placeCarried(manifest.bundleVersion, shards, imports, "the plan opened", () =>
+          this.editedWorld().addPlan({ plan: manifest.plan, shards }),
+        );
       },
       true,
     );
   }
 
-  private async storeOpenedImports(imports: ReadonlyArray<ImportedFile>): Promise<void> {
+  private async placeCarried(
+    bundleVersion: string,
+    shards: ReadonlyArray<WorldShardV2>,
+    imports: ReadonlyArray<ImportedFile>,
+    opened: string,
+    place: () => Promise<ReadonlyArray<Issue>>,
+  ): Promise<void> {
+    if (this.state.readOnly) {
+      throw new Error("this world is open in another tab, so it's read-only here");
+    }
+    const carried = new Map(imports.map((file) => [file.sha256, file]));
+    await this.ensureImports({ shards, consists: [] }, async (sha256) => carried.get(sha256));
+    const issues = await place();
+    if (issues.length > 0) {
+      const pinned =
+        bundleVersion === this.bundleVersion
+          ? ""
+          : ` (saved with bundle ${bundleVersion}; this app has bundle ${this.bundleVersion})`;
+      throw new Error(`${issueText(issues)}${pinned}`);
+    }
+    this.update({ fileError: null });
+    await this.storeOpenedImports(imports, opened);
+  }
+
+  private async storeOpenedImports(
+    imports: ReadonlyArray<ImportedFile>,
+    opened: string,
+  ): Promise<void> {
     if (this.state.storageError !== null) return;
     try {
       for (const file of imports) await this.repository.putImportedFile(file);
     } catch (error) {
       this.update({
-        fileError: `the plan opened, but its model files couldn't be stored on this device (${errorText(error)}), so this world can't reopen with them after a reload. Export the world while this tab holds them.`,
+        fileError: `${opened}, but its model files couldn't be stored on this device (${errorText(error)}), so this world can't reopen with them after a reload. Export the world while this tab holds them.`,
       });
     }
+  }
+
+  async saveKit(name: string, library: KitLibrary): Promise<ExportedWorld | null> {
+    let saved: ExportedWorld | null = null;
+    await this.fileAction(
+      "saving the kit",
+      async () => {
+        if (this.state.storageError !== null) throw new Error("storage is unavailable");
+        const kitName = decode(WorldName, name.trim(), "kit name");
+        if (!kitName.ok) throw new Error(issueText(kitName.issues));
+        const read = this.editedWorld().selectionContents();
+        if (!read.ok) throw new Error(issueText(read.issues));
+        const { placements, track, placed } = read.value;
+        const shards = worldShards(placements, track);
+        const manifest = worldManifest(this.freshHeader(kitName.value), shards.map(shardEntry));
+        const credits = this.credits.exportText(creditsForWorld(await this.loadCredits(), placed));
+        const imports = this.loadedImports(shards, []);
+        const bytes = this.repository.packArchive({
+          manifest,
+          shards,
+          notes: [],
+          credits,
+          imports,
+        });
+        await this.storeKit(manifest, library, bytes);
+        saved = { fileName: exportFileName(manifest.name), bytes };
+      },
+      true,
+    );
+    return saved;
+  }
+
+  placeKit(id: string): Promise<boolean> {
+    return this.fileAction(
+      "placing the kit",
+      async () => {
+        const archive = await this.repository.readArchive((await this.storedKit(id)).bytes);
+        if (!archive.ok) throw new Error(issueText(archive.issues));
+        const { manifest, shards, imports } = archive.value;
+        await this.placeCarried(manifest.bundleVersion, shards, imports, "the kit is held", () =>
+          this.editedWorld().holdKit(manifest.name, shards),
+        );
+      },
+      true,
+    );
+  }
+
+  addKitFile(bytes: Uint8Array): Promise<boolean> {
+    return this.fileAction(
+      "adding the kit",
+      async () => {
+        if (this.state.storageError !== null) throw new Error("storage is unavailable");
+        const archive = await this.repository.readArchive(bytes);
+        if (!archive.ok) throw new Error(issueText(archive.issues));
+        const { manifest, notes } = archive.value;
+        if (manifest.placements + manifest.track === 0) {
+          throw new Error("the file holds no parts or track");
+        }
+        if ((manifest.consists ?? []).length > 0 || notes.length > 0) {
+          throw new Error(
+            "a kit holds parts and track only, and the file also holds trains or notes",
+          );
+        }
+        await this.storeKit(manifest, "club", bytes);
+      },
+      true,
+    );
+  }
+
+  async exportKit(id: string): Promise<ExportedWorld | null> {
+    let exported: ExportedWorld | null = null;
+    await this.fileAction(
+      "downloading the kit",
+      async () => {
+        const { kit, bytes } = await this.storedKit(id);
+        exported = { fileName: exportFileName(kit.name), bytes };
+      },
+      true,
+    );
+    return exported;
+  }
+
+  removeKit(id: string): Promise<boolean> {
+    return this.fileAction(
+      "removing the kit",
+      async () => {
+        await this.repository.removeKit(id);
+        this.update({ kits: await this.repository.kits() });
+      },
+      true,
+    );
+  }
+
+  private async storeKit(
+    manifest: WorldManifestV2,
+    library: KitLibrary,
+    bytes: Uint8Array,
+  ): Promise<void> {
+    const { name, placements, track } = manifest;
+    const id = await contentSha256(bytes);
+    await this.repository.putKit({ id, name, library, placements, track }, bytes);
+    this.update({ kits: await this.repository.kits(), fileError: null });
+  }
+
+  private async storedKit(id: string): Promise<{ kit: KitIndexEntry; bytes: Uint8Array }> {
+    const kit = this.state.kits.find((entry) => entry.id === id);
+    const bytes = kit && (await this.repository.kitArchive(id));
+    if (!kit || !bytes) throw new Error("that kit is no longer stored here");
+    return { kit, bytes };
   }
 
   private loadCredits(): Promise<CreditsView> {

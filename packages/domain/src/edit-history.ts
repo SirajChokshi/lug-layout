@@ -1,7 +1,12 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 import type { NoteChange } from "./notes/note-state.ts";
 import type { EventRecordV2 } from "@brr/schema/world";
-import type { GroupAction, GroupChange, GroupRetag } from "./groups/group-table.ts";
+import type {
+  GroupAction,
+  GroupChange,
+  GroupRetag,
+  GroupTableChange,
+} from "./groups/group-table.ts";
 import type { LayerAction, LayerChange } from "./layers/layer-table.ts";
 import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
@@ -464,6 +469,7 @@ export class EditHistory {
     requests: ReadonlyArray<PlacementRequest>,
     track: TrackChange = NO_TRACK_CHANGE,
     plan: PlanChange | null = null,
+    groups: GroupTableChange | null = null,
   ): AppliedEdit {
     checkTrackPieces(track.lift, "lift");
     checkTrackPieces(track.lay, "lay");
@@ -492,7 +498,7 @@ export class EditHistory {
       notes: this.follower.follow(changes),
       event: null,
       layers: null,
-      groups: null,
+      groups: groups && { ...groups, placements: [], pieces: [] },
     });
   }
 

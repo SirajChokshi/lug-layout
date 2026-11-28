@@ -10,6 +10,7 @@ import {
   worldShards,
   worldShardsV1,
   type ImportedFile,
+  type KitIndexEntry,
   type PlacementRecordV1,
   type WorldArchive,
   type WorldHeader,
@@ -342,4 +343,38 @@ it("refuses to save a placement on a layer the header doesn't list, or a note on
   ).rejects.toThrow("note shard 0_0.notes.0.layer: names layer 0, a parts layer, not a notes one");
   const unchanged = await worlds.read(id);
   expect(unchanged.ok && [unchanged.value.shards, unchanged.value.notes]).toEqual([[], []]);
+});
+
+it("keeps each kit's archive apart from its index entry, lists kits by name, refuses an entry the schema doesn't accept and drops both on removal", async () => {
+  const worlds = repositoryOn(new IDBFactory());
+  const station: KitIndexEntry = {
+    id: "b",
+    name: "Station throat",
+    library: "club",
+    placements: 0,
+    track: 6,
+  };
+  const siding: KitIndexEntry = {
+    id: "a",
+    name: "Passing siding",
+    library: "personal",
+    placements: 2,
+    track: 9,
+  };
+  const stationBytes = utf8.encode("station archive");
+  await worlds.putKit(station, stationBytes);
+  await worlds.putKit(siding, utf8.encode("siding archive"));
+
+  const listed = await worlds.kits();
+  const archive = await worlds.kitArchive("b");
+  await expect(worlds.putKit({ ...siding, id: "c", name: " " }, stationBytes)).rejects.toThrow(
+    "the kit wasn't saved",
+  );
+  await worlds.removeKit("a");
+
+  expect({ listed, archive }).toEqual({ listed: [siding, station], archive: stationBytes });
+  expect({ kits: await worlds.kits(), archive: await worlds.kitArchive("a") }).toEqual({
+    kits: [station],
+    archive: undefined,
+  });
 });

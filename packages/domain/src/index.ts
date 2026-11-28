@@ -115,6 +115,7 @@ export {
   type GroupAction,
   type GroupMembers,
   type GroupRetag,
+  type GroupTableChange,
   type GroupTagged,
 } from "./groups/group-table.ts";
 export {

@@ -174,6 +174,7 @@ import type { PlacementHover } from "./placement-hover.ts";
 import { placementModeSwitchEnabled } from "./placement-mode.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
+import { MemoryKits } from "./memory-kits.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -2308,6 +2309,128 @@ describe("groups", () => {
   }, 240_000);
 });
 
+function storingEditor(factory: IDBFactory) {
+  return startEditor([USER_BRICK], new BundleDirectoryFetcher(), [USER_BRICK], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(INDEXED_DB).toConstantValue(factory);
+  });
+}
+
+function clickGround(editor: IEditor, backend: AimedBackend, x: number, z: number) {
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+}
+
+describe("kits", () => {
+  it("saves a user's own baseplate, models and laid track as a kit, places it as one new group in one undo step at its saved relative poses with its track joining the laid run end to end, refuses it where its own parts would overlap or when its models are held up only from outside, and reopens with the kit's group kept", async () => {
+    const factory = new IDBFactory();
+    const { editor, backend, catalog } = await storingEditor(factory);
+    await loadCatalogItem(catalog, HELD_BRICK);
+    const brick = HELD_BRICK;
+    const baseplate = await importUserFile(
+      editor,
+      "my-baseplate.ldr",
+      userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]),
+    );
+    const cottage = await importUserFile(
+      editor,
+      "my-cottage.mpd",
+      userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+    );
+    const place = placer(editor, backend);
+    await place(baseplate, 0, 1280);
+    await place(cottage, -200, 1280);
+    for (const x of [0, 200, 0, 200]) await place(brick, x, 1280);
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-40 * STUD, 0], [40 * STUD, 0]);
+    const laid = editor.dump().laidTrack.length;
+    const [west, east] = editor
+      .dump()
+      .trackEnds.map((end) => end.xLdu)
+      .toSorted((a, b) => a - b);
+    if (west === undefined || east === undefined) throw new Error("the run has no two open ends");
+    const start = layeredPoses(editor);
+
+    selectAt(editor, backend, 0, 1280);
+    toggleAt(editor, backend, [200, 1280]);
+    const stackedOnly = selectedItems(editor);
+    const outside = await editor.saveKit("Two bricks", "personal");
+    const outsideError = editor.snapshot().fileError;
+    const boxed = boxSelect(editor, backend, [-1000, -400], [1000, 1800]).selected;
+    const pivot = editor.snapshot().selection?.pivotStuds;
+    if (!pivot) throw new Error("the selection has no pivot");
+    expect(await editor.saveKit("Brick siding", "personal")).not.toBeNull();
+    const [kit] = editor.snapshot().kits;
+    if (!kit) throw new Error("the kit wasn't listed");
+
+    expect(await editor.placeKit(kit.id)).toBe(true);
+    clickGround(editor, backend, pivot.x * STUD, pivot.z * STUD);
+    const overlap = { refusal: editor.snapshot().selectionRefusal, poses: layeredPoses(editor) };
+    const run = east - west;
+    clickGround(editor, backend, pivot.x * STUD + run, pivot.z * STUD);
+    const placed = {
+      label: editor.snapshot().history.undoLabel,
+      poses: groupedPoses(editor),
+      track: laidGroups(editor),
+      ends: editor
+        .dump()
+        .trackEnds.map((end) => end.xLdu)
+        .toSorted((a, b) => a - b),
+      groups: editor.dump().groups,
+      selected: groupedSelection(editor),
+    };
+    const copies = layeredPoses(editor).filter((pose) => !start.includes(pose));
+    editor.undo(0);
+    const undone = {
+      poses: layeredPoses(editor),
+      track: laidGroups(editor).length,
+      groups: editor.dump().groups,
+    };
+    editor.redo(0);
+    await vi.waitFor(() =>
+      expect(editor.snapshot().world).toMatchObject({ save: "saved", placements: 12 }),
+    );
+    const reopened = await storingEditor(factory);
+    await vi.waitFor(() => expect(reopened.editor.snapshot().placements).toBe(12), {
+      timeout: 60_000,
+    });
+    selectAt(reopened.editor, reopened.backend, run - 200, 1280);
+
+    const shifted = (pose: string) =>
+      pose.replace(/ (-?\d+),/u, (_, x: string) => ` ${Number(x) + run},`);
+    expect({ kit, stackedOnly, outside, outsideError }).toEqual({
+      kit: { id: kit.id, name: "Brick siding", library: "personal", placements: 6, track: laid },
+      stackedOnly: [brick, brick],
+      outside: null,
+      outsideError: `saving the kit failed: ${USER_BRICK}: isn't joined to the kit's other models and doesn't stand on the table, so placing the kit couldn't check what holds it up. Take in what it rests on, or save it as a kit of its own`,
+    });
+    expect(overlap.poses).toEqual(start);
+    expect(overlap.refusal).toMatch(/^Can't place the kit here\. /u);
+    expect({ copies: copies.toSorted(), ...placed, poses: placed.poses.length }).toEqual({
+      copies: start.map(shifted).toSorted(),
+      label: "place",
+      poses: 12,
+      track: [
+        ...Array.from({ length: laid }, () => null),
+        ...Array.from({ length: laid }, () => 0),
+      ],
+      ends: [west, east + run],
+      groups: [{ id: 0, name: "Brick siding" }],
+      selected: { selected: boxed, groups: ["Brick siding"], loose: 0, refusal: null },
+    });
+    expect(placed.poses.filter((pose) => pose.endsWith(" in 0"))).toHaveLength(6);
+    expect(undone).toEqual({ poses: start, track: laid, groups: [] });
+    expect({
+      poses: groupedPoses(reopened.editor),
+      groups: reopened.editor.dump().groups,
+      clicked: groupedSelection(reopened.editor).groups,
+    }).toEqual({ poses: placed.poses, groups: placed.groups, clicked: ["Brick siding"] });
+  }, 240_000);
+});
+
 it("lists a user's own file in the catalog by its name when a fresh editor reopens the world that places it", async () => {
   const repository = new MemoryRepository();
   const saving = await startImportingEditor(() => repository);
@@ -2963,12 +3086,14 @@ interface MemoryWorld {
   readonly notes: Map<string, NoteShardV2>;
 }
 
-class MemoryRepository implements IWorldRepository {
+class MemoryRepository extends MemoryKits implements IWorldRepository {
   private readonly worlds = new Map<string, MemoryWorld>();
   private readonly imports = new Map<string, ImportedFile>();
   private nextId = 1;
 
-  constructor(private readonly archives: IWorldRepository | null = null) {}
+  constructor(private readonly archives: IWorldRepository | null = null) {
+    super();
+  }
 
   private planArchives(): IWorldRepository {
     if (!this.archives) throw new Error("this test packs and reads no plan files");

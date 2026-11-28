@@ -26,6 +26,8 @@ import {
   type TrainSelectionView,
   type UndrawnPart,
 } from "@brr/client";
+import type { KitLibrary } from "@brr/schema/world";
+import { downloadBlob } from "./download.ts";
 import type { IconName } from "./icons/glyphs.ts";
 import { Icon } from "./icons/icon.tsx";
 import { PLATFORM, shortcutText } from "./keys.tsx";
@@ -643,6 +645,50 @@ function selectionMeta(selection: SelectionView, size: string, items: string): s
   return `Track piece · heading ${(primary.heading * FULL_TURN_DEGREES) / ZETA16_ORDER}° · ${size}`;
 }
 
+function KitSaver({ editor, disabled }: { readonly editor: IEditor; readonly disabled: boolean }) {
+  const [name, setName] = useState("");
+  const [library, setLibrary] = useState<KitLibrary>("personal");
+  const onSave = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    void editor.saveKit(name, library).then((file) => {
+      if (!file) return;
+      setName("");
+      if (library === "club") {
+        downloadBlob(file.fileName, new Blob([file.bytes.slice()], { type: "application/zip" }));
+      }
+    });
+  };
+  return (
+    <form
+      className="selection-actions selection-kit"
+      aria-label="Save selection as kit"
+      onSubmit={onSave}
+    >
+      <input
+        type="text"
+        value={name}
+        maxLength={editor.worldNameMaxLength}
+        placeholder="Kit name"
+        aria-label="Kit name"
+        disabled={disabled}
+        onChange={(event) => setName(event.currentTarget.value)}
+      />
+      <select
+        aria-label="Kit library"
+        value={library}
+        disabled={disabled}
+        onChange={(event) => setLibrary(event.currentTarget.value === "club" ? "club" : "personal")}
+      >
+        <option value="personal">Personal</option>
+        <option value="club">Club (downloads its file)</option>
+      </select>
+      <button type="submit" data-action="save-kit" disabled={disabled || name.trim() === ""}>
+        Save selection as kit
+      </button>
+    </form>
+  );
+}
+
 export function SelectionPanel({
   editor,
   snapshot,
@@ -758,6 +804,12 @@ export function SelectionPanel({
             Ungroup <kbd>{shortcutText("ungroup")}</kbd>
           </button>
         </div>
+      )}
+      {movable && (
+        <KitSaver
+          editor={editor}
+          disabled={snapshot.status !== "ready" || snapshot.storageError !== null}
+        />
       )}
     </section>
   );

@@ -40,6 +40,7 @@ import { EditorCanvas } from "./editor-canvas.tsx";
 import { Icon } from "./icons/icon.tsx";
 import { EditorFooter, EditorHud, PlacementToolbar, SelectionPanel } from "./editor-panels.tsx";
 import { EventPanel } from "./event-panel.tsx";
+import { KitLibrary } from "./kit-library.tsx";
 import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
@@ -320,6 +321,7 @@ export function EditorApp({
       </div>
       <LibraryColumn panels={panels} hidden={mode === "play"}>
         <PalettePanel editor={editor} snapshot={snapshot} palette={palette} />
+        <KitLibrary editor={editor} snapshot={snapshot} />
       </LibraryColumn>
       <PlanScaleBar scaleBar={scaleBar} />
       <div className="side-panel">

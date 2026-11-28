@@ -276,42 +276,55 @@ describe("EditHistory", () => {
     expect([history.undoDepth, history.redoDepth]).toEqual([3, 0]);
   });
 
-  it("keeps placements, track and a plan change committed together as one step, all undone and redone together", () => {
+  it("keeps placements, track, a plan change and a new group they join committed together as one step, all undone and redone together", () => {
     const world = new World();
     const history = new EditHistory(world);
     const empty = { regions: [], activePlanId: null, tableTypes: [] };
     const opened = { regions: [], activePlanId: "plan-1", tableTypes: [] };
     const change = { before: empty, after: opened };
-    const run = { lift: [], lay: [straightAt(0, 0n)] };
+    const created = GroupTable.empty.created([], () => "Station kit");
+    if (!created.ok) throw new Error("the group wasn't created");
+    const { table, id } = created.value;
+    const grouping = {
+      action: "group" as const,
+      groups: [id],
+      before: GroupTable.empty,
+      after: table,
+    };
+    const run = { lift: [], lay: [{ ...straightAt(0, 0n), group: id }] };
 
     const done = history.commit(
       "open-plan",
       [
         {
           placement: null,
-          to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0, group: null },
+          to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0, group: id },
         },
         {
           placement: null,
-          to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3, layer: 0, group: null },
+          to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3, layer: 0, group: id },
         },
       ],
       run,
       change,
+      grouping,
     );
+    const noRetags = { placements: [], pieces: [] };
     expect(done.plan).toBe(change);
+    expect(done.groups).toEqual({ ...grouping, ...noRetags });
     expect(history.nextUndo()).toEqual({ kind: "open-plan", placements: 2, pieces: 1 });
 
     const undone = history.undo();
     expect(undone).toMatchObject({
       track: { lift: run.lay, lay: [] },
       plan: { before: opened, after: empty },
+      groups: { before: table, after: GroupTable.empty, ...noRetags },
     });
     expect(livePlacements(world)).toEqual([]);
     expect(history.undoDepth).toBe(0);
 
-    expect(history.redo()).toMatchObject({ track: run, plan: change });
-    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0,0,-", "3,0,40,60,1,3,0,-"]);
+    expect(history.redo()).toMatchObject({ track: run, plan: change, groups: grouping });
+    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0,0,0", "3,0,40,60,1,3,0,0"]);
   });
 
   it("keeps a layer change as its own step, named by the layer, handing back the earlier table on undo", () => {

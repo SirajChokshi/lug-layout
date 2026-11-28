@@ -2,6 +2,7 @@ import { decode, decodedOrThrow, type Decoded, type Issue } from "@brr/schema/de
 import { planArchiveFiles, readPlanFiles, type PlanArchive } from "@brr/schema/plan";
 import {
   IMPORT_DIRECTORY,
+  KitIndexEntry,
   NoteShardV2,
   WorldDocumentIndex,
   WorldHeader,
@@ -43,7 +44,10 @@ import { readZip, writeStoredZip } from "./zip.ts";
 export const WORLD_INDEX_DATABASE = "brr-worlds";
 export const WORLD_DATABASE_PREFIX = "brr-world-";
 export const IMPORT_DATABASE = "brr-imports";
+const KIT_DATABASE = "brr-kits";
 const IMPORT_STORE = "files";
+const KIT_STORE = "kits";
+const KIT_ARCHIVE_STORE = "archives";
 const WORLD_INDEX_STORE = "worlds";
 const MANIFEST_STORE = "manifest";
 const SHARD_STORE = "shards";
@@ -90,6 +94,10 @@ export interface IWorldRepository {
   readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>>;
   putImportedFile(file: ImportedFile): Promise<void>;
   importedFile(sha256: string): Promise<ImportedFile | undefined>;
+  kits(): Promise<ReadonlyArray<KitIndexEntry>>;
+  kitArchive(id: string): Promise<Uint8Array | undefined>;
+  putKit(kit: KitIndexEntry, archive: Uint8Array): Promise<void>;
+  removeKit(id: string): Promise<void>;
 }
 
 const HEX_RADIX = 16;
@@ -533,5 +541,56 @@ export class IndexedDbWorldRepository implements IWorldRepository {
       requestResult(db.transaction(IMPORT_STORE).objectStore(IMPORT_STORE).get(sha256)),
     );
     return isImportedFile(value) && value.sha256 === sha256 ? value : undefined;
+  }
+
+  private async withKits<T>(use: (db: IDBDatabase) => Promise<T>): Promise<T> {
+    const db = await openDatabase(this.factory, KIT_DATABASE, [
+      { name: KIT_STORE, keyPath: "id" },
+      { name: KIT_ARCHIVE_STORE },
+    ]);
+    try {
+      return await use(db);
+    } finally {
+      db.close();
+    }
+  }
+
+  async kits(): Promise<ReadonlyArray<KitIndexEntry>> {
+    const values = await this.withKits((db) =>
+      requestResult(db.transaction(KIT_STORE).objectStore(KIT_STORE).getAll()),
+    );
+    return values
+      .flatMap((value) => {
+        const entry = decode(KitIndexEntry, value);
+        return entry.ok ? [entry.value] : [];
+      })
+      .toSorted((a, b) => a.name.localeCompare(b.name) || (a.id < b.id ? -1 : 1));
+  }
+
+  async kitArchive(id: string): Promise<Uint8Array | undefined> {
+    const value: unknown = await this.withKits((db) =>
+      requestResult(db.transaction(KIT_ARCHIVE_STORE).objectStore(KIT_ARCHIVE_STORE).get(id)),
+    );
+    return value instanceof Uint8Array ? value : undefined;
+  }
+
+  async putKit(kit: KitIndexEntry, archive: Uint8Array): Promise<void> {
+    const entry = decodedOrThrow(decode(KitIndexEntry, kit, "kit"), "the kit wasn't saved");
+    await this.withKits(async (db) => {
+      const transaction = db.transaction([KIT_STORE, KIT_ARCHIVE_STORE], "readwrite");
+      transaction.objectStore(KIT_STORE).put(entry);
+      transaction.objectStore(KIT_ARCHIVE_STORE).put(archive.slice(), entry.id);
+      await transactionDone(transaction);
+    });
+    this.requestPersistenceOnce();
+  }
+
+  removeKit(id: string): Promise<void> {
+    return this.withKits(async (db) => {
+      const transaction = db.transaction([KIT_STORE, KIT_ARCHIVE_STORE], "readwrite");
+      transaction.objectStore(KIT_STORE).delete(id);
+      transaction.objectStore(KIT_ARCHIVE_STORE).delete(id);
+      await transactionDone(transaction);
+    });
   }
 }

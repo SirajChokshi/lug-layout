@@ -21,11 +21,14 @@ export interface GroupMembers<P> {
   readonly pieces: ReadonlyArray<GroupTagged<number>>;
 }
 
-export interface GroupChange<P> {
+export interface GroupTableChange {
   readonly action: GroupAction;
   readonly groups: ReadonlyArray<number>;
   readonly before: GroupTable;
   readonly after: GroupTable;
+}
+
+export interface GroupChange<P> extends GroupTableChange {
   readonly placements: ReadonlyArray<GroupRetag<P>>;
   readonly pieces: ReadonlyArray<GroupRetag<number>>;
 }
