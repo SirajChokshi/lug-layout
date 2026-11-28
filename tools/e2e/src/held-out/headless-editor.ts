@@ -3,9 +3,11 @@ import {
   EDITOR,
   IMPORT_WORKER_POOL,
   mainThreadModules,
+  PLAN_SERVICE,
   type IEditor,
   type IImportWorkerPool,
   type ImportRun,
+  type IPlanService,
 } from "@brr/client";
 import {
   BrickCompiler,
@@ -170,10 +172,17 @@ interface MemoryWorld {
   readonly notes: Map<string, NoteShardV2>;
 }
 
+type WorldArchives = Pick<
+  IWorldRepository,
+  "packArchive" | "readArchive" | "readWorldFiles" | "packPlanArchive" | "readPlanArchive"
+>;
+
 class MemoryWorldRepository implements IWorldRepository {
   private readonly worlds = new Map<string, MemoryWorld>();
   private readonly files = new Map<string, ImportedFile>();
   private nextId = 1;
+
+  constructor(private readonly archives: WorldArchives) {}
 
   private entry(id: string, world: MemoryWorld): WorldIndexEntry {
     const manifest = worldManifest(world.header, [...world.shards.values()].map(shardEntry));
@@ -233,33 +242,24 @@ class MemoryWorldRepository implements IWorldRepository {
     return [];
   }
 
-  packArchive(_archive: WorldArchive): Uint8Array {
-    return new Uint8Array();
+  packArchive(archive: WorldArchive): Uint8Array {
+    return this.archives.packArchive(archive);
   }
 
-  async readArchive(): Promise<Decoded<WorldArchive>> {
-    return {
-      ok: false,
-      issues: [{ path: "archive", message: "isn't read by the held-out harness" }],
-    };
+  readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>> {
+    return this.archives.readArchive(bytes);
   }
 
-  async readWorldFiles(): Promise<Decoded<WorldFiles>> {
-    return {
-      ok: false,
-      issues: [{ path: "world files", message: "aren't read by the held-out harness" }],
-    };
+  readWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldFiles>> {
+    return this.archives.readWorldFiles(files);
   }
 
-  packPlanArchive(_archive: PlanArchive): Uint8Array {
-    return new Uint8Array();
+  packPlanArchive(archive: PlanArchive): Uint8Array {
+    return this.archives.packPlanArchive(archive);
   }
 
-  async readPlanArchive(): Promise<Decoded<PlanArchive>> {
-    return {
-      ok: false,
-      issues: [{ path: "plan archive", message: "isn't read by the held-out harness" }],
-    };
+  readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>> {
+    return this.archives.readPlanArchive(bytes);
   }
 
   async putImportedFile(file: ImportedFile): Promise<void> {
@@ -319,6 +319,7 @@ export interface HeadlessEditor {
   readonly backend: AimedBackend;
   readonly frame: () => Promise<void>;
   readonly clock: SliceClock;
+  readonly plans: IPlanService;
 }
 
 const scheduledFrames: FrameRequestCallback[] = [];
@@ -354,7 +355,8 @@ export async function startHeadlessEditor(
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher(bundleRoot));
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   container.rebind(IMPORT_WORKER_POOL).toConstantValue(new InProcessImportPool(bundle, fetchUrl));
-  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryWorldRepository());
+  const archives = container.get(WORLD_REPOSITORY);
+  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryWorldRepository(archives));
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: CANVAS_WIDTH,
@@ -362,5 +364,5 @@ export async function startHeadlessEditor(
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return { editor, backend, frame: runScheduledFrames, clock };
+  return { editor, backend, frame: runScheduledFrames, clock, plans: container.get(PLAN_SERVICE) };
 }

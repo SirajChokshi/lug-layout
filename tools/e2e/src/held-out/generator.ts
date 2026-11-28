@@ -72,6 +72,12 @@ export interface ModuleFile {
   readonly text: string;
 }
 
+export interface ShowModule {
+  readonly name: string;
+  readonly author: string;
+  readonly text: string;
+}
+
 export interface ModulePair {
   readonly seed: number;
   readonly subject: ModuleModel;
@@ -106,6 +112,17 @@ const PINNED_BRICK_ATTEMPTS = 40;
 const PIN_CHANCE = 0.5;
 const NAME_LENGTH = 10;
 const NAME_RADIX = 36;
+const SHOW_MODULE_MIN_PARTS = 1200;
+const SHOW_MODULE_MAX_PARTS = 1800;
+const SHOW_MODULE_MIN_EDGE_BRICKS = 4;
+const SHOW_MODULE_MAX_EDGE_BRICKS = 12;
+const SHOW_GROUND_ATTEMPTS = 64;
+const SHOW_SCENERY_ATTEMPTS = 64;
+const SHOW_MIN_WALL_COURSES = 2;
+const SHOW_MAX_WALL_COURSES = 8;
+const SHOW_STALLED_PHASES = 128;
+const SHOW_SMALL_PART_CELLS = 8;
+const SHOW_PHASES = 3;
 const SECTIONS: ReadonlyArray<Section> = ["ground", "edge", "pins", "scenery"];
 const AXES: ReadonlyArray<Axis> = [0, 1, 2];
 const PLAN_AXES: ReadonlyArray<Axis> = [0, 2];
@@ -613,6 +630,10 @@ class Build {
   assembly(extra: ReadonlyArray<Placed> = []): Assembly {
     return [...[this.base, ...this.placed, ...extra].map(blockPart), ...this.pins.map(pinPart)];
   }
+
+  get parts(): number {
+    return 1 + this.placed.length + this.pins.length;
+  }
 }
 
 function blockBounds(block: Block, turn: number, origin: Vec3): LdrawBounds {
@@ -704,8 +725,13 @@ const LICENSE = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt";
 const IDENTITY_PLACEMENT = "0 0 0 1 0 0 0 1 0 0 0 1";
 const INHERITED_COLOUR = 16;
 
-function ldrawText(name: string, title: string, lines: ReadonlyArray<string>): string {
-  return [`0 ${title}`, `0 Name: ${name}`, AUTHOR, LICENSE, ...lines, ""].join("\n");
+function ldrawText(
+  name: string,
+  title: string,
+  lines: ReadonlyArray<string>,
+  author = AUTHOR,
+): string {
+  return [`0 ${title}`, `0 Name: ${name}`, author, LICENSE, ...lines, ""].join("\n");
 }
 
 function sectionLines(build: Build, section: Section, withPins: boolean): string[] {
@@ -827,6 +853,47 @@ export function generateBuilds(
     }
   }
   return builds;
+}
+
+function small(blocks: ReadonlyArray<Block>): ReadonlyArray<Block> {
+  const fits = blocks.filter((block) => block.width * block.depth <= SHOW_SMALL_PART_CELLS);
+  return fits.length > 0 ? fits : blocks;
+}
+
+function showPhase(build: Build, pools: BlockPools, random: SeededRandom): void {
+  const phase = random.int(SHOW_PHASES);
+  if (phase === 0) build.scatter(small(pools.plates), SHOW_GROUND_ATTEMPTS, "ground", true);
+  else if (phase === 1)
+    build.wall(pools.bricks, random.between(SHOW_MIN_WALL_COURSES, SHOW_MAX_WALL_COURSES));
+  else
+    build.scatter(
+      small([...pools.bricks, ...pools.plates, ...pools.tiles]),
+      SHOW_SCENERY_ATTEMPTS,
+      "scenery",
+    );
+}
+
+export function showModule(pools: BlockPools, seed: number, author: string): ShowModule {
+  const random = new SeededRandom(seed);
+  const build = new Build(squareModuleBase(pools, random), random, pools.colors);
+  build.edgeBricks(
+    pools.technicBricks,
+    random.between(SHOW_MODULE_MIN_EDGE_BRICKS, SHOW_MODULE_MAX_EDGE_BRICKS),
+    [],
+  );
+  const target = random.between(SHOW_MODULE_MIN_PARTS, SHOW_MODULE_MAX_PARTS);
+  for (let stalled = 0; build.parts < target && stalled < SHOW_STALLED_PHASES;) {
+    const before = build.parts;
+    showPhase(build, pools, random);
+    stalled = build.parts > before ? 0 : stalled + 1;
+  }
+  const name = `show-module-${seed}.ldr`;
+  const lines = [build.base, ...build.placed].map(lineOf);
+  return {
+    name,
+    author,
+    text: ldrawText(name, `Show module ${seed} by ${author}`, lines, `0 Author: ${author}`),
+  };
 }
 
 function namedModule(base: string, title: string): ModelNames {

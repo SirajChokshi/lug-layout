@@ -703,6 +703,11 @@ function rebuildText(sample: LatencySample | null): string {
   return `${sample.rebuiltChunks} chunks, ${integer.format(sample.rebuiltInstances)} parts, ${integer.format(sample.rebuiltStuds)} studs`;
 }
 
+function splitText(sample: LatencySample | null): string {
+  if (!sample) return "none yet";
+  return `${sample.rebuildMs.toFixed(1)} ms rebuild, ${sample.queueMs.toFixed(1)} ms to the frame, ${sample.submitMs.toFixed(1)} ms submit, ${sample.gpuWaitMs.toFixed(1)} ms GPU wait`;
+}
+
 export function EditorHud({
   editor,
   snapshot,
@@ -768,6 +773,7 @@ export function EditorHud({
     ],
     ["Last edit latency", latencyText(snapshot.lastLatency, snapshot)],
     ["Rebuilt for it", rebuildText(snapshot.lastLatency)],
+    ["Last edit split", splitText(snapshot.lastLatency)],
   );
   if (snapshot.studs) {
     rows.push(

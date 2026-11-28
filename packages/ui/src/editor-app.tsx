@@ -233,6 +233,7 @@ export function EditorApp({
       data-save={snapshot.world?.save ?? ""}
       data-road-pieces={snapshot.roads.placements}
       data-mode={snapshot.mode}
+      data-latency-samples={snapshot.latencies.length}
     >
       <EditorCanvas
         editor={editor}
