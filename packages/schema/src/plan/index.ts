@@ -4,7 +4,7 @@ import {
   CREDITS_FILE,
   Count,
   MANIFEST_FILE,
-  PlanRecordV1,
+  PlanRecordV2,
   ShardListV1,
   canonicalJson,
   compareSuperChunks,
@@ -24,12 +24,15 @@ export {
   PlanFootprintV1,
   PlanObstacleV1,
   PlanRecordV1,
+  PlanRecordV2,
   PlanRectV1,
   PlanTableV1,
 } from "../world/index.ts";
 
 export const PLAN_FORMAT = "brr.plan";
-export const PLAN_SCHEMA_VERSION = 1;
+export const PLAN_SCHEMA_VERSION = 2;
+const PLAN_SCHEMA_VERSIONS = [1, PLAN_SCHEMA_VERSION] as const;
+const OLDEST_PLAN_SCHEMA = PLAN_SCHEMA_VERSIONS[0];
 export const PLAN_SHEET_FILE = "plan.svg";
 export const PARTS_CSV_FILE = "parts.csv";
 export const BRICKLINK_XML_FILE = "bricklink.xml";
@@ -50,14 +53,16 @@ const PlanFormat = v.literal(PLAN_FORMAT, (issue) =>
 );
 
 function versionMessage(input: unknown): string {
-  if (typeof input !== "number") return `must be ${PLAN_SCHEMA_VERSION}`;
-  if (input > PLAN_SCHEMA_VERSION) {
+  if (typeof input === "number" && input > PLAN_SCHEMA_VERSION) {
     return `is ${input}, newer than plan schema ${PLAN_SCHEMA_VERSION}, the newest this app reads; open it in a newer version of the app`;
   }
-  return `is ${input}, older than plan schema ${PLAN_SCHEMA_VERSION}, the only one this app reads`;
+  if (typeof input === "number" && input < OLDEST_PLAN_SCHEMA) {
+    return `is ${input}, older than plan schema ${OLDEST_PLAN_SCHEMA}, the oldest this app reads`;
+  }
+  return `must be ${PLAN_SCHEMA_VERSIONS.join(" or ")}`;
 }
 
-const PlanSchemaVersion = v.literal(PLAN_SCHEMA_VERSION, (issue) => versionMessage(issue.input));
+const PlanSchemaVersion = v.picklist(PLAN_SCHEMA_VERSIONS, (issue) => versionMessage(issue.input));
 
 const PlanFormatField = v.looseObject({ format: PlanFormat });
 const PlanVersionField = v.looseObject({ schemaVersion: PlanSchemaVersion });
@@ -67,7 +72,7 @@ const PlanManifestFields = v.strictObject(
     format: PlanFormat,
     schemaVersion: PlanSchemaVersion,
     bundleVersion: v.string(),
-    plan: PlanRecordV1,
+    plan: PlanRecordV2,
     placements: Count,
     track: Count,
     shards: ShardListV1,
@@ -86,7 +91,7 @@ const PlanManifestFields = v.strictObject(
   strictMessage,
 );
 
-export const PlanManifestV1 = v.pipe(
+export const PlanManifestV2 = v.pipe(
   PlanManifestFields,
   v.forward(
     v.partialCheck(
@@ -106,16 +111,16 @@ export const PlanManifestV1 = v.pipe(
     ["track"],
   ),
 );
-export type PlanManifestV1 = v.InferOutput<typeof PlanManifestV1>;
+export type PlanManifestV2 = v.InferOutput<typeof PlanManifestV2>;
 
 export interface PlanHeader {
   readonly bundleVersion: string;
-  readonly plan: PlanRecordV1;
+  readonly plan: PlanRecordV2;
   readonly disclaimer: string;
 }
 
 export interface PlanFiles {
-  readonly manifest: PlanManifestV1;
+  readonly manifest: PlanManifestV2;
   readonly shards: ReadonlyArray<WorldShardV1>;
   readonly credits: string;
   readonly outputs: PlanOutputs;
@@ -128,7 +133,7 @@ export type PlanArchive = PlanFiles & {
 export function planManifest(
   header: PlanHeader,
   shards: ReadonlyArray<ShardEntryV1>,
-): PlanManifestV1 {
+): PlanManifestV2 {
   const entries = [...shards];
   entries.sort((a, b) => compareSuperChunks(a.superChunk, b.superChunk));
   return {
@@ -178,7 +183,7 @@ export function readPlanFiles(files: ReadonlyMap<string, string>): Decoded<PlanF
   if (!format.ok) return format;
   const version = decode(PlanVersionField, json.value, MANIFEST_FILE);
   if (!version.ok) return version;
-  const manifest = decode(PlanManifestV1, json.value, MANIFEST_FILE);
+  const manifest = decode(PlanManifestV2, json.value, MANIFEST_FILE);
   if (!manifest.ok) return manifest;
   const read = readShardFiles(files, manifest.value.shards, decodeShardV1);
   const credits = files.get(CREDITS_FILE);

@@ -92,6 +92,7 @@ export {
   OPACITY_PERCENT_MAX,
   PlanFootprintV2,
   PlanListV2,
+  PlanRecordV2,
   PlanRegionRecordV2,
   PlanTableV2,
   Rgb,

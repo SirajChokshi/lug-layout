@@ -28,9 +28,7 @@ import {
   type PlacementKey,
   type PlanChange,
   type PlanCheck,
-  type PlanArea,
   type PlanDelta,
-  type PlanFootprint,
   type PlanIssue,
   type PlanRegion,
   type PlanState,
@@ -44,9 +42,10 @@ import {
 } from "@brr/domain";
 import { chunkOf, lduFromMm } from "@brr/math";
 import { decode, type Decoded, type Issue } from "@brr/schema/decode";
-import { TABLE_TYPE_ID_MAX, TableTypeRecordV2, UNSTATED_OBSTACLE_KIND } from "@brr/schema/world";
+import { TABLE_TYPE_ID_MAX, TableTypeRecordV2, type PlanRecordV2 } from "@brr/schema/world";
 import { SCENE_BACKEND, type ISceneBackend, type PlanOverlay, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
+import { venueOf } from "./plan-document.ts";
 
 export const DEFAULT_MAX_OVERHANG_MM = 0;
 export const DEFAULT_MAX_REACH_MM = 700;
@@ -109,13 +108,6 @@ export type TableInput = Omit<PlanTable, "id" | "number" | "typeId">;
 export type TableTypeInput = Omit<TableType, "id">;
 export type VenueInput<L extends VenueList> = Omit<VenueItems[L], "id">;
 
-export interface PlanInput extends Omit<PlanRegion, "id" | "footprint"> {
-  readonly footprint: Pick<PlanFootprint, "roomWidthMm" | "roomDepthMm"> & {
-    readonly tables: ReadonlyArray<TableInput>;
-    readonly obstacles: ReadonlyArray<Omit<PlanArea, "id">>;
-  };
-}
-
 export interface DrawnTable {
   readonly planId: string;
   readonly tableId: string;
@@ -176,7 +168,7 @@ export interface IPlanService {
   setTableTopY(y: number): void;
   onEdit(listener: (change: PlanChange) => void): () => void;
   restore(state: PlanState): void;
-  addition(plan: PlanInput): PlanChange;
+  addition(plan: PlanRecordV2): PlanChange;
 }
 
 interface UnreadableBox {
@@ -665,7 +657,7 @@ export class PlanService implements IPlanService {
     this.afterChange(true);
   }
 
-  addition(plan: PlanInput): PlanChange {
+  addition(plan: PlanRecordV2): PlanChange {
     const { footprint } = plan;
     const region: PlanRegion = {
       id: this.newId("plan"),
@@ -675,18 +667,12 @@ export class PlanService implements IPlanService {
       footprint: {
         roomWidthMm: footprint.roomWidthMm,
         roomDepthMm: footprint.roomDepthMm,
-        rooms: [],
         tables: footprint.tables.map((table, i) => ({
           id: this.newId("table"),
           number: i + 1,
           ...table,
         })),
-        obstacles: footprint.obstacles.map((obstacle) => ({
-          id: this.newId("obstacle"),
-          kind: UNSTATED_OBSTACLE_KIND,
-          ...obstacle,
-        })),
-        aisles: [],
+        ...venueOf(footprint, (list) => this.newId(list)),
       },
       maxOverhangMm: plan.maxOverhangMm,
       maxReachMm: plan.maxReachMm,

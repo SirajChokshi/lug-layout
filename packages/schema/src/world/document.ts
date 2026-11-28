@@ -304,6 +304,12 @@ function listedOrLeftOut<T extends v.GenericSchema>(row: T) {
   return v.exactOptional(v.pipe(v.array(row), v.minLength(1, "is empty: leave it out instead")));
 }
 
+const PlanVenueEntries = {
+  obstacles: v.array(PlanObstacleV2),
+  rooms: listedOrLeftOut(PlanRoomV2),
+  aisles: listedOrLeftOut(PlanAisleV2),
+};
+
 export const PlanFootprintV2 = v.strictObject(
   {
     ...PlanFootprintV1.entries,
@@ -311,12 +317,19 @@ export const PlanFootprintV2 = v.strictObject(
       v.array(PlanTableV2),
       v.check((tables) => uniqueNumbers(tables), "must not repeat a table number"),
     ),
-    obstacles: v.array(PlanObstacleV2),
-    rooms: listedOrLeftOut(PlanRoomV2),
-    aisles: listedOrLeftOut(PlanAisleV2),
+    ...PlanVenueEntries,
   },
   strictMessage,
 );
+
+export const PlanRecordV2 = v.strictObject(
+  {
+    ...PlanRecordV1.entries,
+    footprint: v.strictObject({ ...PlanFootprintV1.entries, ...PlanVenueEntries }, strictMessage),
+  },
+  strictMessage,
+);
+export type PlanRecordV2 = v.InferOutput<typeof PlanRecordV2>;
 
 export const PlanRegionRecordV2 = v.strictObject(
   { ...PlanRecordV1.entries, footprint: PlanFootprintV2, layer: LayerId },

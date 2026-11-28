@@ -15,7 +15,7 @@ import {
   planManifest,
   readPlanFiles,
   type PlanOutputs,
-  type PlanRecordV1,
+  type PlanRecordV2,
 } from "./index.ts";
 
 const SHA = "a".repeat(64);
@@ -26,7 +26,7 @@ const OUTPUTS: PlanOutputs = {
   "rebrickable.csv": "Part,Color,Quantity\n",
 };
 
-const plan: PlanRecordV1 = {
+const plan: PlanRecordV2 = {
   name: "Club table",
   originChunkX: -2,
   originChunkZ: 3,
@@ -36,7 +36,13 @@ const plan: PlanRecordV1 = {
     roomWidthMm: 2400,
     roomDepthMm: -5,
     tables: [{ name: "Table 1", rect: { x: 0, z: 0, width: 768, depth: 512.5 }, heightMm: 750 }],
-    obstacles: [{ name: "Pillar", rect: { x: -40, z: 600, width: 80, depth: 80 } }],
+    obstacles: [
+      { name: "Pillar", rect: { x: -40, z: 600, width: 80, depth: 80 } },
+      { name: "Fire door", rect: { x: 2000, z: 0, width: 400, depth: 100 }, kind: "door" },
+      { name: "Socket", rect: { x: 300, z: 100, width: 100, depth: 100 }, kind: "power" },
+    ],
+    rooms: [{ name: "Hall", rect: { x: 0, z: 0, width: 2400, depth: 1600 } }],
+    aisles: [{ name: "Crew", rect: { x: 0, z: 700, width: 2400, depth: 600 }, side: "crew" }],
   },
 };
 
@@ -81,7 +87,7 @@ function withManifest(files: Map<string, string>, patch: Record<string, unknown>
 }
 
 describe("plan archive files", () => {
-  it("read back to the plan, its exact placements and track, and its credits", () => {
+  it("read back to the plan with its venue, its exact placements and track, and its credits", () => {
     const read = readPlanFiles(planFiles());
     expect(read.ok && read.value.manifest.plan).toEqual(plan);
     expect(read.ok && byValue(read.value.shards.flatMap((shard) => shard.placements))).toEqual(
@@ -90,6 +96,14 @@ describe("plan archive files", () => {
     expect(read.ok && read.value.shards.flatMap((shard) => shard.track)).toEqual(track);
     expect(read.ok && read.value.credits).toBe("credits");
     expect(read.ok && read.value.outputs).toEqual(OUTPUTS);
+  });
+
+  it("still read a plan file written at schema 1", () => {
+    const { rooms: _rooms, aisles: _aisles, ...footprint } = plan.footprint;
+    const obstacles = footprint.obstacles.filter((obstacle) => obstacle.kind === undefined);
+    const v1 = { ...plan, footprint: { ...footprint, obstacles } };
+    const read = readPlanFiles(withManifest(planFiles(), { schemaVersion: 1, plan: v1 }));
+    expect(read.ok && read.value.manifest.plan).toEqual(v1);
   });
 
   it.each([
@@ -113,18 +127,18 @@ describe("plan archive files", () => {
       [
         {
           path: `${MANIFEST_FILE}.schemaVersion`,
-          message: "is 0, older than plan schema 1, the only one this app reads",
+          message: "is 0, older than plan schema 1, the oldest this app reads",
         },
       ],
     ],
     [
       "a newer schema version",
-      (files: Map<string, string>) => withManifest(files, { schemaVersion: 2 }),
+      (files: Map<string, string>) => withManifest(files, { schemaVersion: 3 }),
       [
         {
           path: `${MANIFEST_FILE}.schemaVersion`,
           message:
-            "is 2, newer than plan schema 1, the newest this app reads; open it in a newer version of the app",
+            "is 3, newer than plan schema 2, the newest this app reads; open it in a newer version of the app",
         },
       ],
     ],
