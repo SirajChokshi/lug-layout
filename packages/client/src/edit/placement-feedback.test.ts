@@ -134,6 +134,7 @@ function hover(
         joints: distinctJoints(placement.mates ?? []),
         lifted: false,
         restsOn: [],
+        lifts: [],
         turnBlocksSnap: false,
         turnMates: [],
         turnJoints: distinctJoints(placement.turnMates ?? []),
@@ -204,6 +205,12 @@ it.each([
     },
     tone: "mates",
     lines: ["1 axle goes in (1 inferred)", "Lands 3 plates up on Baseplate 32 x 32"],
+  },
+  {
+    name: "a model whose own plates take the place of two plates under it, which it offers to lift",
+    placement: { lifts: [BASEPLATE, model("Baseplate 32 x 32", 640)] },
+    tone: "fits",
+    lines: ["Click: lift the 2 plates under it"],
   },
   {
     name: "a refusal naming the hit part by id when its label is empty, and a turn that would meet unverified pins",

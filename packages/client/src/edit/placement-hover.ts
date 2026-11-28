@@ -74,6 +74,7 @@ export interface PlacementHover {
   readonly joints: number;
   readonly lifted: boolean;
   readonly restsOn: ReadonlyArray<PlacedModelView>;
+  readonly lifts: ReadonlyArray<PlacedModelView>;
   readonly turnBlocksSnap: boolean;
   readonly turnMates: ReadonlyArray<HoverMateCount>;
   readonly turnJoints: number;

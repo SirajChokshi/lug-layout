@@ -1041,6 +1041,7 @@ class RoadSnapQuery {
 }
 const WHOLE_GROUP_COMPONENT = 0;
 const NO_PIECES: ReadonlyArray<PieceMember> = [];
+const NO_LIFTED: ReadonlyArray<PlacedModel> = [];
 const NOTHING_DRAWN = "nothing in the file is drawn";
 const WORLD_FRAME: PlacementPose = { refId: -1, colorId: -1, x: 0, z: 0, yPlates: 0, rot: 0 };
 const PASTE_REFUSED = "Can't paste here.";
@@ -1060,6 +1061,22 @@ function poseOf(model: PlacedModel): PlacementPose {
     yPlates: handle.yPlates,
     rot: handle.rot,
   };
+}
+
+function partTopsLdu(boxes: Float32Array): readonly [number, number] {
+  let lowest = Number.POSITIVE_INFINITY;
+  let highest = Number.NEGATIVE_INFINITY;
+  for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+    const top = boxes[b + 4] ?? 0;
+    lowest = Math.min(lowest, top);
+    highest = Math.max(highest, top);
+  }
+  return [lowest, highest];
+}
+
+function liesUnder(model: PlacedModel, topLdu: number): boolean {
+  const [, highest] = partTopsLdu(model.placeable.partBoxes);
+  return model.handle.yPlates * PLATE_LDU + highest <= topLdu;
 }
 
 interface LayoutPiece {
@@ -1410,6 +1427,9 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly tilePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
   private readonly tileChoice = placementChoice();
   private readonly groupChoice = placementChoice();
+  private readonly liftChoice = placementChoice();
+  private readonly liftNeighbours: PlacedModel[] = [];
+  private readonly liftTrack: number[] = [];
   private readonly memberMates = new MateReport();
   private solidBoxes = new Float64Array(0);
   private solidRects = new Float64Array(0);
@@ -2899,6 +2919,10 @@ export class Editor implements IEditor, IEditedWorld {
         this.search
           .restingOn(connected.volumes, pose, null)
           .flatMap((owner) => this.placedViewOf(owner) ?? []),
+      lifts: (placeable, connected, pose) =>
+        [...(this.liftUnder(placeable, connected, pose)?.keys() ?? [])].flatMap(
+          (owner) => this.placedViewOf(owner) ?? [],
+        ),
       neighbourhood: () => ({
         ldu: this.assistLdu,
         cells: cellsWithin(this.assistLdu),
@@ -2916,13 +2940,63 @@ export class Editor implements IEditor, IEditedWorld {
     return placed ? { placed, failed: choice.waitFailed } : null;
   }
 
-  private heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null {
+  private heldPoseRefusal(
+    placeable: Placeable,
+    pose: LatticePose,
+    lifted: ReadonlySet<PlacedModel> = NO_MODELS,
+  ): string | null {
     this.heldShapesWait = false;
     return (
-      this.trackPlacementRefusal(placeable, pose, NO_MODELS, NO_TRACK_SKIP) ??
-      this.roadOverlap(placeable, this.placedRoads, pose)?.reason ??
+      this.trackPlacementRefusal(placeable, pose, lifted) ??
+      this.roadOverlap(placeable, this.roadsWithout(lifted), pose)?.reason ??
       this.standingTrainCut(placeable, pose)
     );
+  }
+
+  private liftUnder(
+    placeable: Placeable,
+    { model, volumes, boxes, technic }: Connected,
+    pose: LatticePose,
+  ): ReadonlyMap<number, PlacedModel> | null {
+    const [baseTopLdu, topLdu] = partTopsLdu(placeable.partBoxes);
+    if (topLdu <= baseTopLdu) return null;
+    const lifted = new Map<number, PlacedModel>();
+    const choice = this.liftChoice;
+    for (;;) {
+      this.search.withdrawn(new Set(lifted.keys()), () =>
+        this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice),
+      );
+      if (choice.accepted || choice.waitingOn !== NOT_WAITING) break;
+      const blocker = this.searchModels.get(choice.overlap.owner);
+      if (!blocker || !liesUnder(blocker, pose.yPlates * PLATE_LDU + baseTopLdu)) return null;
+      lifted.set(choice.overlap.owner, blocker);
+    }
+    const models = new Set(lifted.values());
+    const free =
+      choice.accepted &&
+      models.size > 0 &&
+      this.groupBlock([...models], NO_PIECES, "delete") === null &&
+      ![...lifted].some(([owner, blocker]) => this.bearsLoad(owner, blocker, models)) &&
+      this.heldPoseRefusal(placeable, pose, models) === null;
+    return free ? lifted : null;
+  }
+
+  private bearsLoad(owner: number, model: PlacedModel, lifted: ReadonlySet<PlacedModel>): boolean {
+    this.placed.touching(model.box, this.liftNeighbours);
+    const carries = this.liftNeighbours.some(
+      (other) =>
+        !lifted.has(other) &&
+        this.search
+          .restingOn(
+            this.volumesOf(other.placeable),
+            poseOf(other),
+            this.searchIds.get(other.id) ?? null,
+          )
+          .includes(owner),
+    );
+    const track = this.trackWorld.drawing();
+    track?.placementsWithin((box) => model.meetsInPlan(box), this.liftTrack);
+    return carries || (track !== null && this.liftTrack.length > 0);
   }
 
   private assistReachLdu(): number {
@@ -3563,7 +3637,8 @@ export class Editor implements IEditor, IEditedWorld {
       this.queueClick(this.clickedPick(active.id, eventTimeMs));
       return;
     }
-    if (!placement.accepted) {
+    const lifted = placement.accepted ? this.liftedFor(active, placement) : null;
+    if (!lifted) {
       const counts = this.roadOverlap(active, this.placedRoads, pose)?.counts ?? NO_ROAD_CELLS;
       this.refuse(refusedAt(active.id, pose, this.assist.refusal ?? "", counts), null);
       this.update({ hover: this.hoverView() });
@@ -3571,7 +3646,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.dropping = true;
     try {
-      this.placeAt(active, pose, eventTimeMs);
+      this.placeAt(active, pose, lifted, eventTimeMs);
     } finally {
       this.dropping = false;
     }
@@ -3779,18 +3854,31 @@ export class Editor implements IEditor, IEditedWorld {
     return this.catalogItems.find((item) => item.id === id)?.label ?? id;
   }
 
-  private placeAt(placeable: Placeable, pose: LatticePose, eventTimeMs: number): void {
-    this.show(
-      this.history.place({
-        refId: this.activeRefId,
-        colorId: placeable.worldColor,
-        x: pose.x,
-        z: pose.z,
-        yPlates: pose.yPlates,
-        rot: pose.rot,
-      }),
-      eventTimeMs,
-    );
+  private liftedFor(
+    placeable: Placeable,
+    { pose, lifts }: PlacementHover,
+  ): ReadonlyArray<PlacedModel> | null {
+    if (lifts.length === 0) return NO_LIFTED;
+    const lifted = this.liftUnder(placeable, this.connectedOf(placeable), pose);
+    return lifted && [...lifted.values()];
+  }
+
+  private placeAt(
+    placeable: Placeable,
+    pose: LatticePose,
+    lifted: ReadonlyArray<PlacedModel>,
+    eventTimeMs: number,
+  ): void {
+    const to = {
+      refId: this.activeRefId,
+      colorId: placeable.worldColor,
+      x: pose.x,
+      z: pose.z,
+      yPlates: pose.yPlates,
+      rot: pose.rot,
+    };
+    const lifts = lifted.map((model) => ({ placement: model.placement, to: null }));
+    this.show(this.history.commit("place", [...lifts, { placement: null, to }]), eventTimeMs);
   }
 
   private historyView(): HistoryView {
