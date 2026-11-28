@@ -295,10 +295,10 @@ export function EditorApp({
             <Icon name="track" size={20} />
             Brick Railroad
           </h1>
+          <ShellModeSwitch mode={mode} play={playSnapshot} onChoose={chooseMode} />
           <span className="menubar-title">{snapshot.world?.name}</span>
         </header>
         <div className="toolstrip">
-          <ShellModeSwitch mode={mode} play={playSnapshot} onChoose={chooseMode} />
           <PlacementToolbar
             editor={editor}
             snapshot={snapshot}
