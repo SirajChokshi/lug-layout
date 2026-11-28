@@ -1,6 +1,7 @@
 import { CHUNK_LDU } from "@brr/math";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import {
+  BASE_LAYER_ID,
   compareSuperChunks,
   encodeTrackPosition,
   shardName,
@@ -8,12 +9,12 @@ import {
   superChunkOfChunk,
   superChunkOfTrack,
   worldShards,
-  type PlacementRecordV1,
+  type PlacementRecordV2,
   type SuperChunk,
   type TrackRecordV2,
   type WorldShardV2,
 } from "@brr/schema/world";
-import type { PlacementPose, TrackPieceAt } from "./edit-history.ts";
+import type { LayeredPose, TrackPieceAt } from "./edit-history.ts";
 import { SLOT_LIVE, type PlacementHandle, type World } from "./world.ts";
 
 export interface PlacementTarget {
@@ -25,8 +26,8 @@ export function worldPlacements(
   world: World,
   refs: ReadonlyArray<string>,
   only?: ReadonlySet<string>,
-): PlacementRecordV1[] {
-  const placements: PlacementRecordV1[] = [];
+): PlacementRecordV2[] {
+  const placements: PlacementRecordV2[] = [];
   for (const chunk of world.chunks()) {
     if (chunk.liveCount === 0) continue;
     const superChunk = superChunkOfChunk(chunk.originX / CHUNK_LDU, chunk.originZ / CHUNK_LDU);
@@ -36,6 +37,7 @@ export function worldPlacements(
       const refId = chunk.refId[slot] ?? 0;
       const ref = refs[refId];
       if (ref === undefined) throw new Error(`placement refId ${refId} has no catalog id`);
+      const layer = chunk.layer[slot] ?? BASE_LAYER_ID;
       placements.push({
         ref,
         color: chunk.colorId[slot] ?? 0,
@@ -43,6 +45,7 @@ export function worldPlacements(
         z: chunk.z[slot] ?? 0,
         yPlates: chunk.yPlates[slot] ?? 0,
         rot: chunk.rot[slot] ?? 0,
+        ...(layer === BASE_LAYER_ID ? {} : { layer }),
       });
     }
   }
@@ -112,7 +115,7 @@ export class DirtyShards {
 export function shardPoses(
   shards: ReadonlyArray<WorldShardV2>,
   resolve: (ref: string, color: number) => PlacementTarget | null,
-): Decoded<PlacementPose[]> {
+): Decoded<LayeredPose[]> {
   const issues: Issue[] = [];
   const unknown = new Set<string>();
   for (const shard of shards) {
@@ -128,7 +131,7 @@ export function shardPoses(
     }
   }
   if (issues.length > 0) return { ok: false, issues };
-  const poses: PlacementPose[] = [];
+  const poses: LayeredPose[] = [];
   const ordered = [...shards];
   ordered.sort((a, b) => compareSuperChunks(a.superChunk, b.superChunk));
   for (const shard of ordered) {
@@ -142,6 +145,7 @@ export function shardPoses(
         z: placement.z,
         yPlates: placement.yPlates,
         rot: placement.rot,
+        layer: placement.layer ?? BASE_LAYER_ID,
       });
     }
   }
@@ -158,7 +162,7 @@ export function addShards(
   return {
     ok: true,
     value: poses.value.map((pose) =>
-      world.add(pose.refId, pose.colorId, pose.x, pose.z, pose.yPlates, pose.rot),
+      world.add(pose.refId, pose.colorId, pose.x, pose.z, pose.yPlates, pose.rot, pose.layer),
     ),
   };
 }

@@ -98,7 +98,15 @@ it("removes, in one edit, two placements whose columns share a chunk", async () 
   const history = new EditHistory(new World());
   const placed = new PlacedChunks(new NullBackend());
   const placeAt = (x: number): PlacementRef | null => {
-    const edit = history.place({ refId: index, colorId: color, x, z: ROW_Z, yPlates: 0, rot: 0 });
+    const edit = history.place({
+      refId: index,
+      colorId: color,
+      x,
+      z: ROW_Z,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+    });
     placed.apply(edit, () => placeable);
     return edit.changes[0]?.placement ?? null;
   };

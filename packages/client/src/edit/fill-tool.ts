@@ -254,7 +254,7 @@ export class FillTool {
       (now === ALREADY_THERE_TILE ? 1 : 0) - (was === ALREADY_THERE_TILE ? 1 : 0);
   }
 
-  requests(refId: number, colorId: number, rot: number): PlacementRequest[] {
+  requests(refId: number, colorId: number, rot: number, layer: number): PlacementRequest[] {
     const requests: PlacementRequest[] = [];
     if (this.overLimit) return requests;
     for (let tile = 0; tile < this.laidTiles; tile++) {
@@ -268,6 +268,7 @@ export class FillTool {
           z: this.tileZ[tile] ?? 0,
           yPlates: this.tileY[tile] ?? 0,
           rot,
+          layer,
         },
       });
     }

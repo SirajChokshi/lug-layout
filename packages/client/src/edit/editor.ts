@@ -25,6 +25,11 @@ import {
   type ConsistRef,
   NO_TRACK_CHANGE,
   tableTypeSize,
+  layOnLayer,
+  type LayerAction,
+  type LayerChange,
+  type LayeredPose,
+  type LayerLocks,
   type TrackPieceAt,
   type TrackPieceRef,
   type EditKind,
@@ -87,6 +92,7 @@ import {
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { ImportReport, LayoutPart, StudioReport } from "@brr/import";
 import {
+  BASE_LAYER_ID,
   importRef,
   importedSha256,
   worldTrack,
@@ -94,6 +100,7 @@ import {
   type ConsistRecordV1,
   type ImportedFile,
   type TrackRecordV1,
+  type TrackRecordV2,
 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import {
@@ -125,6 +132,7 @@ import {
 import { NOTHING_REBUILT, type ITrackWorld } from "./track-world.ts";
 import type { ITrackPathSelection, TrackPathScope } from "./track-path-selection.ts";
 import {
+  TRACK_ITEM_ID,
   TRACK_PIECE_PREFIX,
   type ExtensionAttempt,
   type ITrackEditSession,
@@ -134,7 +142,7 @@ import {
   type TrackLayRequest,
   type TrackClickRefusal,
 } from "./track-edit-session.ts";
-import type { RoadNeighbourhood } from "./road-drawing.ts";
+import { ROAD_KIT_PREFIX, type RoadNeighbourhood } from "./road-drawing.ts";
 import type { IRoadEditSession, RoadEditView } from "./road-edit-session.ts";
 import type { ITrackPiers, PierPiece } from "./track-piers.ts";
 import type { ITallestTrain } from "../trains/tallest-train.ts";
@@ -250,7 +258,14 @@ import {
   type TrackSelectionView,
   type TrainSelectionView,
 } from "./selection.ts";
-import { ANNOTATION_SERVICE, EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
+import {
+  ANNOTATION_SERVICE,
+  EDITOR_CAMERA,
+  LAYER_SERVICE,
+  PLAN_SERVICE,
+  TABLE_GROUND,
+} from "../tokens.ts";
+import type { ILayerService } from "../layers/layer-service.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
@@ -595,7 +610,7 @@ function cellsView(cells: ModelCells): ModelBakeView["cells"] {
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
   readonly chunkCounts: ReadonlyArray<readonly [number, number, number]>;
-  readonly laidTrack: ReadonlyArray<TrackRecordV1>;
+  readonly laidTrack: ReadonlyArray<TrackRecordV2>;
   readonly trackEnds: ReturnType<TrackDrawing["openEnds"]>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
   readonly covers: ReadonlyArray<PlaceableCoverView>;
@@ -877,7 +892,7 @@ const HANDLE_TOLERANCE_PX = 8;
 interface ModelMember {
   readonly model: PlacedModel | null;
   readonly placeable: Placeable;
-  readonly pose: PlacementPose;
+  readonly pose: LayeredPose;
   readonly component: number;
 }
 
@@ -887,10 +902,11 @@ interface PieceMember {
   readonly pose: Pose16;
   readonly yPlates: number;
   readonly rise: number;
+  readonly layer: number;
 }
 
 interface GroupTargets {
-  readonly modelPoses: ReadonlyArray<PlacementPose>;
+  readonly modelPoses: ReadonlyArray<LayeredPose>;
   readonly piecePoses: ReadonlyArray<Pose16>;
 }
 
@@ -1050,7 +1066,7 @@ const PIECE_TURN_REFUSED = "Can't turn it.";
 const SEATS_PENDING =
   "a model under the track is still checking its studs, so track can't move onto it yet";
 
-function poseOf(model: PlacedModel): PlacementPose {
+function poseOf(model: PlacedModel): LayeredPose {
   const { handle } = model;
   return {
     refId: handle.refId,
@@ -1059,6 +1075,7 @@ function poseOf(model: PlacedModel): PlacementPose {
     z: handle.z,
     yPlates: handle.yPlates,
     rot: handle.rot,
+    layer: handle.layer,
   };
 }
 
@@ -1072,7 +1089,7 @@ interface LayoutMembers {
   readonly leftOut: ReadonlyArray<string>;
 }
 
-function layoutMembers(pieces: ReadonlyArray<LayoutPiece>): LayoutMembers {
+function layoutMembers(pieces: ReadonlyArray<LayoutPiece>, layer: number): LayoutMembers {
   const [anchor] = pieces;
   if (!anchor) return { members: [], leftOut: [] };
   const [anchorX, anchorY, anchorZ] = anchor.placeable.frameShift;
@@ -1090,7 +1107,7 @@ function layoutMembers(pieces: ReadonlyArray<LayoutPiece>): LayoutMembers {
     }
     const x = anchorX - shiftX + 0;
     const z = anchorZ - shiftZ + 0;
-    const pose = { refId, colorId: placeable.worldColor, x, z, yPlates, rot: 0 };
+    const pose = { refId, colorId: placeable.worldColor, x, z, yPlates, rot: 0, layer };
     members.push({ model: null, placeable, pose, component: WHOLE_GROUP_COMPONENT });
   }
   const lowest = Math.min(...members.map(({ pose }) => pose.yPlates));
@@ -1208,9 +1225,36 @@ function editLabel(edit: EditSummary | null): string | null {
       return "event details";
     case "open-plan":
       return `open plan (${counted(edit.placements, "placement", "placements")}, ${counted(edit.pieces, "track piece", "track pieces")})`;
+    case "layer":
+      return layerEditLabel(edit.action, edit.name);
     default: {
       const unhandled: never = edit;
       throw new Error(`unhandled edit ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+function layerEditLabel(action: LayerAction, name: string): string {
+  switch (action) {
+    case "create":
+      return `new layer "${name}"`;
+    case "rename":
+      return `rename layer to "${name}"`;
+    case "move":
+      return `reorder layer "${name}"`;
+    case "show":
+      return `show layer "${name}"`;
+    case "hide":
+      return `hide layer "${name}"`;
+    case "lock":
+      return `lock layer "${name}"`;
+    case "unlock":
+      return `unlock layer "${name}"`;
+    case "opacity":
+      return `layer "${name}" opacity`;
+    default: {
+      const unhandled: never = action;
+      throw new Error(`unhandled layer action ${String(unhandled)}`);
     }
   }
 }
@@ -1367,6 +1411,8 @@ export class Editor implements IEditor, IEditedWorld {
   private world = new World();
   private consists = new ConsistLayout();
   private history: EditHistory;
+  private readonly layerLocks: LayerLocks = { isLocked: (layer) => this.layers.isLocked(layer) };
+  private lockedInBox = 0;
   private readonly consistRefs = new Map<ConsistHandle, ConsistRef>();
   private activeTrain: PlayModel | null = null;
   private trainAim: RailAim | null = null;
@@ -1570,8 +1616,9 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
     @inject(TRACK_PATH_SELECTION) private readonly trackPaths: ITrackPathSelection,
     @inject(EVENT_DETAILS) private readonly events: IEventDetails,
+    @inject(LAYER_SERVICE) private readonly layers: ILayerService,
   ) {
-    this.history = new EditHistory(this.world, this.consists, annotations);
+    this.history = new EditHistory(this.world, this.consists, annotations, this.layerLocks);
     this.placed = new PlacedChunks(backend, (placeable, handle) =>
       this.trackWorld.carriedTrackAt(placeable, handle),
     );
@@ -1608,6 +1655,7 @@ export class Editor implements IEditor, IEditedWorld {
     plans.onEdit((change) => this.planEdited(change));
     annotations.onEdit((change) => this.notesEdited(change));
     events.onEdit((change) => this.eventEdited(change));
+    layers.onEdit((change) => this.layerEdited(change));
   }
 
   private sessionChanged(): void {
@@ -2088,14 +2136,15 @@ export class Editor implements IEditor, IEditedWorld {
       fits: (pier, pose, posed, piece) => {
         if (track.changeOverlaps(change, piece.indices, posed)) return false;
         if (trains.some((train) => footprintMeetsBox(train, posed))) return false;
-        const member = { model: null, placeable: pier, pose, component: 0 };
+        const layered = { ...pose, layer: this.layers.activeLayer() };
+        const member = { model: null, placeable: pier, pose: layered, component: 0 };
         const check: ModelCheck = {
           models: [member],
           exempt: NO_MODELS,
           placedRoads: this.placedRoads,
           trackSkip: NO_TRACK_SKIP,
         };
-        return this.modelRefusal(check, [pose]) === null;
+        return this.modelRefusal(check, [layered]) === null;
       },
     });
   }
@@ -2128,7 +2177,7 @@ export class Editor implements IEditor, IEditedWorld {
       if (typeof piece === "string") unplaced.push(`${part.name}: ${piece}`);
       else pieces.push(piece);
     }
-    const { members, leftOut } = layoutMembers(pieces);
+    const { members, leftOut } = layoutMembers(pieces, this.layers.activeLayer());
     const omitted = [...unplaced, ...leftOut].join("; ");
     const [frame] = members;
     if (!frame) {
@@ -2282,6 +2331,12 @@ export class Editor implements IEditor, IEditedWorld {
 
   private roadDragStart(ndcX: number, ndcY: number): boolean {
     if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return false;
+    const layerRefusal = this.state.roadErase ? null : this.layers.activeLayerRefusal();
+    if (layerRefusal !== null) {
+      const at = { x: this.hitX, z: this.hitZ, rot: this.ghostRot };
+      this.refuse(refusedAt(this.state.roadKit ?? ROAD_KIT_PREFIX, at, layerRefusal), null);
+      return false;
+    }
     this.roads.beginStroke(this.hitX, this.hitZ, this.roadNeighbourhood);
     this.update(this.roads.view());
     return true;
@@ -2385,20 +2440,25 @@ export class Editor implements IEditor, IEditedWorld {
   private commitLay(lay: TrackLayRequest, eventTimeMs: number): void {
     const track = this.trackWorld.drawing();
     if (!track) return;
-    const raised = track.levelRaisedPieces(lay.change);
+    const layerRefusal = this.layers.activeLayerRefusal();
+    if (layerRefusal !== null) {
+      this.tracks.refuseOnLayer();
+      const at = lay.sample ?? { x: this.hoverX, z: this.hoverZ, rot: 0 };
+      this.refuse(refusedAt(lay.sample?.item ?? TRACK_ITEM_ID, at, layerRefusal), null);
+      return;
+    }
+    const layer = this.layers.activeLayer();
+    const change = layOnLayer(lay.change, layer);
+    const raised = track.levelRaisedPieces(change);
     const ready = this.trackWorld.support() !== null;
-    const rampEnds = track.rampEndsAbove(lay.change);
-    const rampsWaiting = !ready && lay.change.lay.some((at) => at.rise !== 0);
+    const rampEnds = track.rampEndsAbove(change);
+    const rampsWaiting = !ready && change.lay.some((at) => at.rise !== 0);
     const allSeated =
       ready &&
       raised.every((piece) => track.seated(piece)) &&
       rampEnds.every((rest) => track.rampEndSeated(rest));
     if ((raised.length === 0 && rampEnds.length === 0 && !rampsWaiting) || allSeated) {
-      this.show(
-        this.history.commit("lay-track", [], lay.change),
-        eventTimeMs,
-        lay.sample ?? undefined,
-      );
+      this.show(this.history.commit("lay-track", [], change), eventTimeMs, lay.sample ?? undefined);
       this.tracks.finishLay(lay);
       return;
     }
@@ -2406,7 +2466,7 @@ export class Editor implements IEditor, IEditedWorld {
     const redo = this.history.redoDepth;
     this.tracks.setPiering(true);
     this.update(this.tracks.view());
-    this.piersFor(track, raised, lay.change).then(
+    this.piersFor(track, raised, change).then(
       (piers) => {
         this.tracks.setPiering(false);
         const unchanged =
@@ -2418,9 +2478,9 @@ export class Editor implements IEditor, IEditedWorld {
           this.update(this.tracks.view());
           return;
         }
-        const requests = piers.map((to) => ({ placement: null, to }));
+        const requests = piers.map((to) => ({ placement: null, to: { ...to, layer } }));
         this.show(
-          this.history.commit("lay-track", requests, lay.change),
+          this.history.commit("lay-track", requests, change),
           eventTimeMs,
           lay.sample ?? undefined,
         );
@@ -2919,6 +2979,7 @@ export class Editor implements IEditor, IEditedWorld {
   private heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null {
     this.heldShapesWait = false;
     return (
+      this.layers.activeLayerRefusal() ??
       this.trackPlacementRefusal(placeable, pose, NO_MODELS, NO_TRACK_SKIP) ??
       this.roadOverlap(placeable, this.placedRoads, pose)?.reason ??
       this.standingTrainCut(placeable, pose)
@@ -3615,6 +3676,12 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const picked = this.pickAt(ndcX, ndcY);
+    const locked = picked ? this.lockedSelectionRefusal(picked) : null;
+    if (locked !== null) {
+      this.select([]);
+      this.update({ selectionRefusal: locked });
+      return;
+    }
     if (picked?.kind === "track") {
       this.clickTrack(picked.placement, ndcX, ndcY, eventTimeMs);
       return;
@@ -3638,6 +3705,11 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode !== "select" || this.gesture) return;
     const picked = this.pickAt(ndcX, ndcY);
     if (!picked) return;
+    const locked = this.lockedSelectionRefusal(picked);
+    if (locked !== null) {
+      this.update({ selectionRefusal: locked });
+      return;
+    }
     this.selection.toggle(picked);
     this.showSelection();
   }
@@ -3646,15 +3718,39 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode !== "select" || this.gesture) return false;
     const picked = this.pickAt(ndcX, ndcY);
     if (picked?.kind !== "track") return false;
-    this.select(this.trackPaths.members(picked.placement, scope));
+    const locked = this.lockedSelectionRefusal(picked);
+    if (locked !== null) {
+      this.select([]);
+      this.update({ selectionRefusal: locked });
+      return true;
+    }
+    const members = this.trackPaths.members(picked.placement, scope);
+    this.select(members);
+    this.reportLockedLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length);
     return true;
+  }
+
+  private onShownLockedLayer(member: SelectionMember): boolean {
+    const layer = this.memberLayer(member);
+    if (layer === null) return false;
+    const layers = this.layers.table();
+    return layers.isLocked(layer) && !layers.isHidden(layer);
+  }
+
+  private reportLockedLeftOut(count: number): void {
+    if (count === 0) return;
+    this.update({
+      selectionRefusal: `${counted(count, "part", "parts")} on locked layers left out.`,
+    });
   }
 
   private pickAt(ndcX: number, ndcY: number): SelectionMember | null {
     this.backend.rayThrough(ndcX, ndcY, this.ray);
+    const layers = this.layers.table();
     let best: PlacedModel | null = null;
     let bestT = Number.POSITIVE_INFINITY;
     for (const model of this.placed.models()) {
+      if (layers.isHidden(model.handle.layer)) continue;
       const t = model.rayHit(this.ray);
       if (t < bestT) {
         bestT = t;
@@ -3662,7 +3758,7 @@ export class Editor implements IEditor, IEditedWorld {
       }
     }
     const train = this.railYard.pick(this.ray);
-    const trackHit = this.trackWorld.drawing()?.pieceOnRay(this.ray) ?? null;
+    const trackHit = this.trackWorld.drawing()?.pieceOnRay(this.ray, layers) ?? null;
     const trainT = train?.t ?? Number.POSITIVE_INFINITY;
     const trackT = trackHit?.distance ?? Number.POSITIVE_INFINITY;
     if (train && trainT < bestT && trainT <= trackT) return { kind: "train", train: train.handle };
@@ -3788,6 +3884,7 @@ export class Editor implements IEditor, IEditedWorld {
         z: pose.z,
         yPlates: pose.yPlates,
         rot: pose.rot,
+        layer: this.layers.activeLayer(),
       }),
       eventTimeMs,
     );
@@ -3851,6 +3948,76 @@ export class Editor implements IEditor, IEditedWorld {
     this.show(this.history.editEvent(change), performance.now());
   }
 
+  private layerEdited(change: LayerChange): void {
+    this.show(this.history.layerEdit(change), performance.now());
+  }
+
+  private layersChanged(): void {
+    const gesture = this.gesture;
+    const held = gesture?.kind === "move" ? gesture : null;
+    const heldOnUnselectable =
+      held !== null &&
+      (held.models.some(({ model }) => model !== null && !this.selectableModel(model)) ||
+        held.pieces.some(({ index }) => index !== null && !this.selectablePiece(index)));
+    if (heldOnUnselectable) this.cancelGesture();
+    this.select(this.selection.members, this.selection.rememberedPivot);
+    this.rehover();
+    this.session.documentEdited();
+  }
+
+  private selectableModel(model: PlacedModel): boolean {
+    const table = this.layers.table();
+    const layer = model.handle.layer;
+    return !table.isHidden(layer) && !table.isLocked(layer);
+  }
+
+  private selectablePiece(placement: number): boolean {
+    const track = this.trackWorld.drawing();
+    if (!track) return false;
+    const table = this.layers.table();
+    const layer = track.pieceLayer(placement);
+    return !table.isHidden(layer) && !table.isLocked(layer);
+  }
+
+  private selectable(member: SelectionMember): boolean {
+    switch (member.kind) {
+      case "model":
+        return this.selectableModel(member.model);
+      case "track":
+        return this.selectablePiece(member.placement);
+      case "train":
+        return true;
+      default: {
+        const unhandled: never = member;
+        throw new Error(`unhandled selection member ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private memberLayer(member: SelectionMember): number | null {
+    switch (member.kind) {
+      case "model":
+        return member.model.handle.layer;
+      case "track":
+        return this.trackWorld.drawing()?.pieceLayer(member.placement) ?? null;
+      case "train":
+        return null;
+      default: {
+        const unhandled: never = member;
+        throw new Error(`unhandled selection member ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private lockedSelectionRefusal(member: SelectionMember): string | null {
+    const layer = this.memberLayer(member);
+    if (layer === null) return null;
+    const record = this.layers.table().layer(layer);
+    return record?.locked
+      ? `That's on locked layer "${record.name}", so it can't be selected.`
+      : null;
+  }
+
   private show(
     edit: AppliedEdit,
     eventTimeMs: number,
@@ -3859,9 +4026,10 @@ export class Editor implements IEditor, IEditedWorld {
     if (edit.plan) this.plans.restore(edit.plan.after);
     if (edit.notes) this.annotations.restore(edit.notes.after);
     if (edit.event) this.events.restore(edit.event.after);
+    if (edit.layers) this.layers.restore(edit.layers.after);
     const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
     const documentOnly =
-      (edit.plan !== null || edit.notes !== null || edit.event !== null) &&
+      (edit.plan !== null || edit.notes !== null || edit.event !== null || edit.layers !== null) &&
       edit.changes.length === 0 &&
       !trackChanged;
     this.applyConsists(edit);
@@ -3929,6 +4097,7 @@ export class Editor implements IEditor, IEditedWorld {
       lastFill: null,
     });
     this.repaintTrackPreview();
+    if (edit.layers) this.layersChanged();
     return view;
   }
 
@@ -4230,7 +4399,23 @@ export class Editor implements IEditor, IEditedWorld {
       });
       return;
     }
-    const requests = fill.requests(this.activeRefId, placeable.worldColor, this.ghostRot);
+    const layerRefusal = this.layers.activeLayerRefusal();
+    if (layerRefusal !== null) {
+      fill.cancel();
+      this.update({
+        fillDraft: null,
+        lastFill: {
+          item: placeable.id,
+          placed: 0,
+          refused: 0,
+          alreadyThere: 0,
+          reason: layerRefusal,
+        },
+      });
+      return;
+    }
+    const layer = this.layers.activeLayer();
+    const requests = fill.requests(this.activeRefId, placeable.worldColor, this.ghostRot, layer);
     const result: FillResult = {
       item: placeable.id,
       placed: requests.length,
@@ -4647,8 +4832,8 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private select(chosen: ReadonlyArray<SelectionMember>, pivot: LatticePoint | null = null): void {
-    const shown = chosen.filter(
-      (member) => member.kind !== "train" || this.trainView(member.train) !== null,
+    const shown = chosen.filter((member) =>
+      member.kind === "train" ? this.trainView(member.train) !== null : this.selectable(member),
     );
     this.selection.replace(shown, pivot);
     this.showSelection();
@@ -4921,6 +5106,7 @@ export class Editor implements IEditor, IEditedWorld {
       const inside = this.membersInBox(gesture, ndcX, ndcY);
       this.endGesture();
       this.select(this.boxSelection(gesture, inside));
+      this.reportLockedLeftOut(this.lockedInBox);
       return;
     }
     const placement = this.groundHit(ndcX, ndcY) ? this.aimHeld(gesture) : gesture.placement;
@@ -5094,12 +5280,21 @@ export class Editor implements IEditor, IEditedWorld {
       }
     }
     const inside: SelectionMember[] = [];
+    const layers = this.layers.table();
+    let locked = 0;
+    const take = (member: SelectionMember): void => {
+      const layer = this.memberLayer(member) ?? BASE_LAYER_ID;
+      if (layers.isHidden(layer)) return;
+      if (layers.isLocked(layer)) locked++;
+      else inside.push(member);
+    };
     for (const model of this.placed.models()) {
-      if (footprintInside(quad, model.box)) inside.push({ kind: "model", model });
+      if (footprintInside(quad, model.box)) take({ kind: "model", model });
     }
     const placements = this.boxedPlacements;
     this.trackWorld.drawing()?.placementsWithin((box) => footprintInside(quad, box), placements);
-    for (const placement of placements) inside.push({ kind: "track", placement });
+    for (const placement of placements) take({ kind: "track", placement });
+    this.lockedInBox = locked;
     return inside;
   }
 
@@ -5172,8 +5367,8 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.trackWorld.drawing();
     if (!track) return NO_PIECES;
     return indices.map((index) => {
-      const { piece, pose, yPlates, rise } = track.laidPiece(index);
-      return { index, piece, pose, yPlates, rise };
+      const { piece, pose, yPlates, rise, layer } = track.laidPiece(index);
+      return { index, piece, pose, yPlates, rise, layer };
     });
   }
 
@@ -5186,10 +5381,13 @@ export class Editor implements IEditor, IEditedWorld {
     const lift: TrackPieceAt[] = [];
     const lay: TrackPieceAt[] = [];
     let appended = track.pieceCount;
-    pieces.forEach(({ index, piece, yPlates, rise }, member) => {
+    const active = this.layers.activeLayer();
+    pieces.forEach(({ index, piece, yPlates, rise, layer }, member) => {
       if (index !== null) lift.push(track.laidPiece(index));
       const pose = targets?.[member];
-      if (pose) lay.push({ index: index ?? appended++, piece, pose, yPlates, rise });
+      if (!pose) return;
+      const laidOn = index === null ? active : layer;
+      lay.push({ index: index ?? appended++, piece, pose, yPlates, rise, layer: laidOn });
     });
     return { lift: lift.toSorted(byIndex), lay: lay.toSorted(byIndex) };
   }
@@ -5246,10 +5444,25 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
+  private onActiveLayer(pose: LayeredPose): LayeredPose {
+    return { ...pose, layer: this.layers.activeLayer() };
+  }
+
+  private newMembersRefusal(edit: GroupEdit): RefusedClick | null {
+    const added = edit.models.find((member) => member.model === null);
+    const addsPiece = edit.pieces.some((piece) => piece.index === null);
+    if (!added && !addsPiece) return null;
+    const reason = this.layers.activeLayerRefusal();
+    if (reason === null) return null;
+    const at = added?.pose ?? { x: this.hoverX, z: this.hoverZ, rot: 0 };
+    return refusedAt(added?.placeable.id ?? TRACK_ITEM_ID, at, reason);
+  }
+
   private groupRefusal(edit: GroupEdit, placed: GroupTargets): RefusedClick | null {
     return this.search.withdrawn(
       this.searchIdsOf(edit.exempt),
       () =>
+        this.newMembersRefusal(edit) ??
         edit.block ??
         this.unreadConnectors(edit.models) ??
         this.modelRefusal(edit, placed.modelPoses) ??
@@ -5531,7 +5744,9 @@ export class Editor implements IEditor, IEditedWorld {
     const requests: PlacementRequest[] = edit.models.map((member, index) => {
       const to = placement.modelPoses[index];
       if (!to) throw new Error(`the placement has no pose for member ${index}`);
-      return { placement: member.model?.placement ?? null, to };
+      return member.model
+        ? { placement: member.model.placement, to }
+        : { placement: null, to: this.onActiveLayer(to) };
     });
     const change = this.trackChange(edit.pieces, placement.piecePoses);
     const view = this.show(this.history.commit(kind, requests, change), eventTimeMs);
@@ -5591,10 +5806,11 @@ export class Editor implements IEditor, IEditedWorld {
       return { ref, color: colorId, x, z, yPlates, rot };
     });
     const laid = this.trackWorld.records();
-    const track = pieces.map((piece, index) => {
+    const track = pieces.map((piece, index): TrackRecordV1 => {
       const record = laid[piece];
       if (!record) throw new Error(`plan row for track piece ${piece} has no laid piece`);
-      return { ...record, index };
+      const { ref, heading, position, yPlates, rise } = record;
+      return { index, ref, heading, position, yPlates, ...(rise === undefined ? {} : { rise }) };
     });
     const placeables = new Map(models.map(({ placeable }) => [placeable.id, placeable]));
     const imported: PlanImport[] = [];
@@ -5699,18 +5915,19 @@ export class Editor implements IEditor, IEditedWorld {
       pose,
       component: WHOLE_GROUP_COMPONENT,
     }));
-    const pieces = laid.value.map(({ piece, pose, yPlates, rise }) => ({
+    const pieces = laid.value.map(({ piece, pose, yPlates, rise, layer }) => ({
       index: null,
       piece,
       pose,
       yPlates,
       rise,
+      layer,
     }));
     const targets = { modelPoses: poses.value, piecePoses: pieces.map((piece) => piece.pose) };
     const refusal = this.groupRefusal(this.pasteEdit(models, pieces), targets);
     if (refusal) return [{ path: plan.name, message: refusal.reason }];
     const change = this.plans.addition(plan);
-    const requests = poses.value.map((to) => ({ placement: null, to }));
+    const requests = poses.value.map((to) => ({ placement: null, to: this.onActiveLayer(to) }));
     const opened = this.history.commit(
       "open-plan",
       requests,
@@ -6108,7 +6325,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.tracks.clearEnds();
     this.world = world;
     this.consists = new ConsistLayout();
-    this.history = new EditHistory(world, this.consists, this.annotations);
+    this.history = new EditHistory(world, this.consists, this.annotations, this.layerLocks);
     this.placed.addAll(
       handles.flatMap((handle) => {
         const placeable = this.catalog.placeables()[handle.refId];

@@ -263,6 +263,12 @@ function releaseView(track: TrackView): Omit<HintView, "hints"> | null {
       return { tone: "warn", title: "Nothing laid", detail: TOO_STEEP };
     case "refused-changed":
       return { tone: "warn", title: "Nothing laid", detail: LAYOUT_CHANGED };
+    case "refused-layer":
+      return {
+        tone: "warn",
+        title: "Nothing laid",
+        detail: "the active layer is locked or hidden",
+      };
     case "laid":
     case "joined":
     case null:
@@ -734,9 +740,9 @@ function view(snapshot: EditorSnapshot): HintView {
         };
       }
       return {
-        tone: "idle",
+        tone: snapshot.selectionRefusal === null ? "idle" : "warn",
         title: "Select",
-        detail: null,
+        detail: snapshot.selectionRefusal,
         hints: [
           gesture("Click", "select a model or track piece"),
           gesture("Drag", "box-select"),

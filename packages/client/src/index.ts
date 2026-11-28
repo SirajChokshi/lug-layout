@@ -170,6 +170,8 @@ export {
 } from "./plan/plan-service.ts";
 export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
+export type { ILayerService } from "./layers/layer-service.ts";
+export type { LayerTable } from "@brr/domain";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -265,6 +267,7 @@ export {
   SHEET_SETS,
   EVENT_DETAILS,
   LAYOUT_SIZE,
+  LAYER_SERVICE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,
