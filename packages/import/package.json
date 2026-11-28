@@ -13,6 +13,7 @@
   "dependencies": {
     "@brr/catalog": "workspace:*",
     "@brr/domain": "workspace:*",
+    "@brr/math": "workspace:*",
     "@brr/schema": "workspace:*"
   },
   "devDependencies": {

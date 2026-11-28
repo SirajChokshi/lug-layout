@@ -39,6 +39,12 @@ export {
   type ResolvedPart,
 } from "./bluebrick-mapping.ts";
 export {
+  blueBrickNotes,
+  type BlueBrickNoteAnchor,
+  type BlueBrickNoteIssue,
+  type BlueBrickNotes,
+} from "./bluebrick-notes.ts";
+export {
   importStudioFile,
   MirrorPartExists,
   prepareStudioImport,
