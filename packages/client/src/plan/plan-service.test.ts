@@ -108,7 +108,7 @@ it("commits an unchecked plan, tables kept, when a placement box cannot be read"
   const placement = {
     key: { chunkKey: 5, slot: 2 },
     ref: "ldraw:3811",
-    label: "3811 at 0, 0",
+    label: "3811 at stud 0, 0",
     box: unreadable,
   };
 

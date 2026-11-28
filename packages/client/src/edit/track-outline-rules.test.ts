@@ -266,7 +266,7 @@ function carriedIn(
 }
 
 function carriedAcross(): string {
-  return `trackSeam: Track carried by my-run.ldr at 0, 0 stands across the seam ${ACROSS_THE_SEAM}`;
+  return `trackSeam: Track carried by my-run.ldr at stud 0, 0 stands across the seam ${ACROSS_THE_SEAM}`;
 }
 
 function onTheSeam(track: ReadonlyArray<string>): Pose16 {
@@ -323,7 +323,7 @@ describe("a model's own track, judged by its exact outlines like laid track", ()
     expect([
       outlineRows(carriedIn(ABUTTING, { ...run, body: astride, footing: astride })),
       outlineRows(besideTheJoiner),
-    ]).toEqual([[`seam: my-run.ldr at 0, 0 stands across the seam ${ACROSS_THE_SEAM}`], []]);
+    ]).toEqual([[`seam: my-run.ldr at stud 0, 0 stands across the seam ${ACROSS_THE_SEAM}`], []]);
   });
 
   it("the model's own track over a table edge overhangs by its outline, and the rest of the model by its own box", () => {
@@ -337,7 +337,7 @@ describe("a model's own track, judged by its exact outlines like laid track", ()
       footing: brick,
     });
     expect(outlineRows(plan)).toEqual([
-      "trackOffTable: Track carried by my-run.ldr at 0, 0 overhangs the tables: part of its outline is more than 0 mm past the edge of every table.",
+      "trackOffTable: Track carried by my-run.ldr at stud 0, 0 overhangs the tables: part of its outline is more than 0 mm past the edge of every table.",
     ]);
   });
 
@@ -352,7 +352,7 @@ describe("a model's own track, judged by its exact outlines like laid track", ()
     const [straight] = plan.outlines;
     expect([(straight?.maxX ?? 0) > 1000, (straight?.maxZ ?? 0) > 1000]).toEqual([true, true]);
     expect(outlineRows(plan)).toEqual([
-      'trackSeam: Track carried by my-run.ldr at 0, 0 stands across the seam between tables "A" and "B"; a seam must fall between placements.',
+      'trackSeam: Track carried by my-run.ldr at stud 0, 0 stands across the seam between tables "A" and "B"; a seam must fall between placements.',
     ]);
   });
 });

@@ -119,7 +119,7 @@ it("downloads the sheet chosen with its saved layers, layout and format, remembe
         content: "placements",
         layers: sheetSets.sets(PLAN.id)[0]?.layers,
       },
-      layout: { kind: "tiled", paper: "a4", orientation: "auto", denominator: 1, overlapMm: 10 },
+      layout: { kind: "fit", paper: "a3", orientation: "auto" },
       format: "pdf",
     },
     {
@@ -176,6 +176,7 @@ it("adds and deletes sheets, and refuses to download a tiling whose overlap the 
 
   fireEvent.click(screen.getByRole("button", { name: "Add sheet" }));
   const added = { chosen: field("sheet-name").value, count: sheetSets.sets(PLAN.id).length };
+  fireEvent.change(field("sheet-layout"), { target: { value: "tiled" } });
   fireEvent.change(field("sheet-overlap"), { target: { value: "2" } });
   const refused = {
     single: screen.getByRole("button", { name: "Download sheet" }).hasAttribute("disabled"),

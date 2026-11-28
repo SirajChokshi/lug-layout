@@ -99,10 +99,10 @@ test("a user's own track container is judged by its exact track outlines: a run 
   expect(poses.map(({ x, z }) => `${x}, ${z}`).toSorted()).toEqual(
     ["0, 0", `0, ${-ROW_LDU}`, `${SEAM_LDU / 2}, ${ROW_LDU}`].toSorted(),
   );
-  const across = `trackSeam: Track carried by my-9V-run.ldr at ${SEAM_LDU / 2}, ${ROW_LDU} stands across the seam ${ACROSS_THE_SEAM}`;
+  const across = `trackSeam: Track carried by my-9V-run.ldr at stud ${SEAM_LDU / 2 / STUD_LDU}, ${ROW_LDU / STUD_LDU} stands across the seam ${ACROSS_THE_SEAM}`;
   expect(outlineRows(oneStudEast)).toEqual([
-    `trackSeam: Track carried by my-9V-run.ldr at ${STUD_LDU}, 0 stands across the seam ${ACROSS_THE_SEAM}`,
-    `trackSeam: Track carried by my-plastic-run.ldr at ${STUD_LDU}, ${-ROW_LDU} stands across the seam ${ACROSS_THE_SEAM}`,
+    `trackSeam: Track carried by my-9V-run.ldr at stud 1, 0 stands across the seam ${ACROSS_THE_SEAM}`,
+    `trackSeam: Track carried by my-plastic-run.ldr at stud 1, ${-ROW_LDU / STUD_LDU} stands across the seam ${ACROSS_THE_SEAM}`,
   ]);
   expect(outlineRows(endsOnTheSeam)).toEqual([]);
   expect(outlineRows(spanning)).toEqual([across]);
@@ -146,9 +146,9 @@ test("a wall standing in the cell a user's run's end joiner reaches into keeps i
   expect((await editor.poses()).map(({ x, z }) => [x, z])).toEqual([[0, 0]]);
   expect(outlineRows(oneWallRows)).toEqual([]);
   expect(outlineRows(oneStudEast)).toEqual([
-    `trackSeam: Track carried by my-run-and-wall.ldr at ${2 * STUD_LDU}, 0 stands across the seam ${ACROSS_THE_SEAM}`,
+    `trackSeam: Track carried by my-run-and-wall.ldr at stud 2, 0 stands across the seam ${ACROSS_THE_SEAM}`,
   ]);
   expect(outlineRows(twoWallRows)).toEqual([
-    `seam: my-run-and-walls.ldr at 0, 0 stands across the seam ${ACROSS_THE_SEAM}`,
+    `seam: my-run-and-walls.ldr at stud 0, 0 stands across the seam ${ACROSS_THE_SEAM}`,
   ]);
 });

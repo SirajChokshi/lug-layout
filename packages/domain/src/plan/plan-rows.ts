@@ -1,3 +1,4 @@
+import { STUD_LDU } from "@brr/math";
 import { FACT_STRIDE, clearFacts } from "./plan-facts.ts";
 import { BOX_STRIDE, type PlacementKey } from "./plan-rules.ts";
 import { NO_PLAN_SHAPE, ShapeTable, type PlanShape } from "./plan-shape.ts";
@@ -26,7 +27,7 @@ const SLOT_LIVE = 1;
 
 export function placementLabel(kind: number, base: string, a: number, b: number): string {
   if (kind === LABEL_NUMBERED) return `${base} #${a}`;
-  return `${base} at ${a}, ${b}`;
+  return `${base} at stud ${a / STUD_LDU}, ${b / STUD_LDU}`;
 }
 
 function grownInt32(
