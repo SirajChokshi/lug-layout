@@ -15,7 +15,7 @@ function sheetSets() {
   return container.get(SHEET_SETS);
 }
 
-it("starts every plan with a main plan tiled at true scale and a table plan fitted to A3, as named layer sets", () => {
+it("starts every plan with a main plan and a table plan, both fitted to one A3 page, as named layer sets", () => {
   const sets = sheetSets();
   expect(sets.sets("plan-1")).toEqual([
     {
@@ -34,7 +34,7 @@ it("starts every plan with a main plan tiled at true scale and a table plan fitt
         "dimensions",
         "numbers",
       ],
-      layout: { kind: "tiled", paper: "a4", orientation: "auto", denominator: 1, overlapMm: 10 },
+      layout: { kind: "fit", paper: "a3", orientation: "auto" },
       format: "pdf",
     },
     {

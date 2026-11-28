@@ -327,6 +327,42 @@ describe("a sheet fitted to one page", () => {
     }
   });
 
+  it("turns the page whichever way keeps the key on it when the drawing fits both ways at the same scale", () => {
+    const placements = Array.from({ length: 30 }, (_, i): SheetPlacement => ({
+      number: i + 1,
+      label: `3811 Baseplate 32 x 32, Green at stud ${i * 32}, 0`,
+      parts: 1,
+      segment: "model",
+      rings: square(i * 40, 0, 40),
+      flagged: false,
+    }));
+    const squareRoom: PlanSheet = {
+      ...sheetWith(placements),
+      room: at(0, 0, 1200, 1200),
+      tables: [],
+    };
+    const fitted = (["portrait", "landscape", "auto"] as const).map(
+      (orientation) =>
+        composer.compose(
+          squareRoom,
+          { kind: "fit", paper: "a3", orientation },
+          WHOLE_PLAN_SELECTION,
+        ).pages,
+    );
+
+    expect({
+      scales: fitted.map(
+        ([page]) => /drawn at (1:\d+)/u.exec(page ? titleLines(page).join(" ") : "")?.[1],
+      ),
+      pages: fitted.map((pages) => pages.length),
+      auto: fitted[2]?.[0]?.size,
+    }).toEqual({
+      scales: ["1:10", "1:10", "1:10"],
+      pages: [2, 1, 1],
+      auto: { widthMm: 420, heightMm: 297 },
+    });
+  });
+
   it("flows a long key onto continuation pages, listing every placement once and in order", () => {
     const many = Array.from({ length: 150 }, (_, i): SheetPlacement => ({
       number: i + 1,

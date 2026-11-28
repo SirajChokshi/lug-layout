@@ -36,7 +36,7 @@ import {
   type PlanState,
   type PlacementFacts,
 } from "@brr/domain";
-import { CHUNK_LDU, chunkKey, chunkOf, lduFromMm, mmFromLdu } from "@brr/math";
+import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf, lduFromMm, mmFromLdu } from "@brr/math";
 import { OBSTACLE_KINDS } from "@brr/schema/world";
 import type { BufferMemory, ISceneBackend, PlanOverlay, RebaseEvent, WorldBox } from "@brr/render";
 import { fitAllBox } from "../camera/editor-camera.ts";
@@ -694,7 +694,7 @@ function todaysEntry(model: PlanModelSource): PlacedForPlan {
   return {
     key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
     ref: model.placeable.id,
-    label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
+    label: `${model.placeable.label} at stud ${model.handle.x / STUD_LDU}, ${model.handle.z / STUD_LDU}`,
     box: model.box,
   };
 }

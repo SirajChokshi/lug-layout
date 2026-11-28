@@ -179,7 +179,7 @@ test("a user's own balloon loop of 9V track is one reversing-loop warning naming
   const warning = {
     rule: "trackReversing",
     severity: "warning",
-    message: `Reversing loop or wye through my-balloon.ldr at ${pose.x}, ${pose.z}: a train can run through it and come back past ${entry} the other way, ${SHORTS}`,
+    message: `Reversing loop or wye through my-balloon.ldr at stud ${pose.x / STUD_LDU}, ${pose.z / STUD_LDU}: a train can run through it and come back past ${entry} the other way, ${SHORTS}`,
   };
   expect({ x: pose.x, z: pose.z }).toEqual(PLACED_AT);
   expect(openEnds).toHaveLength(1);

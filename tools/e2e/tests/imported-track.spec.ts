@@ -637,7 +637,7 @@ test("a plan lists an imported 9V run's open ends, clears them when the loop clo
   const redone = await editor.planRows();
 
   const onTheRun = expect.stringMatching(
-    /^Open track end at \(-?\d+ mm, -?\d+ mm\) on nine-volt-run\.ldr at -?\d+, -?\d+: nothing joins it\.$/u,
+    /^Open track end at \(-?\d+ mm, -?\d+ mm\) on nine-volt-run\.ldr at stud -?\d+, -?\d+: nothing joins it\.$/u,
   );
   expect(placed.filter((row) => row.rule === "trackOpenEnd")).toEqual([
     { rule: "trackOpenEnd", severity: "error", message: onTheRun },
@@ -715,7 +715,7 @@ test("a plan lists the kink in a user's 9V run as ends that don't join, closes t
   expect(ruled(placed, "trackOpenEnd")).toHaveLength(KINKED_RUN_FREE_ENDS);
   expect(ruled(placed, "trackJoin")).toEqual([
     expect.stringMatching(
-      /^Two track ends of kinked-run-and-plastic-oval\.ldr at -?\d+, -?\d+ meet at \(-?\d+ mm, -?\d+ mm\) but don't join: their headings are 90° off a straight join\.$/u,
+      /^Two track ends of kinked-run-and-plastic-oval\.ldr at stud -?\d+, -?\d+ meet at \(-?\d+ mm, -?\d+ mm\) but don't join: their headings are 90° off a straight join\.$/u,
     ),
   ]);
   expect(placed.filter((row) => row.severity === "warning" && row.rule !== "bomMapping")).toEqual([
@@ -723,7 +723,7 @@ test("a plan lists the kink in a user's 9V run as ends that don't join, closes t
       rule: "trackUnverified",
       severity: "warning",
       message: expect.stringMatching(
-        /^kinked-run-and-plastic-oval\.ldr at -?\d+, -?\d+ holds 16 × 53400 Train Track 6 Studs Wide Curved, whose connector poses are unverified: they're derived from the part file but not certified/u,
+        /^kinked-run-and-plastic-oval\.ldr at stud -?\d+, -?\d+ holds 16 × 53400 Train Track 6 Studs Wide Curved, whose connector poses are unverified: they're derived from the part file but not certified/u,
       ),
     },
   ]);
