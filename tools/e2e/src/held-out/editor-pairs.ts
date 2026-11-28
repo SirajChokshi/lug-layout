@@ -245,6 +245,7 @@ export class EditorPath {
 
   async hold(item: string, turns = 0): Promise<void> {
     this.editor.pointerLeave();
+    this.editor.dropTrackEnd();
     this.editor.chooseItem(item);
     const deadline = performance.now() + LOAD_TIMEOUT_MS;
     while (
