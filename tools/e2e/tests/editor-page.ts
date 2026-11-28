@@ -99,6 +99,12 @@ export interface TrackChoice {
   readonly joins: boolean;
 }
 
+export interface LoopOffer {
+  readonly pieces: number;
+  readonly label: string;
+  readonly text: string;
+}
+
 export interface ModelTrack {
   readonly pieces: number;
   readonly runFrame: number;
@@ -709,6 +715,41 @@ export class EditorPage {
       pieces: Number(await strip.getAttribute("data-choice-pieces")),
       joins: (await strip.getAttribute("data-choice-joins")) === "true",
     };
+  }
+
+  private loopsPanel(): Locator {
+    return this.page.locator("section.track-loops-panel");
+  }
+
+  async loopOffers(): Promise<ReadonlyArray<LoopOffer>> {
+    const panel = this.loopsPanel();
+    await expect
+      .poll(
+        async () => [
+          await panel.getAttribute("data-scanning"),
+          await panel.getAttribute("data-waiting"),
+        ],
+        { timeout: READY_TIMEOUT_MS },
+      )
+      .toEqual(["false", "0"]);
+    return panel.locator("li").evaluateAll((rows) =>
+      rows.map((row) => ({
+        pieces: Number(row.getAttribute("data-pieces")),
+        label: row.querySelector("button")?.textContent ?? "",
+        text: row.querySelector("p")?.textContent ?? "",
+      })),
+    );
+  }
+
+  async previewLoop(index: number): Promise<void> {
+    await this.loopsPanel().locator("li button").nth(index).hover();
+    await this.settle();
+  }
+
+  async closeLoop(index: number): Promise<TrackCounts> {
+    await this.loopsPanel().locator("li button").nth(index).click();
+    await this.settle();
+    return this.trackCounts();
   }
 
   async modelTrack(): Promise<ModelTrack> {

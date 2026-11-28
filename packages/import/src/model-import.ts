@@ -53,6 +53,7 @@ import {
 import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
 import type { IPartRecords } from "./library-bake-store.ts";
 import type { LdrawMirror, MirrorSource, MirrorStats, Probe } from "./ldraw-mirror.ts";
+import type { CachedGlyph, PlanGlyphCache } from "./plan-glyph-cache.ts";
 import { isShadowLibraryPath, type IShadowLibrary } from "./shadow-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
 import { TimeSpent } from "./time-spent.ts";
@@ -186,6 +187,7 @@ export interface ImportReport {
   readonly bakeRounds: number;
   readonly bakeIssue: string | null;
   readonly bakeHelpersFailed: number;
+  readonly glyphFromCache: boolean;
   readonly fetched: MirrorStats;
   readonly records: RecordReport | null;
   readonly shadowLibrary: RecordStats | null;
@@ -213,12 +215,9 @@ export interface CompiledGlb {
   readonly source: CompiledSource;
 }
 
-export type ModelBake = Omit<
-  BakedModel,
-  "status" | "recordedParts" | "resumedParts" | "phases" | "glyph" | "glyphIssue"
->;
+export type ModelBake = Omit<BakedModel, "status" | "recordedParts" | "resumedParts" | "phases">;
 
-export type PlacementBake = Omit<ModelBake, "studCover">;
+export type PlacementBake = Omit<ModelBake, "studCover" | "glyph" | "glyphIssue">;
 
 export interface PlacedImport extends Omit<ImportResult, "bake" | "report" | "studio"> {
   readonly sections: ReadonlyArray<LdrawHeader>;
@@ -287,6 +286,7 @@ const HELPER_DEADLINE_PER_PRIMARY_MS = 4;
 const HELPER_DEADLINE_SLACK_MS = 5_000;
 const FETCH_CONCURRENCY = 16;
 const MATRIX_FLOATS = 12;
+const UNCACHED_GLYPH: CachedGlyph = { glyph: null, keep: async () => undefined };
 
 function bitCount(word: number): number {
   let bits = word - ((word >>> 1) & 0x55555555);
@@ -312,7 +312,10 @@ function asksForHeldFiles(outcome: BakeOutcome, library: ImportLibrary): boolean
   );
 }
 
-function joinedShards(primary: BakedModel, others: ReadonlyArray<BakedModel>): ModelBake {
+function joinedShards(
+  primary: BakedModel,
+  others: ReadonlyArray<BakedModel>,
+): Omit<ModelBake, "glyph" | "glyphIssue"> {
   const {
     status: _baked,
     recordedParts: _recorded,
@@ -375,6 +378,7 @@ interface Assembled {
       | "bakeRounds"
       | "bakeIssue"
       | "bakeHelpersFailed"
+      | "glyphFromCache"
       | "fetched"
       | "records"
       | "shadowLibrary"
@@ -396,6 +400,7 @@ interface BakeRounds {
   readonly issue: string | null;
   readonly rounds: number;
   readonly helpersFailed: number;
+  readonly glyphFromCache: boolean;
   readonly recordedParts: number;
   readonly phases: BakePhases | null;
   readonly coverPhases: BakePhases | null;
@@ -547,6 +552,7 @@ export class ModelImportEngine {
     private readonly now: () => number,
     private readonly helpers: ReadonlyArray<IBakeHelper>,
     private readonly shadowLibrary: IShadowLibrary | null,
+    private readonly glyphs: PlanGlyphCache | null = null,
   ) {}
 
   async importText(
@@ -637,6 +643,7 @@ export class ModelImportEngine {
         bakeRounds: baked.rounds,
         bakeIssue: baked.issue,
         bakeHelpersFailed: baked.helpersFailed,
+        glyphFromCache: baked.glyphFromCache,
         fetched: this.mirror.stats(),
         records:
           this.records === null
@@ -886,6 +893,7 @@ export class ModelImportEngine {
         issue: "nothing in the file is drawn",
         rounds: 0,
         helpersFailed: 0,
+        glyphFromCache: false,
         recordedParts: 0,
         phases: null,
         coverPhases: null,
@@ -901,12 +909,13 @@ export class ModelImportEngine {
       tableDepthLdu: job.tableDepthLdu,
       vehicles: job.vehicles,
     };
+    const cached = (await this.glyphs?.entry(library.key, inputs)) ?? UNCACHED_GLYPH;
     const of = HELPER_SLICES * this.helpers.length + PRIMARY_SLICES;
     const visibility = (from: number, slices: number): VisibilityBakeRequest => ({
       ...inputs,
       shard: { from, to: from + slices, of, visibilityOnly: true },
     });
-    const primaryCoverRequest = visibility(0, PRIMARY_SLICES);
+    const primaryCoverRequest = { ...visibility(0, PRIMARY_SLICES), glyph: cached.glyph === null };
     const helped = this.helpers.map((helper, index) => ({
       helper,
       request: visibility(PRIMARY_SLICES + HELPER_SLICES * index, HELPER_SLICES),
@@ -972,6 +981,7 @@ export class ModelImportEngine {
               issue: withoutReservedPaths(outcome.message),
               rounds,
               helpersFailed,
+              glyphFromCache: false,
               recordedParts: 0,
               phases: null,
               coverPhases: null,
@@ -987,14 +997,21 @@ export class ModelImportEngine {
       }
       const [first, ...others] = baked;
       if (!first) throw new Error("the bake round returned no shard");
+      const cover = primaryCover?.status === "baked" ? primaryCover : null;
+      if (cached.glyph === null && cover?.glyph) await cached.keep(cover.glyph);
       return {
-        bake: joinedShards(first, others),
+        bake: {
+          ...joinedShards(first, others),
+          glyph: cached.glyph ?? cover?.glyph ?? null,
+          glyphIssue: cover?.glyphIssue ?? null,
+        },
         issue: null,
         rounds,
         helpersFailed,
+        glyphFromCache: cached.glyph !== null,
         recordedParts: first.recordedParts,
         phases: first.phases,
-        coverPhases: primaryCover?.status === "baked" ? primaryCover.phases : null,
+        coverPhases: cover?.phases ?? null,
         placedAt,
       };
     }

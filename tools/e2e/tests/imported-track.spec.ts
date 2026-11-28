@@ -419,6 +419,65 @@ test("an imported model's open end is extended from the keyboard into a loop tha
   expect(await editor.trackEnds()).toEqual(modelEnds);
 });
 
+async function nineVoltRunWithAGap(liftLdu: number): Promise<string> {
+  const { text } = await layout(
+    "nine-volt-run-with-a-gap",
+    [{ scene: "passing-loop", turns: 0, offset: [RUN_OFFSET_LDU, 0] }],
+    (references) => {
+      const straights = references
+        .filter(({ file, position: [, , z] }) => file === STRAIGHT_FILE && z === 0)
+        .toSorted((a, b) => a.position[0] - b.position[0]);
+      const first = straights[0];
+      const last = straights.at(-1);
+      if (!first || !last || straights.length < 3) {
+        throw new Error("the passing loop has no run of straights with a middle to leave out");
+      }
+      const lifted = [first, last].map((reference): Reference => {
+        const [x, y, z] = reference.position;
+        return { ...reference, position: [x, y - liftLdu, z] };
+      });
+      references.splice(0, references.length, ...lifted);
+    },
+  );
+  const file = test.info().outputPath("nine-volt-run-with-a-gap.ldr");
+  await writeFile(file, text);
+  return file;
+}
+
+test("the gap in a user's own 9V file is offered as a one-click close that names its pieces and previews them, closes exactly, is undone as one step, and O closes it again", async ({
+  page,
+}) => {
+  const editor = await importAndPlace(
+    page,
+    await nineVoltRunWithAGap(await undersideBelowOriginLdu(STRAIGHT_FILE.replace(".dat", ""))),
+  );
+  const modelEnds = await editor.trackEnds();
+  const offers = await editor.loopOffers();
+  const [gap] = offers;
+  if (!gap) throw new Error(`nothing closes the user's gap: ${JSON.stringify(modelEnds)}`);
+  await editor.previewLoop(0);
+  await editor.waitForFarTierAndMeshesSettled();
+  await page.screenshot({ path: test.info().outputPath("loop-closer-preview.png") });
+  const closed = await editor.closeLoop(0);
+  await editor.waitForFarTierAndMeshesSettled();
+  await page.screenshot({ path: test.info().outputPath("loop-closer-closed.png") });
+  const laid = await editor.laidTrack();
+  await editor.undo();
+  const undone = { laid: await editor.laidTrack(), ends: await editor.trackEnds() };
+  await editor.loopOffers();
+  await editor.press("o");
+  const pressed = await editor.trackCounts();
+
+  expect(modelEnds).toHaveLength(4);
+  expect(gap).toMatchObject({ pieces: 2, label: "Close with 2 pieces" });
+  expect(gap.text).toMatch(/^2 × 74746 Train Track 9V Straight\. It joins the open ends at /u);
+  expect(closed).toEqual({ pieces: 2, openEnds: 2, joins: 3, lastCommit: "joined" });
+  expect(laid).toHaveLength(2);
+  expect(undone).toEqual({ laid: [], ends: modelEnds });
+  expect(pressed).toEqual(closed);
+  expect(await editor.laidTrack()).toEqual(laid);
+});
+
 test("a curve turned 0.1° off the field is reported and nothing joins it", async ({ page }) => {
   const { text, pieces } = await layout(
     "off-field-curve",

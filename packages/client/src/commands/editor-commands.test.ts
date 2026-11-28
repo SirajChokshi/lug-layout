@@ -185,6 +185,7 @@ describe("play commands", () => {
       "extend-preview",
       "next-track-choice",
       "previous-track-choice",
+      "close-track-loop",
       "raise-track",
       "lower-track",
       "raise-track-brick",

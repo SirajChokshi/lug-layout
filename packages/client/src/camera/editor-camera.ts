@@ -1,9 +1,10 @@
-import { NO_ROW, roomRect, type LduRect } from "@brr/domain";
+import { roomRect, type LduRect } from "@brr/domain";
 import { chunkOf } from "@brr/math";
 import { CAMERA_FOV_DEGREES, SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
 import type { SavedViewV1 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import type { IPlanService } from "../plan/plan-service.ts";
+import { placementsBox } from "../plan/placements-box.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import { ViewCamera, type GroundDirection, type ViewMode } from "./view-camera.ts";
 
@@ -96,30 +97,9 @@ function flatBox(rect: LduRect): WorldBox {
   return { minX: rect.minX, minY: 0, minZ: rect.minZ, maxX: rect.maxX, maxY: 0, maxZ: rect.maxZ };
 }
 
-function placementsUnion(plans: IPlanService): WorldBox | null {
-  const view = plans.placements();
-  const first = view.first();
-  if (first === NO_ROW) return null;
-  let minX = view.minX(first);
-  let minY = view.minY(first);
-  let minZ = view.minZ(first);
-  let maxX = view.maxX(first);
-  let maxY = view.maxY(first);
-  let maxZ = view.maxZ(first);
-  for (let row = first; row !== NO_ROW; row = view.next(row)) {
-    minX = Math.min(minX, view.minX(row));
-    minY = Math.min(minY, view.minY(row));
-    minZ = Math.min(minZ, view.minZ(row));
-    maxX = Math.max(maxX, view.maxX(row));
-    maxY = Math.max(maxY, view.maxY(row));
-    maxZ = Math.max(maxZ, view.maxZ(row));
-  }
-  return { minX, minY, minZ, maxX, maxY, maxZ };
-}
-
 export function fitAllBox(plans: IPlanService): WorldBox {
   return (
-    placementsUnion(plans) ??
+    placementsBox(plans.placements()) ??
     union(plans.plans().map((plan) => flatBox(roomRect(plan)))) ??
     HOME_BOX
   );

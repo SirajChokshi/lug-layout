@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./bluebrick": "./src/bluebrick/index.ts",
     "./bundle": "./src/bundle/index.ts",
     "./bundle-pointer": "./src/bundle-pointer/index.ts",
     "./catalog-api": "./src/catalog-api/index.ts",

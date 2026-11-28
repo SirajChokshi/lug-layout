@@ -204,6 +204,25 @@ export {
   type PaperId,
   type PaperSize,
 } from "./sheets/paper.ts";
+export {
+  EVENT_COMMENT_MAX_LENGTH,
+  EVENT_FIELDS,
+  EVENT_LABEL_MAX_LENGTH,
+  eventDraft,
+  type EventDraft,
+  type EventEdit,
+  type EventField,
+  type EventFieldIssue,
+  type IEventDetails,
+} from "./event/event-details.ts";
+export {
+  STUDS_PER_MODULE,
+  sizeMeasures,
+  type ILayoutSize,
+  type LayoutSize,
+  type SizeMeasure,
+  type SizeUnit,
+} from "./event/layout-size.ts";
 export type {
   IssueSeverity,
   LduRect,
@@ -241,6 +260,8 @@ export {
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
   SHEET_SETS,
+  EVENT_DETAILS,
+  LAYOUT_SIZE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,
@@ -383,6 +404,9 @@ export type {
   TrackEndView,
   TrackGapView,
   TrackRouteView,
+  LoopClosureView,
+  LoopPartCount,
+  TrackLoopsView,
 } from "./edit/track-drawing.ts";
 export { MM_PER_CM, cmText, heightText, studsText } from "./edit/size-labels.ts";
 export type { LabelKind, LabelView } from "./edit/size-labels.ts";

@@ -595,7 +595,13 @@ function view(snapshot: EditorSnapshot): HintView {
       if (holding) return holding;
       const released = track ? releaseView(track) : null;
       if (track?.extend) return extendView(track.extend, released);
-      const hints = [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")];
+      const closable = (track?.loops.closures.length ?? 0) > 0;
+      const hints = [
+        gesture("Drag", "lay track"),
+        ...(closable ? [key("close-track-loop", "close the nearest gap")] : []),
+        key("undo", "undo"),
+        key("draw-track", "done"),
+      ];
       if (released) return { ...released, hints };
       return {
         tone: "track",

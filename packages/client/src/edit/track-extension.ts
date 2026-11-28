@@ -6,16 +6,8 @@ import {
   type TrackPieceDef,
   type TrackRun,
 } from "@brr/domain";
-import {
-  HALF_TURN_16,
-  STUD_LDU,
-  normalizeHeading16,
-  pose16Equals,
-  zeta16Direction,
-  zeta16ToStuds,
-  type Pose16,
-  planeHypot,
-} from "@brr/math";
+import { HALF_TURN_16, STUD_LDU, normalizeHeading16, pose16Equals, type Pose16 } from "@brr/math";
+import { joinTargets } from "./join-targets.ts";
 import type { TrackBlockView, TrackRefusal } from "./track-drag.ts";
 
 export type ExtensionTurn = "straight" | "left" | "right";
@@ -104,28 +96,10 @@ interface Focus {
   index: number;
 }
 
-interface JoinTarget {
-  readonly index: number;
-  readonly distanceLdu: number;
-}
-
-const JOIN_SEARCH_RADIUS_LDU = 96 * STUD_LDU;
-const JOIN_TARGETS = 4;
 const SUGGESTED_JOIN_PIECES = 4;
 const TURN_ORDER: ReadonlyArray<ExtensionTurn> = ["straight", "left", "right"];
 const NO_ENDS: ReadonlyArray<number> = [];
 const LIBRARY_ENTRY = 0;
-
-function targetAhead(start: Pose16, end: Pose16, index: number): JoinTarget | null {
-  const from = zeta16ToStuds(start.position);
-  const to = zeta16ToStuds(end.position);
-  const dx = to.x - from.x;
-  const dz = to.z - from.z;
-  const facing = zeta16Direction(start.heading);
-  if (dx * facing.x + dz * facing.z <= 0) return null;
-  const distanceLdu = planeHypot(dx, dz) * STUD_LDU;
-  return distanceLdu <= JOIN_SEARCH_RADIUS_LDU ? { index, distanceLdu } : null;
-}
 
 function turnSeenFromAbove(move: TrackMove): ExtensionTurn {
   const turn = normalizeHeading16(move.turn);
@@ -348,9 +322,6 @@ export class TrackExtension {
     const cached = this.options.get(from);
     if (cached) return cached;
     const { kit } = this.site;
-    const ends = this.site.endPoses();
-    const start = ends[from];
-    if (!start) throw new RangeError(`there is no open end ${from}`);
     const turns = [kit.straight, kit.left, kit.right]
       .map((move): TurnChoice => {
         const joins = this.site.joinedEnd(from, move);
@@ -367,10 +338,7 @@ export class TrackExtension {
       remembered === null
         ? []
         : [{ kind: "piece", moves: [remembered], ...this.site.pieceFit(from, remembered) }];
-    const nearest = ends
-      .flatMap((end, index) => (index === from ? [] : (targetAhead(start, end, index) ?? [])))
-      .toSorted((a, b) => a.distanceLdu - b.distanceLdu)
-      .slice(0, JOIN_TARGETS);
+    const nearest = joinTargets(this.site.endPoses(), from);
     const joins: ExtensionChoice[] = [];
     let unjoined: UnjoinedEndView | null = null;
     nearest.forEach(({ index, distanceLdu }, rank) => {

@@ -51,6 +51,8 @@ import { TrackEditSession } from "./edit/track-edit-session.ts";
 import { TrackPathSelection } from "./edit/track-path-selection.ts";
 import { TrackWorld } from "./edit/track-world.ts";
 import { WorldSession } from "./edit/world-session.ts";
+import { EventDetailsService } from "./event/event-details.ts";
+import { LayoutSizeMeter } from "./event/layout-size.ts";
 import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
@@ -145,6 +147,8 @@ import {
   PDF_SHEET_WRITER,
   PNG_SHEET_WRITER,
   SHEET_SETS,
+  EVENT_DETAILS,
+  LAYOUT_SIZE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
@@ -199,6 +203,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PDF_SHEET_WRITER).to(PdfSheetWriter).inSingletonScope();
   bind(PNG_SHEET_WRITER).to(PngSheetWriter).inSingletonScope();
   bind(SHEET_SETS).to(SheetSets).inSingletonScope();
+  bind(EVENT_DETAILS).to(EventDetailsService).inSingletonScope();
+  bind(LAYOUT_SIZE).to(LayoutSizeMeter).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();

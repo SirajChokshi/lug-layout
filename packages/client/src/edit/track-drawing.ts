@@ -130,6 +130,7 @@ import {
   type ExtensionSite,
   type PieceFit,
 } from "./track-extension.ts";
+import { LoopCloser, type LoopCloserSite, type LoopClosure } from "./loop-closer.ts";
 import { pieceRelativePose } from "./group-transform.ts";
 import { SolveSamples, type TrackSolveStats } from "./solve-samples.ts";
 
@@ -320,6 +321,34 @@ export interface ExtensionPlan {
   readonly change: TrackChange;
   readonly goal: Pose16 | null;
   readonly end: Pose16;
+}
+
+export interface LoopPlan {
+  readonly closure: LoopClosure;
+  readonly change: TrackChange;
+}
+
+export interface LoopPartCount {
+  readonly part: string;
+  readonly title: string;
+  readonly count: number;
+}
+
+export interface LoopClosureView {
+  readonly key: string;
+  readonly from: TrackEndView;
+  readonly to: TrackEndView;
+  readonly gapLdu: number;
+  readonly pieces: number;
+  readonly parts: ReadonlyArray<LoopPartCount>;
+}
+
+export interface TrackLoopsView {
+  readonly closures: ReadonlyArray<LoopClosureView>;
+  readonly checked: number;
+  readonly pairs: number | null;
+  readonly waiting: number;
+  readonly previewed: string | null;
 }
 
 interface PreviewRun {
@@ -645,8 +674,9 @@ export function trackChunkKey(chunkX: number, chunkZ: number): number {
   return -1 - chunkKey(chunkX, chunkZ);
 }
 
-export class TrackDrawing implements ExtensionSite {
+export class TrackDrawing implements ExtensionSite, LoopCloserSite {
   readonly extension: TrackExtension;
+  readonly closer: LoopCloser;
   private readonly systemKits = new Map<string, SystemKit>();
   private active: SystemKit;
   private readonly byDef = new Map<string, KitPart>();
@@ -754,6 +784,8 @@ export class TrackDrawing implements ExtensionSite {
   private previewLabelsComputed = false;
   private previewLabelsSource: LaidPreview | null = null;
   private lastPreviewLabels: ReadonlyArray<LabelView> = [];
+  private loopsViewAt = -1;
+  private loopsView: TrackLoopsView | null = null;
 
   constructor(
     { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
@@ -823,6 +855,12 @@ export class TrackDrawing implements ExtensionSite {
     };
     this.bands = new TrackBands(pieces, this.verticalRange(), this.supportedOn);
     this.extension = new TrackExtension(this);
+    this.closer = new LoopCloser(this);
+  }
+
+  private endsChanged(): void {
+    this.extension.endsChanged();
+    this.closer.endsChanged();
   }
 
   private systemKit(system: string): SystemKit | null {
@@ -863,7 +901,7 @@ export class TrackDrawing implements ExtensionSite {
     if (chosen === this.active) return true;
     this.cancelDrag();
     this.active = chosen;
-    this.extension.endsChanged();
+    this.endsChanged();
     return true;
   }
 
@@ -914,7 +952,7 @@ export class TrackDrawing implements ExtensionSite {
       throw new RangeError(`a ramp can't rise ${plates} plates a piece`);
     if (plates === this.risePerPiece) return;
     this.risePerPiece = plates;
-    this.extension.endsChanged();
+    this.endsChanged();
   }
 
   gradePercent(): number {
@@ -1214,7 +1252,7 @@ export class TrackDrawing implements ExtensionSite {
     this.bands.setSource(source);
     this.skipped.clear();
     this.reseatDrag(this.dragPlates);
-    this.extension.endsChanged();
+    this.endsChanged();
   }
 
   private readonly supportedOn = (seats: StudSeats): SupportedPiece => {
@@ -1232,7 +1270,7 @@ export class TrackDrawing implements ExtensionSite {
     this.bands.clear();
     this.skipped.clear();
     this.reseatDrag(this.dragPlates);
-    this.extension.endsChanged();
+    this.endsChanged();
   }
 
   unsupportedPieces(): ReadonlyArray<UnsupportedPiece> | null {
@@ -1949,7 +1987,9 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   private previewLaid(): LaidPreview | null {
-    const source = this.drag ? this.dragRun() : this.extension.chosen();
+    const source = this.drag
+      ? this.dragRun()
+      : (this.closer.previewed() ?? this.extension.chosen());
     if (this.previewLaidComputed && source === this.previewLaidSource) return this.lastPreviewLaid;
     this.previewLaidComputed = true;
     this.previewLaidSource = source;
@@ -1966,6 +2006,11 @@ export class TrackDrawing implements ExtensionSite {
 
   private previewRun(): PreviewRun | null {
     if (this.drag) return this.dragRun();
+    const loop = this.closer.previewed();
+    if (loop) {
+      const { heights } = this.loopHeights(loop);
+      return { start: loop.start, moves: loop.moves, refused: null, heights };
+    }
     const run = this.extension.chosen();
     if (!run) return null;
     const { choice } = run;
@@ -1984,6 +2029,10 @@ export class TrackDrawing implements ExtensionSite {
     }
     const goal = choice.joins === null ? null : this.endHeight(choice.joins);
     return this.runPlan(startPlates, choice.moves, goal);
+  }
+
+  private loopHeights(loop: LoopClosure): RunHeightsResult {
+    return this.runPlan(this.endHeight(loop.from), loop.moves, this.endHeight(loop.to));
   }
 
   private buildGhost({ run: route, moves, laid }: LaidPreview): PreviewGhost {
@@ -2051,6 +2100,44 @@ export class TrackDrawing implements ExtensionSite {
     const { change, end } = this.runChange(run.start, run.choice.moves, heights);
     const goal = run.choice.joins === null ? null : (this.ends[run.choice.joins] ?? null);
     return { run, change, goal, end };
+  }
+
+  loopPlan(key: string | null): LoopPlan | null {
+    const closure = this.drag ? null : this.closer.find(key);
+    if (!closure) return null;
+    const { heights } = this.loopHeights(closure);
+    return { closure, change: this.runChange(closure.start, closure.moves, heights).change };
+  }
+
+  loops(): TrackLoopsView {
+    const { closer } = this;
+    if (this.loopsView && closer.version === this.loopsViewAt) return this.loopsView;
+    this.loopsViewAt = closer.version;
+    this.loopsView = {
+      closures: closer.closures().map((closure) => this.loopView(closure)),
+      checked: closer.checked,
+      pairs: closer.pairCount,
+      waiting: closer.waiting,
+      previewed: closer.previewed()?.key ?? null,
+    };
+    return this.loopsView;
+  }
+
+  private loopView(closure: LoopClosure): LoopClosureView {
+    const counts = new Map<string, LoopPartCount>();
+    for (const move of closure.moves) {
+      const { element, title } = this.pieceSet.element(this.movePart(move).catalogIndex);
+      const counted = counts.get(element)?.count ?? 0;
+      counts.set(element, { part: element.replace(/^[a-z]+:/u, ""), title, count: counted + 1 });
+    }
+    return {
+      key: closure.key,
+      from: endView(closure.start, WORLD_TRACK_FRAME, this.endHeight(closure.from)),
+      to: endView(closure.goal, WORLD_TRACK_FRAME, this.endHeight(closure.to)),
+      gapLdu: closure.gapLdu,
+      pieces: closure.moves.length,
+      parts: [...counts.values()].toSorted((a, b) => a.part.localeCompare(b.part)),
+    };
   }
 
   onExtension(xLdu: number, zLdu: number): boolean {
@@ -2466,7 +2553,7 @@ export class TrackDrawing implements ExtensionSite {
     this.leverViews = null;
     this.bomList = null;
     this.endStudFloats = null;
-    this.extension.endsChanged();
+    this.endsChanged();
   }
 
   private indexBands(): void {

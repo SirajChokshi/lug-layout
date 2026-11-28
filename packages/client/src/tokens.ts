@@ -34,6 +34,8 @@ import type { ITrackEditSession } from "./edit/track-edit-session.ts";
 import type { ITrackPathSelection } from "./edit/track-path-selection.ts";
 import type { ITrackWorld } from "./edit/track-world.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
+import type { IEventDetails } from "./event/event-details.ts";
+import type { ILayoutSize } from "./event/layout-size.ts";
 import type { ITableGround } from "./ground/table-ground.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
@@ -167,6 +169,9 @@ export const PNG_SHEET_WRITER: ServiceIdentifier<ISheetWriter> = Symbol.for(
   "brr.client.PngSheetWriter",
 );
 export const SHEET_SETS: ServiceIdentifier<ISheetSets> = Symbol.for("brr.client.SheetSets");
+export const EVENT_DETAILS: ServiceIdentifier<IEventDetails> =
+  Symbol.for("brr.client.EventDetails");
+export const LAYOUT_SIZE: ServiceIdentifier<ILayoutSize> = Symbol.for("brr.client.LayoutSize");
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",
 );

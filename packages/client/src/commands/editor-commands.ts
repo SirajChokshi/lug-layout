@@ -27,6 +27,7 @@ export type EditorActionId =
   | "extend-preview"
   | "next-track-choice"
   | "previous-track-choice"
+  | "close-track-loop"
   | "raise-track"
   | "lower-track"
   | "raise-track-brick"
@@ -222,6 +223,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "," }],
     keywords: "cycle option piece join back",
+  },
+  {
+    id: "close-track-loop",
+    title: "Close the nearest pair of open track ends that joins exactly",
+    group: "Edit",
+    keys: [{ key: "o" }],
+    keywords: "close loop gap join complete oval circuit ends",
   },
   {
     id: "raise-track",
@@ -683,6 +691,13 @@ export function commandEnabled(
     case "next-track-choice":
     case "previous-track-choice":
       return snapshot.track?.extend != null && !snapshot.readOnly;
+    case "close-track-loop":
+      return (
+        snapshot.mode === "track" &&
+        !snapshot.readOnly &&
+        snapshot.track?.held === null &&
+        snapshot.track.loops.closures.length > 0
+      );
     case "delete":
       if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
       if (snapshot.mode === "table") return snapshot.hoveredTable !== null;
@@ -844,6 +859,9 @@ export function runEditorAction(
       return;
     case "previous-track-choice":
       editor.cycleTrackChoice(-1);
+      return;
+    case "close-track-loop":
+      editor.closeTrackLoop(null, eventTimeMs);
       return;
     case "raise-track":
       editor.raiseTrack(1);

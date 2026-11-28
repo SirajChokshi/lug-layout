@@ -1284,6 +1284,7 @@ export const CompilerRequest = v.variant("op", [
     omrAuthoringIdentification: v.exactOptional(v.boolean()),
   }),
   v.strictObject({ op: v.literal("readStudio") }),
+  v.strictObject({ op: v.literal("readBlueBrick") }),
   v.strictObject({
     op: v.literal("compile"),
     lod: BundleLod,

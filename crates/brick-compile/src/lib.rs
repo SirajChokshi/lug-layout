@@ -2,6 +2,7 @@ pub mod affine;
 pub mod authored;
 pub mod bake;
 pub mod bands;
+pub mod bluebrick;
 pub mod bore;
 pub mod circle;
 pub mod clip;

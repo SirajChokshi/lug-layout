@@ -28,6 +28,7 @@ import {
   type TrackPieceRef,
   type EditKind,
   type EditSummary,
+  type EventChange,
   type HistoryStep,
   type NoteChange,
   type PlanChange,
@@ -104,9 +105,11 @@ import {
 import type { IPlanSheetSource, PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
+import type { IEventDetails } from "../event/event-details.ts";
 import {
   CONNECTOR_TABLES,
   EDITOR_FRAME_LOOP,
+  EVENT_DETAILS,
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   RAIL_YARD,
@@ -636,6 +639,8 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setTrackRampPlates(plates: number): void;
   selectTrackChoice(index: number): void;
   dropTrackEnd(): boolean;
+  previewTrackLoop(key: string | null): void;
+  closeTrackLoop(key: string | null, eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
   removeTrain(index: number, eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
@@ -666,6 +671,7 @@ const EDITOR_LOD: BundleLod = "standard";
 const ASSIST_TOLERANCE_PX = 32;
 const ASSIST_FLOOR_LDU = STUD_LDU;
 const ASSIST_BASIN_LDU = 3 * STUD_LDU;
+const LOOP_SCAN_FRAME_BUDGET_MS = 10;
 const NDC_SPAN = 2;
 const HALF_STUD_LDU = STUD_LDU / 2;
 const ORIGIN_INTS = 3;
@@ -1190,6 +1196,8 @@ function editLabel(edit: EditSummary | null): string | null {
       return "plan edit";
     case "note":
       return "note edit";
+    case "event":
+      return "event details";
     case "open-plan":
       return `open plan (${counted(edit.placements, "placement", "placements")}, ${counted(edit.pieces, "track piece", "track pieces")})`;
     default: {
@@ -1551,6 +1559,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(TALLEST_TRAIN) private readonly tallestTrains: ITallestTrain,
     @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
     @inject(TRACK_PATH_SELECTION) private readonly trackPaths: ITrackPathSelection,
+    @inject(EVENT_DETAILS) private readonly events: IEventDetails,
     @inject(PLAN_SCENE_BACKEND) plan: IPlanSceneBackend,
   ) {
     this.history = new EditHistory(this.world, this.consists, annotations);
@@ -1576,7 +1585,7 @@ export class Editor implements IEditor, IEditedWorld {
       models: () => this.placed.models(),
       carriedParts: (placeable) => this.trackWorld.carriedParts(placeable),
     });
-    frames.setFrameWork(this.assistFrame);
+    frames.setFrameWork(this.frameWork);
     catalog.subscribe(() => {
       this.update({ meshes: catalog.meshProgress() });
       if (this.solidsAwaited) void Promise.resolve().then(() => this.solidsArrived());
@@ -1584,6 +1593,7 @@ export class Editor implements IEditor, IEditedWorld {
     plans.subscribe(() => this.plansChanged());
     plans.onEdit((change) => this.planEdited(change));
     annotations.onEdit((change) => this.notesEdited(change));
+    events.onEdit((change) => this.eventEdited(change));
   }
 
   private sessionChanged(): void {
@@ -2504,6 +2514,21 @@ export class Editor implements IEditor, IEditedWorld {
     return true;
   }
 
+  previewTrackLoop(key: string | null): void {
+    if (this.state.mode !== "track") return;
+    const view = this.tracks.previewLoop(key);
+    if (view) this.update(view);
+  }
+
+  closeTrackLoop(key: string | null, eventTimeMs: number): void {
+    if (this.state.mode !== "track" || this.state.readOnly || this.tracks.holding()) return;
+    if (this.tracks.dragging() || this.tracks.piering()) return;
+    const lay = this.tracks.closeLoop(key);
+    if (!lay) return;
+    this.commitLay(lay, eventTimeMs);
+    this.repaintTrackPreview();
+  }
+
   private enterRoadMode(id: string): void {
     this.ghostRot = this.placeRot;
     if (this.state.mode === "track") this.tracks.drop();
@@ -2818,7 +2843,18 @@ export class Editor implements IEditor, IEditedWorld {
     this.assist.aim({ placeable, connected, mode }, this.pick, startedMs);
   }
 
-  private readonly assistFrame = (startMs: number): void => {
+  private readonly frameWork = (startMs: number): void => {
+    this.assistFrame(startMs);
+    this.loopScanFrame(startMs);
+  };
+
+  private loopScanFrame(startMs: number): void {
+    if (this.state.mode !== "track") return;
+    const view = this.tracks.scanLoops(startMs + LOOP_SCAN_FRAME_BUDGET_MS);
+    if (view) this.update(view);
+  }
+
+  private assistFrame(startMs: number): void {
     const outcome = this.assist.frame(startMs);
     switch (outcome) {
       case "quiet":
@@ -2837,7 +2873,7 @@ export class Editor implements IEditor, IEditedWorld {
         throw new Error(`unhandled assist frame ${String(unhandled)}`);
       }
     }
-  };
+  }
 
   private assistHost(): AssistHost {
     return {
@@ -3797,6 +3833,11 @@ export class Editor implements IEditor, IEditedWorld {
     this.show(this.history.annotate(change), performance.now());
   }
 
+  private eventEdited(change: EventChange): void {
+    if (this.state.readOnly) return;
+    this.show(this.history.editEvent(change), performance.now());
+  }
+
   private show(
     edit: AppliedEdit,
     eventTimeMs: number,
@@ -3804,9 +3845,12 @@ export class Editor implements IEditor, IEditedWorld {
   ): ViewUpdate {
     if (edit.plan) this.plans.restore(edit.plan.after);
     if (edit.notes) this.annotations.restore(edit.notes.after);
+    if (edit.event) this.events.restore(edit.event.after);
     const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
     const documentOnly =
-      (edit.plan !== null || edit.notes !== null) && edit.changes.length === 0 && !trackChanged;
+      (edit.plan !== null || edit.notes !== null || edit.event !== null) &&
+      edit.changes.length === 0 &&
+      !trackChanged;
     this.applyConsists(edit);
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     for (const model of view.removed) this.unsearchable(model);
@@ -3823,6 +3867,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (worldChanged) this.session.placementsEdited(edit);
     if (trackChanged) this.session.trackEdited(edit.track.lift);
     if (edit.notes) this.session.notesEdited();
+    if (edit.event) this.session.documentEdited();
     if (sample) {
       this.timeEdit({
         ...sample,

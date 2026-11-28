@@ -81,6 +81,7 @@ function edit(kind: "place" | "remove", handle: PlacementHandle): AppliedEdit {
     track: NO_TRACK_CHANGE,
     plan: null,
     notes: null,
+    event: null,
   };
 }
 

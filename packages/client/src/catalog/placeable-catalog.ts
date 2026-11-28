@@ -17,6 +17,7 @@ import type {
   ImportReport,
   ImportResult,
   LayoutPart,
+  ModelBake,
   PlacedImport,
   PlacementListener,
   RefusedConnectorRecord,
@@ -161,7 +162,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   rollingStock(): Promise<ReadonlyArray<PlayModel>>;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null;
-  baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
+  baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells" | "glyph"> | null;
   partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord>;
   partSolids(): IPartSolids;
   loadPartSolids(partIndices: ReadonlySet<number>): Promise<void>;
@@ -222,6 +223,10 @@ function placedModel(placed: PlacedSource): PlacementModel {
     submodels: placed.submodels,
     vehicles: placed.bake.vehicles,
   };
+}
+
+function withGlyph<M extends PlacementModel>(model: M, bake: Pick<ModelBake, "glyph">): M {
+  return bake.glyph === null ? model : { ...model, glyph: bake.glyph };
 }
 
 export function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor {
@@ -348,7 +353,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly notDrawnSections = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
   private readonly customPartsById = new Map<string, ReadonlyArray<CustomPartCredit> | null>();
   private readonly playModels = new Map<string, PlayModel>();
-  private readonly bakes = new Map<string, Pick<PartModel, "lattice" | "cells">>();
+  private readonly bakes = new Map<string, Pick<PartModel, "lattice" | "cells" | "glyph">>();
   private readonly requests = new RequestOrder();
   private readonly compiledSources = new Map<string, CompiledSource>();
   private readonly farModelIndex = new Map<string, number>();
@@ -669,7 +674,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       return { ...reports, kind: "refused", refusal };
     }
     const placed = { ...result, sections: result.report.sections, bake };
-    const model: PartModel = { ...placedModel(placed), studCover: bake.studCover };
+    const model: PartModel = withGlyph({ ...placedModel(placed), studCover: bake.studCover }, bake);
     const added = await this.addPlaceable(file, model, result);
     this.customPartsById.set(added.placeable.id, customPartCredits(result.report));
     return { ...reports, kind: "placeable", item: added.slot.view, credit: added.credit };
@@ -752,6 +757,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const covered = { ...model, studCover: bake.studCover };
     const checked = this.importedPlaceable(pending.id, pending.label, covered, credit);
     this.placeablesByRefId[refId] = checked;
+    this.bakes.set(checked.id, withGlyph(model, bake));
     return { ...reports, kind: "checked", placeable: checked };
   }
 
@@ -821,7 +827,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     return this.customPartsById.get(placeable.id) ?? null;
   }
 
-  baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null {
+  baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells" | "glyph"> | null {
     return this.bakes.get(placeable.id) ?? null;
   }
 
