@@ -58,6 +58,7 @@ function handleAt(): PlacementHandle {
     z: AT_Z,
     yPlates: Y_PLATES,
     rot: QUARTER_TURNS,
+    layer: 0,
   };
 }
 
@@ -71,7 +72,15 @@ function edit(kind: "place" | "remove", handle: PlacementHandle): AppliedEdit {
         placement: { handle: null },
         from: null,
         to: placing
-          ? { refId: 0, colorId: 0, x: AT_X, z: AT_Z, yPlates: Y_PLATES, rot: QUARTER_TURNS }
+          ? {
+              refId: 0,
+              colorId: 0,
+              x: AT_X,
+              z: AT_Z,
+              yPlates: Y_PLATES,
+              rot: QUARTER_TURNS,
+              layer: 0,
+            }
           : null,
         removed: placing ? null : handle,
         added: placing ? handle : null,
@@ -82,6 +91,7 @@ function edit(kind: "place" | "remove", handle: PlacementHandle): AppliedEdit {
     plan: null,
     notes: null,
     event: null,
+    layers: null,
   };
 }
 

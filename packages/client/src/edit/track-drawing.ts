@@ -1,7 +1,12 @@
 import type { PartBundle, PartShapeAsset } from "@brr/catalog";
 import type { PoseStatus, TrackPartFrame, TrackPiece, TrackShape } from "@brr/schema/bundle";
 import type { Decoded, Issue } from "@brr/schema/decode";
-import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
+import {
+  BASE_LAYER_ID,
+  decodeTrackPosition,
+  encodeTrackPosition,
+  type TrackRecordV2,
+} from "@brr/schema/world";
 import {
   BOX_MAX_X,
   BOX_MAX_Y,
@@ -66,6 +71,7 @@ import {
   type PartSink,
   type DrawingKit,
   type EndGap,
+  type LayerTable,
   type PlacementPose,
   type PlacementRegion,
   type TrackChange,
@@ -2253,6 +2259,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         pose: entry.placement,
         yPlates: entry.yPlates,
         rise: entry.rise,
+        layer: BASE_LAYER_ID,
       })),
     };
   }
@@ -2267,6 +2274,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         laid.part.catalogIndex === at.piece &&
         laid.yPlates === at.yPlates &&
         laid.rise === at.rise &&
+        this.layout.layer(at.index) === at.layer &&
         pose16Equals(laid.placement, at.pose);
       if (!same) throw new Error(`laid track piece ${at.index} is not the piece the edit lifts`);
       touched.add(this.chunkOfPlaced(laid));
@@ -2274,7 +2282,15 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     }
     for (const at of change.lay) {
       const part = this.pieceByIndex(at.piece);
-      this.layout.insert(at.index, at.piece, at.pose, at.yPlates, at.rise);
+      this.layout.insert(
+        at.index,
+        at.piece,
+        at.pose,
+        at.yPlates,
+        at.rise,
+        WORLD_TRACK_FRAME,
+        at.layer,
+      );
       touched.add(this.chunkOfPlaced({ part, placement: at.pose, yPlates: at.yPlates, rise: 0 }));
     }
     this.indexChunks();
@@ -2647,14 +2663,16 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         pose: composePose16(placement, local),
         yPlates,
         rise: 0,
+        layer: BASE_LAYER_ID,
       })),
     };
   }
 
-  switchAt(xLdu: number, zLdu: number): number | null {
+  switchAt(xLdu: number, zLdu: number, layers: Pick<LayerTable, "isHidden">): number | null {
     let best: number | null = null;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (let p = 0; p < this.layout.count; p++) {
+      if (layers.isHidden(this.layout.layer(p))) continue;
       const placed = this.placedAt(p);
       if (this.pieceSet.thrown(placed.part.catalogIndex) === null) continue;
       const box = partBox(placed);
@@ -2691,14 +2709,20 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       pose: placed.placement,
       yPlates: placed.yPlates,
       rise: placed.rise,
+      layer: this.layout.layer(placement),
     };
   }
 
-  pieceOnRay(ray: Float64Array): TrackPieceHit | null {
+  pieceLayer(placement: number): number {
+    return this.layout.layer(placement);
+  }
+
+  pieceOnRay(ray: Float64Array, layers: Pick<LayerTable, "isHidden">): TrackPieceHit | null {
     const dy = ray[RAY_DIRECTION_Y] ?? 0;
     if (dy === 0) return null;
     let best: TrackPieceHit | null = null;
     for (let p = 0; p < this.layout.count; p++) {
+      if (layers.isHidden(this.layout.layer(p))) continue;
       const placed = this.placedAt(p);
       const top = partBox(placed).maxY;
       const distance = (top - (ray[RAY_ORIGIN_Y] ?? 0)) / dy;
@@ -3376,10 +3400,11 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return false;
   }
 
-  records(): TrackRecordV1[] {
-    const records: TrackRecordV1[] = [];
+  records(): TrackRecordV2[] {
+    const records: TrackRecordV2[] = [];
     for (let index = 0; index < this.layout.count; index++) {
       const placed = this.placedAt(index);
+      const layer = this.layout.layer(index);
       records.push({
         index,
         ref: placed.part.piece.id,
@@ -3387,12 +3412,13 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         position: encodeTrackPosition(placed.placement.position),
         yPlates: placed.yPlates,
         ...(placed.rise === 0 ? {} : { rise: placed.rise }),
+        ...(layer === BASE_LAYER_ID ? {} : { layer }),
       });
     }
     return records;
   }
 
-  restore(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<number>> {
+  restore(records: ReadonlyArray<TrackRecordV2>): Decoded<ReadonlyArray<number>> {
     if (this.layout.count > 0) {
       return {
         ok: false,
@@ -3403,7 +3429,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return lay.ok ? { ok: true, value: this.applyTrack({ lift: [], lay: lay.value }) } : lay;
   }
 
-  laidPieces(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<TrackPieceAt>> {
+  laidPieces(records: ReadonlyArray<TrackRecordV2>): Decoded<ReadonlyArray<TrackPieceAt>> {
     const issues: Issue[] = [];
     records.forEach((record, position) => {
       if (record.index !== position) {
@@ -3436,7 +3462,8 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       if (!part) return [];
       const pose = pose16(decodeTrackPosition(record.position), record.heading);
       const rise = record.rise ?? 0;
-      return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates, rise }];
+      const layer = record.layer ?? BASE_LAYER_ID;
+      return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates, rise, layer }];
     });
     return { ok: true, value: lay };
   }

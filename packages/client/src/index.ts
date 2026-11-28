@@ -191,6 +191,8 @@ export {
 export { TEXT_LINE_HEIGHT_EM } from "./notes/text-frame.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
 export { AISLE_SIDES, OBSTACLE_KINDS, UNSTATED_OBSTACLE_KIND } from "@brr/schema/world";
+export type { ILayerService } from "./layers/layer-service.ts";
+export type { LayerTable } from "@brr/domain";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -291,6 +293,7 @@ export {
   SHEET_SETS,
   EVENT_DETAILS,
   LAYOUT_SIZE,
+  LAYER_SERVICE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,

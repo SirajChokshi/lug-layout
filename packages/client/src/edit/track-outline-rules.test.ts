@@ -113,6 +113,7 @@ function laidIn(
       pose,
       yPlates: 0,
       rise: 0,
+      layer: 0,
     })),
   };
   drawing.applyTrack(change);

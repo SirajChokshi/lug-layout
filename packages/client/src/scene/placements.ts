@@ -12,6 +12,7 @@ export interface PlacementDump {
   readonly z: ReadonlyArray<number>;
   readonly yPlates: ReadonlyArray<number>;
   readonly rot: ReadonlyArray<number>;
+  readonly layer: ReadonlyArray<number>;
 }
 
 export function dumpPlacements(world: World): PlacementDump {
@@ -23,6 +24,7 @@ export function dumpPlacements(world: World): PlacementDump {
   const z: number[] = [];
   const yPlates: number[] = [];
   const rot: number[] = [];
+  const layer: number[] = [];
   for (const chunk of world.chunks()) {
     for (let i = 0; i < chunk.count; i++) {
       if (((chunk.flags[i] ?? 0) & SLOT_LIVE) === 0) continue;
@@ -34,7 +36,8 @@ export function dumpPlacements(world: World): PlacementDump {
       z.push(chunk.z[i] ?? 0);
       yPlates.push(chunk.yPlates[i] ?? 0);
       rot.push(chunk.rot[i] ?? 0);
+      layer.push(chunk.layer[i] ?? 0);
     }
   }
-  return { chunkKey, slot, refId, colorId, x, z, yPlates, rot };
+  return { chunkKey, slot, refId, colorId, x, z, yPlates, rot, layer };
 }

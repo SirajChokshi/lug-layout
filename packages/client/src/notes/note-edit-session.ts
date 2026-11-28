@@ -7,7 +7,8 @@ import { inject, injectable } from "inversify";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { rulerText } from "../edit/measure-tool.ts";
 import type { LabelView } from "../edit/size-labels.ts";
-import { ANNOTATION_SERVICE, PLACEABLE_CATALOG } from "../tokens.ts";
+import type { ILayerService } from "../layers/layer-service.ts";
+import { ANNOTATION_SERVICE, LAYER_SERVICE, PLACEABLE_CATALOG } from "../tokens.ts";
 import type { IAnnotationService } from "./annotation-service.ts";
 import { NoteSketch, SELECTED_RGB, rgbOf } from "./note-sketch.ts";
 import type {
@@ -128,8 +129,10 @@ export class NoteEditSession implements INoteEditSession, NoteToolHost {
     private readonly backend: Pick<ISceneBackend, "setNoteShapes" | "projectToNdc">,
     @inject(PLACEABLE_CATALOG)
     private readonly catalog: Pick<IPlaceableCatalog, "resolveRef" | "placeables">,
+    @inject(LAYER_SERVICE) private readonly layers: Pick<ILayerService, "table" | "subscribe">,
   ) {
-    annotations.subscribe(() => this.notesChanged());
+    annotations.subscribe(() => this.notesOrLayersChanged());
+    layers.subscribe(() => this.notesOrLayersChanged());
   }
 
   subscribe(listener: () => void): () => void {
@@ -327,11 +330,11 @@ export class NoteEditSession implements INoteEditSession, NoteToolHost {
   }
 
   private noteLayers(): ReadonlyArray<LayerRecordV2> {
-    return this.annotations.document().layers.filter((layer) => layer.kind === "notes");
+    return this.layers.table().layers.filter((layer) => layer.kind === "notes");
   }
 
   private shownLayer(id: number): LayerRecordV2 | null {
-    const layer = this.annotations.document().layers.find((candidate) => candidate.id === id);
+    const layer = this.layers.table().layer(id);
     return layer?.visible ? layer : null;
   }
 
@@ -344,7 +347,7 @@ export class NoteEditSession implements INoteEditSession, NoteToolHost {
     return this.noteLayers().length === 0 ? NO_NOTES_LAYER : NO_OPEN_NOTES_LAYER;
   }
 
-  private notesChanged(): void {
+  private notesOrLayersChanged(): void {
     const entry = this.selectedEntry();
     if (!entry || !this.editable(entry)) this.choose(null);
     this.publish();

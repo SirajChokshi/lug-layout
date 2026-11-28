@@ -200,6 +200,8 @@ function commitText(track: TrackView): string {
       return `refused: ${TOO_STEEP}`;
     case "refused-changed":
       return "refused: the layout changed while the run's piers were being built";
+    case "refused-layer":
+      return "refused: the active layer is locked or hidden";
     case "switch-straight":
       return "switch thrown to the straight route";
     case "switch-branching":

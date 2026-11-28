@@ -1,7 +1,12 @@
 import { CHUNK_LDU, chunkKey, chunkOf, isLatticePose, isRot90 } from "@brr/math";
+import { LAYER_ID_MAX } from "@brr/schema/world";
 
 const INITIAL_CHUNK_CAPACITY = 4;
 export const SLOT_LIVE = 1;
+
+export function isLayerId(layer: number): boolean {
+  return Number.isInteger(layer) && layer >= 0 && layer <= LAYER_ID_MAX;
+}
 
 export interface ChunkView {
   readonly key: number;
@@ -16,6 +21,7 @@ export interface ChunkView {
   readonly z: Int32Array;
   readonly yPlates: Int16Array;
   readonly rot: Uint8Array;
+  readonly layer: Uint16Array;
 }
 
 export interface PlacementHandle {
@@ -29,6 +35,7 @@ export interface PlacementHandle {
   readonly z: number;
   readonly yPlates: number;
   readonly rot: number;
+  readonly layer: number;
 }
 
 function grown<T extends Uint32Array | Uint16Array | Int32Array | Int16Array | Uint8Array>(
@@ -51,6 +58,7 @@ class Chunk {
   z = new Int32Array(INITIAL_CHUNK_CAPACITY);
   yPlates = new Int16Array(INITIAL_CHUNK_CAPACITY);
   rot = new Uint8Array(INITIAL_CHUNK_CAPACITY);
+  layer = new Uint16Array(INITIAL_CHUNK_CAPACITY);
   private freeSlots = new Uint32Array(INITIAL_CHUNK_CAPACITY);
   private freeCount = 0;
 
@@ -76,6 +84,7 @@ class Chunk {
     this.z = grown(this.z, new Int32Array(this.capacity));
     this.yPlates = grown(this.yPlates, new Int16Array(this.capacity));
     this.rot = grown(this.rot, new Uint8Array(this.capacity));
+    this.layer = grown(this.layer, new Uint16Array(this.capacity));
     this.freeSlots = grown(this.freeSlots, new Uint32Array(this.capacity));
   }
 
@@ -88,7 +97,15 @@ class Chunk {
     return this.count++;
   }
 
-  push(refId: number, colorId: number, x: number, z: number, yPlates: number, rot: number): number {
+  push(
+    refId: number,
+    colorId: number,
+    x: number,
+    z: number,
+    yPlates: number,
+    rot: number,
+    layer: number,
+  ): number {
     const slot = this.takeSlot();
     this.flags[slot] = SLOT_LIVE;
     this.refId[slot] = refId;
@@ -97,6 +114,7 @@ class Chunk {
     this.z[slot] = z;
     this.yPlates[slot] = yPlates;
     this.rot[slot] = rot;
+    this.layer[slot] = layer;
     this.liveCount++;
     return slot;
   }
@@ -131,6 +149,7 @@ class Chunk {
       z: this.z.subarray(0, n),
       yPlates: this.yPlates.subarray(0, n),
       rot: this.rot.subarray(0, n),
+      layer: this.layer.subarray(0, n),
     };
   }
 }
@@ -181,6 +200,10 @@ class SlotHandle implements PlacementHandle {
     return this.chunk.rot[this.liveSlot()] ?? 0;
   }
 
+  get layer(): number {
+    return this.chunk.layer[this.liveSlot()] ?? 0;
+  }
+
   belongsTo(chunk: Chunk): boolean {
     return chunk === this.chunk;
   }
@@ -202,6 +225,7 @@ export class World {
     z: number,
     yPlates: number,
     rot: number,
+    layer: number,
   ): PlacementHandle {
     if (!isLatticePose(x, z, yPlates)) {
       throw new RangeError(
@@ -209,6 +233,7 @@ export class World {
       );
     }
     if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+    if (!isLayerId(layer)) throw new RangeError(`layer ${layer} is not a layer id`);
     const chunkX = chunkOf(x);
     const chunkZ = chunkOf(z);
     const key = chunkKey(chunkX, chunkZ);
@@ -218,7 +243,7 @@ export class World {
       this.byKey.set(key, chunk);
       this.ordered.push(chunk);
     }
-    const slot = chunk.push(refId, colorId, x, z, yPlates, rot);
+    const slot = chunk.push(refId, colorId, x, z, yPlates, rot, layer);
     this.live++;
     return new SlotHandle(chunk, slot, chunk.generation[slot] ?? 0);
   }

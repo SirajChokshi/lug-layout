@@ -6,6 +6,7 @@ import {
   ZETA16_COEFFICIENT_COUNT,
   type Pose16,
 } from "@brr/math";
+import { BASE_LAYER_ID, LAYER_ID_MAX } from "@brr/schema/world";
 import { WORLD_TRACK_FRAME, type TrackFrame } from "./end-gaps.ts";
 
 export interface TrackRoute {
@@ -62,6 +63,7 @@ export class TrackLayout {
   private riseOf = new Int8Array(INITIAL_CAPACITY);
   private positionOf = new BigInt64Array(INITIAL_CAPACITY * ZETA16_COEFFICIENT_COUNT);
   private frameOf = new Uint32Array(INITIAL_CAPACITY);
+  private layerOf = new Uint16Array(INITIAL_CAPACITY);
   private readonly frames = new Map<number, TrackFrame>([
     [WORLD_TRACK_FRAME.id, WORLD_TRACK_FRAME],
   ]);
@@ -91,6 +93,7 @@ export class TrackLayout {
     yPlates: number,
     risePlates = 0,
     frame: TrackFrame = WORLD_TRACK_FRAME,
+    layer = BASE_LAYER_ID,
   ): number {
     if (!isIntegerIn(at, 0, this.size)) {
       throw new RangeError(`track placement ${at} is outside 0-${this.size}`);
@@ -111,6 +114,9 @@ export class TrackLayout {
     }
     if (!isIntegerIn(yPlates + risePlates, INT16_MIN, INT16_MAX)) {
       throw new RangeError(`track end height ${yPlates + risePlates} plates is not an int16`);
+    }
+    if (!isIntegerIn(layer, 0, LAYER_ID_MAX)) {
+      throw new RangeError(`track layer ${layer} is not a layer id`);
     }
     for (const coefficient of placement.position) {
       if (BigInt.asIntN(INT64_BITS, coefficient) !== coefficient) {
@@ -133,6 +139,7 @@ export class TrackLayout {
     this.headingOf[at] = pose16(placement.position, placement.heading).heading;
     this.yPlatesOf[at] = yPlates;
     this.riseOf[at] = risePlates;
+    this.layerOf[at] = layer;
     this.positionOf.set(placement.position, at * ZETA16_COEFFICIENT_COUNT);
     return at;
   }
@@ -153,6 +160,7 @@ export class TrackLayout {
     this.headingOf.copyWithin(to, from, this.size);
     this.yPlatesOf.copyWithin(to, from, this.size);
     this.riseOf.copyWithin(to, from, this.size);
+    this.layerOf.copyWithin(to, from, this.size);
     this.positionOf.copyWithin(
       to * ZETA16_COEFFICIENT_COUNT,
       from * ZETA16_COEFFICIENT_COUNT,
@@ -191,6 +199,11 @@ export class TrackLayout {
   rise(placement: number): number {
     this.checkPlacement(placement);
     return this.riseOf[placement] ?? 0;
+  }
+
+  layer(placement: number): number {
+    this.checkPlacement(placement);
+    return this.layerOf[placement] ?? BASE_LAYER_ID;
   }
 
   endYPlates(placement: number, connector: number): number {
@@ -243,5 +256,8 @@ export class TrackLayout {
     const frameOf = new Uint32Array(this.capacity);
     frameOf.set(this.frameOf);
     this.frameOf = frameOf;
+    const layerOf = new Uint16Array(this.capacity);
+    layerOf.set(this.layerOf);
+    this.layerOf = layerOf;
   }
 }

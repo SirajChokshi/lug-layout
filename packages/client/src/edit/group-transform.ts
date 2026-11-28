@@ -58,15 +58,15 @@ export function latticeCentre(box: WorldBox): LatticePoint {
   return { x: nearestStud((box.minX + box.maxX) / 2), z: nearestStud((box.minZ + box.maxZ) / 2) };
 }
 
-export function translated(pose: PlacementPose, dx: number, dz: number): PlacementPose {
+export function translated<P extends PlacementPose>(pose: P, dx: number, dz: number): P {
   return { ...pose, x: pose.x + dx + 0, z: pose.z + dz + 0 };
 }
 
-export function turnedAbout(
-  pose: PlacementPose,
+export function turnedAbout<P extends PlacementPose>(
+  pose: P,
   pivot: LatticePoint,
   turns: number,
-): PlacementPose {
+): P {
   const turn = quarterTurn(turns);
   const cos = rot90Cos(turn);
   const sin = rot90Sin(turn);
@@ -101,7 +101,7 @@ export function pieceRelativePose(pose: Pose16, frame: PlacementPose): Pose16 {
   return pose16(rotateZeta16(offset, steps), normalizeHeading16(pose.heading + steps));
 }
 
-export function relativePose(pose: PlacementPose, frame: PlacementPose): PlacementPose {
+export function relativePose<P extends PlacementPose>(pose: P, frame: PlacementPose): P {
   const back = quarterTurn(-frame.rot);
   const cos = rot90Cos(back);
   const sin = rot90Sin(back);

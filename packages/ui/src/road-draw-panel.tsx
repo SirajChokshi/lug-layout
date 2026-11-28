@@ -45,6 +45,8 @@ function issueText(issue: RoadTileIssue): string {
       return `${where}: its edges wouldn't line up with ${issue.blocker ?? "the road"} beside it`;
     case "overlap":
       return `${where}: overlaps ${issue.blocker ?? "another plate"}`;
+    case "locked":
+      return `${where}: ${issue.blocker ?? "a plate"} is on a locked layer, so the stroke can't change it`;
     default: {
       const unhandled: never = issue.problem;
       throw new Error(`unhandled road problem ${String(unhandled)}`);

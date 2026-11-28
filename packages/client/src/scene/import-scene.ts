@@ -6,6 +6,7 @@ import {
 } from "@brr/catalog";
 import { BomCounter, countPlacements, World, type PlacementContents } from "@brr/domain";
 import type { BundleCredit, BundleLod } from "@brr/schema/bundle";
+import { BASE_LAYER_ID } from "@brr/schema/world";
 import type { ImportResult } from "@brr/import";
 import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
@@ -206,7 +207,7 @@ export class ImportScene implements IImportScene {
     const x = latticeCeil(this.nextX - bounds.minX);
     const z = latticeRound(-(bounds.minZ + bounds.maxZ) / 2);
     const module = this.modules.length;
-    this.world.add(module, NO_COLOR, x, z, GROUND_PLATES, NO_TURN);
+    this.world.add(module, NO_COLOR, x, z, GROUND_PLATES, NO_TURN, BASE_LAYER_ID);
     this.modules.push({ result, x, z, bounds });
     this.nextX = x + bounds.maxX + MODULE_GAP_LDU;
     this.frame();

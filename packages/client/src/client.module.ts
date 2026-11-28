@@ -58,6 +58,7 @@ import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-work
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
 import { AnnotationService } from "./notes/annotation-service.ts";
+import { LayerService } from "./layers/layer-service.ts";
 import { NoteEditSession } from "./notes/note-edit-session.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { PlanSheetService } from "./plan/plan-sheet-service.ts";
@@ -139,6 +140,7 @@ import {
   TALLEST_TRAIN,
   TRACK_PIERS,
   VEHICLE_IDS,
+  LAYER_SERVICE,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
   PLAN_DRAWING,
@@ -197,6 +199,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
   bind(ANNOTATION_SERVICE).to(AnnotationService).inSingletonScope();
   bind(NOTE_EDIT_SESSION).to(NoteEditSession).inSingletonScope();
+  bind(LAYER_SERVICE).to(LayerService).inSingletonScope();
   bind(PLAN_SHEET_SERVICE).to(PlanSheetService).inSingletonScope();
   bind(SHEET_TYPEFACE).to(CourierTypeface).inSingletonScope();
   bind(SHEET_TILER).to(SheetTiler).inSingletonScope();

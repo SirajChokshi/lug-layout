@@ -71,6 +71,7 @@ import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
+  BASE_LAYER_ID,
   noteShardEntry,
   noteShards,
   shardEntry,
@@ -130,6 +131,7 @@ import {
   PLACEABLE_CATALOG,
   TRACK_WORLD,
   PLACEMENT_SEARCH,
+  LAYER_SERVICE,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
   SHEET_SETS,
@@ -1697,6 +1699,367 @@ function startImportingEditor(
     bound.rebind(WORLD_REPOSITORY).toConstantValue(repository(archives));
   });
 }
+
+function layeredPoses(editor: IEditor): ReadonlyArray<string> {
+  const { refs, placements } = editor.dump();
+  return placements.refId
+    .map(
+      (ref, i) =>
+        `${refs[ref]} ${placements.x[i]},${placements.z[i]} y${placements.yPlates[i]} on ${placements.layer[i]}`,
+    )
+    .toSorted();
+}
+
+function itemsOnLayers(editor: IEditor): ReadonlyArray<string> {
+  const { refs, placements } = editor.dump();
+  return placements.refId.map((ref, i) => `${refs[ref]} on ${placements.layer[i]}`).toSorted();
+}
+
+describe("layers", () => {
+  it("draws a zone with the note tool on a notes layer made after the world opened, refuses once that layer is locked, and still refuses a note on a parts layer", async () => {
+    const { editor, backend, container } = await startEditor();
+    backend.viewHalfWidthLdu = NOTE_VIEW_HALF_WIDTH_LDU;
+    const layers = container.get(LAYER_SERVICE);
+    const annotations = container.get(ANNOTATION_SERVICE);
+    const created = layers.create("Labels", "notes");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    editor.setNoteTool("zone");
+    const offered = editor.snapshot().noteTool?.layer;
+    noteDrag(editor, backend, [0, 0], [200, 200]);
+    const drawn = annotations.notes().map(({ note }) => [note.kind, note.layer]);
+    layers.setLocked(created.value, true);
+    const lockedRefusal = editor.snapshot().noteTool?.refusal;
+    noteDrag(editor, backend, [400, 0], [600, 200]);
+    const label = (layer: number) =>
+      annotations.add({
+        kind: "text",
+        layer,
+        text: "Depot",
+        x: 0,
+        z: 0,
+        rot: 0,
+        heightStuds: 2,
+        color: "#000000",
+      }).ok;
+
+    expect({
+      offered,
+      drawn,
+      lockedRefusal,
+      afterLocking: annotations.notes().length,
+      onParts: label(BASE_LAYER_ID),
+    }).toEqual({
+      offered: created.value,
+      drawn: [["zone", created.value]],
+      lockedRefusal: "Every notes layer is hidden or locked.",
+      afterLocking: 1,
+      onParts: false,
+    });
+  }, 120_000);
+
+  it("snaps a saved ruler only to models on shown layers: on a user's own model whose layer is hidden its end is free, and once shown it attaches", async () => {
+    const { editor, backend, annotations, placed, container } = await noteToolEditor();
+    const layers = container.get(LAYER_SERVICE);
+    selectAt(editor, backend, placed.x, placed.z);
+    const box = selectedBox(editor);
+    editor.setNoteTool("ruler");
+
+    layers.setVisible(BASE_LAYER_ID, false);
+    noteDrag(editor, backend, [placed.x - 20, placed.z - 10], [placed.x - 20, placed.z + 611]);
+    layers.setVisible(BASE_LAYER_ID, true);
+    noteDrag(editor, backend, [box.maxX + 3, box.minZ - 4], [box.maxX + 413, box.minZ + 7]);
+
+    expect(rulerSpans(annotations).map(({ from }) => from)).toEqual(["point", "model"]);
+  }, 240_000);
+
+  it("puts a user's imported model on the layer active when it's placed, picks through a hidden layer, refuses to select or add to a locked one, undoes each layer change as one step, and reopens with every layer kept", async () => {
+    const repository = new MemoryRepository();
+    const { editor, backend, container } = await startImportingEditor(() => repository);
+    const layers = container.get(LAYER_SERVICE);
+    const cottage = await importUserFile(
+      editor,
+      "my-cottage.mpd",
+      userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+    );
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    const created = layers.create("Cottages", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const cottages = created.value;
+    await place(cottage, 0, 0);
+    await place(cottage, 200, 0);
+    const placed = itemsOnLayers(editor);
+    const poses = layeredPoses(editor);
+    const selected = () => editor.snapshot().selection?.primary.item ?? null;
+    const refusal = () => editor.snapshot().selectionRefusal;
+    const everything: [Ground, Ground] = [
+      [-400, -400],
+      [400, 400],
+    ];
+
+    selectAt(editor, backend, 0, 0);
+    const shown = selected();
+    layers.setVisible(cottages, false);
+    selectAt(editor, backend, 0, 0);
+    const hidden = {
+      picked: selected(),
+      boxed: boxSelect(editor, backend, ...everything).selected,
+    };
+    layers.setVisible(cottages, true);
+    layers.setLocked(cottages, true);
+    selectAt(editor, backend, 200, 0);
+    const { tone, detail } = toolHints(editor.snapshot());
+    const lockedClick = { picked: selected(), refusal: refusal(), hint: { tone, detail } };
+    const boxed = boxSelect(editor, backend, ...everything).selected;
+    const lockedBox = { boxed, refusal: refusal() };
+    const { placements, reason } = await place(cottage, 0, 200);
+    const undoLabel = editor.snapshot().history.undoLabel;
+    editor.undo(0);
+    editor.undo(0);
+    editor.undo(0);
+    const undone = {
+      cottages: layers.table().layer(cottages),
+      next: editor.snapshot().history.undoLabel,
+    };
+    editor.redo(0);
+    editor.redo(0);
+    editor.redo(0);
+    const storedLock = async () => {
+      const [entry] = await repository.list();
+      const stored = entry ? await repository.read(entry.id) : null;
+      return stored?.ok
+        ? stored.value.manifest.layers.find(({ id }) => id === cottages)?.locked
+        : null;
+    };
+    await vi.waitFor(async () => expect(await storedLock()).toBe(true));
+    const reopened = await startImportingEditor(() => repository);
+
+    expect({
+      placed,
+      shown,
+      hidden,
+      lockedClick,
+      lockedBox,
+      lockedPlace: { placements, reason },
+      undoLabel,
+      undone,
+    }).toEqual({
+      placed: [`${cottage} on ${cottages}`, `${cottage} on ${cottages}`, `${BASEPLATE} on 0`],
+      shown: cottage,
+      hidden: { picked: BASEPLATE, boxed: [BASEPLATE] },
+      lockedClick: {
+        picked: null,
+        refusal: "That's on locked layer \"Cottages\", so it can't be selected.",
+        hint: {
+          tone: "warn",
+          detail: "That's on locked layer \"Cottages\", so it can't be selected.",
+        },
+      },
+      lockedBox: { boxed: [BASEPLATE], refusal: "2 parts on locked layers left out." },
+      lockedPlace: {
+        placements: 3,
+        reason: 'Layer "Cottages" is locked, so nothing can be added to it.',
+      },
+      undoLabel: 'lock layer "Cottages"',
+      undone: {
+        cottages: {
+          id: cottages,
+          name: "Cottages",
+          kind: "parts",
+          visible: true,
+          locked: false,
+          opacity: 100,
+        },
+        next: "place",
+      },
+    });
+    expect({
+      poses: layeredPoses(reopened.editor),
+      layers: reopened.container.get(LAYER_SERVICE).table().layers,
+    }).toEqual({ poses, layers: layers.table().layers });
+  }, 240_000);
+
+  it("lays track on the active layer, picks a laid piece only while its layer is shown, refuses to select it or throw its switch while the layer is locked, and saves each piece's layer", async () => {
+    const repository = new MemoryRepository();
+    const { editor, backend, container } = await startImportingEditor(() => repository);
+    const layers = container.get(LAYER_SERVICE);
+    const created = layers.create("Main line", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const line = created.value;
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, 0], [24 * STUD, 0]);
+    editor.dropTrackEnd();
+    editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+    backend.aim(0, 40 * STUD);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    const at = editor.snapshot().track?.switches[0];
+    if (!at) throw new Error("the laid switch has no lever");
+    const lever = () => editor.snapshot().track?.switches[0]?.lever;
+    const throwSwitch = () => {
+      editor.chooseItem(TRACK_ITEM_ID);
+      backend.aim(at.xLdu, at.zLdu);
+      editor.pointerMove(0, 0);
+      editor.dragStart(0, 0);
+      editor.dragEnd(0, 0, 0);
+      return { lever: lever(), reason: editor.snapshot().lastRefusal?.reason ?? null };
+    };
+    const pickOrigin = () => ({
+      picked: selectAt(editor, backend, 0, 0)?.kind ?? null,
+      refusal: editor.snapshot().selectionRefusal,
+    });
+
+    const shown = pickOrigin();
+    layers.setVisible(line, false);
+    const hidden = pickOrigin();
+    layers.setVisible(line, true);
+    layers.setLocked(line, true);
+    const locked = pickOrigin();
+    const before = lever();
+    const lockedThrow = throwSwitch();
+    layers.setLocked(line, false);
+    const unlockedThrow = throwSwitch();
+    const laidLayers = new Set(editor.dump().laidTrack.map((piece) => piece.layer));
+    const storedLayers = async () => {
+      const [entry] = await repository.list();
+      const stored = entry ? await repository.read(entry.id) : null;
+      const track = stored?.ok ? stored.value.shards.flatMap((shard) => shard.track) : [];
+      return new Set(track.map((piece) => piece.layer));
+    };
+    await vi.waitFor(async () => expect(await storedLayers()).toEqual(new Set([line])));
+
+    expect({ shown, hidden, locked, lockedThrow, laidLayers }).toEqual({
+      shown: { picked: "track", refusal: null },
+      hidden: { picked: null, refusal: null },
+      locked: {
+        picked: null,
+        refusal: "That's on locked layer \"Main line\", so it can't be selected.",
+      },
+      lockedThrow: {
+        lever: before,
+        reason: 'This switch is on locked layer "Main line", so it can\'t be thrown.',
+      },
+      laidLayers: new Set([line]),
+    });
+    expect(unlockedThrow.lever).not.toBe(before);
+
+    const spurLayer = layers.create("Spur", "parts");
+    if (!spurLayer.ok) throw new Error("the layer wasn't created");
+    const spur = spurLayer.value;
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [24 * STUD, 0], [72 * STUD, 0]);
+    editor.chooseItem(null);
+    const straightsOn = (layer: number) =>
+      editor
+        .dump()
+        .laidTrack.filter(
+          (piece) => (piece.layer ?? BASE_LAYER_ID) === layer && piece.ref === NINE_VOLT_STRAIGHT,
+        ).length;
+    const onSpur = straightsOn(spur);
+    const onLine = straightsOn(line);
+    layers.setLocked(spur, true);
+    const run = pathSelected(editor, backend, [0, 0], "run");
+    const runRefusal = editor.snapshot().selectionRefusal;
+    const lockedPiece = pathSelected(editor, backend, [48 * STUD, 0], "run");
+    const lockedRefusal = editor.snapshot().selectionRefusal;
+
+    expect({ onSpur: onSpur > 0, run, runRefusal, lockedPiece, lockedRefusal }).toEqual({
+      onSpur: true,
+      run: {
+        took: true,
+        tally: { models: 0, pieces: onLine, trains: 0 },
+        items: laidStraights(onLine),
+        primary: expect.any(Array),
+      },
+      runRefusal: `${onSpur} ${onSpur === 1 ? "part" : "parts"} on locked layers left out.`,
+      lockedPiece: { took: true, tally: null, items: [], primary: undefined },
+      lockedRefusal: "That's on locked layer \"Spur\", so it can't be selected.",
+    });
+  }, 240_000);
+
+  it("refuses to drop a held switch into straights on a locked layer, naming the layer, and once unlocked drops it on the active layer, undo giving the straights back on their own layer", async () => {
+    const { editor, backend, container, at } = await runsOffUsersSwitch();
+    const layers = container.get(LAYER_SERVICE);
+    const laid = editor.dump().laidTrack;
+    const created = layers.create("Junctions", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const junctions = created.value;
+    layers.setLocked(BASE_LAYER_ID, true);
+
+    const locked = holdAndClick(editor, backend, RIGHT_SWITCH, at.west);
+    layers.setLocked(BASE_LAYER_ID, false);
+    const dropped = holdAndClick(editor, backend, RIGHT_SWITCH, at.west);
+    const onLayers = editor
+      .dump()
+      .laidTrack.filter((piece) => piece.layer !== undefined)
+      .map(({ ref, layer }) => [ref, layer]);
+    editor.undo(0);
+
+    expect({ locked, dropped, onLayers }).toEqual({
+      locked: {
+        refusedClicks: expect.any(Number),
+        reason: expect.stringContaining('would replace track on locked layer "Parts".'),
+        pieces: laid.length,
+      },
+      dropped: expect.objectContaining({ pieces: laid.length - 1 }),
+      onLayers: [[RIGHT_SWITCH, junctions]],
+    });
+    expect(editor.dump().laidTrack).toEqual(laid);
+  }, 120_000);
+
+  it("refuses a road stroke over a user's own baseplate on a locked layer, naming it, then lays the road on the active layer, and erasing keeps a re-laid junction and gives the baseplate back on their own layers", async () => {
+    const { editor, backend, container } = await startImportingEditor();
+    const layers = container.get(LAYER_SERVICE);
+    const created = layers.create("Ground", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const ground = created.value;
+    const baseplate = userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]);
+    const item = await importUserFile(editor, "my-baseplate.ldr", baseplate);
+    await placer(editor, backend)(item, 320, 320);
+    expect(layers.setActiveLayer(BASE_LAYER_ID)).toEqual([]);
+    layers.setLocked(ground, true);
+
+    const locked = roadStrokeResult(editor, backend, [320, 320], [1600, 320]);
+    const issues = editor.snapshot().lastRoadStroke?.stroke.issues;
+    const lockedLayout = itemsOnLayers(editor);
+    layers.setLocked(ground, false);
+    const laid = roadStrokeResult(editor, backend, [320, 320], [1600, 320]);
+    const branched = roadStrokeResult(editor, backend, [960, 320], [960, 1600]);
+    const roadLayers = new Set(editor.dump().placements.layer);
+    const sketch = layers.create("Sketch", "parts");
+    if (!sketch.ok) throw new Error("the layer wasn't created");
+    expect(layers.setActiveLayer(sketch.value)).toEqual([]);
+    layers.setLocked(sketch.value, true);
+    const branchErased = roadStrokeResult(editor, backend, [960, 960], [960, 1600], true);
+    const afterBranchErased = new Set(editor.dump().placements.layer);
+    layers.setLocked(sketch.value, false);
+    expect(layers.setActiveLayer(BASE_LAYER_ID)).toEqual([]);
+    const erased = roadStrokeResult(editor, backend, [320, 320], [1600, 320], true);
+
+    expect({
+      locked,
+      issues,
+      lockedLayout,
+      laid,
+      branched,
+      roadLayers,
+      branchErased,
+      afterBranchErased,
+      erased,
+    }).toEqual({
+      locked: "refused",
+      issues: [{ x: 320, z: 320, problem: "locked", shape: null, blocker: "my-baseplate.ldr" }],
+      lockedLayout: [`${item} on ${ground}`],
+      laid: "laid",
+      branched: "laid",
+      roadLayers: new Set([BASE_LAYER_ID]),
+      branchErased: "laid",
+      afterBranchErased: new Set([BASE_LAYER_ID]),
+      erased: "laid",
+    });
+    expect(itemsOnLayers(editor)).toEqual([`${item} on ${ground}`]);
+  }, 120_000);
+});
 
 it("lists a user's own file in the catalog by its name when a fresh editor reopens the world that places it", async () => {
   const repository = new MemoryRepository();
@@ -5574,6 +5937,57 @@ it.each([
   120_000,
 );
 
+it("my own module won't lift plates on a locked layer and is refused naming the plate, is refused on a locked active layer, and once both are unlocked lifts the plates onto the active layer as one undo step", async () => {
+  const { editor, module, place, hintAtCentre, container } = await myModuleOverFourPlates();
+  const layers = container.get(LAYER_SERVICE);
+  const table = itemsOnLayers(editor);
+  const created = layers.create("Modules", "parts");
+  if (!created.ok) throw new Error("the layer wasn't created");
+  const modules = created.value;
+  layers.setLocked(BASE_LAYER_ID, true);
+  const lockedPlatesHint = await hintAtCentre();
+  const lockedPlates = await place(module, 0, 0);
+  layers.setLocked(BASE_LAYER_ID, false);
+  layers.setLocked(modules, true);
+  const lockedActiveHint = await hintAtCentre();
+  const lockedActive = await place(module, 0, 0);
+  layers.setLocked(modules, false);
+  const unlockedHint = await hintAtCentre();
+  const lifted = (await place(module, 0, 0)).placements;
+  const placed = itemsOnLayers(editor);
+  editor.undo(0);
+
+  expect({
+    lockedPlatesHint,
+    lockedPlates,
+    lockedActiveHint,
+    lockedActive,
+    unlockedHint,
+    lifted,
+    placed,
+    undone: itemsOnLayers(editor),
+  }).toEqual({
+    lockedPlatesHint: expect.stringContaining(PLATE_HIT),
+    lockedPlates: {
+      placements: 4,
+      refusedClicks: 1,
+      reason: expect.stringContaining(PLATE_HIT),
+    },
+    lockedActiveHint: expect.stringContaining(
+      'Layer "Modules" is locked, so nothing can be added to it.',
+    ),
+    lockedActive: {
+      placements: 4,
+      refusedClicks: 2,
+      reason: 'Layer "Modules" is locked, so nothing can be added to it.',
+    },
+    unlockedHint: "Magnetic · 0° · Click: lift the 4 plates under it",
+    lifted: 1,
+    placed: [`${module} on ${modules}`],
+    undone: table,
+  });
+}, 120_000);
+
 it("measures in studs and cm: a user's model reads its size held and selected, a drag lays a ruler, a click lays none, and Delete or Escape drops a ruler mid-drag before lifting a laid one", async () => {
   const { editor, backend, catalog } = await startEditor(
     ["baseplate-row"],
@@ -9289,6 +9703,7 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   "throw-switch": "throws a switch without placing a model",
   plan: "edits plan regions only",
   note: "edits notes only",
+  layer: "edits the layer table only",
   "open-plan":
     "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
   event: "edits the event details only",

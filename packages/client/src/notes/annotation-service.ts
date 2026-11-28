@@ -31,7 +31,8 @@ import {
 import { inject, injectable } from "inversify";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { IWorldSession } from "../edit/world-session.ts";
-import { PLACEABLE_CATALOG, WORLD_SESSION } from "../tokens.ts";
+import type { ILayerService } from "../layers/layer-service.ts";
+import { LAYER_SERVICE, PLACEABLE_CATALOG, WORLD_SESSION } from "../tokens.ts";
 
 export type NoteDocument = Pick<WorldDocument, "layers" | "contributors">;
 
@@ -45,7 +46,6 @@ export interface IAnnotationService extends PlacementFollower {
   subscribe(listener: () => void): () => void;
   version(): number;
   notes(): NoteState;
-  document(): NoteDocument;
   records(): ReadonlyArray<NoteRecordV2>;
   rulerSpan(id: string): NoteSpan | null;
   add(body: NoteBody): Decoded<string>;
@@ -87,6 +87,7 @@ export class AnnotationService implements IAnnotationService {
   constructor(
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
+    @inject(LAYER_SERVICE) private readonly layers: Pick<ILayerService, "table">,
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -100,10 +101,6 @@ export class AnnotationService implements IAnnotationService {
 
   notes(): NoteState {
     return this.entries;
-  }
-
-  document(): NoteDocument {
-    return this.openDocument;
   }
 
   records(): ReadonlyArray<NoteRecordV2> {
@@ -203,7 +200,10 @@ export class AnnotationService implements IAnnotationService {
     }
     const decoded = decode(NoteRecordV2, noteAt(body, 0), NEW_NOTE_PATH);
     if (!decoded.ok) return decoded;
-    const index = new WorldDocumentIndex(this.openDocument);
+    const index = new WorldDocumentIndex({
+      ...this.openDocument,
+      layers: [...this.layers.table().layers],
+    });
     const issues = this.referenceIssues(decoded.value, NEW_NOTE_PATH, index, this.world);
     return issues.length > 0 ? { ok: false, issues } : { ok: true, value: canonicalBody(body) };
   }
