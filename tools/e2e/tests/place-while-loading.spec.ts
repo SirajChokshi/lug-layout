@@ -11,7 +11,7 @@ test("a click made while a set loads places it there once it has loaded", async 
 
   await editor.pick(GROCER);
   await page.mouse.click(point.sx, point.sy);
-  await expect(page.locator(".tool-hud")).toContainText("Queued: placing at -640, 0 when ready");
+  await expect(page.locator(".tool-hud")).toContainText("Queued: placing at stud -32, 0 when ready");
   const whileLoading = { tables: await editor.heldTables(), poses: await editor.poses() };
   release();
 
