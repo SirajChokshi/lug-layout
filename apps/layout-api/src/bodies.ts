@@ -1,7 +1,13 @@
-import type { Account, VersionSummary, WorldSummary } from "@brr/schema/layout-api";
+import type {
+  Account,
+  ShareLinkSummary,
+  VersionSummary,
+  WorldSummary,
+} from "@brr/schema/layout-api";
 import type * as v from "valibot";
 import type { AccountRecord } from "./accounts.ts";
 import { isoTime } from "./http.ts";
+import type { ShareLinkRecord } from "./share-links.ts";
 import type { VersionRecord } from "./world-history.ts";
 import type { WorldRecord } from "./world-record.ts";
 
@@ -17,6 +23,10 @@ export function worldBody(world: WorldRecord): v.InferInput<typeof WorldSummary>
     updatedAt: isoTime(world.updatedAt),
     head: world.head,
   };
+}
+
+export function shareLinkBody(link: ShareLinkRecord): v.InferInput<typeof ShareLinkSummary> {
+  return { id: link.id, role: link.role, createdAt: isoTime(link.createdAt) };
 }
 
 export function versionBody(version: VersionRecord): v.InferInput<typeof VersionSummary> {

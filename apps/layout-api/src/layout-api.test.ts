@@ -7,17 +7,23 @@ import {
   ErrorResponse,
   MAX_SHARD_BYTES,
   MissingFilesResponse,
+  SHARE_FRAGMENT_KEY,
+  SHARE_TOKEN_HEADER,
   SIGN_IN_FRAGMENT_KEY,
   SNAPSHOT_FORMAT,
   SNAPSHOT_SCHEMA_VERSION,
   SaveVersionResponse,
   SessionResponse,
+  ShareLinkListResponse,
+  ShareLinkResponse,
   SignInLinkResponse,
   StoredFileResponse,
   VersionListResponse,
   VersionResponse,
+  WORLD_FRAGMENT_KEY,
   WorldListResponse,
   WorldResponse,
+  type ShareRole,
   type WorldSnapshot,
 } from "@brr/schema/layout-api";
 import {
@@ -53,6 +59,7 @@ import type { IMailer, SignInMail } from "./mailer.ts";
 import { LAYOUT_MIGRATIONS } from "./migrations.ts";
 import type { IRandomSource } from "./random.ts";
 import { SchemaMigrations } from "./schema-migrations.ts";
+import { SHARE_LINK_LIMIT } from "./share-links.ts";
 import type { SqlDatabase } from "./sql-database.ts";
 
 interface TestEnv {
@@ -67,6 +74,7 @@ interface TestEnv {
 interface CallOptions {
   readonly method?: string;
   readonly session?: string;
+  readonly share?: string;
   readonly client?: string;
   readonly json?: unknown;
   readonly body?: string | Uint8Array<ArrayBuffer>;
@@ -122,6 +130,7 @@ function call(path: string, options: CallOptions = {}): Promise<Response> {
     ...options.headers,
     "cf-connecting-ip": options.client ?? "192.0.2.1",
     ...(options.session === undefined ? {} : { authorization: `Bearer ${options.session}` }),
+    ...(options.share === undefined ? {} : { [SHARE_TOKEN_HEADER]: options.share }),
     ...(options.json === undefined ? {} : { "content-type": "application/json" }),
   };
   const body = options.json === undefined ? options.body : JSON.stringify(options.json);
@@ -225,6 +234,31 @@ async function createWorld(user: SignedIn, name: string): Promise<string> {
     WorldResponse,
   );
   return created.world.id;
+}
+
+interface SharedLink {
+  readonly id: string;
+  readonly token: string;
+  readonly url: string;
+}
+
+async function shareWorld(owner: SignedIn, world: string, role: ShareRole): Promise<SharedLink> {
+  const created = await expectJson(
+    await call(`/v1/worlds/${world}/share-links`, {
+      method: "POST",
+      json: { role },
+      session: owner.session,
+    }),
+    201,
+    ShareLinkResponse,
+  );
+  expect(created.shareLink.role).toBe(role);
+  const fragment = new URLSearchParams(new URL(created.url).hash.slice(1));
+  return {
+    id: created.shareLink.id,
+    token: fragment.get(SHARE_FRAGMENT_KEY) ?? "",
+    url: created.url,
+  };
 }
 
 function put(
@@ -766,41 +800,251 @@ describe("layout API worlds", () => {
     expect(listed.versions).toEqual([]);
   });
 
-  it("keeps each account's worlds and files out of other accounts' reach", async () => {
+  it("answers every world endpoint by the caller's session and share link", async () => {
     const owner = await signIn("owner@club.example");
+    const helper = await signIn("helper@club.example");
     const other = await signIn("other@club.example");
     const world = await createWorld(owner, "Private yard");
-    const files = worldFiles([baseplate], [], []);
+    const files = worldFiles([baseplate, signalBoxOnBaseplate], [], [signalBox]);
     for (const shard of files.shards) await put(owner, world, "shards", shard);
+    await put(owner, world, "imports", signalBox);
     await expectJson(await save(owner, world, null, files.snapshot), 201, SaveVersionResponse);
     const [shard] = files.shards;
-    if (shard === undefined) throw new Error("the fixture world has no shard");
+    const [unstored] = worldFiles([station], [], []).shards;
+    if (shard === undefined || unstored === undefined) throw new Error("a fixture has no shard");
+    const viewer = await shareWorld(owner, world, "viewer");
+    const commenter = await shareWorld(owner, world, "commenter");
+    const editor = await shareWorld(owner, world, "editor");
+    const revoked = await shareWorld(owner, world, "editor");
+    const revocation = await call(`/v1/worlds/${world}/share-links/${revoked.id}`, {
+      method: "DELETE",
+      session: owner.session,
+    });
+    expect(revocation.status).toBe(204);
+    const elsewhere = await shareWorld(owner, await createWorld(owner, "Other yard"), "editor");
 
-    const listed = await expectJson(
-      await call("/v1/worlds", { session: other.session }),
-      200,
-      WorldListResponse,
+    type Group = "read" | "edit" | "manage";
+    const inWorld = `/v1/worlds/${world}`;
+    const endpoints: ReadonlyArray<{
+      readonly name: string;
+      readonly group: Group;
+      readonly path: string;
+      readonly options: CallOptions;
+    }> = [
+      { name: "GET world", group: "read", path: inWorld, options: {} },
+      { name: "GET versions", group: "read", path: `${inWorld}/versions`, options: {} },
+      { name: "GET version", group: "read", path: `${inWorld}/versions/1`, options: {} },
+      { name: "GET shard", group: "read", path: `${inWorld}/shards/${shard.sha256}`, options: {} },
+      {
+        name: "GET import",
+        group: "read",
+        path: `${inWorld}/imports/${signalBox.sha256}`,
+        options: {},
+      },
+      {
+        name: "PUT shard",
+        group: "edit",
+        path: `${inWorld}/shards/${unstored.sha256}`,
+        options: { method: "PUT", body: unstored.body },
+      },
+      {
+        name: "PUT import",
+        group: "edit",
+        path: `${inWorld}/imports/${lamp.sha256}`,
+        options: { method: "PUT", body: lamp.body },
+      },
+      {
+        name: "POST version",
+        group: "edit",
+        path: `${inWorld}/versions`,
+        options: { method: "POST", json: { parent: 1, snapshot: files.snapshot } },
+      },
+      { name: "DELETE world", group: "manage", path: inWorld, options: { method: "DELETE" } },
+      { name: "GET share links", group: "manage", path: `${inWorld}/share-links`, options: {} },
+      {
+        name: "POST share link",
+        group: "manage",
+        path: `${inWorld}/share-links`,
+        options: { method: "POST", json: { role: "viewer" } },
+      },
+      {
+        name: "DELETE share link",
+        group: "manage",
+        path: `${inWorld}/share-links/${viewer.id}`,
+        options: { method: "DELETE" },
+      },
+    ];
+    const callers: Readonly<Record<string, Pick<CallOptions, "session" | "share">>> = {
+      "no credentials": {},
+      "a revoked link": { share: revoked.token },
+      "another account": { session: other.session },
+      "another account with another world's link": {
+        session: other.session,
+        share: elsewhere.token,
+      },
+      "a viewer link": { share: viewer.token },
+      "another account with a viewer link": { session: other.session, share: viewer.token },
+      "another account with a commenter link": { session: other.session, share: commenter.token },
+      "an editor link": { share: editor.token },
+      "another account with an editor link": { session: helper.session, share: editor.token },
+    };
+    const expected: Readonly<Record<string, Readonly<Record<Group, number>>>> = {
+      "no credentials": { read: 401, edit: 401, manage: 401 },
+      "a revoked link": { read: 401, edit: 401, manage: 401 },
+      "another account": { read: 404, edit: 404, manage: 404 },
+      "another account with another world's link": { read: 404, edit: 404, manage: 404 },
+      "a viewer link": { read: 200, edit: 403, manage: 403 },
+      "another account with a viewer link": { read: 200, edit: 403, manage: 403 },
+      "another account with a commenter link": { read: 200, edit: 403, manage: 403 },
+      "an editor link": { read: 200, edit: 401, manage: 403 },
+      "another account with an editor link": { read: 200, edit: 201, manage: 403 },
+    };
+
+    const answered: Record<string, Record<string, number>> = {};
+    for (const [caller, credentials] of Object.entries(callers)) {
+      const statuses: Record<string, number> = {};
+      for (const endpoint of endpoints) {
+        const response = await call(endpoint.path, {
+          ...endpoint.options,
+          ...credentials,
+          client: nextClient(),
+        });
+        await response.arrayBuffer();
+        statuses[endpoint.name] = response.status;
+      }
+      answered[caller] = statuses;
+    }
+    expect(answered).toEqual(
+      Object.fromEntries(
+        Object.entries(expected).map(([caller, byGroup]) => [
+          caller,
+          Object.fromEntries(endpoints.map((endpoint) => [endpoint.name, byGroup[endpoint.group]])),
+        ]),
+      ),
     );
-    expect(listed.worlds).toEqual([]);
-    for (const [path, method] of [
-      [`/v1/worlds/${world}`, "GET"],
-      [`/v1/worlds/${world}`, "DELETE"],
-      [`/v1/worlds/${world}/versions`, "GET"],
-      [`/v1/worlds/${world}/versions/1`, "GET"],
-      [`/v1/worlds/${world}/shards/${shard.sha256}`, "GET"],
-    ] as const) {
-      expect({
-        path,
-        method,
-        error: await expectError(await call(path, { method, session: other.session }), 404),
-      }).toEqual({
-        path,
-        method,
-        error: `this account has no world ${world}`,
+
+    for (const account of [helper, other]) {
+      const listed = await expectJson(
+        await call("/v1/worlds", { session: account.session, share: editor.token }),
+        200,
+        WorldListResponse,
+      );
+      expect(listed.worlds).toEqual([]);
+    }
+  });
+
+  it("hands out, lists and revokes share links, and lets an editor with a session save", async () => {
+    const owner = await signIn("host@club.example");
+    const guest = await signIn("guest@club.example");
+    const world = await createWorld(owner, "Show layout");
+    const first = worldFiles([baseplate, signalBoxOnBaseplate, station], straights, [signalBox]);
+    for (const shard of first.shards) await put(owner, world, "shards", shard);
+    await put(owner, world, "imports", signalBox);
+    await expectJson(await save(owner, world, null, first.snapshot), 201, SaveVersionResponse);
+
+    const viewer = await shareWorld(owner, world, "viewer");
+    const editor = await shareWorld(owner, world, "editor");
+    expect(viewer.url).toBe(
+      `${APP_ORIGIN}/#${WORLD_FRAGMENT_KEY}=${world}&${SHARE_FRAGMENT_KEY}=${viewer.token}`,
+    );
+    expect(viewer.token).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(
+      await expectError(
+        await call(`/v1/worlds/${world}/share-links`, {
+          method: "POST",
+          json: { role: "owner" },
+          session: owner.session,
+        }),
+        400,
+      ),
+    ).toBe("body.role: must be one of viewer, commenter, editor");
+    const listing = await call(`/v1/worlds/${world}/share-links`, { session: owner.session });
+    const listingText = await listing.text();
+    expect(listing.status).toBe(200);
+    expect(listingText).not.toContain(viewer.token);
+    expect(listingText).not.toContain(editor.token);
+    const listed = decodedOrThrow(
+      decode(ShareLinkListResponse, JSON.parse(listingText)),
+      "share links",
+    );
+    expect(listed.shareLinks.map((link) => [link.id, link.role])).toEqual([
+      [viewer.id, "viewer"],
+      [editor.id, "editor"],
+    ]);
+
+    const opened = await expectJson(
+      await call(`/v1/worlds/${world}`, { share: viewer.token }),
+      200,
+      WorldResponse,
+    );
+    expect(opened).toMatchObject({ role: "viewer", world: { name: "Club show", head: 1 } });
+
+    const moved = worldFiles(
+      [baseplate, signalBoxOnBaseplate, { ...station, x: -2020 }],
+      straights,
+      [signalBox],
+    );
+    const asGuest = { session: guest.session, share: editor.token };
+    for (const shard of moved.shards) {
+      await call(`/v1/worlds/${world}/shards/${shard.sha256}`, {
+        method: "PUT",
+        body: shard.body,
+        ...asGuest,
       });
     }
-    expect((await put(other, world, "shards", shard)).status).toBe(404);
-    expect((await call(`/v1/worlds/${world}`, { session: owner.session })).status).toBe(200);
+    const saved = await expectJson(
+      await call(`/v1/worlds/${world}/versions`, {
+        method: "POST",
+        json: { parent: 1, snapshot: moved.snapshot },
+        ...asGuest,
+      }),
+      201,
+      SaveVersionResponse,
+    );
+    expect(saved).toMatchObject({
+      previousHead: 1,
+      version: { version: 2, savedBy: guest.accountId },
+    });
+    expect(
+      await expectJson(
+        await call(`/v1/worlds/${world}`, { session: owner.session }),
+        200,
+        WorldResponse,
+      ),
+    ).toMatchObject({ role: "owner", world: { head: 2 } });
+    expect(
+      (
+        await expectJson(
+          await call("/v1/account", { session: guest.session }),
+          200,
+          AccountResponse,
+        )
+      ).usage,
+    ).toMatchObject({ bytes: 0, worlds: 0 });
+
+    const revokeEditor = () =>
+      call(`/v1/worlds/${world}/share-links/${editor.id}`, {
+        method: "DELETE",
+        session: owner.session,
+      });
+    expect((await revokeEditor()).status).toBe(204);
+    expect(await expectError(await revokeEditor(), 404)).toBe(
+      `world ${world} has no share link ${editor.id}`,
+    );
+
+    for (let link = 1; link < SHARE_LINK_LIMIT; link += 1) {
+      await shareWorld(owner, world, "commenter");
+    }
+    expect(
+      await expectError(
+        await call(`/v1/worlds/${world}/share-links`, {
+          method: "POST",
+          json: { role: "viewer" },
+          session: owner.session,
+        }),
+        507,
+      ),
+    ).toBe(`this world already has its limit of ${SHARE_LINK_LIMIT} share links`);
   });
 
   it("deletes a world with its files, and an account with every world it owns", async () => {
@@ -846,6 +1090,7 @@ describe("layout API worlds", () => {
     const preflight = await call("/v1/worlds", { method: "OPTIONS" });
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get("access-control-allow-headers")).toContain("Authorization");
+    expect(preflight.headers.get("access-control-allow-headers")).toContain(SHARE_TOKEN_HEADER);
     expect(preflight.headers.get("access-control-allow-methods")).toContain("PUT");
     expect(await expectError(await call("/v1/nothing"), 404)).toBe("no such endpoint");
     const wrong = await call("/v1/sign-in-links");

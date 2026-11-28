@@ -10,6 +10,7 @@ import { LAYOUT_MIGRATIONS } from "./migrations.ts";
 import type { IRandomSource } from "./random.ts";
 import { RateLimitBindings } from "./request-limits.ts";
 import { SchemaMigrations } from "./schema-migrations.ts";
+import { ShareLinks } from "./share-links.ts";
 import { WorldDirectory } from "./world-directory.ts";
 import { WorldFiles } from "./world-files.ts";
 import { WorldHandlers } from "./world-handlers.ts";
@@ -44,11 +45,13 @@ export function createLayoutApi(env: LayoutEnv, clock: IClock, random: IRandomSo
   const files = new WorldFiles(db, env.LAYOUT_FILES, clock);
   const directory = new WorldDirectory(db, files, clock, random);
   const history = new WorldHistory(db, files, clock);
+  const shareLinks = new ShareLinks(db, clock, random, config.APP_ORIGIN);
   return new LayoutApi(
     new SchemaMigrations(db, LAYOUT_MIGRATIONS, clock),
     accounts,
+    shareLinks,
     new RateLimitBindings(env.SIGN_IN_RATE_LIMIT, env.ACCOUNT_RATE_LIMIT),
     new AccountHandlers(accounts, directory, files, clock),
-    new WorldHandlers(directory, files, history),
+    new WorldHandlers(directory, files, history, shareLinks),
   );
 }
