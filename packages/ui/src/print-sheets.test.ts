@@ -24,7 +24,14 @@ const PLAN: PlanRegion = {
   name: "Plan 1",
   originChunkX: 0,
   originChunkZ: 0,
-  footprint: { roomWidthMm: 4000, roomDepthMm: 3000, tables: [], obstacles: [] },
+  footprint: {
+    roomWidthMm: 4000,
+    roomDepthMm: 3000,
+    rooms: [],
+    tables: [],
+    obstacles: [],
+    aisles: [],
+  },
   maxOverhangMm: 0,
   maxReachMm: 700,
 };
