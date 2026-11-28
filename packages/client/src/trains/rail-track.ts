@@ -8,7 +8,7 @@ import {
   type LaidPieceRef,
   type TrackGraph,
 } from "@brr/domain";
-import { pose16 } from "@brr/math";
+import { PLATE_LDU, pose16 } from "@brr/math";
 import type { TrackPiece } from "@brr/schema/bundle";
 import { decodeTrackPosition, encodeTrackPosition, type LaidPieceV1 } from "@brr/schema/world";
 import type { PlayTrack } from "../edit/track-drawing.ts";
@@ -32,6 +32,7 @@ export interface RailCarrier {
 export interface SwitchSite {
   readonly label: string;
   readonly x: number;
+  readonly y: number;
   readonly z: number;
 }
 
@@ -91,6 +92,7 @@ export class RailTrack {
       sites.push({
         label: `Switch ${s + 1} (${piece?.title ?? "switch"})`,
         x: ends === 0 ? 0 : x / ends,
+        y: play.railTopY + layout.yPlates(placement) * PLATE_LDU,
         z: ends === 0 ? 0 : z / ends,
       });
     }

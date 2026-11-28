@@ -1103,6 +1103,28 @@ export function routeMiddle(route: TrackRoute): LatticePoint {
   };
 }
 
+const TRACK_HEADINGS = 16;
+
+export function isCurve(route: TrackRoute): boolean {
+  return (
+    (route.to.heading - route.from.heading + TRACK_HEADINGS) % TRACK_HEADINGS !== TRACK_HEADINGS / 2
+  );
+}
+
+export function curveFarthestFrom(
+  routes: ReadonlyArray<TrackRoute>,
+  taken: ReadonlyArray<LatticePoint>,
+): LatticePoint {
+  const clearance = (point: LatticePoint) =>
+    Math.min(...taken.map((other) => Math.hypot(point.x - other.x, point.z - other.z)));
+  const farthest = routes
+    .filter(isCurve)
+    .map(routeMiddle)
+    .toSorted((a, b) => clearance(b) - clearance(a))[0];
+  if (!farthest) throw new Error("the track has no curve");
+  return farthest;
+}
+
 export function nearestLattice(end: TrackEnd): LatticePoint {
   return {
     x: Math.round(end.xLdu / STUD) * STUD,

@@ -33,7 +33,7 @@ interface OverlayBox {
   readonly clicksCaughtBy: ReadonlyArray<string>;
 }
 
-async function openEditor(page: Page): Promise<void> {
+async function openEditor(page: Page, starter: string | null = null): Promise<void> {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("requestfailed", (request) =>
@@ -48,7 +48,12 @@ async function openEditor(page: Page): Promise<void> {
     const shown = await editor.locator(".error").allTextContents();
     throw new Error(`the editor couldn't start: ${[...shown, ...pageErrors].join(" | ")}`);
   }
-  await startEmpty(page);
+  if (starter === null) {
+    await startEmpty(page);
+    return;
+  }
+  await page.locator(`.welcome [data-starter="${starter}"]`).click();
+  await expect(page.locator(".welcome")).toHaveCount(0, { timeout: READY_TIMEOUT_MS });
 }
 
 async function enterMode(page: Page, mode: Mode): Promise<void> {
@@ -238,13 +243,19 @@ for (const viewport of VIEWPORTS) {
       });
     }
 
-    test("overlays never overlap or catch each other's clicks in Play, with the library folded away, stats folded or open", async ({
+    test("overlays never overlap or catch each other's clicks in Play, before and while the cab runs the Station stop train, with the library folded away, stats folded or open", async ({
       page,
     }) => {
-      await openEditor(page);
+      await openEditor(page, "station-stop");
       await chooseShellMode(page, "play");
-      await expect(page.locator(".play-panel")).toBeVisible();
+      const cab = page.locator("section.play-panel");
+      await expect(cab).toBeVisible();
       await expect(page.locator(".library")).toBeHidden();
+      await expectOverlaysApart(page, viewport);
+      await page.locator(".editor-hud > summary").click();
+      await expectOverlaysApart(page, viewport);
+      await cab.locator('[data-action="play"]').click();
+      await expect(cab).toHaveAttribute("data-play-status", "running");
       await expectOverlaysApart(page, viewport);
       await page.locator(".editor-hud > summary").click();
       await expectOverlaysApart(page, viewport);

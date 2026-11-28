@@ -1,6 +1,6 @@
 import { rigidLift } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
-import { RAY_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
+import { PROJECTION_FLOATS, RAY_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import type { SimFrameLayout, SimTrainLoad, TrainSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
@@ -24,6 +24,7 @@ export interface PlaySwitchView {
   readonly label: string;
   readonly diverging: boolean;
   readonly x: number;
+  readonly y: number;
   readonly z: number;
 }
 
@@ -74,6 +75,7 @@ export interface ITrainPlay {
   rerail(): void;
   follow(camera: FollowCamera | null): void;
   click(ndcX: number, ndcY: number): boolean;
+  projectSwitches(out: Float64Array): void;
 }
 
 export const NO_TRACK_LAID = "Lay some track first, then set a train on it.";
@@ -367,6 +369,15 @@ export class TrainPlay implements ITrainPlay {
     return ((data[first + axis] ?? 0) + (data[last + axis] ?? 0)) / 2;
   }
 
+  projectSwitches(out: Float64Array): void {
+    const switches = this.state.switches;
+    const count = Math.min(switches.length, Math.floor(out.length / PROJECTION_FLOATS));
+    for (let s = 0; s < count; s++) {
+      const view = switches[s];
+      if (view) this.backend.projectToNdc(view.x, view.y, view.z, out, s * PROJECTION_FLOATS);
+    }
+  }
+
   click(ndcX: number, ndcY: number): boolean {
     const rails = this.rails;
     if (this.state.status !== "running" || !rails) return false;
@@ -476,6 +487,7 @@ export class TrainPlay implements ITrainPlay {
       label: site.label,
       diverging: (states[index] ?? 0) === DIVERGING,
       x: site.x,
+      y: site.y,
       z: site.z,
     }));
   }

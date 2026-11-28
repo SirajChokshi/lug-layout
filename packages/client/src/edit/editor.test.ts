@@ -11926,6 +11926,7 @@ async function rampedLoop(sim: InThreadSim) {
 
 const RAISED_LDU = RAMP_CLIMB_PLATES * PLATE_LDU;
 const RAMP_MIDDLE_LDU = LOOP_HALF_LDU - 8 * STUD;
+const SWITCH_X_LDU = 30 * STUD;
 
 function bodiesOnSide(backend: HeadlessBackend, side: number): ReadonlyArray<number> {
   return [...backend.vehicles]
@@ -11996,6 +11997,37 @@ it("runs a train whole laps of a loop that ramps up over generated piers and bac
   expect(lapped).toBe(true);
   expect(lifted.length).toBeGreaterThan(0);
   for (const rise of lifted) expect(rise).toBeCloseTo(RAISED_LDU, 9);
+}, 300_000);
+
+it("stands each switch lever at its own rail top: a switch dropped into the raised stretch of a ramped loop is the climb above one dropped into its ground straight", async () => {
+  const sim = new InThreadSim();
+  const { editor, backend, container, catalog } = await rampedLoop(sim);
+  const laid = editor.snapshot().track?.pieces ?? 0;
+  const onGround = holdAndClick(editor, backend, RIGHT_SWITCH, [SWITCH_X_LDU, LOOP_RADIUS_LDU]);
+  editor.raiseTrack(RAMP_CLIMB_PLATES);
+  const onRaised = holdAndClick(editor, backend, RIGHT_SWITCH, [0, -LOOP_RADIUS_LDU]);
+  editor.raiseTrack(-RAMP_CLIMB_PLATES);
+  editor.chooseItem(null);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await settledPlacer(editor, backend)(LOCOMOTIVE, -SWITCH_X_LDU, LOOP_RADIUS_LDU);
+  editor.chooseItem(null);
+  const play = container.get(TRAIN_PLAY);
+  const frame = everyAnimationFrame();
+  await play.start();
+  frame();
+  const { switches } = play.snapshot();
+  play.stop();
+  const ground = switches.find((view) => view.z > 0);
+  const raised = switches.find((view) => view.z < 0);
+
+  expect({ onGround, onRaised }).toEqual({
+    onGround: { refusedClicks: 0, reason: null, pieces: laid - 1 },
+    onRaised: { refusedClicks: 0, reason: null, pieces: laid - 2 },
+  });
+  expect({ switches: switches.length, rise: (raised?.y ?? 0) - (ground?.y ?? 0) }).toEqual({
+    switches: 2,
+    rise: RAISED_LDU,
+  });
 }, 300_000);
 
 it("sets a train on raised track and on a ramp where it fits, drawn on their rails", async () => {

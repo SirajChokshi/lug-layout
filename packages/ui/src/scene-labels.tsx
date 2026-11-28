@@ -17,12 +17,12 @@ const SCREEN_FLOATS_PER_LABEL = 2;
 const PILL_FLOATS_PER_LABEL = 4;
 const PILL_GAP_PX = 2;
 
-interface PlacedLabel {
+export interface PlacedLabel {
   readonly node: SVGGElement;
   readonly translate: SVGTransform;
 }
 
-function placedLabel(node: Element | undefined): PlacedLabel | null {
+export function placedLabel(node: Element | undefined): PlacedLabel | null {
   if (!(node instanceof SVGGElement)) return null;
   const translate =
     node.transform.baseVal.numberOfItems > 0 ? node.transform.baseVal.getItem(0) : null;

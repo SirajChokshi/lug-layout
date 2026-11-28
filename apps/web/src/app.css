@@ -940,7 +940,8 @@ button.plan-issue:hover {
   border-top: none;
 }
 
-.scene-labels {
+.scene-labels,
+.switch-levers {
   position: fixed;
   inset: 0;
   width: 100vw;
@@ -1740,12 +1741,6 @@ footer a {
   margin-left: -1px;
 }
 
-.play-controls .toolbar {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-2);
-}
-
 .play-start,
 .play-controls {
   display: flex;
@@ -1777,11 +1772,34 @@ footer a {
   color: var(--text-on-accent);
 }
 
-.play-motion {
+.play-speedometer {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
   margin: 0;
-  font-size: var(--text-heading);
+}
+
+.play-speed {
+  font-size: var(--text-readout);
   font-weight: var(--weight-strong);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.play-motion {
+  color: var(--text-secondary);
+  font-weight: var(--weight-medium);
+}
+
+.play-drive {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.play-stop:not(:disabled) {
+  border-color: var(--status-danger);
+  color: var(--status-danger);
 }
 
 .play-derailed {
@@ -1795,26 +1813,45 @@ footer a {
   color: var(--status-danger);
 }
 
-.play-switches {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.switch-lever {
+  color: var(--text-primary);
+  pointer-events: auto;
+  cursor: pointer;
+  outline: none;
 }
 
-.play-switches li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.play-switches button[aria-pressed="true"] {
-  border-color: var(--status-warn);
-  background: var(--status-warn-soft);
+.switch-lever[aria-pressed="true"] {
   color: var(--status-warn);
+}
+
+.switch-lever-stem,
+.switch-lever-arm {
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+
+.switch-lever-stem {
+  stroke-width: 2;
+}
+
+.switch-lever-arm {
+  stroke-width: 4;
+}
+
+.switch-lever-base {
+  fill: currentColor;
+  stroke: var(--surface-panel-solid);
+  stroke-width: 2;
+}
+
+.switch-lever-knob {
+  fill: var(--surface-panel-solid);
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.switch-lever:focus-visible .switch-lever-base {
+  stroke: var(--accent);
 }
 
 .play-follow {

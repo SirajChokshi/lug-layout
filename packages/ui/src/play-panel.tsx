@@ -25,8 +25,7 @@ function studsPerSecond(lduPerS: number): string {
 function motionText(snapshot: PlaySnapshot): string {
   if (snapshot.derailSpeedLduPerS > 0) return "derailed";
   if (snapshot.speedLduPerS === 0) return snapshot.targetLduPerS === 0 ? "stopped" : "starting";
-  const way = snapshot.direction < 0 ? "backward" : "forward";
-  return `${studsPerSecond(snapshot.speedLduPerS)} studs/s ${way}`;
+  return `studs/s ${snapshot.direction < 0 ? "backward" : "forward"}`;
 }
 
 interface PlayPanelProps {
@@ -147,8 +146,9 @@ export function PlayPanel({
               </select>
             </label>
           )}
-          <p className="play-motion" aria-live="polite">
-            {motionText(snapshot)}
+          <p className="play-speedometer" aria-live="polite">
+            <span className="play-speed">{studsPerSecond(snapshot.speedLduPerS)}</span>
+            <span className="play-motion">{motionText(snapshot)}</span>
           </p>
           {snapshot.derailSpeedLduPerS > 0 && (
             <div className="play-derailed" role="alert">
@@ -173,6 +173,25 @@ export function PlayPanel({
               onChange={(event) => play.drive(Number(event.target.value))}
             />
           </label>
+          <div className="play-drive">
+            <button type="button" disabled={derailed} onClick={() => play.drive(-max / 2)}>
+              Back
+            </button>
+            <button
+              type="button"
+              className="play-stop"
+              disabled={derailed || !moving}
+              onClick={() => play.drive(0)}
+            >
+              Stop ({shortcutText("stop-train")})
+            </button>
+            <button type="button" disabled={derailed} onClick={() => play.drive(max / 2)}>
+              Forward
+            </button>
+          </div>
+          <button type="button" data-action="stop-play" onClick={() => play.stop()}>
+            Leave play ({shortcutText("play")})
+          </button>
           <label className="play-follow">
             <input
               type="checkbox"
@@ -181,41 +200,11 @@ export function PlayPanel({
             />
             Follow the train
           </label>
-          <div className="toolbar">
-            <button type="button" disabled={derailed} onClick={() => play.drive(-max / 2)}>
-              Back
-            </button>
-            <button type="button" disabled={derailed} onClick={() => play.drive(max / 2)}>
-              Forward
-            </button>
-            <button type="button" disabled={derailed || !moving} onClick={() => play.drive(0)}>
-              Stop ({shortcutText("stop-train")})
-            </button>
-            <button type="button" data-action="stop-play" onClick={() => play.stop()}>
-              Leave play ({shortcutText("play")})
-            </button>
-          </div>
-          {snapshot.switches.length > 0 && (
-            <ul className="play-switches" aria-label="Switches">
-              {snapshot.switches.map((view) => (
-                <li key={view.index}>
-                  <span>{view.label}</span>
-                  <button
-                    type="button"
-                    aria-pressed={view.diverging}
-                    onClick={() => play.throwSwitch(view.index)}
-                  >
-                    {view.diverging ? "diverging" : "straight"}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
           {snapshot.notice && <p className="play-error">{snapshot.notice}</p>}
           <p className="toolbar-hint">
             {shortcutText("throttle-up")}/{shortcutText("throttle-down")} throttle,{" "}
             {shortcutText("stop-train")} stops, {shortcutText("rerail")} rerails. Going the other
-            way brakes, stops and reverses. Click a switch on the layout to throw it.
+            way brakes, stops and reverses. Click a lever on the layout to throw its switch.
           </p>
           <RunningGearPanel gear={runningGear} />
         </div>
