@@ -446,6 +446,30 @@ it("a file the reader refuses comes back with the reader's reason", async () => 
     status: "rejected",
     kind: "malformed",
     message:
-      'the BlueBrick map is damaged: Map/Layers/Layer[6]/RulerItems/CircularRuler[1]/Radius "twelve" isn\'t a finite decimal',
+      'the BlueBrick file is damaged: Map/Layers/Layer[6]/RulerItems/CircularRuler[1]/Radius "twelve" isn\'t a finite decimal',
+  });
+});
+
+it("a budget saved by BlueBrick comes back through the compiler, and a map read as a budget is refused", async () => {
+  const { compiler } = await bundleCompiler();
+  expect(
+    compiler.readBlueBrickBudget(await readFile(new URL("budget.bbb", blueBrickFixtures))),
+  ).toEqual({
+    status: "read",
+    budget: {
+      version: 1,
+      parts: [
+        { id: "2865.8", count: 12 },
+        { id: "3811.1", count: 0 },
+        { id: "TS_OLDNAME_TEST", count: 3 },
+      ],
+    },
+  });
+  expect(
+    compiler.readBlueBrickBudget(await readFile(new URL("synthetic-yard.bbm", blueBrickFixtures))),
+  ).toEqual({
+    status: "rejected",
+    kind: "notBudget",
+    message: "not a BlueBrick budget: its root element is <Map>, not <Budget>",
   });
 });

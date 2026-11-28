@@ -62,6 +62,7 @@ pub enum Operation {
     },
     ReadStudio,
     ReadBlueBrick,
+    ReadBlueBrickBudget,
     Compile {
         lod: LodName,
         stud_primitives: Vec<String>,

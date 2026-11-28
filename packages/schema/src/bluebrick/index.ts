@@ -423,3 +423,44 @@ export const BlueBrickRead = v.variant("status", [
   }),
 ]);
 export type BlueBrickRead = v.InferOutput<typeof BlueBrickRead>;
+
+export const BLUEBRICK_BUDGET_NEWEST_FORMAT = 1;
+
+export const BlueBrickBudgetedPart = v.strictObject({
+  id: v.pipe(
+    v.string(),
+    v.description("the part id exactly as the .bbb wrote it, read through BlueBrickPartMapper"),
+  ),
+  count: v.pipe(Index, v.description("how many of the part the budget allows; 0 allows none")),
+});
+export type BlueBrickBudgetedPart = v.InferOutput<typeof BlueBrickBudgetedPart>;
+
+export const BlueBrickBudget = v.strictObject({
+  version: v.pipe(Integer, v.minValue(0), v.maxValue(BLUEBRICK_BUDGET_NEWEST_FORMAT)),
+  parts: v.pipe(
+    list(BlueBrickBudgetedPart),
+    v.check(
+      (parts) => new Set(parts.map((part) => part.id)).size === parts.length,
+      "lists each part id once, as BlueBrick refuses a budget that repeats one",
+    ),
+  ),
+});
+export type BlueBrickBudget = v.InferOutput<typeof BlueBrickBudget>;
+
+export const BlueBrickBudgetRejectionKind = v.picklist([
+  "notXml",
+  "notBudget",
+  "newerVersion",
+  "malformed",
+]);
+export type BlueBrickBudgetRejectionKind = v.InferOutput<typeof BlueBrickBudgetRejectionKind>;
+
+export const BlueBrickBudgetRead = v.variant("status", [
+  v.strictObject({ status: v.literal("read"), budget: BlueBrickBudget }),
+  v.strictObject({
+    status: v.literal("rejected"),
+    kind: BlueBrickBudgetRejectionKind,
+    message: v.string(),
+  }),
+]);
+export type BlueBrickBudgetRead = v.InferOutput<typeof BlueBrickBudgetRead>;

@@ -1285,6 +1285,7 @@ export const CompilerRequest = v.variant("op", [
   }),
   v.strictObject({ op: v.literal("readStudio") }),
   v.strictObject({ op: v.literal("readBlueBrick") }),
+  v.strictObject({ op: v.literal("readBlueBrickBudget") }),
   v.strictObject({
     op: v.literal("compile"),
     lod: BundleLod,

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { decode } from "../decode/index.ts";
-import { BlueBrickMap } from "./index.ts";
+import { BlueBrickBudget, BlueBrickMap } from "./index.ts";
 
 interface Ref {
   readonly layer: number;
@@ -186,4 +186,16 @@ it.each<[string, (held: Fixture) => void, string]>([
   const held = fixture();
   corrupt(held);
   expect(messages(held.map)).toEqual([message]);
+});
+
+function budget(ids: ReadonlyArray<string>) {
+  return { version: 1, parts: ids.map((id) => ({ id, count: 2 })) };
+}
+
+it("refuses a budget that repeats a part id, as BlueBrick does", () => {
+  expect(decode(BlueBrickBudget, budget(["3811.2", "3811.4"])).ok).toBe(true);
+  const repeated = decode(BlueBrickBudget, budget(["3811.2", "3811.2"]));
+  expect(repeated.ok ? [] : repeated.issues.map((issue) => issue.message)).toEqual([
+    "lists each part id once, as BlueBrick refuses a budget that repeats one",
+  ]);
 });

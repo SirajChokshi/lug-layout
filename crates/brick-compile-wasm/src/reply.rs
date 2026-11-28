@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use brick_compile::affine::Vec3;
 use brick_compile::authored::AUTHORED_RULE_VERSION;
-use brick_compile::bluebrick::{BlueBrickError, BlueBrickMap};
+use brick_compile::bluebrick::{BlueBrickBudget, BlueBrickError, BlueBrickMap};
 use brick_compile::cover::{CellsCause, ModelCover};
 use brick_compile::flatten::FlattenError;
 use brick_compile::inline::InlineComparison;
@@ -133,6 +133,8 @@ pub enum Reply {
     StudioRejected { kind: &'static str, message: String },
     #[serde(rename = "read")]
     BlueBrickRead { map: BlueBrickMap },
+    #[serde(rename = "read")]
+    BlueBrickBudgetRead { budget: BlueBrickBudget },
     #[serde(rename = "rejected")]
     BlueBrickRejected { kind: &'static str, message: String },
     #[serde(rename = "compiled")]

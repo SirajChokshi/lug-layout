@@ -23,7 +23,7 @@ import {
   type CompilerVehicles,
   type ModelSection,
 } from "@brr/schema/bundle";
-import { BlueBrickRead } from "@brr/schema/bluebrick";
+import { BlueBrickBudgetRead, BlueBrickRead } from "@brr/schema/bluebrick";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { WasiReactor } from "./wasi-reactor.ts";
 
@@ -434,6 +434,11 @@ export class BrickCompiler {
   readBlueBrick(bbm: Uint8Array): BlueBrickRead {
     const { header } = this.call({ op: "readBlueBrick" }, { bbm });
     return decodedOrThrow(decode(BlueBrickRead, header), "brick-compile readBlueBrick");
+  }
+
+  readBlueBrickBudget(bbb: Uint8Array): BlueBrickBudgetRead {
+    const { header } = this.call({ op: "readBlueBrickBudget" }, { bbb });
+    return decodedOrThrow(decode(BlueBrickBudgetRead, header), "brick-compile readBlueBrickBudget");
   }
 
   compile(request: CompileRequest, library: LibraryFiles): CompileOutput {
