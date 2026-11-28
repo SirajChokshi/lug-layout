@@ -38,6 +38,7 @@ export type PlacementLineKind =
   | "snap"
   | "mates"
   | "lift"
+  | "lifts"
   | "turn";
 
 export interface PlacementLine {
@@ -87,6 +88,7 @@ export interface SettleView extends PlacementModeView {
   readonly ghostRot: number;
   readonly activeItem: string | null;
   readonly ghostSettled: boolean;
+  readonly history: { readonly undoDepth: number };
 }
 
 const PLACE_MODE = "place";
@@ -139,8 +141,8 @@ function sameAsk(before: SettleView, after: SettleView): boolean {
 export function ghostSettles(before: SettleView, after: SettleView, dropping: boolean): boolean {
   if (after.mode !== PLACE_MODE || before.mode !== PLACE_MODE) return false;
   if (!sameHeldCell(before, after) || !sameAsk(before, after)) return false;
-  if (after.placements !== before.placements)
-    return dropping && after.placements > before.placements;
+  const dropped = dropping && after.history.undoDepth > before.history.undoDepth;
+  if (dropped || after.placements !== before.placements) return dropped;
   return before.ghostSettled;
 }
 
@@ -377,6 +379,9 @@ function placementLines(hover: PlacementHoverInput, placement: PlacementHover): 
   if (!placement.accepted) {
     lines.push(line("refusal", hover.refusal ?? UNPLACEABLE));
   } else {
+    if (placement.lifts.length > 0) {
+      lines.push(line("lifts", `Click: lift the ${plates(placement.lifts.length)} under it`));
+    }
     const mates = joined(placement.mates);
     const kindLines = mateLines(mates);
     if (kindLines.length > 1) lines.push(line("joints", jointsText(placement.joints)));
