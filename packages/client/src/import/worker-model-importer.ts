@@ -12,6 +12,7 @@ import type {
   LayoutPart,
   PlacementListener,
   RollingDiagnosticsRows,
+  StudioLdraw,
 } from "@brr/import";
 import { inject, injectable } from "inversify";
 import {
@@ -41,6 +42,7 @@ export interface IModelImporter {
     lod?: BundleLod,
   ): Promise<RollingDiagnosticsRows>;
   layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>>;
+  studioLdraw(fileName: string, bytes: Uint8Array, lod?: BundleLod): Promise<StudioLdraw>;
 }
 
 @injectable()
@@ -94,6 +96,23 @@ export class WorkerModelImporter implements IModelImporter {
   async layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>> {
     const compilerUrl = this.compilerUrl(await this.loader.importContext("standard"));
     return this.workers.layoutParts({ compilerUrl, fileName, text });
+  }
+
+  async studioLdraw(
+    fileName: string,
+    bytes: Uint8Array,
+    lod: BundleLod = "standard",
+  ): Promise<StudioLdraw> {
+    const [context, job, bricklinkParts] = await Promise.all([
+      this.loader.importContext(lod),
+      this.job(fileName, lod),
+      this.loader.loadBricklinkParts(lod),
+    ]);
+    return this.workers.studioLdraw({
+      compilerUrl: this.compilerUrl(context),
+      ...(this.ldrawLibraryBaseUrl === null ? {} : { ldrawLibraryUrl: this.ldrawLibraryBaseUrl }),
+      input: { kind: "studio", job, bytes: bytes.slice(), bricklinkParts },
+    });
   }
 
   private compilerUrl(context: ImportContext): string {

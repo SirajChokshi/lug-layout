@@ -9,6 +9,7 @@ import {
   type LayoutPart,
   type PartConnectorSource,
   type RollingDiagnosticsRows,
+  type StudioLdraw,
 } from "@brr/import";
 import type { BundleLod } from "@brr/schema/bundle";
 import { readFile } from "node:fs/promises";
@@ -75,6 +76,10 @@ export class InThreadModelImporter implements IModelImporter {
   }
 
   importStudio(fileName: string): Promise<ImportResult> {
+    return Promise.reject(new Error(`${fileName}: Studio files are not imported in this test`));
+  }
+
+  studioLdraw(fileName: string): Promise<StudioLdraw> {
     return Promise.reject(new Error(`${fileName}: Studio files are not imported in this test`));
   }
 

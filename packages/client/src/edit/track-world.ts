@@ -39,6 +39,7 @@ import type {
 } from "./placed-chunks.ts";
 import {
   TrackDrawing,
+  type LaidTrackPart,
   type LowClearance,
   type PlacedTrackPiece,
   type PlayTrack,
@@ -143,6 +144,7 @@ export interface ITrackWorld extends PlanTrackSource {
   restore(records: ReadonlyArray<TrackRecordV1>): ReadonlyArray<Issue>;
   adoptRestored(): void;
   records(): TrackRecordV1[];
+  laidParts(): ReadonlyArray<LaidTrackPart>;
   routes(): ReadonlyArray<TrackRouteView>;
   openEnds(): ReadonlyArray<TrackEndView>;
 }
@@ -614,6 +616,10 @@ export class TrackWorld implements ITrackWorld {
 
   records(): TrackRecordV1[] {
     return this.track?.records() ?? [];
+  }
+
+  laidParts(): ReadonlyArray<LaidTrackPart> {
+    return this.track?.laidParts() ?? [];
   }
 
   routes(): ReadonlyArray<TrackRouteView> {

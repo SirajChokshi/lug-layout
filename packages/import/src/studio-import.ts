@@ -81,13 +81,17 @@ export async function prepareStudioImport(
   };
 }
 
-export async function importStudioFile(
-  engine: ModelImportEngine,
+export interface StudioLdraw {
+  readonly fileName: string;
+  readonly text: string;
+  readonly customFiles: ReadonlyArray<CustomSource>;
+}
+
+async function preparedStudioFile(
   compiler: BrickCompiler,
   mirror: LdrawMirror,
   input: StudioFileInput,
-  onPlaced: PlacementListener = IGNORE_PLACEMENT,
-): Promise<ImportResult> {
+): Promise<Extract<StudioPrepared, { readonly kind: "ready" }>> {
   const prepared = await prepareStudioImport(
     compiler,
     input.job.fileName,
@@ -97,6 +101,26 @@ export async function importStudioFile(
     new Set(input.job.ldconfigCodes),
   );
   if (prepared.kind === "rejected") throw new Error(prepared.rejection.message);
+  return prepared;
+}
+
+export async function studioLdraw(
+  compiler: BrickCompiler,
+  mirror: LdrawMirror,
+  input: StudioFileInput,
+): Promise<StudioLdraw> {
+  const prepared = await preparedStudioFile(compiler, mirror, input);
+  return { fileName: prepared.fileName, text: prepared.ldraw, customFiles: prepared.customFiles };
+}
+
+export async function importStudioFile(
+  engine: ModelImportEngine,
+  compiler: BrickCompiler,
+  mirror: LdrawMirror,
+  input: StudioFileInput,
+  onPlaced: PlacementListener = IGNORE_PLACEMENT,
+): Promise<ImportResult> {
+  const prepared = await preparedStudioFile(compiler, mirror, input);
   const result = await engine.importText(
     {
       ...input.job,

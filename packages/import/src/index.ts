@@ -42,6 +42,8 @@ export {
   importStudioFile,
   MirrorPartExists,
   prepareStudioImport,
+  studioLdraw,
+  type StudioLdraw,
   type StudioPrepared,
   type StudioReport,
 } from "./studio-import.ts";
@@ -102,5 +104,6 @@ export {
   type RollingDiagnosticsRequest,
   type RollingDiagnosticsRows,
   type StudioFileInput,
+  type StudioLdrawRequest,
 } from "./worker-protocol.ts";
 export type { LooseGeometry } from "./brick-compiler.ts";

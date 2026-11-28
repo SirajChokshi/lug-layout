@@ -9,6 +9,8 @@ import type {
   PlacementListener,
   RollingDiagnosticsRequest,
   RollingDiagnosticsRows,
+  StudioLdraw,
+  StudioLdrawRequest,
 } from "@brr/import";
 import { IMPORT_PROTOCOL, RpcEndpoint, type BakeHelperHandoff } from "@brr/rpc";
 import { inject, injectable } from "inversify";
@@ -17,6 +19,8 @@ import { IMPORT_BAKE_HELPERS, IMPORT_WORKER_FACTORY } from "../tokens.ts";
 export type ImportWorkerFactory = () => Worker;
 
 export type ImportRun = Omit<ImportWorkerRequest, "kind" | "ticket">;
+
+export type StudioLdrawRun = Omit<StudioLdrawRequest, "kind">;
 
 export interface IImportWorkerPool {
   run(
@@ -29,12 +33,17 @@ export interface IImportWorkerPool {
     partIds: ReadonlyArray<string>,
   ): Promise<RollingDiagnosticsRows>;
   layoutParts(request: Omit<LayoutPartsRequest, "kind">): Promise<ReadonlyArray<LayoutPart>>;
+  studioLdraw(request: StudioLdrawRun): Promise<StudioLdraw>;
 }
 
 interface Primary {
   readonly worker: Worker;
   readonly endpoint: RpcEndpoint<
-    ImportWorkerRequest | RollingDiagnosticsRequest | LayoutPartsRequest | BakeHelperHandoff,
+    | ImportWorkerRequest
+    | RollingDiagnosticsRequest
+    | LayoutPartsRequest
+    | StudioLdrawRequest
+    | BakeHelperHandoff,
     ImportWorkerResponse | ImportWorkerPlaced
   >;
   readonly crashed: Promise<never>;
@@ -98,6 +107,7 @@ export class ImportWorkerPool implements IImportWorkerPool {
           throw new Error("the import worker replied with a placement instead of a result");
         case "rollingDiagnostics":
         case "layoutParts":
+        case "studioLdraw":
           throw new Error(`the import worker answered an import with ${response.kind}`);
         default: {
           const unhandled: never = response;
@@ -127,6 +137,7 @@ export class ImportWorkerPool implements IImportWorkerPool {
       case "imported":
       case "placed":
       case "layoutParts":
+      case "studioLdraw":
         throw new Error(
           `the import worker answered a rolling diagnostics request with ${response.kind}`,
         );
@@ -151,7 +162,34 @@ export class ImportWorkerPool implements IImportWorkerPool {
       case "imported":
       case "placed":
       case "rollingDiagnostics":
+      case "studioLdraw":
         throw new Error(`the import worker answered a layout request with ${response.kind}`);
+      default: {
+        const unhandled: never = response;
+        throw new Error(`unhandled import worker response ${String(unhandled)}`);
+      }
+    }
+  }
+
+  async studioLdraw(request: StudioLdrawRun): Promise<StudioLdraw> {
+    const primary = this.primary ?? this.startPrimary();
+    const transfer = [request.input.bytes.buffer];
+    const response = await Promise.race([
+      primary.endpoint.request({ ...request, kind: "studioLdraw" }, transfer),
+      primary.crashed,
+    ]);
+    switch (response.kind) {
+      case "studioLdraw":
+        return response.ldraw;
+      case "failed":
+        throw new Error(response.message);
+      case "imported":
+      case "placed":
+      case "rollingDiagnostics":
+      case "layoutParts":
+        throw new Error(
+          `the import worker answered a Studio file's LDraw request with ${response.kind}`,
+        );
       default: {
         const unhandled: never = response;
         throw new Error(`unhandled import worker response ${String(unhandled)}`);

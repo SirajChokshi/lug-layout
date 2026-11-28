@@ -5,6 +5,7 @@ import type { LibraryConnectorsIndexRef, ShadowLibraryIndexRef } from "@brr/sche
 import type { LayoutPart } from "./layout-parts.ts";
 import type { PinnedRecords } from "./library-bake-store.ts";
 import type { ImportResult, ImportJob, ModelBake, PlacedImport } from "./model-import.ts";
+import type { StudioLdraw } from "./studio-import.ts";
 
 export interface LdrawTextInput {
   readonly kind: "ldraw";
@@ -64,10 +65,18 @@ export interface LayoutPartsRequest {
   readonly text: string;
 }
 
+export interface StudioLdrawRequest {
+  readonly kind: "studioLdraw";
+  readonly compilerUrl: string;
+  readonly ldrawLibraryUrl?: string;
+  readonly input: StudioFileInput;
+}
+
 export type ImportWorkerResponse =
   | { readonly kind: "imported"; readonly model: ImportResult }
   | { readonly kind: "rollingDiagnostics"; readonly rows: RollingDiagnosticsRows }
   | { readonly kind: "layoutParts"; readonly parts: ReadonlyArray<LayoutPart> }
+  | { readonly kind: "studioLdraw"; readonly ldraw: StudioLdraw }
   | { readonly kind: "failed"; readonly message: string };
 
 export interface ImportWorkerPlaced {

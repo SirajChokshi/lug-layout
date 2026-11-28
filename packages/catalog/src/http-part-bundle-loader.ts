@@ -18,6 +18,7 @@ import {
   CrosswalkFile,
   LibraryPartsFile,
   ModelFile,
+  ModelLdrawFile,
   PartShape,
   PartTableFile,
   RollingDiagnosticsFile,
@@ -397,6 +398,18 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   ): Promise<{ readonly glyph?: Uint8Array }> {
     if (ref === undefined) return {};
     return { glyph: new Uint8Array(await this.bytes(`${lod}/${ref.file}`, "structural")) };
+  }
+
+  async loadModelLdraw(lod: BundleLod, name: string): Promise<ModelLdrawFile> {
+    const index = await this.loadIndex(lod);
+    const entry = index.models.find((model) => model.name === name);
+    if (!entry) throw new Error(`model "${name}" is not in the bundle`);
+    if (!entry.ldraw) {
+      throw new Error(
+        `bundle ${index.bundleVersion} doesn't ship the LDraw file model "${name}" is baked from`,
+      );
+    }
+    return this.json(ModelLdrawFile, `${lod}/${entry.ldraw.file}`);
   }
 
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {

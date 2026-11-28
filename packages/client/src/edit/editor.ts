@@ -53,6 +53,7 @@ import {
   outlinesOverlap,
   GENDER_MALE,
   NO_SHAPE,
+  latticeAffine,
   type ModelConnectors,
 } from "@brr/domain";
 import {
@@ -85,6 +86,7 @@ import {
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { ImportReport, LayoutPart, StudioReport } from "@brr/import";
 import {
+  comparePlacements,
   importRef,
   importedSha256,
   worldTrack,
@@ -101,6 +103,7 @@ import {
   type IBomSource,
 } from "../bom/bom-service.ts";
 import type { IPlanSheetSource, PlanSheetShapes } from "../plan/plan-sheet-service.ts";
+import type { LdrawLayout, LdrawMember } from "./ldraw-export.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { IEventDetails } from "../event/event-details.ts";
@@ -5675,6 +5678,33 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
+  ldrawLayout(): LdrawLayout {
+    const refs = this.catalog.refs();
+    const models = this.placed.models().map(({ handle, placeable }) => {
+      const { refId, colorId, x, z, yPlates, rot } = handle;
+      const ref = refs[refId];
+      if (ref === undefined) throw new Error(`placement refId ${refId} has no catalog id`);
+      const source = this.catalog.ldrawSource(refId);
+      const yUpAffine = latticeAffine(handle, placeable.frameShift);
+      return { record: { ref, color: colorId, x, z, yPlates, rot }, member: { source, yUpAffine } };
+    });
+    models.sort((a, b) => comparePlacements(a.record, b.record));
+    const track = this.trackWorld
+      .laidParts()
+      .map(({ partId, ldrawColor, matrix }): LdrawMember => ({
+        source: {
+          kind: "library-part",
+          path: this.catalog.libraryPartPath(partId),
+          color: ldrawColor,
+        },
+        yUpAffine: matrix,
+      }));
+    return {
+      members: [...models.map(({ member }) => member), ...track],
+      trainsOnRails: this.consists.consists().length,
+    };
+  }
+
   private consistRecords(): ReadonlyArray<ConsistRecordV1> {
     return this.consists.consists().map(({ pose }) => ({
       ref: this.catalog.refs()[pose.refId] ?? "",
@@ -6108,6 +6138,10 @@ export class Editor implements IEditor, IEditedWorld {
 
   exportPlan(planId: string): Promise<ExportedWorld | null> {
     return this.session.exportPlan(planId);
+  }
+
+  exportLdraw(): Promise<ExportedWorld | null> {
+    return this.session.exportLdraw();
   }
 
   openPlan(bytes: Uint8Array): Promise<boolean> {

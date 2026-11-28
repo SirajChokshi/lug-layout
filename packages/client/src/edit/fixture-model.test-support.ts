@@ -26,6 +26,7 @@ import type {
   BundleManifest,
   CatalogPart,
   LibraryPartsFile,
+  ModelLdrawFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import { Container } from "inversify";
@@ -121,6 +122,10 @@ export class WithFixtureModels implements IPartBundleLoader {
 
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
     return this.from(name).loadModelRecord(lod, name);
+  }
+
+  loadModelLdraw(lod: BundleLod, name: string): Promise<ModelLdrawFile> {
+    return this.from(name).loadModelLdraw(lod, name);
   }
 
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {

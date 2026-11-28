@@ -33,7 +33,7 @@ import {
   type BundleModelEntry,
   type NotDrawnSection,
 } from "@brr/schema/bundle";
-import { importRef, type ImportedFile } from "@brr/schema/world";
+import { importRef, importedSha256, type ImportedFile } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import { MergedParts } from "../edit/merged-parts.ts";
 import { NO_MESHES, type MeshCounts, type MeshProgress } from "../edit/mesh-progress.ts";
@@ -51,6 +51,7 @@ import {
   type RollingDiagnosticsView,
 } from "../inspect/rolling-diagnostics.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
+import type { LdrawSource } from "../edit/ldraw-export.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { studPrimitiveBoxes } from "../running-gear/instance-boxes.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
@@ -153,6 +154,8 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   itemRefId(itemId: string): number | null;
   refs(): ReadonlyArray<string>;
   resolveRef(ref: string, color: number): PlacementTarget | null;
+  ldrawSource(refId: number): LdrawSource;
+  libraryPartPath(partId: string): string;
   load(refId: number): Promise<Placeable>;
   itemModel(itemId: string): Promise<CatalogItemModel | null>;
   addImported(file: ImportedFile): Promise<ImportOutcome>;
@@ -345,6 +348,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     undrawnParts: [],
   };
   private slots: CatalogSlot[] = [];
+  private libraryPaths: ReadonlyMap<string, string> = new Map();
   private studBoxes: ReadonlyArray<Float64Array> = [];
   private trainRefIds: ReadonlyArray<number> = [];
   private placeablesByRefId: Array<Placeable | null> = [];
@@ -371,6 +375,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   async start(index: BundleIndex): Promise<StartedCatalog> {
     this.lod = index.lod;
     this.bundleColors = index.colors;
+    this.libraryPaths = new Map(index.catalogParts.map((part) => [part.id, part.path]));
     const colorSource = { colors: index.colors, parts: [] };
     const colors = new ColorTable(colorSource);
     for (const color of index.colors) colors.indexOfCode(color.code);
@@ -516,6 +521,21 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const refId = this.slots.findIndex((slot) => slot.group === ref && slot.worldColor === color);
     const slot = this.slots[refId];
     return slot ? { refId, colorId: slot.worldColor } : null;
+  }
+
+  ldrawSource(refId: number): LdrawSource {
+    const slot = this.slots[refId];
+    if (!slot) throw new Error(`no catalog item has ref id ${refId}`);
+    if (slot.model !== null) return { kind: "bundle-model", lod: this.lod, name: slot.model };
+    const sha256 = importedSha256(slot.group);
+    if (sha256 !== null) return { kind: "imported-model", sha256 };
+    return { kind: "library-part", path: this.libraryPartPath(slot.group), color: slot.worldColor };
+  }
+
+  libraryPartPath(partId: string): string {
+    const path = this.libraryPaths.get(partId);
+    if (path === undefined) throw new Error(`${partId} has no LDraw library path in the bundle`);
+    return path;
   }
 
   load(refId: number): Promise<Placeable> {

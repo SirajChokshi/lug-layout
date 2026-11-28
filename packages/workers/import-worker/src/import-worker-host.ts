@@ -6,6 +6,7 @@ import {
   type ImportWorkerResponse,
   type LayoutPartsRequest,
   type RollingDiagnosticsRequest,
+  type StudioLdrawRequest,
 } from "@brr/import";
 import { IMPORT_PROTOCOL, RpcEndpoint, type BakeHelperHandoff, type RpcPort } from "@brr/rpc";
 import { inject, injectable } from "inversify";
@@ -28,7 +29,11 @@ function messageOf(error: unknown): string {
 export class ImportWorkerHost {
   private readonly endpoint: RpcEndpoint<
     ImportWorkerResponse | ImportWorkerPlaced,
-    ImportWorkerRequest | RollingDiagnosticsRequest | LayoutPartsRequest | BakeHelperHandoff
+    | ImportWorkerRequest
+    | RollingDiagnosticsRequest
+    | LayoutPartsRequest
+    | StudioLdrawRequest
+    | BakeHelperHandoff
   >;
 
   constructor(
@@ -71,6 +76,13 @@ export class ImportWorkerHost {
               (error: unknown) =>
                 this.endpoint.reply(id, { kind: "failed", message: messageOf(error) }),
             );
+          return;
+        case "studioLdraw":
+          this.service.studioLdraw(message).then(
+            (ldraw) => this.endpoint.reply(id, { kind: "studioLdraw", ldraw }),
+            (error: unknown) =>
+              this.endpoint.reply(id, { kind: "failed", message: messageOf(error) }),
+          );
           return;
         case "useBakeHelpers":
           this.bakeHelpers.use(message.ports);

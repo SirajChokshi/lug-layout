@@ -25,6 +25,7 @@ import type {
   BundleManifest,
   CatalogPart,
   LibraryPartsFile,
+  ModelLdrawFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
@@ -100,6 +101,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
     return this.loader.loadModelRecord(lod, name);
+  }
+
+  loadModelLdraw(lod: BundleLod, name: string): Promise<ModelLdrawFile> {
+    return this.loader.loadModelLdraw(lod, name);
   }
 
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {

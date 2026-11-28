@@ -130,6 +130,7 @@ export {
   WorldHeader,
   WorldManifestV2,
   WorldShardV2,
+  comparePlacements,
   decodeWorldManifest,
   decodeWorldShard,
   migrateManifestV1,

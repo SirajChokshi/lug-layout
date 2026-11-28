@@ -43,6 +43,7 @@ import { EDITOR, EDITOR_CAMERA, EVENT_DETAILS, WORLD_SESSION } from "../tokens.t
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
+import type { LdrawLayout } from "./ldraw-export.ts";
 import type {
   IEditedWorld,
   IWorldSession,
@@ -124,6 +125,10 @@ class BaseplateWorld implements IEditedWorld {
 
   placedCredits(): ReadonlyArray<ModelCredit> {
     return [];
+  }
+
+  ldrawLayout(): LdrawLayout {
+    return { members: [], trainsOnRails: 0 };
   }
 
   validate({ shards }: StoredContents): ReadonlyArray<Issue> {

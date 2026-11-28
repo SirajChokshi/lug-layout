@@ -398,6 +398,8 @@ export const BundleFarMesh = v.object({
 export type BundleFarMesh = v.InferOutput<typeof BundleFarMesh>;
 
 const FileRef = v.object({ file: v.string() });
+export const ModelLdrawFile = v.object({ name: v.string(), text: v.string() });
+export type ModelLdrawFile = v.InferOutput<typeof ModelLdrawFile>;
 
 export const BundleModelEntry = v.object({
   name: v.string(),
@@ -419,6 +421,7 @@ export const BundleModelEntry = v.object({
   errata: v.optional(v.array(ModelErratum)),
   farMesh: v.optional(v.nullable(BundleFarMesh)),
   glyph: v.optional(FileRef),
+  ldraw: v.optional(FileRef),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
 

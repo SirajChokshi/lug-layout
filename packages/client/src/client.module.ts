@@ -56,6 +56,7 @@ import { LayoutSizeMeter } from "./event/layout-size.ts";
 import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
+import { LdrawExporter, WholeLayoutSubmodel } from "./edit/ldraw-export.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
 import { AnnotationService } from "./notes/annotation-service.ts";
 import { PlanService } from "./plan/plan-service.ts";
@@ -113,6 +114,8 @@ import {
   LIBRARY_PART_PLACER,
   LIBRARY_PART_SEARCH,
   IMPORT_WORKER_POOL,
+  LAYOUT_SUBMODELS,
+  LDRAW_EXPORTER,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE,
@@ -188,6 +191,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(TABLE_GROUND).to(TableGround).inSingletonScope();
   bind(IMPORT_WORKER_POOL).to(ImportWorkerPool).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
+  bind(LAYOUT_SUBMODELS).to(WholeLayoutSubmodel).inSingletonScope();
+  bind(LDRAW_EXPORTER).to(LdrawExporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();
   bind(TRACK_SCENE).to(TrackScene).inSingletonScope();

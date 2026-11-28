@@ -6,6 +6,7 @@ import {
   type IEditor,
   type IImportWorkerPool,
   type ImportRun,
+  type StudioLdrawRun,
 } from "@brr/client";
 import {
   BrickCompiler,
@@ -13,12 +14,14 @@ import {
   layoutParts,
   LdrawMirror,
   ModelImportEngine,
+  studioLdraw,
   type FetchFunction,
   type IBakeHelper,
   type ImportResult,
   type LayoutPart,
   type LayoutPartsRequest,
   type RollingDiagnosticsRows,
+  type StudioLdraw,
 } from "@brr/import";
 import {
   SCENE_BACKEND,
@@ -311,6 +314,12 @@ class InProcessImportPool implements IImportWorkerPool {
     text,
   }: Omit<LayoutPartsRequest, "kind">): Promise<ReadonlyArray<LayoutPart>> {
     return layoutParts(new BrickCompiler(this.bundle.compiler), fileName, text);
+  }
+
+  studioLdraw(request: StudioLdrawRun): Promise<StudioLdraw> {
+    const compiler = new BrickCompiler(this.bundle.compiler);
+    const mirror = new LdrawMirror(this.bundle.source, this.fetchUrl);
+    return studioLdraw(compiler, mirror, request.input);
   }
 }
 
