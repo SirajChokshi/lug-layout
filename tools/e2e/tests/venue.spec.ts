@@ -80,6 +80,7 @@ test("a venue's room rectangles, pillar, door, power point and public and crew a
   expect(booth.status, booth.text).toBe("placeable");
   await editor.escape();
   await editor.goTo(PLAN_CORNER);
+  await editor.chooseMode("plan");
   await page.locator(".plan-panel > summary").click();
   await page.locator('[data-action="new-plan"]').click();
   await editor.drawTable(...TABLE);
@@ -145,6 +146,7 @@ test("a venue's room rectangles, pillar, door, power point and public and crew a
   await expect(page.locator(".welcome")).toHaveCount(0);
   await expect.poll(() => venueOf(editor)).toEqual(crewBothSides.venue);
   await expect.poll(() => rowsOf(editor)).toEqual([]);
+  await editor.chooseMode("plan");
   await page.locator('section[aria-label="Aisles"]').scrollIntoViewIfNeeded();
   await shot(editor, page, "venue-reloaded.png");
 });
