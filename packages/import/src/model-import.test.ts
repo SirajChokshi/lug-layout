@@ -10,6 +10,7 @@ import {
   rollingDiagnosticsFit,
   SectionVocabularyFile,
   ShadowLibraryPin,
+  decodePlanGlyph,
   isCustomPartId,
   type CompilerVehicles,
   type LibraryBakePart,
@@ -48,8 +49,9 @@ import {
   type PlacedImport,
   type PlacementListener,
 } from "./model-import.ts";
+import { PlanGlyphCache } from "./plan-glyph-cache.ts";
 import { ShadowMirror, type IShadowLibrary } from "./shadow-mirror.ts";
-import { NO_BYTE_CACHE } from "./verified-files.ts";
+import { NO_BYTE_CACHE, type IByteCache } from "./verified-files.ts";
 
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = new URL("../../../.cache/ldraw/", import.meta.url);
@@ -236,6 +238,7 @@ interface ImportOptions {
   readonly shadowLibrary?: IShadowLibrary;
   readonly customFiles?: ReadonlyArray<CustomSource>;
   readonly withoutPrimitiveTable?: boolean;
+  readonly glyphs?: PlanGlyphCache;
 }
 
 async function importWith(
@@ -250,6 +253,7 @@ async function importWith(
     shadowLibrary,
     customFiles = [],
     withoutPrimitiveTable = false,
+    glyphs,
   }: ImportOptions = {},
 ): Promise<ImportResult> {
   const manifest = await bundleManifest();
@@ -265,6 +269,7 @@ async function importWith(
     () => 0,
     helpers,
     shadowLibrary ?? null,
+    glyphs ?? null,
   );
   const job = {
     fileName,
@@ -467,7 +472,7 @@ async function importOutsideTheBundle(
 }
 
 it(
-  "announces placement once, before the result, with every field the result has but the stud cover, and listening changes nothing in the result",
+  "announces placement once, before the result, with every field the result has but the stud cover and the plan glyph, and listening changes nothing in the result",
   async () => {
     const text = [
       "0 two stacked bricks beside a plate",
@@ -487,9 +492,13 @@ it(
     const quiet = await importOutsideTheBundle("stacked.ldr", text, null);
     const { bake, report, studio: _studio, ...shape } = listened;
     if (!bake) throw new Error("the stacked bricks did not bake");
-    const { studCover, ...placement } = bake;
+    const { studCover, glyph, glyphIssue, ...placement } = bake;
 
     expect(studCover.covered).toBeGreaterThan(0);
+    expect({ glyph: glyph instanceof Uint8Array, glyphIssue }).toEqual({
+      glyph: true,
+      glyphIssue: null,
+    });
     expect(comparable(listened)).toEqual(comparable(quiet));
     expect(announced).toEqual([
       {
@@ -1238,6 +1247,60 @@ it("draws a Studio CustomParts file from its own sub-part as custom, under its S
   ]);
   expect(result.instanceCount).toBe(4);
 });
+
+function memoryByteCache(): IByteCache {
+  const stored = new Map<string, Uint8Array>();
+  return {
+    get: async (key) => stored.get(key),
+    put: async (key, bytes) => {
+      stored.set(key, bytes.slice());
+    },
+  };
+}
+
+function glyphSize(glyph: Uint8Array | null | undefined): ReadonlyArray<number> {
+  if (!glyph) throw new Error("the import baked no plan glyph");
+  const decoded = decodePlanGlyph(glyph);
+  if (!decoded.ok) throw new Error(decoded.issues.map((issue) => issue.message).join("; "));
+  return [decoded.value.width, decoded.value.depth];
+}
+
+it(
+  "bakes a user file's plan glyph from its own custom part's geometry, and takes it from the cache for the same content but not once the custom part changes",
+  async () => {
+    const [brick, twoByTwo] = await Promise.all([
+      pinnedGeometry("parts/3001.dat"),
+      pinnedGeometry("parts/3003.dat"),
+    ]);
+    const glyphs = new PlanGlyphCache("brick-compile.wasm", memoryByteCache());
+    const studio = (body: ReadonlyArray<string>) =>
+      importWith(pinnedMirror, "custom-brick.io", "1 4 0 0 0 1 0 0 0 1 0 0 0 1 studiobrick.dat\n", {
+        glyphs,
+        customFiles: [studioPart("studiobrick.dat", CC_BY_4, body)],
+      });
+
+    const official = await importWith(
+      pinnedMirror,
+      "brick.ldr",
+      "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n",
+    );
+    const first = await studio(brick);
+    const again = await studio(brick);
+    const changed = await studio(twoByTwo);
+
+    expect(first.report.parts).toMatchObject([{ kind: "custom", origin: "studio" }]);
+    expect(glyphSize(official.bake?.glyph)).toEqual([32, 16]);
+    expect(first.bake?.glyph).toEqual(official.bake?.glyph);
+    expect([first, again, changed].map((result) => result.report.glyphFromCache)).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    expect(again.bake?.glyph).toEqual(first.bake?.glyph);
+    expect(glyphSize(changed.bake?.glyph)).toEqual([16, 16]);
+  },
+  BAKE_TIMEOUT_MS,
+);
 
 it("refuses a Studio custom part whose own files refer to each other in a loop, rather than closing the loop with the library part of that name", async () => {
   const result = await importWith(

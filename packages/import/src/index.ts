@@ -30,6 +30,15 @@ export {
   type StudioPartOutcome,
 } from "./studio-mapping.ts";
 export {
+  BlueBrickPartMapper,
+  MirrorPartResolver,
+  type BlueBrickIdMapping,
+  type BlueBrickOutcome,
+  type BlueBrickPartVia,
+  type LdrawPartResolver,
+  type ResolvedPart,
+} from "./bluebrick-mapping.ts";
+export {
   importStudioFile,
   MirrorPartExists,
   prepareStudioImport,
@@ -77,6 +86,7 @@ export {
   type LibraryConnectorOptions,
 } from "./library-connector-store.ts";
 export { NO_BYTE_CACHE, type IByteCache, type RecordStats } from "./verified-files.ts";
+export { PlanGlyphCache } from "./plan-glyph-cache.ts";
 export {
   bakeTransferables,
   transferablesOf,

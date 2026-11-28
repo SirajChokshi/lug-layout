@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Map>
+  <Version>9</Version>
+  <nbItems>11</nbItems>
+  <BackgroundColor>
+    <IsKnownColor>false</IsKnownColor>
+    <Name>ff2a6e3c</Name>
+  </BackgroundColor>
+  <Author>Brick Railroad</Author>
+  <LUG>Synthetic LUG</LUG>
+  <Event>Yard &amp; siding test</Event>
+  <Date>
+    <Day>29</Day>
+    <Month>2</Month>
+    <Year>2024</Year>
+  </Date>
+  <Comment>Built by hand from official LDraw parts:
+3811 baseplates, 53401 straights and a 53400 curve.</Comment>
+  <ExportInfo>
+    <ExportPath />
+    <ExportFileType>1</ExportFileType>
+    <ExportArea>
+      <X>0</X>
+      <Y>0</Y>
+      <Width>0</Width>
+      <Height>0</Height>
+    </ExportArea>
+    <ExportScale>0</ExportScale>
+    <ExportWatermark>true</ExportWatermark>
+    <ExportElectricCircuit>false</ExportElectricCircuit>
+    <ExportConnectionPoints>false</ExportConnectionPoints>
+  </ExportInfo>
+  <SelectedLayerIndex>2</SelectedLayerIndex>
+  <Layers>
+    <Layer type="grid" id="1">
+      <Name>Grid</Name>
+      <Visible>true</Visible>
+      <Transparency>100</Transparency>
+      <HullProperties isVisible="false">
+        <hullColor>
+          <IsKnownColor>true</IsKnownColor>
+          <Name>Black</Name>
+        </hullColor>
+        <hullThickness>1</hullThickness>
+      </HullProperties>
+      <GridColor>
+        <IsKnownColor>false</IsKnownColor>
+        <Name>ffffffff</Name>
+      </GridColor>
+      <GridThickness>2</GridThickness>
+      <SubGridColor>
+        <IsKnownColor>false</IsKnownColor>
+        <Name>ffd3d3d3</Name>
+      </SubGridColor>
+      <SubGridThickness>0.5</SubGridThickness>
+      <GridSizeInStud>32</GridSizeInStud>
+      <SubDivisionNumber>4</SubDivisionNumber>
+      <DisplayGrid>false</DisplayGrid>
+      <DisplaySubGrid>true</DisplaySubGrid>
+      <DisplayCellIndex>true</DisplayCellIndex>
+      <CellIndexFont>
+        <FontFamily>Arial</FontFamily>
+        <Size>12</Size>
+        <Style>Bold</Style>
+      </CellIndexFont>
+      <CellIndexColor>
+        <IsKnownColor>true</IsKnownColor>
+        <Name>DarkSlateGray</Name>
+      </CellIndexColor>
+      <CellIndexColumnType>1</CellIndexColumnType>
+      <CellIndexRowType>0</CellIndexRowType>
+      <CellIndexCorner>
+        <X>-1</X>
+        <Y>2</Y>
+      </CellIndexCorner>
+    </Layer>
+    <Layer type="brick" id="2">
+      <Name>Baseplates</Name>
+      <Visible>true</Visible>
+      <Transparency>80</Transparency>
+      <HullProperties isVisible="true">
+        <hullColor>
+          <IsKnownColor>false</IsKnownColor>
+          <Name>ff0000ff</Name>
+        </hullColor>
+        <hullThickness>3</hullThickness>
+      </HullProperties>
+      <DisplayBrickElevation>false</DisplayBrickElevation>
+      <Bricks>
+        <Brick id="10">
+          <DisplayArea>
+            <X>0</X>
+            <Y>0</Y>
+            <Width>32</Width>
+            <Height>32</Height>
+          </DisplayArea>
+          <MyGroup />
+          <PartNumber>3811.2</PartNumber>
+          <Orientation>0</Orientation>
+          <ActiveConnectionPointIndex>0</ActiveConnectionPointIndex>
+          <Altitude>0</Altitude>
+          <Connexions count="0" />
+        </Brick>
+        <Brick id="11">
+          <DisplayArea>
+            <X>32</X>
+            <Y>0</Y>
+            <Width>32</Width>
+            <Height>32</Height>
+          </DisplayArea>
+          <MyGroup />
+          <PartNumber>3811.2</PartNumber>
+          <Orientation>0</Orientation>
+          <ActiveConnectionPointIndex>0</ActiveConnectionPointIndex>
+          <Altitude>0</Altitude>
+          <Connexions count="0" />
+        </Brick>
+      </Bricks>
+      <Groups />
+    </Layer>
+    <Layer type="brick" id="3">
+      <Name>Track</Name>
+      <Visible>true</Visible>
+      <Transparency>100</Transparency>
+      <HullProperties isVisible="false">
+        <hullColor>
+          <IsKnownColor>true</IsKnownColor>
+          <Name>Black</Name>
+        </hullColor>
+        <hullThickness>1</hullThickness>
+      </HullProperties>
+      <DisplayBrickElevation>true</DisplayBrickElevation>
+      <Bricks>
+        <Brick id="20">
+          <DisplayArea>
+            <X>8</X>
+            <Y>12</Y>
+            <Width>16</Width>
+            <Height>8</Height>
+          </DisplayArea>
+          <MyGroup>40</MyGroup>
+          <PartNumber>53401.72</PartNumber>
+          <Orientation>0</Orientation>
+          <ActiveConnectionPointIndex>1</ActiveConnectionPointIndex>
+          <Altitude>0</Altitude>
+          <Connexions count="2">
+            <Connexion id="100">
+              <LinkedTo />
+            </Connexion>
+            <Connexion id="101">
+              <LinkedTo>102</LinkedTo>
+            </Connexion>
+          </Connexions>
+        </Brick>
+        <Brick id="21">
+          <DisplayArea>
+            <X>24</X>
+            <Y>12</Y>
+            <Width>16</Width>
+            <Height>8</Height>
+          </DisplayArea>
+          <MyGroup>40</MyGroup>
+          <PartNumber>53401.72</PartNumber>
+          <Orientation>180</Orientation>
+          <ActiveConnectionPointIndex>0</ActiveConnectionPointIndex>
+          <Altitude>0</Altitude>
+          <Connexions count="2">
+            <Connexion id="102">
+              <LinkedTo>101</LinkedTo>
+            </Connexion>
+            <Connexion id="103">
+              <LinkedTo>104</LinkedTo>
+            </Connexion>
+          </Connexions>
+        </Brick>
+        <Brick id="22">
+          <DisplayArea>
+            <X>39.31371</X>
+            <Y>12.68629</Y>
+            <Width>17.37258</Width>
+            <Height>17.37258</Height>
+          </DisplayArea>
+          <MyGroup>41</MyGroup>
+          <PartNumber>53400.72</PartNumber>
+          <Orientation>-22.5</Orientation>
+          <ActiveConnectionPointIndex>1</ActiveConnectionPointIndex>
+          <Altitude>9.6</Altitude>
+          <Connexions count="2">
+            <Connexion id="104">
+              <LinkedTo>103</LinkedTo>
+            </Connexion>
+            <Connexion id="105">
+              <LinkedTo />
+            </Connexion>
+          </Connexions>
+        </Brick>
+      </Bricks>
+      <Groups>
+        <Group id="40">
+          <PartNumber />
+          <MyGroup>41</MyGroup>
+        </Group>
+        <Group id="41">
+          <PartNumber>YARD-LEAD.KIT</PartNumber>
+          <MyGroup />
+        </Group>
+      </Groups>
+    </Layer>
+    <Layer type="area" id="4">
+      <Name>Zones</Name>
+      <Visible>false</Visible>
+      <Transparency>30</Transparency>
+      <HullProperties isVisible="false">
+        <hullColor>
+          <IsKnownColor>true</IsKnownColor>
+          <Name>Black</Name>
+        </hullColor>
+        <hullThickness>1</hullThickness>
+      </HullProperties>
+      <AreaCellSize>8</AreaCellSize>
+      <Areas>
+        <Area>
+          <x>-1</x>
+          <y>3</y>
+          <color>4C228B22</color>
+        </Area>
+        <Area>
+          <x>0</x>
+          <y>3</y>
+          <color>4C228B22</color>
+        </Area>
+        <Area>
+          <x>0</x>
+          <y>4</y>
+          <color>4CFFA500</color>
+        </Area>
+      </Areas>
+    </Layer>
+    <Layer type="text" id="5">
+      <Name>Labels</Name>
+      <Visible>true</Visible>
+      <Transparency>100</Transparency>
+      <HullProperties isVisible="false">
+        <hullColor>
+          <IsKnownColor>true</IsKnownColor>
+          <Name>Black</Name>
+        </hullColor>
+        <hullThickness>1</hullThickness>
+      </HullProperties>
+      <TextCells>
+        <TextCell>
+          <DisplayArea>
+            <X>2.5</X>
+            <Y>24.25</Y>
+            <Width>27.5</Width>
+            <Height>6.75</Height>
+          </DisplayArea>
+          <MyGroup />
+          <Text>Yard lead
+&lt;siding&gt;</Text>
+          <Orientation>-90</Orientation>
+          <FontColor>
+            <IsKnownColor>false</IsKnownColor>
+            <Name>ff123456</Name>
+          </FontColor>
+          <Font>
+            <FontFamily>Segoe UI</FontFamily>
+            <Size>10.5</Size>
+            <Style>Bold, Italic</Style>
+          </Font>
+          <TextAlignment>Far</TextAlignment>
+        </TextCell>
+      </TextCells>
+      <Groups />
+    </Layer>
+    <Layer type="ruler" id="6">
+      <Name>Measures</Name>
+      <Visible>true</Visible>
+      <Transparency>100</Transparency>
+      <HullProperties isVisible="false">
+        <hullColor>
+          <IsKnownColor>true</IsKnownColor>
+          <Name>Black</Name>
+        </hullColor>
+        <hullThickness>1</hullThickness>
+      </HullProperties>
+      <RulerItems>
+        <LinearRuler>
+          <DisplayArea>
+            <X>8</X>
+            <Y>4</Y>
+            <Width>48</Width>
+            <Height>10</Height>
+          </DisplayArea>
+          <MyGroup />
+          <Color>
+            <IsKnownColor>true</IsKnownColor>
+            <Name>Black</Name>
+          </Color>
+          <LineThickness>2.5</LineThickness>
+          <DisplayDistance>true</DisplayDistance>
+          <DisplayUnit>false</DisplayUnit>
+          <GuidelineColor>
+            <IsKnownColor>true</IsKnownColor>
+            <Name>Gray</Name>
+          </GuidelineColor>
+          <GuidelineThickness>1</GuidelineThickness>
+          <GuidelineDashPattern>
+            <value>2</value>
+            <value>4</value>
+          </GuidelineDashPattern>
+          <Unit>2</Unit>
+          <MeasureFont>
+            <FontFamily>Arial</FontFamily>
+            <Size>15.75</Size>
+            <Style>Regular</Style>
+          </MeasureFont>
+          <MeasureFontColor>
+            <IsKnownColor>true</IsKnownColor>
+            <Name>Black</Name>
+          </MeasureFontColor>
+          <Point1>
+            <X>8</X>
+            <Y>16</Y>
+          </Point1>
+          <Point2>
+            <X>56</X>
+            <Y>16</Y>
+          </Point2>
+          <AttachedBrick1>20</AttachedBrick1>
+          <AttachedBrick2>0</AttachedBrick2>
+          <OffsetDistance>-6</OffsetDistance>
+          <AllowOffset>true</AllowOffset>
+        </LinearRuler>
+        <CircularRuler>
+          <DisplayArea>
+            <X>36</X>
+            <Y>4</Y>
+            <Width>24</Width>
+            <Height>24</Height>
+          </DisplayArea>
+          <MyGroup />
+          <Color>
+            <IsKnownColor>false</IsKnownColor>
+            <Name>ffff0000</Name>
+          </Color>
+          <LineThickness>1</LineThickness>
+          <DisplayDistance>true</DisplayDistance>
+          <DisplayUnit>true</DisplayUnit>
+          <GuidelineColor>
+            <IsKnownColor>true</IsKnownColor>
+            <Name>Black</Name>
+          </GuidelineColor>
+          <GuidelineThickness>1</GuidelineThickness>
+          <GuidelineDashPattern />
+          <Unit>0</Unit>
+          <MeasureFont>
+            <FontFamily>Arial</FontFamily>
+            <Size>8</Size>
+            <Style>Underline</Style>
+          </MeasureFont>
+          <MeasureFontColor>
+            <IsKnownColor>true</IsKnownColor>
+            <Name>Red</Name>
+          </MeasureFontColor>
+          <Center>
+            <X>48</X>
+            <Y>16</Y>
+          </Center>
+          <Radius>12</Radius>
+          <AttachedBrick>11</AttachedBrick>
+        </CircularRuler>
+      </RulerItems>
+      <Groups />
+    </Layer>
+  </Layers>
+</Map>

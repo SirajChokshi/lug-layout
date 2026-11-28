@@ -398,3 +398,54 @@ it(
   },
   COMPILE_TIMEOUT_MS,
 );
+
+const blueBrickFixtures = new URL("../../test-fixtures/bluebrick/", import.meta.url);
+
+function encode(text: string): Uint8Array {
+  return new TextEncoder().encode(text);
+}
+
+it("every BlueBrick map in the fixtures comes back through the compiler in the strict BlueBrick schema", async () => {
+  const { compiler } = await bundleCompiler();
+  const files = (await readdir(blueBrickFixtures)).filter((file) => file.endsWith(".bbm"));
+  expect(files.toSorted()).toEqual([
+    "fordyce-2026.bbm",
+    "queue.bbm",
+    "sample_track01.bbm",
+    "synthetic-yard.bbm",
+    "tight-corner.bbm",
+  ]);
+  for (const file of files) {
+    const read = compiler.readBlueBrick(await readFile(new URL(file, blueBrickFixtures)));
+    if (read.status !== "read") throw new Error(`${file}: ${read.message}`);
+    expect({ file, issues: read.map.issues }).toEqual({ file, issues: [] });
+  }
+  const yard = compiler.readBlueBrick(
+    await readFile(new URL("synthetic-yard.bbm", blueBrickFixtures)),
+  );
+  if (yard.status !== "read") throw new Error(yard.message);
+  const track = yard.map.layers[2];
+  expect(track?.kind === "brick" && track.bricks[1]?.connections).toEqual([
+    { id: "102", link: { layer: 2, brick: 0, connection: 1 } },
+    { id: "103", link: { layer: 2, brick: 2, connection: 0 } },
+  ]);
+});
+
+it("a file the reader refuses comes back with the reader's reason", async () => {
+  const { compiler } = await bundleCompiler();
+  const yard = await readFile(new URL("synthetic-yard.bbm", blueBrickFixtures), "utf8");
+  expect(compiler.readBlueBrick(encode(yard.replace("<Version>9", "<Version>10")))).toEqual({
+    status: "rejected",
+    kind: "newerVersion",
+    message:
+      "this map was saved by a newer BlueBrick (data version 10); this reader knows versions up to 9",
+  });
+  expect(
+    compiler.readBlueBrick(encode(yard.replace("<Radius>12</Radius>", "<Radius>twelve</Radius>"))),
+  ).toEqual({
+    status: "rejected",
+    kind: "malformed",
+    message:
+      'the BlueBrick map is damaged: Map/Layers/Layer[6]/RulerItems/CircularRuler[1]/Radius "twelve" isn\'t a finite decimal',
+  });
+});

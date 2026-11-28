@@ -61,6 +61,7 @@ pub enum Operation {
         omr_authoring_identification: bool,
     },
     ReadStudio,
+    ReadBlueBrick,
     Compile {
         lod: LodName,
         stud_primitives: Vec<String>,
