@@ -1,4 +1,4 @@
-import type { BlueBrickMap } from "@brr/schema/bluebrick";
+import type { BlueBrickBudget, BlueBrickBudgetedPart, BlueBrickMap } from "@brr/schema/bluebrick";
 import type { BrickCompiler, ModelRead } from "./brick-compiler.ts";
 import type { LdrawMirror } from "./ldraw-mirror.ts";
 import type { BricklinkToLdraw } from "./studio-mapping.ts";
@@ -40,6 +40,10 @@ export interface BlueBrickIdMapping {
   readonly id: string;
   readonly bricks: number;
   readonly groups: number;
+  readonly outcome: BlueBrickOutcome;
+}
+
+export interface BlueBrickBudgetMapping extends BlueBrickBudgetedPart {
   readonly outcome: BlueBrickOutcome;
 }
 
@@ -159,14 +163,20 @@ export class BlueBrickPartMapper {
     private readonly omrModels: ReadonlySet<string>,
   ) {}
 
-  async map(map: BlueBrickMap): Promise<ReadonlyArray<BlueBrickIdMapping>> {
+  map(map: BlueBrickMap): Promise<ReadonlyArray<BlueBrickIdMapping>> {
+    return this.mapEach([...itemCounts(map)].map(([id, counts]) => ({ id, ...counts })));
+  }
+
+  mapBudget(budget: BlueBrickBudget): Promise<ReadonlyArray<BlueBrickBudgetMapping>> {
+    return this.mapEach(budget.parts);
+  }
+
+  private async mapEach<TItem extends { readonly id: string }>(
+    items: ReadonlyArray<TItem>,
+  ): Promise<ReadonlyArray<TItem & { readonly outcome: BlueBrickOutcome }>> {
     const resolve = memoized(this.library);
     const mappings = await Promise.all(
-      [...itemCounts(map)].map(async ([id, counts]) => ({
-        id,
-        ...counts,
-        outcome: await this.outcome(id, resolve),
-      })),
+      items.map(async (item) => ({ ...item, outcome: await this.outcome(item.id, resolve) })),
     );
     return mappings.toSorted((a, b) => byText(a.id, b.id));
   }

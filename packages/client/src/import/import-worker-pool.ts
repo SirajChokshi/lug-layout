@@ -1,4 +1,6 @@
 import type {
+  BlueBrickBudgetImport,
+  BlueBrickBudgetRequest,
   ImportResult,
   ImportWorkerPlaced,
   ImportWorkerRequest,
@@ -29,12 +31,17 @@ export interface IImportWorkerPool {
     partIds: ReadonlyArray<string>,
   ): Promise<RollingDiagnosticsRows>;
   layoutParts(request: Omit<LayoutPartsRequest, "kind">): Promise<ReadonlyArray<LayoutPart>>;
+  blueBrickBudget(request: Omit<BlueBrickBudgetRequest, "kind">): Promise<BlueBrickBudgetImport>;
 }
 
 interface Primary {
   readonly worker: Worker;
   readonly endpoint: RpcEndpoint<
-    ImportWorkerRequest | RollingDiagnosticsRequest | LayoutPartsRequest | BakeHelperHandoff,
+    | ImportWorkerRequest
+    | RollingDiagnosticsRequest
+    | LayoutPartsRequest
+    | BlueBrickBudgetRequest
+    | BakeHelperHandoff,
     ImportWorkerResponse | ImportWorkerPlaced
   >;
   readonly crashed: Promise<never>;
@@ -98,6 +105,7 @@ export class ImportWorkerPool implements IImportWorkerPool {
           throw new Error("the import worker replied with a placement instead of a result");
         case "rollingDiagnostics":
         case "layoutParts":
+        case "blueBrickBudget":
           throw new Error(`the import worker answered an import with ${response.kind}`);
         default: {
           const unhandled: never = response;
@@ -127,6 +135,7 @@ export class ImportWorkerPool implements IImportWorkerPool {
       case "imported":
       case "placed":
       case "layoutParts":
+      case "blueBrickBudget":
         throw new Error(
           `the import worker answered a rolling diagnostics request with ${response.kind}`,
         );
@@ -151,7 +160,33 @@ export class ImportWorkerPool implements IImportWorkerPool {
       case "imported":
       case "placed":
       case "rollingDiagnostics":
+      case "blueBrickBudget":
         throw new Error(`the import worker answered a layout request with ${response.kind}`);
+      default: {
+        const unhandled: never = response;
+        throw new Error(`unhandled import worker response ${String(unhandled)}`);
+      }
+    }
+  }
+
+  async blueBrickBudget(
+    request: Omit<BlueBrickBudgetRequest, "kind">,
+  ): Promise<BlueBrickBudgetImport> {
+    const primary = this.primary ?? this.startPrimary();
+    const response = await Promise.race([
+      primary.endpoint.request({ ...request, kind: "blueBrickBudget" }, []),
+      primary.crashed,
+    ]);
+    switch (response.kind) {
+      case "blueBrickBudget":
+        return response.budget;
+      case "failed":
+        throw new Error(response.message);
+      case "imported":
+      case "placed":
+      case "rollingDiagnostics":
+      case "layoutParts":
+        throw new Error(`the import worker answered a budget request with ${response.kind}`);
       default: {
         const unhandled: never = response;
         throw new Error(`unhandled import worker response ${String(unhandled)}`);

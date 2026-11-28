@@ -32,6 +32,7 @@ export {
 export {
   BlueBrickPartMapper,
   MirrorPartResolver,
+  type BlueBrickBudgetMapping,
   type BlueBrickIdMapping,
   type BlueBrickOutcome,
   type BlueBrickPartVia,
@@ -44,6 +45,11 @@ export {
   type BlueBrickNoteIssue,
   type BlueBrickNotes,
 } from "./bluebrick-notes.ts";
+export {
+  importBlueBrickBudget,
+  type BlueBrickBudgetImport,
+  type BlueBrickBudgetInput,
+} from "./bluebrick-budget.ts";
 export {
   importStudioFile,
   MirrorPartExists,
@@ -96,6 +102,7 @@ export { PlanGlyphCache } from "./plan-glyph-cache.ts";
 export {
   bakeTransferables,
   transferablesOf,
+  type BlueBrickBudgetRequest,
   type ImportInput,
   type ImportWorkerPlaced,
   type ImportWorkerRequest,

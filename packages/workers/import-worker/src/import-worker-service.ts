@@ -2,11 +2,14 @@ import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
   BundleThenLibraryConnectors,
   IGNORE_PLACEMENT,
+  importBlueBrickBudget,
   importStudioFile,
   LibraryBakeStore,
   LibraryConnectorStore,
   PlanGlyphCache,
   ShadowMirror,
+  type BlueBrickBudgetImport,
+  type BlueBrickBudgetRequest,
   type BrickCompiler,
   type FetchFunction,
   type IBakeHelper,
@@ -39,6 +42,7 @@ import {
 export interface IImportWorkerService {
   run(request: ImportWorkerRequest, onPlaced?: PlacementListener): Promise<ImportResult>;
   rollingDiagnostics(request: RollingDiagnosticsRequest): Promise<RollingDiagnosticsRows>;
+  blueBrickBudget(request: BlueBrickBudgetRequest): Promise<BlueBrickBudgetImport>;
 }
 
 export type LdrawMirrorFactory = (source: MirrorSource, baseUrl: string | undefined) => LdrawMirror;
@@ -126,6 +130,15 @@ export class ImportWorkerService implements IImportWorkerService {
       this.shadowMirrors.set(key, mirror);
     }
     return mirror;
+  }
+
+  async blueBrickBudget(request: BlueBrickBudgetRequest): Promise<BlueBrickBudgetImport> {
+    const compiler = await this.compilers.load(request.compilerUrl);
+    return importBlueBrickBudget(
+      compiler,
+      this.createMirror(request.source, request.ldrawLibraryUrl),
+      request,
+    );
   }
 
   async rollingDiagnostics(request: RollingDiagnosticsRequest): Promise<RollingDiagnosticsRows> {

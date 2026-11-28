@@ -48,7 +48,12 @@ import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./pa
 import { chosen } from "../edit/editor-choice.test-support.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import type { ICommandPaletteSearch } from "../commands/command-palette-search.ts";
-import type { ImportResult, LayoutPart, RollingDiagnosticsRows } from "@brr/import";
+import type {
+  BlueBrickBudgetImport,
+  ImportResult,
+  LayoutPart,
+  RollingDiagnosticsRows,
+} from "@brr/import";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_LOOK: LookSettings = {
@@ -244,6 +249,10 @@ class UnreachableWorkerImporter implements IModelImporter {
   }
 
   async layoutParts(): Promise<ReadonlyArray<LayoutPart>> {
+    throw new Error(WORKER_UNREACHABLE);
+  }
+
+  async readBlueBrickBudget(): Promise<BlueBrickBudgetImport> {
     throw new Error(WORKER_UNREACHABLE);
   }
 }

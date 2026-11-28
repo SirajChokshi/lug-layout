@@ -111,6 +111,7 @@ import {
 } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type {
+  BlueBrickBudgetImport,
   ImportResult,
   LayoutPart,
   PlacementListener,
@@ -4035,6 +4036,10 @@ class RefusingModelImporter implements IModelImporter {
   layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
     return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
   }
+
+  readBlueBrickBudget(): Promise<BlueBrickBudgetImport> {
+    return Promise.reject(new Error("this test reads no budgets"));
+  }
 }
 
 it("resolves a model file the bake refuses as not imported and keeps the chosen item, so a drop places nothing", async () => {
@@ -4160,6 +4165,10 @@ class GatedModelImporter implements IModelImporter {
 
   layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
     return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
+  }
+
+  readBlueBrickBudget(): Promise<BlueBrickBudgetImport> {
+    return Promise.reject(new Error("this test reads no budgets"));
   }
 }
 
@@ -4632,6 +4641,10 @@ class BakedRecordImporter implements IModelImporter {
 
   layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
     return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
+  }
+
+  readBlueBrickBudget(): Promise<BlueBrickBudgetImport> {
+    return Promise.reject(new Error("this test reads no budgets"));
   }
 }
 
@@ -8809,6 +8822,10 @@ class ImporterBringing implements IModelImporter {
   layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
     return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
   }
+
+  readBlueBrickBudget(): Promise<BlueBrickBudgetImport> {
+    return Promise.reject(new Error("this test reads no budgets"));
+  }
 }
 
 it("gives a part the bundle's packages don't list the record an import brought for it", async () => {
@@ -10509,6 +10526,10 @@ class StudsLandLaterImporter implements IModelImporter {
 
   layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>> {
     return this.inner.layoutParts(fileName, text);
+  }
+
+  readBlueBrickBudget(bytes: Uint8Array): Promise<BlueBrickBudgetImport> {
+    return this.inner.readBlueBrickBudget(bytes);
   }
 }
 

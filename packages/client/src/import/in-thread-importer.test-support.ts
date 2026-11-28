@@ -4,6 +4,7 @@ import {
   LdrawMirror,
   ModelImportEngine,
   layoutParts,
+  type BlueBrickBudgetImport,
   type FetchFunction,
   type ImportResult,
   type LayoutPart,
@@ -84,6 +85,10 @@ export class InThreadModelImporter implements IModelImporter {
 
   async layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>> {
     return layoutParts(await this.compiler("standard"), fileName, text);
+  }
+
+  readBlueBrickBudget(): Promise<BlueBrickBudgetImport> {
+    return Promise.reject(new Error("BlueBrick budgets are not read in this test"));
   }
 
   private async compiler(lod: BundleLod): Promise<BrickCompiler> {

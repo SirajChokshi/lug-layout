@@ -6,6 +6,7 @@ import {
 } from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
 import type {
+  BlueBrickBudgetImport,
   ImportInput,
   ImportJob,
   ImportResult,
@@ -41,6 +42,7 @@ export interface IModelImporter {
     lod?: BundleLod,
   ): Promise<RollingDiagnosticsRows>;
   layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>>;
+  readBlueBrickBudget(bytes: Uint8Array): Promise<BlueBrickBudgetImport>;
 }
 
 @injectable()
@@ -94,6 +96,23 @@ export class WorkerModelImporter implements IModelImporter {
   async layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>> {
     const compilerUrl = this.compilerUrl(await this.loader.importContext("standard"));
     return this.workers.layoutParts({ compilerUrl, fileName, text });
+  }
+
+  async readBlueBrickBudget(bytes: Uint8Array): Promise<BlueBrickBudgetImport> {
+    const [context, manifest, bricklinkParts] = await Promise.all([
+      this.loader.importContext("standard"),
+      this.loader.loadManifest("standard"),
+      this.loader.loadBricklinkParts("standard"),
+    ]);
+    return this.workers.blueBrickBudget({
+      compilerUrl: this.compilerUrl(context),
+      source: context.source,
+      ...(this.ldrawLibraryBaseUrl === null ? {} : { ldrawLibraryUrl: this.ldrawLibraryBaseUrl }),
+      bytes,
+      bricklinkParts,
+      ldconfigCodes: context.ldconfigCodes,
+      omrModels: manifest.models.flatMap((model) => (model.origin === "omr" ? [model.name] : [])),
+    });
   }
 
   private compilerUrl(context: ImportContext): string {

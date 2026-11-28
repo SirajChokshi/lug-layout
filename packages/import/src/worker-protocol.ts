@@ -2,7 +2,9 @@ import type { BricklinkPartCandidates } from "@brr/catalog";
 import type { UnreadBandDiagnostic } from "@brr/schema/bundle";
 import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
 import type { LibraryConnectorsIndexRef, ShadowLibraryIndexRef } from "@brr/schema/bundle";
+import type { BlueBrickBudgetImport, BlueBrickBudgetInput } from "./bluebrick-budget.ts";
 import type { LayoutPart } from "./layout-parts.ts";
+import type { MirrorSource } from "./ldraw-mirror.ts";
 import type { PinnedRecords } from "./library-bake-store.ts";
 import type { ImportResult, ImportJob, ModelBake, PlacedImport } from "./model-import.ts";
 
@@ -64,10 +66,18 @@ export interface LayoutPartsRequest {
   readonly text: string;
 }
 
+export interface BlueBrickBudgetRequest extends BlueBrickBudgetInput {
+  readonly kind: "blueBrickBudget";
+  readonly compilerUrl: string;
+  readonly source: MirrorSource;
+  readonly ldrawLibraryUrl?: string;
+}
+
 export type ImportWorkerResponse =
   | { readonly kind: "imported"; readonly model: ImportResult }
   | { readonly kind: "rollingDiagnostics"; readonly rows: RollingDiagnosticsRows }
   | { readonly kind: "layoutParts"; readonly parts: ReadonlyArray<LayoutPart> }
+  | { readonly kind: "blueBrickBudget"; readonly budget: BlueBrickBudgetImport }
   | { readonly kind: "failed"; readonly message: string };
 
 export interface ImportWorkerPlaced {

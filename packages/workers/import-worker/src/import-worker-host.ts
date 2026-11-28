@@ -1,6 +1,7 @@
 import {
   layoutParts,
   transferablesOf,
+  type BlueBrickBudgetRequest,
   type ImportWorkerPlaced,
   type ImportWorkerRequest,
   type ImportWorkerResponse,
@@ -28,7 +29,11 @@ function messageOf(error: unknown): string {
 export class ImportWorkerHost {
   private readonly endpoint: RpcEndpoint<
     ImportWorkerResponse | ImportWorkerPlaced,
-    ImportWorkerRequest | RollingDiagnosticsRequest | LayoutPartsRequest | BakeHelperHandoff
+    | ImportWorkerRequest
+    | RollingDiagnosticsRequest
+    | LayoutPartsRequest
+    | BlueBrickBudgetRequest
+    | BakeHelperHandoff
   >;
 
   constructor(
@@ -71,6 +76,13 @@ export class ImportWorkerHost {
               (error: unknown) =>
                 this.endpoint.reply(id, { kind: "failed", message: messageOf(error) }),
             );
+          return;
+        case "blueBrickBudget":
+          this.service.blueBrickBudget(message).then(
+            (budget) => this.endpoint.reply(id, { kind: "blueBrickBudget", budget }),
+            (error: unknown) =>
+              this.endpoint.reply(id, { kind: "failed", message: messageOf(error) }),
+          );
           return;
         case "useBakeHelpers":
           this.bakeHelpers.use(message.ports);

@@ -15,6 +15,7 @@ import {
   layoutParts,
   LdrawMirror,
   ModelImportEngine,
+  type BlueBrickBudgetImport,
   type FetchFunction,
   type IBakeHelper,
   type ImportResult,
@@ -311,6 +312,10 @@ class InProcessImportPool implements IImportWorkerPool {
     text,
   }: Omit<LayoutPartsRequest, "kind">): Promise<ReadonlyArray<LayoutPart>> {
     return layoutParts(new BrickCompiler(this.bundle.compiler), fileName, text);
+  }
+
+  async blueBrickBudget(): Promise<BlueBrickBudgetImport> {
+    throw new Error("the held-out harness reads no BlueBrick budgets");
   }
 }
 

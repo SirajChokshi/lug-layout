@@ -3,6 +3,7 @@ import type { BlueBrickBrickLayer, BlueBrickMap } from "@brr/schema/bluebrick";
 import { CrosswalkFile } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { expect, it } from "vitest";
+import { importBlueBrickBudget, type BlueBrickBudgetInput } from "./bluebrick-budget.ts";
 import { BlueBrickPartMapper, MirrorPartResolver } from "./bluebrick-mapping.ts";
 import { BrickCompiler } from "./brick-compiler.ts";
 import { LdrawMirror, type FetchFunction, type MirrorSource } from "./ldraw-mirror.ts";
@@ -35,7 +36,12 @@ async function bundleJson(file: string): Promise<unknown> {
   return JSON.parse(await readFile(new URL(file, bundleRoot), "utf8"));
 }
 
-async function bundleMapper(): Promise<{ compiler: BrickCompiler; mapper: BlueBrickPartMapper }> {
+interface BundleInputs extends Omit<BlueBrickBudgetInput, "bytes"> {
+  readonly compiler: BrickCompiler;
+  readonly mirror: LdrawMirror;
+}
+
+async function bundleInputs(): Promise<BundleInputs> {
   const manifest = (await bundleJson("manifest.json")) as Manifest;
   const compiler = new BrickCompiler(
     new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot))),
@@ -44,11 +50,22 @@ async function bundleMapper(): Promise<{ compiler: BrickCompiler; mapper: BlueBr
     decode(CrosswalkFile, await bundleJson(manifest.crosswalk.file)),
     manifest.crosswalk.file,
   );
+  return {
+    compiler,
+    mirror: new LdrawMirror(manifest.source, pinnedMirror),
+    bricklinkParts: crosswalk.bricklinkParts,
+    ldconfigCodes: manifest.colors.map((color) => color.code),
+    omrModels: manifest.models.filter((model) => model.origin === "omr").map((model) => model.name),
+  };
+}
+
+async function bundleMapper(): Promise<{ compiler: BrickCompiler; mapper: BlueBrickPartMapper }> {
+  const { compiler, mirror, bricklinkParts, ldconfigCodes, omrModels } = await bundleInputs();
   const mapper = new BlueBrickPartMapper(
-    new MirrorPartResolver(compiler, new LdrawMirror(manifest.source, pinnedMirror)),
-    new BricklinkPartsCrosswalk(crosswalk.bricklinkParts),
-    new Set(manifest.colors.map((color) => color.code)),
-    new Set(manifest.models.filter((model) => model.origin === "omr").map((model) => model.name)),
+    new MirrorPartResolver(compiler, mirror),
+    new BricklinkPartsCrosswalk(bricklinkParts),
+    new Set(ldconfigCodes),
+    new Set(omrModels),
   );
   return { compiler, mapper };
 }
@@ -220,6 +237,40 @@ it(
         outcome: { kind: "notInLibrary" },
       },
     ]);
+  },
+  MAPPING_TIMEOUT_MS,
+);
+
+it(
+  "a budget becomes parts list lines for every id read as a library part, lists the ids it can't count, and drops what it budgets at 0",
+  async () => {
+    const { compiler, mirror, ...context } = await bundleInputs();
+    const budget = async (file: string) =>
+      importBlueBrickBudget(compiler, mirror, {
+        ...context,
+        bytes: await readFile(new URL(file, blueBrickFixtures)),
+      });
+    expect(await budget("synthetic-club.bbb")).toEqual({
+      status: "read",
+      lines: [
+        { part: "ldraw:74746", ldrawColor: 8, quantity: 12 },
+        { part: "ldraw:3811", ldrawColor: 2, quantity: 4 },
+        { part: "ldraw:44342p02", ldrawColor: 2, quantity: 1 },
+        { part: "ldraw:53401", ldrawColor: 72, quantity: 16 },
+        { part: "ldraw:74746", ldrawColor: 8, quantity: 4 },
+      ],
+      unread: [
+        { id: "10014-1.SET", count: 1, outcome: { kind: "model", model: "10014-1" } },
+        { id: "3811.9999", count: 1, outcome: { kind: "unknownColor", part: "3811", color: 9999 } },
+        { id: "9VHALFCURVE.8", count: 8, outcome: { kind: "notInLibrary" } },
+        { id: "TABLE96X96", count: 3, outcome: { kind: "table" } },
+      ],
+    });
+    expect(await budget("budget.bbb")).toEqual({
+      status: "read",
+      lines: [{ part: "ldraw:74746", ldrawColor: 8, quantity: 12 }],
+      unread: [{ id: "TS_OLDNAME_TEST", count: 3, outcome: { kind: "notAPart" } }],
+    });
   },
   MAPPING_TIMEOUT_MS,
 );
