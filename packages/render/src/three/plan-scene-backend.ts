@@ -225,22 +225,29 @@ function placeSegments(
   part: number,
   lines: PlanPartLines,
   segments: Float32Array,
-  offsetX: number,
-  offsetZ: number,
-  out: number[],
-): void {
+  batch: PlanBatch,
+  out: Float32Array,
+  at: number,
+): number {
+  const offsetX = page.originX - batch.originX;
+  const offsetZ = page.originZ - batch.originZ;
   const m = part * MATRIX4_FLOATS;
   const e = page.matrices;
   const y = lines.topY;
   for (let s = 0; s < segments.length; s += 2) {
     const x = segments[s] ?? 0;
     const z = segments[s + 1] ?? 0;
-    out.push(
-      offsetX + (e[m] ?? 0) * x + (e[m + 4] ?? 0) * y + (e[m + 8] ?? 0) * z + (e[m + 12] ?? 0),
-      (e[m + 1] ?? 0) * x + (e[m + 5] ?? 0) * y + (e[m + 9] ?? 0) * z + (e[m + 13] ?? 0),
-      offsetZ + (e[m + 2] ?? 0) * x + (e[m + 6] ?? 0) * y + (e[m + 10] ?? 0) * z + (e[m + 14] ?? 0),
-    );
+    out[at++] =
+      offsetX + (e[m] ?? 0) * x + (e[m + 4] ?? 0) * y + (e[m + 8] ?? 0) * z + (e[m + 12] ?? 0);
+    out[at++] = (e[m + 1] ?? 0) * x + (e[m + 5] ?? 0) * y + (e[m + 9] ?? 0) * z + (e[m + 13] ?? 0);
+    out[at++] =
+      offsetZ + (e[m + 2] ?? 0) * x + (e[m + 6] ?? 0) * y + (e[m + 10] ?? 0) * z + (e[m + 14] ?? 0);
   }
+  return at;
+}
+
+function placedFloats(segments: Float32Array): number {
+  return (segments.length / 2) * LINE_VERTEX_FLOATS;
 }
 
 class PlanBatch {
@@ -614,16 +621,26 @@ export class PlanSceneBackend implements IPlanSceneBackend {
   }
 
   private addLines(batch: PlanBatch): void {
-    const outline: number[] = [];
-    const centre: number[] = [];
+    let outlineFloats = 0;
+    let centreFloats = 0;
     for (const page of batch.parts.values()) {
-      const offsetX = page.originX - batch.originX;
-      const offsetZ = page.originZ - batch.originZ;
       for (let n = 0; n < page.partCount; n++) {
         const lines = this.partLines[page.shape[n] ?? 0];
         if (!lines) continue;
-        placeSegments(page, n, lines, lines.outline, offsetX, offsetZ, outline);
-        placeSegments(page, n, lines, lines.centre, offsetX, offsetZ, centre);
+        outlineFloats += placedFloats(lines.outline);
+        centreFloats += placedFloats(lines.centre);
+      }
+    }
+    const outline = new Float32Array(outlineFloats);
+    const centre = new Float32Array(centreFloats);
+    let outlineAt = 0;
+    let centreAt = 0;
+    for (const page of batch.parts.values()) {
+      for (let n = 0; n < page.partCount; n++) {
+        const lines = this.partLines[page.shape[n] ?? 0];
+        if (!lines) continue;
+        outlineAt = placeSegments(page, n, lines, lines.outline, batch, outline, outlineAt);
+        centreAt = placeSegments(page, n, lines, lines.centre, batch, centre, centreAt);
       }
     }
     this.addLineSegments(batch, outline, this.outlines);
@@ -632,12 +649,12 @@ export class PlanSceneBackend implements IPlanSceneBackend {
 
   private addLineSegments(
     batch: PlanBatch,
-    positions: ReadonlyArray<number>,
+    positions: Float32Array,
     material: LineBasicNodeMaterial,
   ): void {
     if (positions.length === 0) return;
     const geometry = new LineGeometry();
-    geometry.setAttribute("position", new Float32BufferAttribute(positions, LINE_VERTEX_FLOATS));
+    geometry.setAttribute("position", new BufferAttribute(positions, LINE_VERTEX_FLOATS));
     const lines = new LineSegments(geometry, material);
     lines.matrixAutoUpdate = false;
     lines.renderOrder = LINE_RENDER_ORDER;
