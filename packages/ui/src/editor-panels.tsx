@@ -10,6 +10,7 @@ import {
   tallyText,
   type EditorActionId,
   type EditorSnapshot,
+  type IContributorService,
   type IEditor,
   type ILayerService,
   type IPanelLayout,
@@ -28,6 +29,7 @@ import {
 import { PLATFORM, shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
 import { MoveToLayerField } from "./layers-panel.tsx";
+import { ContributorField } from "./contributors-panel.tsx";
 import { useId, useRef, useState, type FormEvent } from "react";
 import { TrackPanel } from "./track-panel.tsx";
 import { isCompactLayout } from "./use-compact-layout.ts";
@@ -563,10 +565,12 @@ export function SelectionPanel({
   editor,
   snapshot,
   layers,
+  contributors,
   play,
   onEditorAction,
 }: PanelProps & {
   readonly layers: ILayerService;
+  readonly contributors: IContributorService;
   readonly play: PlaySnapshot;
   readonly onEditorAction: (id: EditorActionId, eventTimeMs: number) => void;
 }) {
@@ -623,12 +627,20 @@ export function SelectionPanel({
               </output>
             </label>
           </div>
-          <MoveToLayerField
-            editor={editor}
-            layers={layers}
-            members={members}
-            enabled={poseEditable}
-          />
+          <div className="selection-fields selection-tags">
+            <MoveToLayerField
+              editor={editor}
+              layers={layers}
+              members={members}
+              enabled={poseEditable}
+            />
+            <ContributorField
+              editor={editor}
+              contributors={contributors}
+              members={members}
+              enabled={poseEditable}
+            />
+          </div>
           <span className="selection-field-label" aria-hidden="true">
             Rotation
           </span>

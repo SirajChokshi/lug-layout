@@ -170,7 +170,12 @@ export {
 export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
 export type { ILayerService, LayerRemovalGuard } from "./layers/layer-service.ts";
-export { layerTallyText, type LayerTally } from "./layers/layer-tally.ts";
+export { tagTallyText, type TagTally } from "./edit/tag-tally.ts";
+export type {
+  ContributorRemovalGuard,
+  IContributorService,
+} from "./contributors/contributor-service.ts";
+export { NO_OWNER, type Roster } from "@brr/domain";
 export type { LayerTable } from "@brr/domain";
 export { BASE_LAYER_ID, OPACITY_PERCENT_MAX } from "@brr/schema/world";
 export {
@@ -267,6 +272,7 @@ export {
   EVENT_DETAILS,
   LAYOUT_SIZE,
   LAYER_SERVICE,
+  CONTRIBUTOR_SERVICE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,

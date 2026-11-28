@@ -6,6 +6,7 @@ import { DirtyShards, addShards, worldPlacements } from "./world-shards.ts";
 const REFS = ["ldraw:3811", "omr:10264-1"];
 const TEN_KM_LDU = 25_000_000;
 const SCENERY_LAYER = 7;
+const CONTRIBUTOR = 12;
 
 const ORIGIN_TRACK: TrackRecordV1 = {
   index: 0,
@@ -28,7 +29,7 @@ function shardsOf(world: World, refs: ReadonlyArray<string>) {
 function editedWorld(): World {
   const world = new World();
   const first = world.add(0, 2, 0, 0, 0, 0, 0);
-  world.add(1, 0, 40, -60, 0, 1, SCENERY_LAYER);
+  world.add(1, 0, 40, -60, 0, 1, SCENERY_LAYER, CONTRIBUTOR);
   world.add(0, 2, 640, 0, 0, 0, 0);
   world.add(1, 0, TEN_KM_LDU, -TEN_KM_LDU, 0, 3, 0);
   world.remove(first);
@@ -54,6 +55,11 @@ describe("world shards", () => {
         shard.placements.map((placement) => ("layer" in placement ? placement.layer : "base")),
       ),
     ).toEqual([SCENERY_LAYER, "base", "base", "base"]);
+    expect(
+      shards.flatMap((shard) =>
+        shard.placements.map((placement) => ("owner" in placement ? placement.owner : "none")),
+      ),
+    ).toEqual([CONTRIBUTOR, "none", "none", "none"]);
   });
 
   it("refuses a shard naming a ref outside the catalog and adds nothing", () => {

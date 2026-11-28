@@ -42,6 +42,7 @@ import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IAnnotationService } from "./notes/annotation-service.ts";
 import type { ILayerService } from "./layers/layer-service.ts";
+import type { IContributorService } from "./contributors/contributor-service.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
 import type { IPlanDrawing } from "./sheets/plan-drawing.ts";
@@ -151,6 +152,9 @@ export const ANNOTATION_SERVICE: ServiceIdentifier<IAnnotationService> = Symbol.
 );
 export const LAYER_SERVICE: ServiceIdentifier<ILayerService> =
   Symbol.for("brr.client.LayerService");
+export const CONTRIBUTOR_SERVICE: ServiceIdentifier<IContributorService> = Symbol.for(
+  "brr.client.ContributorService",
+);
 export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
   "brr.client.PlanSheetService",
 );

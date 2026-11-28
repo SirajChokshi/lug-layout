@@ -1,4 +1,4 @@
-import { NO_TRACK_CHANGE, type PlacementHandle } from "@brr/domain";
+import { NO_TRACK_CHANGE, type PlacementHandle, NO_OWNER } from "@brr/domain";
 import type { BufferMemory, ChunkInstances, ISceneBackend, RebaseEvent } from "@brr/render";
 import { IDENTIFICATION_ACCEPTED_DEVIATION_LDU, SIXTEENTHS_PER_LDU } from "@brr/math";
 import { expect, it } from "vitest";
@@ -148,6 +148,7 @@ function placementHandle(
     },
     rot,
     layer: 0,
+    owner: NO_OWNER,
     kill() {
       live = false;
     },
@@ -190,6 +191,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
             notes: null,
             event: null,
             layers: null,
+            contributors: null,
           },
           placeableOf,
         );
@@ -228,7 +230,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
               {
                 placement: { handle: null },
                 from: null,
-                to: { refId, colorId: 0, x, z, yPlates, rot, layer: 0 },
+                to: { refId, colorId: 0, x, z, yPlates, rot, layer: 0, owner: NO_OWNER },
                 removed: null,
                 added: handle,
               },
@@ -239,6 +241,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
             notes: null,
             event: null,
             layers: null,
+            contributors: null,
           },
           placeableOf,
         );

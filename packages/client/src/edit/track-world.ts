@@ -33,6 +33,7 @@ import type { Placeable } from "./placeable.ts";
 import type { PlanReach } from "./plan-reach.ts";
 import type {
   CarriedTrackParts,
+  OwnerPaint,
   PlacedModels,
   PlacedModel,
   RebuildReport,
@@ -114,6 +115,7 @@ export interface ITrackWorld extends PlanTrackSource {
   loadSupport(): Promise<void> | null;
   support(): TrackSupport | null;
   drawing(): TrackDrawing | null;
+  repaint(paint: OwnerPaint): void;
   pieceCatalog(): TrackCatalog["pieces"];
   requestPieceMeshes(): void;
   apply(change: TrackChange): RebuildReport;
@@ -183,6 +185,7 @@ export class TrackWorld implements ITrackWorld {
   private countedVersion = -1;
   private counts: ModelTrackCounts | null = null;
   private readonly modelBands = new ModelBands((model) => this.carriedParts(model.placeable));
+  private paint: OwnerPaint = () => null;
 
   constructor(
     @inject(SCENE_BACKEND)
@@ -249,6 +252,20 @@ export class TrackWorld implements ITrackWorld {
 
   drawing(): TrackDrawing | null {
     return this.track;
+  }
+
+  repaint(paint: OwnerPaint): void {
+    this.paint = paint;
+    this.track?.setPaint(paint);
+    this.sendChunks();
+  }
+
+  private sendChunks(): void {
+    const track = this.track;
+    for (const key of track?.chunkKeys() ?? []) {
+      const chunk = track?.chunkInstances(key);
+      if (chunk) this.backend.setChunk(key, chunk);
+    }
   }
 
   pieceCatalog(): TrackCatalog["pieces"] {
@@ -601,10 +618,7 @@ export class TrackWorld implements ITrackWorld {
     for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
     this.track = track;
     if (track && this.trackSupport) track.setSupport(this.trackSupport);
-    for (const key of track?.chunkKeys() ?? []) {
-      const chunk = track?.chunkInstances(key);
-      if (chunk) this.backend.setChunk(key, chunk);
-    }
+    this.sendChunks();
     this.heldTrackModels = [];
     this.unsupportedTrack = null;
     this.unsupportedLaid = NO_IDS;
@@ -637,7 +651,9 @@ export class TrackWorld implements ITrackWorld {
   }
 
   private newDrawing(bundle: TrackBundle): TrackDrawing {
-    return new TrackDrawing(bundle, this.catalog.parts(), this.catalog.colors());
+    const drawing = new TrackDrawing(bundle, this.catalog.parts(), this.catalog.colors());
+    drawing.setPaint(this.paint);
+    return drawing;
   }
 
   private supportBand(

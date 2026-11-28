@@ -9,7 +9,7 @@ import {
 } from "./edit-history.ts";
 import { LayerTable } from "./layers/layer-table.ts";
 import { ConsistLayout } from "./rail/consist-layout.ts";
-import { SLOT_LIVE, World } from "./world.ts";
+import { NO_OWNER, SLOT_LIVE, World } from "./world.ts";
 
 function livePlacements(world: World): string[] {
   const rows: string[] = [];
@@ -25,6 +25,7 @@ function livePlacements(world: World): string[] {
           view.yPlates[slot],
           view.rot[slot],
           view.layer[slot],
+          view.owner[slot],
         ].join(","),
       );
     }
@@ -77,6 +78,7 @@ function straightAt(index: number, x: bigint): TrackPieceAt {
     yPlates: 0,
     rise: 0,
     layer: 0,
+    owner: NO_OWNER,
   };
 }
 
@@ -128,6 +130,7 @@ describe("EditHistory", () => {
             yPlates: next() % 3,
             rot: next() % 4,
             layer: next() % 5,
+            owner: (next() % 3) + NO_OWNER,
           });
           const placement = edit.changes[0]?.placement;
           if (placement) placements.push(placement);
@@ -169,6 +172,7 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      owner: NO_OWNER,
     });
     const placement = placed.changes[0]?.placement;
     if (!placement) throw new Error("place reported no change");
@@ -190,7 +194,16 @@ describe("EditHistory", () => {
   it("keeps a track change as one step beside placements, handing it back reversed on undo and as made on redo", () => {
     const world = new World();
     const history = new EditHistory(world);
-    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 });
+    history.place({
+      refId: 1,
+      colorId: 0,
+      x: 0,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      owner: NO_OWNER,
+    });
     const run = { lift: [], lay: [straightAt(0, 0n), straightAt(1, 16n)] };
     const thrown = { lift: [straightAt(1, 16n)], lay: [{ ...straightAt(1, 16n), piece: 2 }] };
 
@@ -200,7 +213,7 @@ describe("EditHistory", () => {
     expect(history.undo()?.track).toEqual({ lift: thrown.lay, lay: thrown.lift });
     expect(history.undo()).toMatchObject({ kind: "lay-track", track: { lift: run.lay, lay: [] } });
     expect(history.nextUndo()?.kind).toBe("place");
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0,-1"]);
     expect(history.nextRedo()).toEqual({ kind: "lay-track", pieces: 2 });
     expect(history.redo()?.track).toBe(run);
     expect(history.redo()?.track).toBe(thrown);
@@ -218,10 +231,13 @@ describe("EditHistory", () => {
     const done = history.commit(
       "open-plan",
       [
-        { placement: null, to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 } },
         {
           placement: null,
-          to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3, layer: 0 },
+          to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0, owner: NO_OWNER },
+        },
+        {
+          placement: null,
+          to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3, layer: 0, owner: NO_OWNER },
         },
       ],
       run,
@@ -239,7 +255,7 @@ describe("EditHistory", () => {
     expect(history.undoDepth).toBe(0);
 
     expect(history.redo()).toMatchObject({ track: run, plan: change });
-    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0,0", "3,0,40,60,1,3,0"]);
+    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0,0,-1", "3,0,40,60,1,3,0,-1"]);
   });
 
   it("keeps a layer change as its own step, named by the layer, handing back the earlier table on undo", () => {
@@ -266,7 +282,16 @@ describe("EditHistory", () => {
     const history = new EditHistory(world, new ConsistLayout(), undefined, {
       isLocked: (layer) => locked.has(layer),
     });
-    const pose = { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 2 };
+    const pose = {
+      refId: 1,
+      colorId: 0,
+      x: 0,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 2,
+      owner: NO_OWNER,
+    };
     const placement = history.place(pose).changes[0]?.placement;
     if (!placement) throw new Error("place reported no change");
     const laid = { ...straightAt(0, 0n), layer: 2 };
@@ -349,7 +374,16 @@ describe("EditHistory", () => {
   it("moves placements and track pieces to a layer as one step that changes only their layer, skipping members already there", () => {
     const world = new World();
     const history = new EditHistory(world);
-    const pose = { refId: 1, colorId: 4, x: 40, z: -60, yPlates: 3, rot: 1, layer: 0 };
+    const pose = {
+      refId: 1,
+      colorId: 4,
+      x: 40,
+      z: -60,
+      yPlates: 3,
+      rot: 1,
+      layer: 0,
+      owner: NO_OWNER,
+    };
     const placements = [pose, { ...pose, x: 640, layer: 2 }].map((at) => {
       const placement = history.place(at).changes[0]?.placement;
       if (!placement) throw new Error("place reported no change");
@@ -367,26 +401,130 @@ describe("EditHistory", () => {
     expect(history.nextUndo()).toEqual({ kind: "move-to-layer", members: 2, layer: 2 });
     expect(moved?.changes.map(({ from, to }) => [from?.layer, to?.layer])).toEqual([[0, 2]]);
     expect(moved?.track).toEqual({ lift: [pieces[0]], lay: [{ ...pieces[0], layer: 2 }] });
-    expect(livePlacements(world)).toEqual(["1,4,40,-60,3,1,2", "1,4,640,-60,3,1,2"]);
+    expect(livePlacements(world)).toEqual(["1,4,40,-60,3,1,2,-1", "1,4,640,-60,3,1,2,-1"]);
     expect(history.moveToLayer(placements, moved?.track.lay ?? [], 2)).toBeNull();
     expect(history.undo()?.track).toEqual({ lift: moved?.track.lay, lay: moved?.track.lift });
     expect(livePlacements(world)).toEqual(before);
     expect(history.redo()?.kind).toBe("move-to-layer");
-    expect(livePlacements(world)).toEqual(["1,4,40,-60,3,1,2", "1,4,640,-60,3,1,2"]);
+    expect(livePlacements(world)).toEqual(["1,4,40,-60,3,1,2,-1", "1,4,640,-60,3,1,2,-1"]);
     expect(history.undoDepth).toBe(4);
+  });
+
+  it("assigns placements and track pieces to a contributor as one step that changes only their owner, skipping members already theirs", () => {
+    const world = new World();
+    const history = new EditHistory(world);
+    const pose = {
+      refId: 1,
+      colorId: 4,
+      x: 40,
+      z: -60,
+      yPlates: 3,
+      rot: 1,
+      layer: 2,
+      owner: NO_OWNER,
+    };
+    const placements = [pose, { ...pose, x: 640, owner: 7 }].map((at) => {
+      const placement = history.place(at).changes[0]?.placement;
+      if (!placement) throw new Error("place reported no change");
+      return placement;
+    });
+    const pieces = [
+      { ...straightAt(0, 0n), yPlates: 2, rise: 1 },
+      { ...straightAt(1, 16n), owner: 7 },
+    ];
+    history.commit("lay-track", [], { lift: [], lay: pieces });
+    const before = livePlacements(world);
+
+    const assigned = history.assignOwner(placements, pieces, 7);
+
+    expect(history.nextUndo()).toEqual({ kind: "assign-owner", members: 2, owner: 7 });
+    expect(assigned?.changes.map(({ from, to }) => [from?.owner, to?.owner])).toEqual([
+      [NO_OWNER, 7],
+    ]);
+    expect(assigned?.track).toEqual({ lift: [pieces[0]], lay: [{ ...pieces[0], owner: 7 }] });
+    expect(livePlacements(world)).toEqual(["1,4,40,-60,3,1,2,7", "1,4,640,-60,3,1,2,7"]);
+    expect(history.assignOwner(placements, assigned?.track.lay ?? [], 7)).toBeNull();
+    expect(history.assignOwner(placements, [], NO_OWNER)?.changes).toHaveLength(2);
+    expect(livePlacements(world)).toEqual(["1,4,40,-60,3,1,2,-1", "1,4,640,-60,3,1,2,-1"]);
+    history.undo();
+    history.undo();
+    expect(livePlacements(world)).toEqual(before);
+    expect(() => history.assignOwner(placements, [], 65_536)).toThrow(/not a contributor id/u);
+  });
+
+  it("moves members onto a layer it creates in the same step, so one undo takes back both", () => {
+    const world = new World();
+    const history = new EditHistory(world);
+    const pose = { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0, owner: 3 };
+    const placement = history.place(pose).changes[0]?.placement;
+    if (!placement) throw new Error("place reported no change");
+    const created = LayerTable.base.created("Alice", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const { table, id } = created.value;
+    const change = { action: "create", layer: id, before: LayerTable.base, after: table } as const;
+
+    const moved = history.moveToLayer([placement], [], id, change);
+
+    expect(moved?.layers).toBe(change);
+    expect(livePlacements(world)).toEqual([`1,0,0,0,0,0,${id},3`]);
+    expect(history.undo()).toMatchObject({ layers: { before: table, after: LayerTable.base } });
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0,3"]);
+    expect(history.undoDepth).toBe(1);
+  });
+
+  it("keeps a roster change as its own step, named by the contributor, handing back the earlier roster on undo", () => {
+    const history = new EditHistory(new World());
+    const roster = [{ id: 0, name: "Alice", color: "#3366cc" }];
+    const change = { action: "remove", contributor: 0, before: roster, after: [] } as const;
+
+    expect(history.contributorEdit(change).contributors).toBe(change);
+    expect(history.nextUndo()).toEqual({ kind: "contributor", action: "remove", name: "Alice" });
+    expect(history.undo()).toMatchObject({
+      kind: "contributor",
+      changes: [],
+      contributors: { before: [], after: roster },
+    });
+    expect(history.redo()?.contributors).toBe(change);
   });
 
   it("drops the redo branch when a new edit follows an undo", () => {
     const world = new World();
     const history = new EditHistory(world);
-    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 });
-    history.place({ refId: 2, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0, layer: 0 });
+    history.place({
+      refId: 1,
+      colorId: 0,
+      x: 0,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      owner: NO_OWNER,
+    });
+    history.place({
+      refId: 2,
+      colorId: 0,
+      x: 640,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      owner: NO_OWNER,
+    });
     history.undo();
-    history.place({ refId: 3, colorId: 0, x: 0, z: 640, yPlates: 0, rot: 0, layer: 0 });
+    history.place({
+      refId: 3,
+      colorId: 0,
+      x: 0,
+      z: 640,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      owner: NO_OWNER,
+    });
 
     expect(history.redoDepth).toBe(0);
     expect(history.redo()).toBeNull();
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0", "3,0,0,640,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0,-1", "3,0,0,640,0,0,0,-1"]);
   });
 
   it("refuses an edit with an invalid pose without touching the world or the history", () => {
@@ -400,6 +538,7 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      owner: NO_OWNER,
     }).changes[0]?.placement;
     if (!placement) throw new Error("place reported no change");
     const before = livePlacements(world);
@@ -409,25 +548,49 @@ describe("EditHistory", () => {
         { placement, to: null },
         {
           placement: null,
-          to: { refId: 2, colorId: 0, x: 0.5, z: 0, yPlates: 0, rot: 0, layer: 0 },
+          to: { refId: 2, colorId: 0, x: 0.5, z: 0, yPlates: 0, rot: 0, layer: 0, owner: NO_OWNER },
         },
       ]),
     ).toThrow(RangeError);
     expect(() =>
       history.commit("rotate", [
-        { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4, layer: 0 } },
+        {
+          placement,
+          to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4, layer: 0, owner: NO_OWNER },
+        },
       ]),
     ).toThrow(/quarter turn/u);
     expect(() =>
       history.commit("rotate", [
-        { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 1, layer: 65_536 } },
+        {
+          placement,
+          to: {
+            refId: 1,
+            colorId: 0,
+            x: 0,
+            z: 0,
+            yPlates: 0,
+            rot: 1,
+            layer: 65_536,
+            owner: NO_OWNER,
+          },
+        },
       ]),
     ).toThrow(/not a layer id/u);
+    expect(() =>
+      history.commit("rotate", [
+        {
+          placement,
+          to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 1, layer: 0, owner: 65_536 },
+        },
+      ]),
+    ).toThrow(/not a contributor id/u);
     const straight = {
       piece: 0,
       pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
       rise: 0,
       layer: 0,
+      owner: NO_OWNER,
     };
     expect(() =>
       history.commit("remove", [{ placement, to: null }], {
@@ -471,6 +634,7 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      owner: NO_OWNER,
     }).changes[0]?.placement;
     const foreign = new EditHistory(new World()).place({
       refId: 1,
@@ -480,6 +644,7 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      owner: NO_OWNER,
     }).changes[0]?.placement;
     if (!placement || !foreign) throw new Error("place reported no change");
 

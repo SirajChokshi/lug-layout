@@ -12,6 +12,7 @@ import {
   type LayeredPose,
   type PlacementRef,
   type PlacementRequest,
+  NO_OWNER,
 } from "@brr/domain";
 import { pose16, STUD_LDU, zeta16, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND } from "@brr/render";
@@ -141,6 +142,7 @@ class Sequence {
       yPlates: 0,
       rot: this.int(4),
       layer: 0,
+      owner: NO_OWNER,
     };
   }
 

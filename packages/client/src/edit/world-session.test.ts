@@ -1,5 +1,12 @@
 import { LINK_PROGRESS_SHARE } from "@brr/catalog";
-import { EditHistory, World, addShards, type AppliedEdit, type PlacementTarget } from "@brr/domain";
+import {
+  EditHistory,
+  World,
+  addShards,
+  type AppliedEdit,
+  type PlacementTarget,
+  NO_OWNER,
+} from "@brr/domain";
 import {
   SCENE_BACKEND,
   type BufferMemory,
@@ -42,7 +49,14 @@ import { Container } from "inversify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { eventDraft } from "../event/event-details.ts";
-import { EDITOR, EDITOR_CAMERA, EVENT_DETAILS, LAYER_SERVICE, WORLD_SESSION } from "../tokens.ts";
+import {
+  CONTRIBUTOR_SERVICE,
+  EDITOR,
+  EDITOR_CAMERA,
+  EVENT_DETAILS,
+  LAYER_SERVICE,
+  WORLD_SESSION,
+} from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
@@ -119,7 +133,16 @@ class BaseplateWorld implements IEditedWorld {
 
   place(column: number): AppliedEdit {
     const x = column * BASEPLATE_LDU;
-    return this.history.place({ refId: 0, colorId: 2, x, z: 0, yPlates: 0, rot: 0, layer: 0 });
+    return this.history.place({
+      refId: 0,
+      colorId: 2,
+      x,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      owner: NO_OWNER,
+    });
   }
 
   contents(): WorldContents {
@@ -433,9 +456,10 @@ async function sessionOnIndexedDb() {
   const session = container.get(WORLD_SESSION);
   const repository = container.get(WORLD_REPOSITORY);
   const layers = container.get(LAYER_SERVICE);
+  const contributors = container.get(CONTRIBUTOR_SERVICE);
   const edited = new BaseplateWorld();
   await session.start(edited, "test");
-  return { session, repository, layers, edited, container };
+  return { session, repository, layers, contributors, edited, container };
 }
 
 describe("schema v2 document data", () => {
@@ -450,6 +474,7 @@ describe("schema v2 document data", () => {
       { id: 2, name: "Scenery", kind: "parts", visible: false, locked: false, opacity: 60 },
     ],
     contributors: [{ id: 3, name: "Ada", color: "#1f77b4" }],
+    groups: [{ id: 1, name: "Station" }],
     event: { title: "Show layout", startDate: "2027-03-12", endDate: "2027-03-14" },
   };
   const LABELS = noteShards([
@@ -619,15 +644,48 @@ describe("schema v2 document data", () => {
     });
   });
 
-  it("refuses a world whose placements carry an owner, rather than dropping it on the next save", async () => {
+  it("opens a world whose placements are owned, keeps each owner when its shard is rewritten, saves roster edits, and won't drop a contributor its saved notes name", async () => {
+    const { session, repository, contributors, edited } = await sessionOnIndexedDb();
+    expect(await session.importWorld(showArchive(repository, [{ ...PLATE, owner: 3 }]))).toBe(true);
+    const id = session.view().world?.id ?? "";
+    expect(contributors.roster()).toEqual(SHOW.contributors);
+
+    session.placementsEdited(edited.place(1));
+    expect(contributors.rename(3, "Ada L.")).toEqual([]);
+    const added = contributors.create("Grace");
+    session.documentEdited();
+    await vi.waitFor(() => expect(session.view().world?.placements).toBe(2));
+    const stored = await repository.read(id);
+    if (!stored.ok) throw new Error("the edited world didn't reopen");
+
+    expect({
+      roster: stored.value.manifest.contributors?.map(({ id: key, name }) => [key, name]),
+      owners: stored.value.shards.flatMap((shard) => shard.placements.map(({ owner }) => owner)),
+      removal: contributors.remove(3),
+    }).toEqual({
+      roster: [
+        [3, "Ada L."],
+        [added.ok ? added.value : -1, "Grace"],
+      ],
+      owners: [3, undefined],
+      removal: [
+        {
+          path: "contributor 3",
+          message: "owns 1 note saved with this world, which this editor can't reassign yet",
+        },
+      ],
+    });
+  });
+
+  it("refuses a world whose placements are in a group, rather than dropping it on the next save", async () => {
     const { session, repository } = await sessionOnIndexedDb();
     const before = await repository.list();
 
-    expect(await session.importWorld(showArchive(repository, [{ ...PLATE, owner: 3 }]))).toBe(
+    expect(await session.importWorld(showArchive(repository, [{ ...PLATE, group: 1 }]))).toBe(
       false,
     );
     expect(session.view().fileError).toBe(
-      "import failed: shard 0_0.placements.0: is in a group or owned by a contributor, which this editor can't keep yet",
+      "import failed: shard 0_0.placements.0: is in a group, which this editor can't keep yet",
     );
     expect(await repository.list()).toEqual(before);
   });

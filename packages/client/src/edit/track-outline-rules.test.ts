@@ -4,7 +4,7 @@ import {
   type IAssetFetcher,
   type PartBundle,
 } from "@brr/catalog";
-import { PlanDelta, emptyFacts, type PlanIssue, type TrackOutline } from "@brr/domain";
+import { PlanDelta, emptyFacts, type PlanIssue, type TrackOutline, NO_OWNER } from "@brr/domain";
 import { chunkKey, mmFromLdu, pose16, zeta16, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND } from "@brr/render";
 import { Container } from "inversify";
@@ -114,6 +114,7 @@ function laidIn(
       yPlates: 0,
       rise: 0,
       layer: 0,
+      owner: NO_OWNER,
     })),
   };
   drawing.applyTrack(change);

@@ -39,7 +39,15 @@ export {
   type RoadTile,
   type RoadTileRefusal,
 } from "./road-tiles.ts";
-export { SLOT_LIVE, World, isLayerId, type ChunkView, type PlacementHandle } from "./world.ts";
+export {
+  NO_OWNER,
+  SLOT_LIVE,
+  World,
+  isLayerId,
+  isOwnerId,
+  type ChunkView,
+  type PlacementHandle,
+} from "./world.ts";
 export {
   EditHistory,
   NO_TRACK_CHANGE,
@@ -58,8 +66,12 @@ export {
   type PlacementFollower,
   type PlacementPose,
   type PlacementRef,
+  type Roster,
+  type RosterAction,
+  type RosterChange,
   type PlacementRequest,
   type PoseChange,
+  type RecordTag,
   type TrackChange,
   type TrackPieceAt,
 } from "./edit-history.ts";

@@ -92,9 +92,10 @@ export interface LaidTrackPiece {
   readonly position: ReadonlyArray<string>;
   readonly yPlates: number;
   readonly layer?: number;
+  readonly owner?: number;
 }
 
-export interface LayeredContents {
+export interface TaggedContents {
   readonly placements: ReadonlyArray<string>;
   readonly track: ReadonlyArray<number>;
 }
@@ -158,6 +159,7 @@ interface PlacementColumns {
   readonly yPlates: ReadonlyArray<number>;
   readonly rot: ReadonlyArray<number>;
   readonly layer: ReadonlyArray<number>;
+  readonly owner: ReadonlyArray<number>;
 }
 
 export interface TrackRoute {
@@ -305,6 +307,29 @@ async function unpinnedReference(path: string): Promise<string | null> {
   const places = [reference, ...LIBRARY_FOLDERS.map((folder) => `${folder}${reference}`)];
   const held = await Promise.all(places.map(pinned));
   return held.includes(true) ? null : reference;
+}
+
+export const COTTAGE_NAME = "my-cottage.mpd";
+
+export function usersCottage(): string {
+  return [
+    `0 FILE ${COTTAGE_NAME}`,
+    "0 My cottage, a user's own model with a part of its own",
+    `0 Name: ${COTTAGE_NAME}`,
+    "0 Author: lug-layout e2e (generated at test time)",
+    "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+    "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+    "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 my-brick.dat",
+    "0 NOFILE",
+    "0 FILE my-brick.dat",
+    "0 My brick, the user's own part",
+    "0 Name: my-brick.dat",
+    "0 Author: lug-layout e2e (generated at test time) [James Jessiman]",
+    "0 !LDRAW_ORG Unofficial_Part",
+    "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+    "0 NOFILE",
+    "",
+  ].join("\n");
 }
 
 export class EditorPage {
@@ -979,14 +1004,15 @@ export class EditorPage {
       .toSorted(byPosition);
   }
 
-  async layered(): Promise<LayeredContents> {
+  async tagged(tag: "layer" | "owner"): Promise<TaggedContents> {
     const { world } = await this.editState();
     const { placements, refs, laidTrack } = world;
+    const untagged = tag === "layer" ? 0 : -1;
     return {
       placements: placements.refId
-        .map((refId, i) => `${refs[refId] ?? refId} on ${column(placements.layer, i)}`)
+        .map((refId, i) => `${refs[refId] ?? refId} ${tag} ${column(placements[tag], i)}`)
         .toSorted(),
-      track: laidTrack.map((piece) => piece.layer ?? 0).toSorted((a, b) => a - b),
+      track: laidTrack.map((piece) => piece[tag] ?? untagged).toSorted((a, b) => a - b),
     };
   }
 

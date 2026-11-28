@@ -1,11 +1,14 @@
 import {
+  CONTRIBUTOR_SERVICE,
   EDITOR,
   LAYER_SERVICE,
+  NO_OWNER,
   mainThreadModules,
   TRACK_ITEM_ID,
   TRAIN_PLAY,
   type EditorActionId,
   type EditorSnapshot,
+  type IContributorService,
   type IEditor,
   type ILayerService,
   type PlaySnapshot,
@@ -28,12 +31,14 @@ const SELECTED: ModelSelectionView = {
   yPlates: 0,
   rot: 0,
   layer: 0,
+  owner: NO_OWNER,
   box: { minX: 0, minY: 0, minZ: 0, maxX: 640, maxY: 8, maxZ: 640 },
 };
 
 function services(): {
   readonly editor: IEditor;
   readonly layers: ILayerService;
+  readonly contributors: IContributorService;
   readonly play: PlaySnapshot;
 } {
   const container = new Container();
@@ -47,6 +52,7 @@ function services(): {
   return {
     editor: container.get(EDITOR),
     layers: container.get(LAYER_SERVICE),
+    contributors: container.get(CONTRIBUTOR_SERVICE),
     play: container.get(TRAIN_PLAY).snapshot(),
   };
 }
@@ -143,7 +149,7 @@ it("runs the client's draw-track and draw-road commands from the toolbar's draw 
 
 function panelOffers() {
   return {
-    fields: ["X studs", "Z studs", "Layer"].map(
+    fields: ["X studs", "Z studs", "Layer", "Contributor"].map(
       (label) => !screen.getByLabelText(label).hasAttribute("disabled"),
     ),
     rotations: screen
@@ -155,14 +161,15 @@ function panelOffers() {
   };
 }
 
-it("offers the selection panel's position, layer and rotation only when the arrows could move the selection, not while a train runs, the world is read-only or a drag is in hand", () => {
-  const { editor, layers, play } = services();
+it("offers the selection panel's position, layer, contributor and rotation only when the arrows could move the selection, not while a train runs, the world is read-only or a drag is in hand", () => {
+  const { editor, layers, contributors, play } = services();
   const selecting = { ...editableSnapshot(editor), mode: "select" as const };
   const panel = (snapshot: EditorSnapshot, status: PlaySnapshot["status"]) =>
     createElement(SelectionPanel, {
       editor,
       snapshot,
       layers,
+      contributors,
       play: { ...play, status },
       onEditorAction: () => {},
     });
@@ -209,28 +216,32 @@ it("offers the selection panel's position, layer and rotation only when the arro
 
   expect({ editable, running, readOnly, dragging, group, groupDragging }).toEqual({
     editable: {
-      fields: [true, true, true],
+      fields: [true, true, true, true],
       rotations: [true, true, true, true],
       actions: [true, true, true],
     },
     running: {
-      fields: [false, false, false],
+      fields: [false, false, false, false],
       rotations: [false, false, false, false],
       actions: [false, true, false],
     },
     readOnly: {
-      fields: [false, false, false],
+      fields: [false, false, false, false],
       rotations: [false, false, false, false],
       actions: [true, true, false],
     },
     dragging: {
-      fields: [false, false, false],
+      fields: [false, false, false, false],
       rotations: [false, false, false, false],
       actions: [true, true, false],
     },
-    group: { fields: [true, true, true], rotations: [true, true], actions: [true, true, true] },
+    group: {
+      fields: [true, true, true, true],
+      rotations: [true, true],
+      actions: [true, true, true],
+    },
     groupDragging: {
-      fields: [false, false, false],
+      fields: [false, false, false, false],
       rotations: [false, false],
       actions: [true, true, false],
     },

@@ -1,34 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
-import { EditorPage, TRACK_ITEM, type LatticePoint } from "./editor-page.ts";
+import {
+  COTTAGE_NAME,
+  EditorPage,
+  TRACK_ITEM,
+  usersCottage,
+  type LatticePoint,
+} from "./editor-page.ts";
 
 const BASEPLATE = "ldraw:3811@2";
-const COTTAGE_NAME = "my-cottage.mpd";
 const FIRST: LatticePoint = { x: 0, z: 0 };
 const SECOND: LatticePoint = { x: 200, z: 0 };
 const ON_THE_LINE: LatticePoint = { x: 0, z: 800 };
 const PLACEMENTS_ROW = /^Placements(\d+)/u;
-
-function usersCottage(): string {
-  return [
-    `0 FILE ${COTTAGE_NAME}`,
-    "0 My cottage, a user's own model with a part of its own, built for the layers test",
-    `0 Name: ${COTTAGE_NAME}`,
-    "0 Author: lug-layout e2e (generated at test time)",
-    "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
-    "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
-    "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 my-brick.dat",
-    "0 NOFILE",
-    "0 FILE my-brick.dat",
-    "0 My brick, the user's own part",
-    "0 Name: my-brick.dat",
-    "0 Author: lug-layout e2e (generated at test time) [James Jessiman]",
-    "0 !LDRAW_ORG Unofficial_Part",
-    "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
-    "0 NOFILE",
-    "",
-  ].join("\n");
-}
 
 async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: test.info().outputPath(`${name}.png`) });
@@ -63,7 +47,7 @@ test("a user's own models and laid track move to a new layer from the Selection 
   const laid = await editor.dragTrack({ x: -400, z: ON_THE_LINE.z }, { x: 400, z: ON_THE_LINE.z });
   expect(laid.pieces).toBeGreaterThan(1);
   await editor.escape();
-  const before = await editor.layered();
+  const before = await editor.tagged("layer");
 
   const panel = page.locator(".layers-panel");
   await panel.locator("summary").click();
@@ -83,7 +67,7 @@ test("a user's own models and laid track move to a new layer from the Selection 
   await expect(layerField).toHaveValue("0");
   await layerField.selectOption({ label: "Scenery" });
   await expect(layerField).toHaveValue(String(scenery));
-  const moved = await editor.layered();
+  const moved = await editor.tagged("layer");
   await expect(row.locator(".layer-count")).toHaveText("3");
   await editor.waitForFarTierAndMeshesSettled();
   await shot(page, "layers-moved");
@@ -105,7 +89,7 @@ test("a user's own models and laid track move to a new layer from the Selection 
   await layerField.selectOption({ label: "Parts" });
   await panel.getByRole("button", { name: "Remove" }).click();
   await expect(panel.locator(".layer-row")).toHaveCount(1);
-  const emptied = await editor.layered();
+  const emptied = await editor.tagged("layer");
   await shot(page, "layers-removed");
   await editor.undo();
   await editor.undo();
@@ -114,14 +98,14 @@ test("a user's own models and laid track move to a new layer from the Selection 
   expect({
     moved,
     emptied,
-    restored: await editor.layered(),
+    restored: await editor.tagged("layer"),
     hidden: everything - shownOnly,
   }).toEqual({
     moved: {
       placements: [
-        `${BASEPLATE} on 0`,
-        `${cottage} on ${scenery}`,
-        `${cottage} on ${scenery}`,
+        `${BASEPLATE} layer 0`,
+        `${cottage} layer ${scenery}`,
+        `${cottage} layer ${scenery}`,
       ].toSorted(),
       track: [...before.track.slice(1), scenery],
     },

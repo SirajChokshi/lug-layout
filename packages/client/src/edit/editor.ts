@@ -1,6 +1,7 @@
 import type { BundleLod } from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
+  directColorCode,
   type IPartBundleLoader,
   type ModelCells,
   type PartModelLattice,
@@ -25,6 +26,7 @@ import {
   type ConsistRef,
   NO_TRACK_CHANGE,
   NO_HIDDEN_LAYERS,
+  NO_OWNER,
   layOnLayer,
   type HiddenLayers,
   type LayerAction,
@@ -44,8 +46,12 @@ import {
   type PlacementContents,
   type PlacementPose,
   type PlacementRegion,
+  type PlacementRef,
   type PlacementRequest,
   type PlateHeights,
+  type RecordTag,
+  type Roster,
+  type RosterAction,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
@@ -90,7 +96,7 @@ import {
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
-import type { Decoded, Issue } from "@brr/schema/decode";
+import { issueText, type Decoded, type Issue } from "@brr/schema/decode";
 import type { ImportReport, LayoutPart, StudioReport } from "@brr/import";
 import {
   BASE_LAYER_ID,
@@ -111,7 +117,7 @@ import {
   type HiddenLayerParts,
   type IBomSource,
 } from "../bom/bom-service.ts";
-import { layerTallyText, tallyLayers, type LayerTally } from "../layers/layer-tally.ts";
+import { tagTallyText, tallyByTag, type TagTally } from "./tag-tally.ts";
 import type { IPlanSheetSource, PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
@@ -263,12 +269,14 @@ import {
 } from "./selection.ts";
 import {
   ANNOTATION_SERVICE,
+  CONTRIBUTOR_SERVICE,
   EDITOR_CAMERA,
   LAYER_SERVICE,
   PLAN_SERVICE,
   TABLE_GROUND,
 } from "../tokens.ts";
 import type { ILayerService } from "../layers/layer-service.ts";
+import type { IContributorService } from "../contributors/contributor-service.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
@@ -644,7 +652,11 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   moveSelectionTo(xStuds: number, zStuds: number, eventTimeMs: number): void;
   moveSelectionToLayer(layer: number, eventTimeMs: number): void;
   selectLayer(layer: number): void;
-  layerContents(): ReadonlyMap<number, LayerTally>;
+  layerContents(): ReadonlyMap<number, TagTally>;
+  assignSelection(owner: number, eventTimeMs: number): void;
+  selectOwner(owner: number): void;
+  ownerContents(): ReadonlyMap<number, TagTally>;
+  moveOwnerToOwnLayer(owner: number, eventTimeMs: number): void;
   turnSelectedModelTo(rot: number, eventTimeMs: number): void;
   copySelection(): void;
   pasteClipboard(): void;
@@ -901,6 +913,7 @@ interface PieceMember {
   readonly yPlates: number;
   readonly rise: number;
   readonly layer: number;
+  readonly owner: number;
 }
 
 interface GroupTargets {
@@ -920,8 +933,9 @@ const GROUP_EDITS: ReadonlySet<EditKind> = new Set<EditKind>([
   "move",
   "remove",
   "move-to-layer",
+  "assign-owner",
 ]);
-const DOCUMENT_EDITS: ReadonlySet<EditKind> = new Set<EditKind>(["plan", "layer"]);
+const DOCUMENT_EDITS: ReadonlySet<EditKind> = new Set<EditKind>(["plan", "layer", "contributor"]);
 
 interface BoxDrag {
   readonly kind: "box";
@@ -1081,6 +1095,7 @@ function poseOf(model: PlacedModel): LayeredPose {
     yPlates: handle.yPlates,
     rot: handle.rot,
     layer: handle.layer,
+    owner: handle.owner,
   };
 }
 
@@ -1203,7 +1218,15 @@ function counted(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-function editLabel(edit: EditSummary | null, layers: LayerTable): string | null {
+function liveMembers(members: ReadonlyArray<SelectionMember>): ReadonlyArray<SelectionMember> {
+  return members.filter((member) => member.kind !== "model" || member.model.handle.live);
+}
+
+function contributorName(roster: Roster, owner: number): string {
+  return roster.find((row) => row.id === owner)?.name ?? `contributor ${owner}`;
+}
+
+function editLabel(edit: EditSummary | null, layers: LayerTable, roster: Roster): string | null {
   if (edit === null) return null;
   switch (edit.kind) {
     case "place":
@@ -1234,6 +1257,12 @@ function editLabel(edit: EditSummary | null, layers: LayerTable): string | null 
       return layerEditLabel(edit.action, edit.name);
     case "move-to-layer":
       return `move to layer "${layers.layer(edit.layer)?.name ?? edit.layer}" (${counted(edit.members, "item", "items")})`;
+    case "contributor":
+      return rosterEditLabel(edit.action, edit.name);
+    case "assign-owner":
+      return edit.owner === NO_OWNER
+        ? `unassign ${counted(edit.members, "item", "items")}`
+        : `assign to "${contributorName(roster, edit.owner)}" (${counted(edit.members, "item", "items")})`;
     default: {
       const unhandled: never = edit;
       throw new Error(`unhandled edit ${JSON.stringify(unhandled)}`);
@@ -1264,6 +1293,23 @@ function layerEditLabel(action: LayerAction, name: string): string {
     default: {
       const unhandled: never = action;
       throw new Error(`unhandled layer action ${String(unhandled)}`);
+    }
+  }
+}
+
+function rosterEditLabel(action: RosterAction, name: string): string {
+  switch (action) {
+    case "add":
+      return `add contributor "${name}"`;
+    case "rename":
+      return `rename contributor to "${name}"`;
+    case "recolour":
+      return `recolour contributor "${name}"`;
+    case "remove":
+      return `remove contributor "${name}"`;
+    default: {
+      const unhandled: never = action;
+      throw new Error(`unhandled roster action ${String(unhandled)}`);
     }
   }
 }
@@ -1421,7 +1467,9 @@ export class Editor implements IEditor, IEditedWorld {
   private history: EditHistory;
   private readonly layerLocks: LayerLocks = { isLocked: (layer) => this.layers.isLocked(layer) };
   private lockedInBox = 0;
-  private layerTallies: ReadonlyMap<number, LayerTally> | null = null;
+  private layerTallies: ReadonlyMap<number, TagTally> | null = null;
+  private ownerTallies: ReadonlyMap<number, TagTally> | null = null;
+  private paintKey = "";
   private readonly consistRefs = new Map<ConsistHandle, ConsistRef>();
   private activeTrain: PlayModel | null = null;
   private trainAim: RailAim | null = null;
@@ -1625,6 +1673,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(TRACK_PATH_SELECTION) private readonly trackPaths: ITrackPathSelection,
     @inject(EVENT_DETAILS) private readonly events: IEventDetails,
     @inject(LAYER_SERVICE) private readonly layers: ILayerService,
+    @inject(CONTRIBUTOR_SERVICE) private readonly contributors: IContributorService,
   ) {
     this.history = new EditHistory(this.world, this.consists, annotations, this.layerLocks);
     this.placed = new PlacedChunks(backend, (placeable, handle) =>
@@ -1660,6 +1709,11 @@ export class Editor implements IEditor, IEditedWorld {
     events.onEdit((change) => this.eventEdited(change));
     layers.onEdit((change) => this.layerEdited(change));
     layers.guardRemoval((layer) => this.layerRemovalRefusal(layer));
+    contributors.onEdit((change) =>
+      this.show(this.history.contributorEdit(change), performance.now()),
+    );
+    contributors.guardRemoval((owner) => this.ownerRemovalRefusal(owner));
+    contributors.subscribe(() => this.repaint());
   }
 
   private sessionChanged(): void {
@@ -2141,7 +2195,7 @@ export class Editor implements IEditor, IEditedWorld {
       fits: (pier, pose, posed, piece) => {
         if (track.changeOverlaps(change, piece.indices, posed)) return false;
         if (trains.some((train) => footprintMeetsBox(train, posed))) return false;
-        const layered = { ...pose, layer: this.layers.activeLayer() };
+        const layered = { ...pose, layer: this.layers.activeLayer(), owner: NO_OWNER };
         const member = { model: null, placeable: pier, pose: layered, component: 0 };
         const check: ModelCheck = {
           models: [member],
@@ -2483,7 +2537,10 @@ export class Editor implements IEditor, IEditedWorld {
           this.update(this.tracks.view());
           return;
         }
-        const requests = piers.map((to) => ({ placement: null, to: { ...to, layer } }));
+        const requests = piers.map((to) => ({
+          placement: null,
+          to: { ...to, layer, owner: NO_OWNER },
+        }));
         this.show(
           this.history.commit("lay-track", requests, change),
           eventTimeMs,
@@ -3890,6 +3947,7 @@ export class Editor implements IEditor, IEditedWorld {
         yPlates: pose.yPlates,
         rot: pose.rot,
         layer: this.layers.activeLayer(),
+        owner: NO_OWNER,
       }),
       eventTimeMs,
     );
@@ -3901,8 +3959,8 @@ export class Editor implements IEditor, IEditedWorld {
     return {
       undo: undo?.kind ?? null,
       redo: redo?.kind ?? null,
-      undoLabel: editLabel(undo, this.layers.table()),
-      redoLabel: editLabel(redo, this.layers.table()),
+      undoLabel: editLabel(undo, this.layers.table(), this.contributors.roster()),
+      redoLabel: editLabel(redo, this.layers.table(), this.contributors.roster()),
       undoDepth: this.history.undoDepth,
       redoDepth: this.history.redoDepth,
     };
@@ -3965,7 +4023,7 @@ export class Editor implements IEditor, IEditedWorld {
       (held.models.some(({ model }) => model !== null && !this.selectableModel(model)) ||
         held.pieces.some(({ index }) => index !== null && !this.selectablePiece(index)));
     if (heldOnUnselectable) this.cancelGesture();
-    this.select(this.selection.members, this.selection.rememberedPivot);
+    this.select(liveMembers(this.selection.members), this.selection.rememberedPivot);
     this.rehover();
     this.session.documentEdited();
   }
@@ -4023,29 +4081,67 @@ export class Editor implements IEditor, IEditedWorld {
       : null;
   }
 
-  layerContents(): ReadonlyMap<number, LayerTally> {
-    this.layerTallies ??= tallyLayers(this.placed.models(), this.trackWorld.drawing());
+  layerContents(): ReadonlyMap<number, TagTally> {
+    this.layerTallies ??= this.tally("layer");
     return this.layerTallies;
+  }
+
+  ownerContents(): ReadonlyMap<number, TagTally> {
+    this.ownerTallies ??= this.tally("owner");
+    return this.ownerTallies;
+  }
+
+  private tally(tag: RecordTag): ReadonlyMap<number, TagTally> {
+    const track = this.trackWorld.drawing();
+    return tallyByTag(
+      this.placed.models(),
+      (model) => model.handle[tag],
+      track?.pieceCount ?? 0,
+      (placement) => track?.pieceTag(placement, tag) ?? 0,
+    );
   }
 
   private layerRemovalRefusal(layer: number): string | null {
     const tally = this.layerContents().get(layer);
     if (!tally) return null;
-    return `holds ${layerTallyText(tally)}; move them to another layer or delete them first`;
+    return `holds ${tagTallyText(tally)}; move them to another layer or delete them first`;
+  }
+
+  private ownerRemovalRefusal(owner: number): string | null {
+    const tally = this.ownerContents().get(owner);
+    if (!tally) return null;
+    return `owns ${tagTallyText(tally)}; assign them to someone else or to nobody first`;
+  }
+
+  private membersTagged(tag: RecordTag, value: number): SelectionMember[] {
+    const track = this.trackWorld.drawing();
+    const members: SelectionMember[] = this.placed
+      .models()
+      .filter((model) => model.handle[tag] === value)
+      .map((model) => ({ kind: "model", model }));
+    for (let placement = 0; placement < (track?.pieceCount ?? 0); placement++) {
+      if (track?.pieceTag(placement, tag) === value) members.push({ kind: "track", placement });
+    }
+    return members;
+  }
+
+  selectOwner(owner: number): void {
+    const contributor = this.contributors.roster().find((row) => row.id === owner);
+    if (!contributor || this.gesture) return;
+    if (this.state.mode !== "select") this.chooseItem(null);
+    this.select(this.membersTagged("owner", owner));
+    if (this.selection.members.length === 0) {
+      this.update({
+        selectionRefusal: `"${contributor.name}" owns nothing on a shown, unlocked layer to select.`,
+      });
+    }
   }
 
   selectLayer(layer: number): void {
     const record = this.layers.table().layer(layer);
     if (!record || this.gesture) return;
     if (this.state.mode !== "select") this.chooseItem(null);
-    const track = this.trackWorld.drawing();
-    const members: SelectionMember[] = this.placed
-      .models()
-      .filter((model) => model.handle.layer === layer)
-      .map((model) => ({ kind: "model", model }));
-    for (let placement = 0; placement < (track?.pieceCount ?? 0); placement++) {
-      if (track?.pieceLayer(placement) === layer) members.push({ kind: "track", placement });
-    }
+    const members = this.membersTagged("layer", layer);
     this.select(members);
     const refusal = record.locked
       ? `Layer "${record.name}" is locked, so its parts can't be selected.`
@@ -4058,29 +4154,136 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   moveSelectionToLayer(layer: number, eventTimeMs: number): void {
-    if (this.state.readOnly || this.gesture) return;
-    const refusal = this.moveToLayerRefusal(layer);
-    if (refusal !== null) {
-      this.update({ selectionRefusal: refusal });
-      return;
-    }
-    const track = this.trackWorld.drawing();
-    const pieces = track
-      ? this.selection.pieces.map((placement) => track.laidPiece(placement)).toSorted(byIndex)
-      : [];
-    const kept = this.selection.members;
-    const placements = this.selection.models.map((model) => model.placement);
-    const edit = this.history.moveToLayer(placements, pieces, layer);
-    if (!edit) return;
-    const { added } = this.show(edit, eventTimeMs);
-    const unmoved = kept.filter((member) => member.kind !== "model" || member.model.handle.live);
-    this.select([...unmoved, ...added.map((model): SelectionMember => ({ kind: "model", model }))]);
+    const moved = this.retagSelection(
+      this.moveToLayerRefusal(layer),
+      eventTimeMs,
+      (models, pieces) => this.history.moveToLayer(models, pieces, layer),
+    );
+    if (!moved) return;
     const target = this.layers.table().layer(layer);
     if (target && !target.visible) {
       this.update({
         selectionRefusal: `Moved to hidden layer "${target.name}", where they can't be picked.`,
       });
     }
+  }
+
+  assignSelection(owner: number, eventTimeMs: number): void {
+    this.retagSelection(this.assignRefusal(owner), eventTimeMs, (models, pieces) =>
+      this.history.assignOwner(models, pieces, owner),
+    );
+  }
+
+  private retagSelection(
+    refusal: string | null,
+    eventTimeMs: number,
+    retag: (
+      models: ReadonlyArray<PlacementRef>,
+      pieces: ReadonlyArray<TrackPieceAt>,
+    ) => AppliedEdit | null,
+  ): boolean {
+    if (this.state.readOnly || this.gesture) return false;
+    if (refusal !== null) {
+      this.update({ selectionRefusal: refusal });
+      return false;
+    }
+    const track = this.trackWorld.drawing();
+    const pieces = track
+      ? this.selection.pieces.map((placement) => track.laidPiece(placement)).toSorted(byIndex)
+      : [];
+    const kept = this.selection.members;
+    const edit = retag(
+      this.selection.models.map((model) => model.placement),
+      pieces,
+    );
+    if (!edit) return false;
+    const { added } = this.show(edit, eventTimeMs);
+    this.select([
+      ...liveMembers(kept),
+      ...added.map((model): SelectionMember => ({ kind: "model", model })),
+    ]);
+    return true;
+  }
+
+  private assignRefusal(owner: number): string | null {
+    if (owner !== NO_OWNER && !this.contributors.roster().some((row) => row.id === owner)) {
+      return `Contributor ${owner} isn't on this world's roster.`;
+    }
+    if (this.selection.models.length + this.selection.pieces.length === 0) {
+      return this.selection.trains.length > 0
+        ? "Trains have no contributor of their own."
+        : "Select models or track pieces to assign.";
+    }
+    return null;
+  }
+
+  moveOwnerToOwnLayer(owner: number, eventTimeMs: number): void {
+    if (this.state.readOnly || this.gesture) return;
+    const contributor = this.contributors.roster().find((row) => row.id === owner);
+    if (!contributor) return;
+    const table = this.layers.table();
+    const named = table.layers.find(
+      (layer) => layer.kind === "parts" && layer.name === contributor.name,
+    );
+    const created = named ? null : table.created(contributor.name, "parts");
+    if (created && !created.ok) {
+      this.update({ selectionRefusal: issueText(created.issues) });
+      return;
+    }
+    const target = named?.id ?? created?.value.id;
+    if (target === undefined) return;
+    const members = this.membersTagged("owner", owner);
+    const refusal = this.ownLayerRefusal(contributor.name, members, named?.locked === true);
+    if (refusal !== null) {
+      this.update({ selectionRefusal: refusal });
+      return;
+    }
+    const track = this.trackWorld.drawing();
+    const edit = this.history.moveToLayer(
+      members.flatMap((member) => (member.kind === "model" ? [member.model.placement] : [])),
+      members.flatMap((member) =>
+        member.kind === "track" && track ? [track.laidPiece(member.placement)] : [],
+      ),
+      target,
+      created
+        ? { action: "create", layer: target, before: table, after: created.value.table }
+        : null,
+    );
+    if (edit) this.show(edit, eventTimeMs);
+    else this.update({ selectionRefusal: `All "${contributor.name}" owns is on that layer.` });
+  }
+
+  private ownLayerRefusal(
+    name: string,
+    members: ReadonlyArray<SelectionMember>,
+    targetLocked: boolean,
+  ): string | null {
+    if (members.length === 0) return `"${name}" owns nothing to move.`;
+    if (targetLocked) return `Layer "${name}" is locked, so nothing can be moved onto it.`;
+    const locked = members.find((member) => {
+      const layer = this.memberLayer(member);
+      return layer !== null && this.layers.isLocked(layer);
+    });
+    return locked ? `Some of what "${name}" owns is on a locked layer; unlock it first.` : null;
+  }
+
+  private repaint(): void {
+    const roster = this.contributors.roster();
+    const coloured = this.contributors.coloured();
+    const key = coloured ? roster.map((row) => `${row.id}${row.color}`).join() : "";
+    if (key === this.paintKey) return;
+    this.paintKey = key;
+    const colors = new Map(
+      coloured
+        ? roster.map((row) => [
+            row.id,
+            this.catalog.colorIndexOf(directColorCode(Number.parseInt(row.color.slice(1), 16))),
+          ])
+        : [],
+    );
+    const paint = (owner: number): number | null => colors.get(owner) ?? null;
+    this.placed.repaint(paint);
+    this.trackWorld.repaint(paint);
   }
 
   private moveToLayerRefusal(layer: number): string | null {
@@ -4107,10 +4310,18 @@ export class Editor implements IEditor, IEditedWorld {
     if (edit.notes) this.annotations.restore(edit.notes.after);
     if (edit.event) this.events.restore(edit.event.after);
     if (edit.layers) this.layers.restore(edit.layers.after);
+    if (edit.contributors) this.contributors.restore(edit.contributors.after);
     const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
-    if (edit.changes.length > 0 || trackChanged) this.layerTallies = null;
+    if (edit.changes.length > 0 || trackChanged) {
+      this.layerTallies = null;
+      this.ownerTallies = null;
+    }
     const documentOnly =
-      (edit.plan !== null || edit.notes !== null || edit.event !== null || edit.layers !== null) &&
+      (edit.plan !== null ||
+        edit.notes !== null ||
+        edit.event !== null ||
+        edit.layers !== null ||
+        edit.contributors !== null) &&
       edit.changes.length === 0 &&
       !trackChanged;
     this.applyConsists(edit);
@@ -4179,6 +4390,7 @@ export class Editor implements IEditor, IEditedWorld {
     });
     this.repaintTrackPreview();
     if (edit.layers) this.layersChanged();
+    if (edit.contributors) this.session.documentEdited();
     return view;
   }
 
@@ -4907,6 +5119,7 @@ export class Editor implements IEditor, IEditedWorld {
       yPlates: piece.yPlates,
       heading: piece.heading,
       layer: track.pieceLayer(placement),
+      owner: track.pieceTag(placement, "owner"),
       box: piece.box,
     };
   }
@@ -5413,8 +5626,8 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.trackWorld.drawing();
     if (!track) return NO_PIECES;
     return indices.map((index) => {
-      const { piece, pose, yPlates, rise, layer } = track.laidPiece(index);
-      return { index, piece, pose, yPlates, rise, layer };
+      const { piece, pose, yPlates, rise, layer, owner } = track.laidPiece(index);
+      return { index, piece, pose, yPlates, rise, layer, owner };
     });
   }
 
@@ -5428,12 +5641,12 @@ export class Editor implements IEditor, IEditedWorld {
     const lay: TrackPieceAt[] = [];
     let appended = track.pieceCount;
     const active = this.layers.activeLayer();
-    pieces.forEach(({ index, piece, yPlates, rise, layer }, member) => {
+    pieces.forEach(({ index, piece, yPlates, rise, layer, owner }, member) => {
       if (index !== null) lift.push(track.laidPiece(index));
       const pose = targets?.[member];
       if (!pose) return;
-      const laidOn = index === null ? active : layer;
-      lay.push({ index: index ?? appended++, piece, pose, yPlates, rise, layer: laidOn });
+      const tags = index === null ? { layer: active, owner: NO_OWNER } : { layer, owner };
+      lay.push({ index: index ?? appended++, piece, pose, yPlates, rise, ...tags });
     });
     return { lift: lift.toSorted(byIndex), lay: lay.toSorted(byIndex) };
   }
@@ -5490,8 +5703,8 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
-  private onActiveLayer(pose: LayeredPose): LayeredPose {
-    return { ...pose, layer: this.layers.activeLayer() };
+  private asNewPart(pose: LayeredPose): LayeredPose {
+    return { ...pose, layer: this.layers.activeLayer(), owner: NO_OWNER };
   }
 
   private newMembersRefusal(edit: GroupEdit): RefusedClick | null {
@@ -5792,7 +6005,7 @@ export class Editor implements IEditor, IEditedWorld {
       if (!to) throw new Error(`the placement has no pose for member ${index}`);
       return member.model
         ? { placement: member.model.placement, to }
-        : { placement: null, to: this.onActiveLayer(to) };
+        : { placement: null, to: this.asNewPart(to) };
     });
     const change = this.trackChange(edit.pieces, placement.piecePoses);
     const view = this.show(this.history.commit(kind, requests, change), eventTimeMs);
@@ -5965,19 +6178,12 @@ export class Editor implements IEditor, IEditedWorld {
       pose,
       component: WHOLE_GROUP_COMPONENT,
     }));
-    const pieces = laid.value.map(({ piece, pose, yPlates, rise, layer }) => ({
-      index: null,
-      piece,
-      pose,
-      yPlates,
-      rise,
-      layer,
-    }));
+    const pieces = laid.value.map((piece) => ({ ...piece, index: null }));
     const targets = { modelPoses: poses.value, piecePoses: pieces.map((piece) => piece.pose) };
     const refusal = this.groupRefusal(this.pasteEdit(models, pieces), targets);
     if (refusal) return [{ path: plan.name, message: refusal.reason }];
     const change = this.plans.addition(plan);
-    const requests = poses.value.map((to) => ({ placement: null, to: this.onActiveLayer(to) }));
+    const requests = poses.value.map((to) => ({ placement: null, to: this.asNewPart(to) }));
     const opened = this.history.commit(
       "open-plan",
       requests,
@@ -6375,6 +6581,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.consists = new ConsistLayout();
     this.history = new EditHistory(world, this.consists, this.annotations, this.layerLocks);
     this.layerTallies = null;
+    this.ownerTallies = null;
     this.placed.addAll(
       handles.flatMap((handle) => {
         const placeable = this.catalog.placeables()[handle.refId];

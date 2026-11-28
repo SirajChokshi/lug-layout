@@ -2,6 +2,7 @@ import {
   ASSET_FETCHER,
   BUNDLE_LODS,
   PART_BUNDLE_LOADER,
+  directColorCode,
   type BricklinkPartCandidates,
   type CatalogCrosswalk,
   type CompiledPartGlb,
@@ -54,6 +55,7 @@ import {
   CandidatePoses,
   MateReport,
   modelEnd,
+  NO_OWNER,
   ProposalProgress,
   RoadNetwork,
   levelCrossings,
@@ -122,6 +124,7 @@ import {
   ANNOTATION_SERVICE,
   BOM_SERVICE,
   CONNECTION_SOLVER,
+  CONTRIBUTOR_SERVICE,
   CONNECTOR_TABLES,
   EDITOR,
   EDITOR_CAMERA,
@@ -156,7 +159,7 @@ import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { chainedPoses, instancesAt } from "../connect/track-instances.test-support.ts";
 import { rampChunkKey } from "./crossing-ramps.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
-import type { EditorSnapshot, IEditor } from "./editor.ts";
+import type { EditorDump, EditorSnapshot, IEditor } from "./editor.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./track-edit-session.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
@@ -1425,6 +1428,18 @@ function itemsOnLayers(editor: IEditor): ReadonlyArray<string> {
   return placements.refId.map((ref, i) => `${refs[ref]} on ${placements.layer[i]}`).toSorted();
 }
 
+function ownersOf(dumped: EditorDump): {
+  readonly models: ReadonlyArray<string>;
+  readonly track: ReadonlyArray<number>;
+} {
+  return {
+    models: dumped.placements.refId
+      .map((ref, i) => `${dumped.refs[ref]} by ${dumped.placements.owner[i]}`)
+      .toSorted(),
+    track: dumped.laidTrack.map((piece) => piece.owner ?? NO_OWNER).toSorted((a, b) => a - b),
+  };
+}
+
 describe("layers", () => {
   it("takes a note on a notes layer made after the world opened, and still refuses one on a parts layer", async () => {
     const { container } = await startImportingEditor();
@@ -1825,6 +1840,121 @@ describe("layers", () => {
         selected: [scenery, scenery, scenery],
         table: "Scenery",
       },
+    });
+  }, 240_000);
+});
+
+describe("contributors", () => {
+  it("assigns a user's own model and laid track to a contributor in one undo step, paints only theirs in the contributor's colour, keeps them through a reopen, moves them to the contributor's own layer, and removes the contributor once nothing is theirs", async () => {
+    const repository = new MemoryRepository();
+    const { editor, backend, container } = await startImportingEditor(() => repository);
+    const contributors = container.get(CONTRIBUTOR_SERVICE);
+    const colors = container.get(PLACEABLE_CATALOG).colors();
+    const cottage = await importUserFile(
+      editor,
+      "my-cottage.mpd",
+      userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+    );
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    await place(cottage, 0, 0);
+    await place(cottage, 200, 0);
+    const line: Ground = [0, 80 * STUD];
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, line[1]], [24 * STUD, line[1]]);
+    const added = contributors.create("Ada");
+    if (!added.ok) throw new Error("the contributor was refused");
+    const ada = added.value;
+    const instancesIn = (code: number) =>
+      [...backend.chunks.values()].reduce(
+        (sum, chunk) =>
+          sum + chunk.colorIndex.filter((index) => colors.codeAt(index) === code).length,
+        0,
+      );
+    const adaColor = () => {
+      const color = contributors.roster().find((row) => row.id === ada)?.color ?? "#000000";
+      return directColorCode(Number.parseInt(color.slice(1), 16));
+    };
+    const paint = () => ({
+      red: instancesIn(4),
+      blue: instancesIn(1),
+      ada: instancesIn(adaColor()),
+    });
+    const unpainted = paint();
+    const unassigned = ownersOf(editor.dump());
+    selectAt(editor, backend, 0, 0);
+    toggleAt(editor, backend, line);
+
+    editor.assignSelection(ada, 0);
+    const assigned = {
+      owners: ownersOf(editor.dump()),
+      undoLabel: editor.snapshot().history.undoLabel,
+      tally: editor.ownerContents().get(ada),
+      removal: contributors.remove(ada),
+    };
+    contributors.setColoured(true);
+    const painted = paint();
+    contributors.recolour(ada, "#123456");
+    const recoloured = paint();
+    contributors.setColoured(false);
+    const plain = paint();
+    editor.undo(0);
+    editor.undo(0);
+    const undone = ownersOf(editor.dump());
+    editor.redo(0);
+    editor.redo(0);
+    await vi.waitFor(() => expect(repository.storedPlacements()).toBe(3));
+    const reopened = await startImportingEditor(() => repository);
+    const reopenedRoster = reopened.container.get(CONTRIBUTOR_SERVICE).roster();
+
+    expect({ unpainted, assigned, painted, recoloured, plain }).toEqual({
+      unpainted: { red: 2, blue: 2, ada: 0 },
+      assigned: {
+        owners: {
+          models: [`${cottage} by -1`, `${cottage} by ${ada}`, `${BASEPLATE} by -1`],
+          track: [...unassigned.track.slice(1), ada],
+        },
+        undoLabel: 'assign to "Ada" (2 items)',
+        tally: { models: 1, pieces: 1 },
+        removal: [
+          {
+            path: `contributor ${ada}`,
+            message:
+              "owns 1 model and 1 track piece; assign them to someone else or to nobody first",
+          },
+        ],
+      },
+      painted: { red: 1, blue: 1, ada: 3 },
+      recoloured: { red: 1, blue: 1, ada: 3 },
+      plain: { red: 2, blue: 2, ada: 0 },
+    });
+    expect({ undone, reopened: ownersOf(reopened.editor.dump()), reopenedRoster }).toEqual({
+      undone: unassigned,
+      reopened: assigned.owners,
+      reopenedRoster: contributors.roster(),
+    });
+
+    const layers = container.get(LAYER_SERVICE);
+    editor.moveOwnerToOwnLayer(ada, 0);
+    const ownLayer = layers.table().layers.find((layer) => layer.name === "Ada");
+    const moved = {
+      items: itemsOnLayers(editor),
+      track: editor.dump().laidTrack.filter((piece) => piece.layer === ownLayer?.id).length,
+      undoLabel: editor.snapshot().history.undoLabel,
+    };
+    editor.undo(0);
+    const undoneLayer = layers.table().layers.some((layer) => layer.name === "Ada");
+    editor.selectOwner(ada);
+    editor.assignSelection(NO_OWNER, 0);
+
+    expect({ moved, undoneLayer, removal: contributors.remove(ada) }).toEqual({
+      moved: {
+        items: [`${cottage} on 0`, `${cottage} on ${ownLayer?.id}`, `${BASEPLATE} on 0`],
+        track: 1,
+        undoLabel: 'move to layer "Ada" (2 items)',
+      },
+      undoneLayer: false,
+      removal: [],
     });
   }, 240_000);
 });
@@ -8888,6 +9018,8 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   note: "edits notes only",
   layer: "edits the layer table only",
   "move-to-layer": "changes only the layer of parts already placed, at the poses they hold",
+  contributor: "edits the contributor roster only",
+  "assign-owner": "changes only the owner of parts already placed, at the poses they hold",
   "open-plan":
     "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
   event: "edits the event details only",

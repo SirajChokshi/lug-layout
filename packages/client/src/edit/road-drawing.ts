@@ -1,4 +1,5 @@
 import {
+  NO_OWNER,
   RoadNetwork,
   extendRoadPath,
   planRoadErase,
@@ -8,6 +9,7 @@ import {
   rotateArms,
   type ExistingRoadTile,
   type LayeredPose,
+  type RecordTag,
   type LayerLocks,
   type PlacementPose,
   type PlacementRef,
@@ -85,7 +87,7 @@ interface TilePlacement {
   readonly tile: PlannedRoadTile;
   readonly choice: number;
   readonly pose: PlacementPose;
-  readonly restoresLayer: number | null;
+  readonly restores: Pick<LayeredPose, RecordTag> | null;
   readonly replaces: PlacedModel | null;
 }
 
@@ -407,7 +409,7 @@ export class RoadDrawing {
     if (evaluated.issues.length > 0) return { requests: [], view: evaluated.view };
     for (const { tile, replaces } of evaluated.placements) {
       if (!replaces || tile.kind !== "lay" || tile.replaces) continue;
-      const { refId, colorId, x, z, yPlates, rot, layer: groundLayer } = replaces.handle;
+      const { refId, colorId, x, z, yPlates, rot, layer: groundLayer, owner } = replaces.handle;
       this.groundUnder.set(replaces.placement, {
         refId,
         colorId,
@@ -416,13 +418,14 @@ export class RoadDrawing {
         yPlates,
         rot,
         layer: groundLayer,
+        owner,
       });
     }
     const requests: PlacementRequest[] = [
       ...evaluated.removals.map((model) => ({ placement: model.placement, to: null })),
-      ...evaluated.placements.map(({ pose, restoresLayer, replaces }) => ({
+      ...evaluated.placements.map(({ pose, restores, replaces }) => ({
         placement: replaces?.placement ?? null,
-        to: { ...pose, layer: restoresLayer ?? layer },
+        to: { ...pose, ...(restores ?? { layer, owner: NO_OWNER }) },
       })),
     ];
     return { requests, view: evaluated.view };
@@ -681,7 +684,14 @@ export class RoadDrawing {
 
   private refill(tile: PlannedRoadTile, lifted: PlacedModel): TilePlacement | null {
     const pose = this.groundUnder.get(lifted.placement);
-    return pose ? { tile, choice: 0, pose, restoresLayer: pose.layer, replaces: lifted } : null;
+    if (!pose) return null;
+    return {
+      tile,
+      choice: 0,
+      pose,
+      restores: { layer: pose.layer, owner: pose.owner },
+      replaces: lifted,
+    };
   }
 
   private lockedIssues(
@@ -734,7 +744,10 @@ export class RoadDrawing {
           yPlates: 0,
           rot: picked.rot,
         },
-        restoresLayer: this.erasing ? (replaces?.handle.layer ?? null) : null,
+        restores:
+          this.erasing && replaces
+            ? { layer: replaces.handle.layer, owner: replaces.handle.owner }
+            : null,
         replaces,
       });
     }

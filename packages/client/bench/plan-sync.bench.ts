@@ -18,6 +18,7 @@ import {
   type TrackChange,
   type TrackOutline,
   type TrackPieceAt,
+  NO_OWNER,
 } from "@brr/domain";
 import { CHUNK_LDU, STUD_LDU, addZeta16, chunkKey, lduFromMm, pose16, zeta16 } from "@brr/math";
 import type { TrackCatalog } from "@brr/schema/bundle";
@@ -654,6 +655,7 @@ function planLaid(
         yPlates: 0,
         rise: 0,
         layer: 0,
+        owner: NO_OWNER,
       };
     }),
   };
@@ -1245,6 +1247,7 @@ function openStraight(straight: number, slot: number): TrackPieceAt {
     yPlates: 0,
     rise: 0,
     layer: 0,
+    owner: NO_OWNER,
   };
 }
 

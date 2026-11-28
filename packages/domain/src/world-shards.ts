@@ -15,7 +15,7 @@ import {
   type WorldShardV2,
 } from "@brr/schema/world";
 import type { LayeredPose, TrackPieceAt } from "./edit-history.ts";
-import { SLOT_LIVE, type PlacementHandle, type World } from "./world.ts";
+import { NO_OWNER, SLOT_LIVE, type PlacementHandle, type World } from "./world.ts";
 
 export interface PlacementTarget {
   readonly refId: number;
@@ -38,6 +38,7 @@ export function worldPlacements(
       const ref = refs[refId];
       if (ref === undefined) throw new Error(`placement refId ${refId} has no catalog id`);
       const layer = chunk.layer[slot] ?? BASE_LAYER_ID;
+      const owner = chunk.owner[slot] ?? NO_OWNER;
       placements.push({
         ref,
         color: chunk.colorId[slot] ?? 0,
@@ -46,6 +47,7 @@ export function worldPlacements(
         yPlates: chunk.yPlates[slot] ?? 0,
         rot: chunk.rot[slot] ?? 0,
         ...(layer === BASE_LAYER_ID ? {} : { layer }),
+        ...(owner === NO_OWNER ? {} : { owner }),
       });
     }
   }
@@ -146,6 +148,7 @@ export function shardPoses(
         yPlates: placement.yPlates,
         rot: placement.rot,
         layer: placement.layer ?? BASE_LAYER_ID,
+        owner: placement.owner ?? NO_OWNER,
       });
     }
   }
@@ -162,7 +165,16 @@ export function addShards(
   return {
     ok: true,
     value: poses.value.map((pose) =>
-      world.add(pose.refId, pose.colorId, pose.x, pose.z, pose.yPlates, pose.rot, pose.layer),
+      world.add(
+        pose.refId,
+        pose.colorId,
+        pose.x,
+        pose.z,
+        pose.yPlates,
+        pose.rot,
+        pose.layer,
+        pose.owner,
+      ),
     ),
   };
 }

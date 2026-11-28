@@ -1,4 +1,4 @@
-import type { LduRect, PlacementRequest } from "@brr/domain";
+import { NO_OWNER, type LduRect, type PlacementRequest } from "@brr/domain";
 import { CHUNK_STUDS, STUD_LDU } from "@brr/math";
 import { GUIDE_GRID_STUDS, type GuideKind, type GuideSegment } from "@brr/render";
 import type { LocalBox } from "./local-box.ts";
@@ -269,6 +269,7 @@ export class FillTool {
           yPlates: this.tileY[tile] ?? 0,
           rot,
           layer,
+          owner: NO_OWNER,
         },
       });
     }

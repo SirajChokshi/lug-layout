@@ -149,6 +149,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   start(index: BundleIndex): Promise<StartedCatalog>;
   parts(): ReadonlyArray<PartAsset>;
   colors(): ColorTable;
+  colorIndexOf(code: number): number;
   placeables(): ReadonlyArray<Placeable | null>;
   itemRefId(itemId: string): number | null;
   refs(): ReadonlyArray<string>;
@@ -575,6 +576,16 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private installMerged(palette: MergedParts, before: number): void {
     if (this.palette !== palette || this.installedColors === 0) return;
     this.backend.addParts(palette.parts.slice(before));
+    this.installColors();
+  }
+
+  colorIndexOf(code: number): number {
+    const index = this.colors().indexOfCode(code);
+    this.installColors();
+    return index;
+  }
+
+  private installColors(): void {
     const colors = this.colors();
     if (colors.size === this.installedColors) return;
     this.installedColors = colors.size;

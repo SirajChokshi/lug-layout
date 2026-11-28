@@ -39,6 +39,7 @@ import {
   freePlacement,
   layMoves,
   NO_END,
+  NO_OWNER,
   NO_TRACK_CHANGE,
   OUTLINE_BOX_FLOATS,
   outlineBox,
@@ -65,6 +66,7 @@ import {
   type LayerTable,
   type PlacementPose,
   type PlacementRegion,
+  type RecordTag,
   type TrackChange,
   type TrackEnd,
   type TrackFrame,
@@ -139,6 +141,7 @@ import {
 } from "./track-extension.ts";
 import { LoopCloser, type LoopCloserSite, type LoopClosure } from "./loop-closer.ts";
 import { pieceRelativePose } from "./group-transform.ts";
+import type { OwnerPaint } from "./placed-chunks.ts";
 import { SolveSamples, type TrackSolveStats } from "./solve-samples.ts";
 
 export type {
@@ -793,6 +796,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
   private lastPreviewLabels: ReadonlyArray<LabelView> = [];
   private loopsViewAt = -1;
   private loopsView: TrackLoopsView | null = null;
+  private paint: OwnerPaint = () => null;
 
   constructor(
     { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
@@ -2193,6 +2197,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         yPlates: entry.yPlates,
         rise: entry.rise,
         layer: BASE_LAYER_ID,
+        owner: NO_OWNER,
       })),
     };
   }
@@ -2208,6 +2213,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         laid.yPlates === at.yPlates &&
         laid.rise === at.rise &&
         this.layout.layer(at.index) === at.layer &&
+        this.layout.owner(at.index) === at.owner &&
         pose16Equals(laid.placement, at.pose);
       if (!same) throw new Error(`laid track piece ${at.index} is not the piece the edit lifts`);
       touched.add(this.chunkOfPlaced(laid));
@@ -2223,6 +2229,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         at.rise,
         WORLD_TRACK_FRAME,
         at.layer,
+        at.owner,
       );
       touched.add(this.chunkOfPlaced({ part, placement: at.pose, yPlates: at.yPlates, rise: 0 }));
     }
@@ -2448,11 +2455,20 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       yPlates: placed.yPlates,
       rise: placed.rise,
       layer: this.layout.layer(placement),
+      owner: this.layout.owner(placement),
     };
   }
 
   pieceLayer(placement: number): number {
     return this.layout.layer(placement);
+  }
+
+  pieceTag(placement: number, tag: RecordTag): number {
+    return tag === "layer" ? this.layout.layer(placement) : this.layout.owner(placement);
+  }
+
+  setPaint(paint: OwnerPaint): void {
+    this.paint = paint;
   }
 
   pieceOnRay(ray: Float64Array, layers: Pick<LayerTable, "isHidden">): TrackPieceHit | null {
@@ -3143,6 +3159,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     for (let index = 0; index < this.layout.count; index++) {
       const placed = this.placedAt(index);
       const layer = this.layout.layer(index);
+      const owner = this.layout.owner(index);
       records.push({
         index,
         ref: placed.part.piece.id,
@@ -3151,6 +3168,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         yPlates: placed.yPlates,
         ...(placed.rise === 0 ? {} : { rise: placed.rise }),
         ...(layer === BASE_LAYER_ID ? {} : { layer }),
+        ...(owner === NO_OWNER ? {} : { owner }),
       });
     }
     return records;
@@ -3201,7 +3219,10 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       const pose = pose16(decodeTrackPosition(record.position), record.heading);
       const rise = record.rise ?? 0;
       const layer = record.layer ?? BASE_LAYER_ID;
-      return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates, rise, layer }];
+      const owner = record.owner ?? NO_OWNER;
+      return [
+        { index, piece: part.catalogIndex, pose, yPlates: record.yPlates, rise, layer, owner },
+      ];
     });
     return { ok: true, value: lay };
   }
@@ -3223,7 +3244,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     members.forEach((member, i) => {
       const piece = this.placedAt(member);
       partIndex[i] = piece.part.partIndex;
-      colorIndex[i] = piece.part.color;
+      colorIndex[i] = this.paint(this.layout.owner(member)) ?? piece.part.color;
       writeMatrix(
         matrices,
         i,
