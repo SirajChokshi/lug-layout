@@ -1,9 +1,11 @@
-import type {
-  EditorSnapshot,
-  IEditor,
-  IStarterWorlds,
-  ModelImportView,
-  WorldFileView,
+import {
+  modelImportText,
+  modelImportWarns,
+  type EditorSnapshot,
+  type IEditor,
+  type IStarterWorlds,
+  type ModelImportView,
+  type WorldFileView,
 } from "@brr/client";
 import type { WorldIndexEntry } from "@brr/schema/world";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
@@ -91,27 +93,6 @@ function WorldRow({
   );
 }
 
-function modelImportText(view: ModelImportView): string {
-  switch (view.status) {
-    case "importing":
-      return `Importing ${view.file}: reading, compiling and baking its parts…`;
-    case "checking":
-      return `${view.file} is in the palette, checking studs. Click the layout to place it.`;
-    case "placeable":
-      return `${view.file} is in the palette. Click the layout to place it.`;
-    case "check-failed":
-      return `${view.file} is in the palette, but its ${view.reason ?? "stud check failed"}. Its studs stay unchecked.`;
-    case "refused":
-      return `${view.file} can't be placed: ${view.reason ?? "no stud lattice from the bake"}.`;
-    case "held":
-      return `${view.file} is held as laid out, one placement per submodel: click the layout to place it, R turns it, Esc lets go. Its submodels stay in the palette.${view.reason === null ? "" : ` ${view.reason}`}`;
-    default: {
-      const unhandled: never = view.status;
-      throw new Error(`unhandled ${String(unhandled)}`);
-    }
-  }
-}
-
 function ModelImportStatus({ view }: { readonly view: ModelImportView }) {
   return (
     <section
@@ -120,15 +101,7 @@ function ModelImportStatus({ view }: { readonly view: ModelImportView }) {
       data-status={view.status}
       data-item={view.item ?? ""}
     >
-      <p
-        className={
-          view.status === "refused" ||
-          view.status === "check-failed" ||
-          (view.status === "held" && view.reason !== null)
-            ? "world-warning"
-            : "world-note"
-        }
-      >
+      <p className={modelImportWarns(view) ? "world-warning" : "world-note"}>
         {modelImportText(view)}
       </p>
       {view.report && (
@@ -163,16 +136,7 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
   const stored = ready && storageError === null;
   const nameIssue = editor.worldNameIssue(newName);
   const modelImport = snapshot.modelImport;
-  const needsAttention =
-    storageError !== null ||
-    readOnly ||
-    world?.save === "failed" ||
-    snapshot.fileError !== null ||
-    snapshot.catalogError !== null ||
-    modelImport?.status === "importing" ||
-    modelImport?.status === "checking" ||
-    modelImport?.status === "check-failed" ||
-    modelImport?.status === "refused";
+  const needsAttention = storageError !== null || readOnly || world?.save === "failed";
   useUnloadGuard(snapshot.unsavedEdits);
 
   const onNew = (event: FormEvent<HTMLFormElement>): void => {

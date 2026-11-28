@@ -107,7 +107,7 @@ test("the palette's MILS template imported as a file bakes to the palette item's
   await page.screenshot({ path: test.info().outputPath("template-and-template-file.png") });
 });
 
-test("a custom model file is placed in the editor through the UI and comes back with the world after a reload", async ({
+test("a custom model file imported through the UI says so in a toast that goes by itself without opening the World card, is placed, and comes back with the world after a reload", async ({
   page,
 }) => {
   const file = test.info().outputPath("custom-module.ldr");
@@ -117,6 +117,8 @@ test("a custom model file is placed in the editor through the UI and comes back 
 
   const imported = await editor.importModel(file);
   expect(imported.status, imported.text).toBe("placeable");
+  await expect(page.locator(".toast")).toHaveText(/^custom-module\.ldr is in the palette\./u);
+  expect(await page.locator(".world-menu").getAttribute("open")).toBeNull();
   await editor.zoom(400);
   await editor.placeAt(imported.item, { x: 0, z: 0 });
   const placed = await editor.poses();
@@ -124,6 +126,7 @@ test("a custom model file is placed in the editor through the UI and comes back 
     [{ item: imported.item, x: 0, z: 0, yPlates: 0, rot: 0 }].toSorted(byPosition),
   );
   await editor.escape();
+  await expect(page.locator(".toast")).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath("custom-module-placed.png") });
   await expect(page.locator(".world-name")).toHaveAttribute("data-save", "saved");
 

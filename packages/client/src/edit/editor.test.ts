@@ -128,6 +128,7 @@ import {
   EDITOR,
   EDITOR_CAMERA,
   MODEL_IMPORTER,
+  NOTICES,
   PLACEABLE_CATALOG,
   TRACK_WORLD,
   PLACEMENT_SEARCH,
@@ -5242,6 +5243,39 @@ it.each([
   },
   120_000,
 );
+
+it("tells a builder about their own model's import in one notice that follows it into the palette, a refused import as a warning and a world file that can't open as an error, each gone once dismissed", async () => {
+  const { editor, container } = await startImportingEditor();
+  const notices = container.get(NOTICES);
+  const shown = () => notices.notices().map((notice) => [notice.tone, notice.text]);
+  const told: Array<ReturnType<typeof shown>> = [];
+  const unsubscribe = notices.subscribe(() => told.push(shown()));
+
+  await importUserFile(editor, "my-cottage.ldr", new TextEncoder().encode(MY_COTTAGE));
+  unsubscribe();
+  const placeable = shown();
+  for (const notice of notices.notices()) notices.dismiss(notice.id);
+  const dismissed = shown();
+  await editor.importModelFile({
+    name: "no-parts.ldr",
+    bytes: new TextEncoder().encode("0 A model with nothing in it\n"),
+  });
+  await editor.importWorld(new TextEncoder().encode("not a world archive"));
+  const refusals = shown();
+  const [warning] = notices.notices();
+  if (warning) notices.dismiss(warning.id);
+
+  expect({ first: told[0], placeable, dismissed, refusals, afterOne: shown() }).toEqual({
+    first: [["progress", "Importing my-cottage.ldr: reading, compiling and baking its parts…"]],
+    placeable: [["note", "my-cottage.ldr is in the palette. Click the layout to place it."]],
+    dismissed: [],
+    refusals: [
+      ["warn", expect.stringMatching(/^no-parts\.ldr can't be placed: /u)],
+      ["error", expect.stringMatching(/ failed: /u)],
+    ],
+    afterOne: [["error", expect.stringMatching(/ failed: /u)]],
+  });
+}, 120_000);
 
 function importedRecord(
   fileName: string,
