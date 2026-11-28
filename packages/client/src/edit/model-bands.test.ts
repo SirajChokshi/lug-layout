@@ -191,6 +191,7 @@ function liveHandle(
     },
     rot,
     layer: 0,
+    group: null,
     kill() {
       live = false;
     },
@@ -255,6 +256,7 @@ class GeneratedWorld {
               yPlates: handle.yPlates,
               rot: handle.rot,
               layer: handle.layer,
+              group: null,
             },
             removed: null,
             added: handle,
@@ -266,6 +268,7 @@ class GeneratedWorld {
         notes: null,
         event: null,
         layers: null,
+        groups: null,
       },
       this.placeableOf,
     );

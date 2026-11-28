@@ -150,6 +150,7 @@ function placementHandle(
     },
     rot,
     layer: 0,
+    group: null,
     kill() {
       live = false;
     },
@@ -192,6 +193,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
             notes: null,
             event: null,
             layers: null,
+            groups: null,
           },
           placeableOf,
         );
@@ -230,7 +232,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
               {
                 placement: { handle: null },
                 from: null,
-                to: { refId, colorId: 0, x, z, yPlates, rot, layer: 0 },
+                to: { refId, colorId: 0, x, z, yPlates, rot, layer: 0, group: null },
                 removed: null,
                 added: handle,
               },
@@ -241,6 +243,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
             notes: null,
             event: null,
             layers: null,
+            groups: null,
           },
           placeableOf,
         );

@@ -1,11 +1,12 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 import type { NoteChange } from "./notes/note-state.ts";
 import type { EventRecordV2 } from "@brr/schema/world";
+import type { GroupAction, GroupChange, GroupRetag } from "./groups/group-table.ts";
 import type { LayerAction, LayerChange } from "./layers/layer-table.ts";
 import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
 import { INT8_MAX, INT8_MIN } from "./track/track-layout.ts";
-import { isLayerId, type PlacementHandle, type World } from "./world.ts";
+import { isGroupTag, isLayerId, type PlacementHandle, type World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
 
@@ -22,7 +23,8 @@ export type EditKind =
   | "note"
   | "open-plan"
   | "event"
-  | "layer";
+  | "layer"
+  | "group";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
@@ -32,6 +34,7 @@ export interface TrackPieceAt {
   readonly yPlates: number;
   readonly rise: number;
   readonly layer: number;
+  readonly group: number | null;
 }
 
 export interface LayerLocks {
@@ -63,7 +66,13 @@ export type EditSummary =
   | { readonly kind: "road" | "fill"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number; readonly lifted: number }
   | { readonly kind: "open-plan"; readonly placements: number; readonly pieces: number }
-  | { readonly kind: "layer"; readonly action: LayerAction; readonly name: string };
+  | { readonly kind: "layer"; readonly action: LayerAction; readonly name: string }
+  | {
+      readonly kind: "group";
+      readonly action: GroupAction;
+      readonly names: ReadonlyArray<string>;
+      readonly members: number;
+    };
 
 export interface PlacementPose {
   readonly refId: number;
@@ -74,9 +83,12 @@ export interface PlacementPose {
   readonly rot: number;
 }
 
-export interface LayeredPose extends PlacementPose {
+export interface PlacementTags {
   readonly layer: number;
+  readonly group: number | null;
 }
+
+export interface TaggedPose extends PlacementPose, PlacementTags {}
 
 export interface PlacementRef {
   readonly handle: PlacementHandle | null;
@@ -95,13 +107,13 @@ const NOTHING_FOLLOWS: PlacementFollower = { follow: () => null };
 
 export interface PlacementRequest {
   readonly placement: PlacementRef | null;
-  readonly to: LayeredPose | null;
+  readonly to: TaggedPose | null;
 }
 
 export interface AppliedChange {
   readonly placement: PlacementRef;
-  readonly from: LayeredPose | null;
-  readonly to: LayeredPose | null;
+  readonly from: TaggedPose | null;
+  readonly to: TaggedPose | null;
   readonly removed: PlacementHandle | null;
   readonly added: PlacementHandle | null;
 }
@@ -128,7 +140,10 @@ export interface AppliedEdit {
   readonly notes: NoteChange | null;
   readonly event: EventChange | null;
   readonly layers: LayerChange | null;
+  readonly groups: AppliedGroupChange | null;
 }
+
+export type AppliedGroupChange = GroupChange<PlacementRef>;
 
 class Ref implements PlacementRef {
   handle: PlacementHandle | null = null;
@@ -144,8 +159,8 @@ class TrainRef implements ConsistRef {
 
 interface Change {
   readonly ref: Ref;
-  readonly before: LayeredPose | null;
-  readonly after: LayeredPose | null;
+  readonly before: TaggedPose | null;
+  readonly after: TaggedPose | null;
 }
 
 interface ConsistChange {
@@ -163,9 +178,10 @@ interface Edit {
   readonly notes: NoteChange | null;
   readonly event: EventChange | null;
   readonly layers: LayerChange | null;
+  readonly groups: GroupChange<Ref> | null;
 }
 
-function poseOf(handle: PlacementHandle): LayeredPose {
+function poseOf(handle: PlacementHandle): TaggedPose {
   return {
     refId: handle.refId,
     colorId: handle.colorId,
@@ -174,33 +190,36 @@ function poseOf(handle: PlacementHandle): LayeredPose {
     yPlates: handle.yPlates,
     rot: handle.rot,
     layer: handle.layer,
+    group: handle.group,
   };
 }
 
-function checkLayer(layer: number): void {
+function checkTags({ layer, group }: PlacementTags): void {
   if (!isLayerId(layer)) throw new RangeError(`layer ${layer} is not a layer id`);
+  if (!isGroupTag(group)) throw new RangeError(`group ${String(group)} is not a group id`);
 }
 
-function checkPose(pose: LayeredPose): void {
+function checkPose(pose: TaggedPose): void {
   if (!isLatticePose(pose.x, pose.z, pose.yPlates)) {
     throw new RangeError(
       `placement (${pose.x}, ${pose.yPlates}, ${pose.z}) is not an integer pose within int32 x/z and int16 yPlates`,
     );
   }
   if (!isRot90(pose.rot)) throw new Error(`rotation ${pose.rot} is not a quarter turn 0-3`);
-  checkLayer(pose.layer);
+  checkTags(pose);
 }
 
 function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof TrackChange): void {
   let previous = -1;
-  for (const { index, piece, yPlates, rise, layer } of pieces) {
+  for (const at of pieces) {
+    const { index, piece, yPlates, rise } = at;
     if (!Number.isInteger(index) || index <= previous) {
       throw new RangeError(`track ${role} indices must be ascending non-negative integers`);
     }
     if (!Number.isInteger(piece) || piece < 0) {
       throw new RangeError(`track piece ${piece} is not a catalog index`);
     }
-    checkLayer(layer);
+    checkTags(at);
     if (!isLatticePose(0, 0, yPlates)) {
       throw new RangeError(`track height ${yPlates} plates is not an int16`);
     }
@@ -239,6 +258,17 @@ function summary(edit: Edit): EditSummary {
       const name = change.after.layer(change.layer)?.name ?? "";
       return { kind: edit.kind, action: change.action, name };
     }
+    case "group": {
+      const change = edit.groups;
+      if (!change) throw new Error("a group edit carries no group change");
+      const named = change.action === "group" ? change.after : change.before;
+      return {
+        kind: edit.kind,
+        action: change.action,
+        names: change.groups.map((id) => named.group(id)?.name ?? ""),
+        members: change.placements.length + change.pieces.length,
+      };
+    }
     default: {
       const unhandled: never = edit.kind;
       throw new Error(`unhandled edit ${String(unhandled)}`);
@@ -260,8 +290,25 @@ function lockedLayerOf(
   return null;
 }
 
+function lockedRetagLayer<P>(locks: LayerLocks, change: GroupChange<P>): number | null {
+  const retags: ReadonlyArray<GroupRetag<unknown>> = [...change.placements, ...change.pieces];
+  for (const { layer } of retags) if (locks.isLocked(layer)) return layer;
+  return null;
+}
+
+function reversed<M>(retag: GroupRetag<M>): GroupRetag<M> {
+  return { ...retag, from: retag.to, to: retag.from };
+}
+
+function checkRetags(retags: ReadonlyArray<GroupRetag<unknown>>): void {
+  for (const retag of retags) {
+    checkTags({ layer: retag.layer, group: retag.from });
+    checkTags({ layer: retag.layer, group: retag.to });
+  }
+}
+
 export function layOnLayer(change: TrackChange, layer: number): TrackChange {
-  return { lift: change.lift, lay: change.lay.map((piece) => ({ ...piece, layer })) };
+  return { lift: change.lift, lay: change.lay.map((piece) => ({ ...piece, layer, group: null })) };
 }
 
 export class EditHistory {
@@ -307,7 +354,7 @@ export class EditHistory {
     return ref;
   }
 
-  place(pose: LayeredPose): AppliedEdit {
+  place(pose: TaggedPose): AppliedEdit {
     return this.commit("place", [{ placement: null, to: pose }]);
   }
 
@@ -321,6 +368,7 @@ export class EditHistory {
       notes: null,
       event: null,
       layers: null,
+      groups: null,
     });
   }
 
@@ -336,6 +384,7 @@ export class EditHistory {
       notes: null,
       event: null,
       layers: null,
+      groups: null,
     });
   }
 
@@ -351,6 +400,7 @@ export class EditHistory {
       notes: null,
       event: null,
       layers: null,
+      groups: null,
     });
   }
 
@@ -364,6 +414,37 @@ export class EditHistory {
       notes: null,
       event: null,
       layers: change,
+      groups: null,
+    });
+  }
+
+  regroup(change: GroupChange<PlacementRef>): AppliedEdit {
+    checkRetags(change.placements);
+    checkRetags(change.pieces);
+    const seen = new Set<Ref>();
+    const placements = change.placements.map((retag) => {
+      const ref = this.own(retag.member);
+      if (seen.has(ref)) throw new Error("a group edit names the same placement twice");
+      seen.add(ref);
+      const handle = this.liveHandle(ref);
+      if (handle.group !== retag.from || handle.layer !== retag.layer) {
+        throw new Error("a group edit's placement isn't tagged as the edit says");
+      }
+      return { ...retag, member: ref };
+    });
+    const owned: GroupChange<Ref> = { ...change, placements };
+    const locked = lockedRetagLayer(this.locks, owned);
+    if (locked !== null) throw new Error(`layer ${locked} is locked, so an edit can't touch it`);
+    return this.record({
+      kind: "group",
+      changes: [],
+      consists: [],
+      track: NO_TRACK_CHANGE,
+      plan: null,
+      notes: null,
+      event: null,
+      layers: null,
+      groups: owned,
     });
   }
 
@@ -411,6 +492,7 @@ export class EditHistory {
       notes: this.follower.follow(changes),
       event: null,
       layers: null,
+      groups: null,
     });
   }
 
@@ -424,6 +506,7 @@ export class EditHistory {
       notes,
       event: null,
       layers: null,
+      groups: null,
     });
   }
 
@@ -437,6 +520,7 @@ export class EditHistory {
       notes: null,
       event: change,
       layers: null,
+      groups: null,
     });
   }
 
@@ -501,7 +585,7 @@ export class EditHistory {
       const from = backwards ? change.after : change.before;
       const to = backwards ? change.before : change.after;
       const added = to
-        ? this.world.add(to.refId, to.colorId, to.x, to.z, to.yPlates, to.rot, to.layer)
+        ? this.world.add(to.refId, to.colorId, to.x, to.z, to.yPlates, to.rot, to.layer, to.group)
         : null;
       if (added) change.ref.handle = added;
       changes.push({ placement: change.ref, from, to, removed: removed[index] ?? null, added });
@@ -527,6 +611,28 @@ export class EditHistory {
       notes,
       event,
       layers,
+      groups: this.applyGroups(edit, step),
+    };
+  }
+
+  private applyGroups(edit: Edit, step: HistoryStep): AppliedGroupChange | null {
+    const change = edit.groups;
+    if (!change) return null;
+    const backwards = step === "undo";
+    const placements = change.placements.map((retag) => {
+      const handle = retag.member.handle;
+      if (!handle?.live) throw new Error("edit history is out of step with the world");
+      const turned = backwards ? reversed(retag) : retag;
+      this.world.regroup(handle, turned.to);
+      return turned;
+    });
+    if (!backwards) return { ...change, placements };
+    return {
+      ...change,
+      before: change.after,
+      after: change.before,
+      placements,
+      pieces: change.pieces.map(reversed),
     };
   }
 

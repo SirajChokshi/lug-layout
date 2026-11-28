@@ -11,6 +11,9 @@ import {
   WORLD_TRACK_FRAME,
   countPlacements,
   EditHistory,
+  GroupTable,
+  groupingChange,
+  ungroupingChange,
   NO_ROW,
   PlanDelta,
   placementKeyText,
@@ -21,16 +24,18 @@ import {
   ConsistLayout,
   consistPoseProblem,
   type AppliedEdit,
+  type AppliedGroupChange,
   type ConsistHandle,
   type ConsistPose,
   type ConsistRef,
   NO_TRACK_CHANGE,
   tableTypeSize,
   layOnLayer,
+  type GroupAction as GroupingAction,
   type LayerAction,
   type LayerChange,
-  type LayeredPose,
   type LayerLocks,
+  type TaggedPose,
   type TrackPieceAt,
   type TrackPieceRef,
   type EditKind,
@@ -102,6 +107,7 @@ import {
   worldTrack,
   type ConsistPieceV1,
   type ConsistRecordV1,
+  type GroupRecordV2,
   type ImportedFile,
   type TrackRecordV1,
   type TrackRecordV2,
@@ -277,6 +283,7 @@ import {
   TABLE_GROUND,
 } from "../tokens.ts";
 import type { ILayerService } from "../layers/layer-service.ts";
+import { GroupSelection } from "./group-selection.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { INoteEditSession, NoteEditView } from "../notes/note-edit-session.ts";
@@ -635,6 +642,7 @@ export interface EditorDump {
   readonly covers: ReadonlyArray<PlaceableCoverView>;
   readonly bakes: ReadonlyArray<ModelBakeView>;
   readonly placements: PlacementDump;
+  readonly groups: ReadonlyArray<GroupRecordV2>;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
   readonly crossings: ReadonlyArray<CrossingDump>;
@@ -669,6 +677,8 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   turnSelectedModelTo(rot: number, eventTimeMs: number): void;
   copySelection(): void;
   pasteClipboard(): void;
+  groupSelection(eventTimeMs: number): void;
+  ungroupSelection(eventTimeMs: number): void;
   dragStart(ndcX: number, ndcY: number): boolean;
   dragMove(ndcX: number, ndcY: number): void;
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
@@ -922,7 +932,7 @@ const HANDLE_TOLERANCE_PX = 8;
 interface ModelMember {
   readonly model: PlacedModel | null;
   readonly placeable: Placeable;
-  readonly pose: LayeredPose;
+  readonly pose: TaggedPose;
   readonly component: number;
 }
 
@@ -933,10 +943,11 @@ interface PieceMember {
   readonly yPlates: number;
   readonly rise: number;
   readonly layer: number;
+  readonly group: number | null;
 }
 
 interface GroupTargets {
-  readonly modelPoses: ReadonlyArray<LayeredPose>;
+  readonly modelPoses: ReadonlyArray<TaggedPose>;
   readonly piecePoses: ReadonlyArray<Pose16>;
 }
 
@@ -1091,13 +1102,17 @@ const NO_LIFTED: ReadonlyArray<PlacedModel> = [];
 const NOTHING_DRAWN = "nothing in the file is drawn";
 const WORLD_FRAME: PlacementPose = { refId: -1, colorId: -1, x: 0, z: 0, yPlates: 0, rot: 0 };
 const PASTE_REFUSED = "Can't paste here.";
+const GROUPING_REFUSED: Readonly<Record<GroupingAction, string>> = {
+  group: "Select two or more parts or groups to group them.",
+  ungroup: "Nothing selected is in a group.",
+};
 const DELETE_REFUSED = "Can't delete.";
 const GROUP_TURN_REFUSED = "Can't turn the group.";
 const PIECE_TURN_REFUSED = "Can't turn it.";
 const SEATS_PENDING =
   "a model under the track is still checking its studs, so track can't move onto it yet";
 
-function poseOf(model: PlacedModel): LayeredPose {
+function poseOf(model: PlacedModel): TaggedPose {
   const { handle } = model;
   return {
     refId: handle.refId,
@@ -1107,6 +1122,7 @@ function poseOf(model: PlacedModel): LayeredPose {
     yPlates: handle.yPlates,
     rot: handle.rot,
     layer: handle.layer,
+    group: handle.group,
   };
 }
 
@@ -1154,7 +1170,16 @@ function layoutMembers(pieces: ReadonlyArray<LayoutPiece>, layer: number): Layou
     }
     const x = anchorX - shiftX + 0;
     const z = anchorZ - shiftZ + 0;
-    const pose = { refId, colorId: placeable.worldColor, x, z, yPlates, rot: 0, layer };
+    const pose = {
+      refId,
+      colorId: placeable.worldColor,
+      x,
+      z,
+      yPlates,
+      rot: 0,
+      layer,
+      group: null,
+    };
     members.push({ model: null, placeable, pose, component: WHOLE_GROUP_COMPONENT });
   }
   const lowest = Math.min(...members.map(({ pose }) => pose.yPlates));
@@ -1276,6 +1301,8 @@ function editLabel(edit: EditSummary | null): string | null {
       return `open plan (${counted(edit.placements, "placement", "placements")}, ${counted(edit.pieces, "track piece", "track pieces")})`;
     case "layer":
       return layerEditLabel(edit.action, edit.name);
+    case "group":
+      return groupEditLabel(edit.action, edit.names);
     default: {
       const unhandled: never = edit;
       throw new Error(`unhandled edit ${JSON.stringify(unhandled)}`);
@@ -1304,6 +1331,25 @@ function layerEditLabel(action: LayerAction, name: string): string {
     default: {
       const unhandled: never = action;
       throw new Error(`unhandled layer action ${String(unhandled)}`);
+    }
+  }
+}
+
+function groupName(id: number): string {
+  return `Group ${id + 1}`;
+}
+
+function groupEditLabel(action: GroupingAction, names: ReadonlyArray<string>): string {
+  switch (action) {
+    case "group":
+      return `group "${names.join('", "')}"`;
+    case "ungroup":
+      return names.length === 1
+        ? `ungroup "${names[0] ?? ""}"`
+        : `ungroup ${counted(names.length, "group", "groups")}`;
+    default: {
+      const unhandled: never = action;
+      throw new Error(`unhandled group action ${String(unhandled)}`);
     }
   }
 }
@@ -1461,6 +1507,7 @@ export class Editor implements IEditor, IEditedWorld {
   private world = new World();
   private consists = new ConsistLayout();
   private history: EditHistory;
+  private groupTable = GroupTable.empty;
   private readonly layerLocks: LayerLocks = { isLocked: (layer) => this.layers.isLocked(layer) };
   private lockedInBox = 0;
   private readonly consistRefs = new Map<ConsistHandle, ConsistRef>();
@@ -1482,9 +1529,15 @@ export class Editor implements IEditor, IEditedWorld {
   private active: Placeable | null = null;
   private activeRefId = -1;
   private readonly selection = new Selection();
+  private readonly grouping = new GroupSelection({
+    table: () => this.groupTable,
+    models: () => this.placed.models(),
+    track: () => this.trackWorld.drawing(),
+  });
   private readonly views: SelectionViews = {
     piece: (placement) => this.pieceView(placement),
     train: (train) => this.trainView(train),
+    grouping: (members) => this.grouping.summary(members),
   };
   private gesture: BoxDrag | HeldGroup | null = null;
   private copied: Copied | null = null;
@@ -2202,7 +2255,7 @@ export class Editor implements IEditor, IEditedWorld {
       fits: (pier, pose, posed, piece) => {
         if (track.changeOverlaps(change, piece.indices, posed)) return false;
         if (trains.some((train) => footprintMeetsBox(train, posed))) return false;
-        const layered = { ...pose, layer: this.layers.activeLayer() };
+        const layered = this.asNewPlacement(pose);
         const member = { model: null, placeable: pier, pose: layered, component: 0 };
         const check: ModelCheck = {
           models: [member],
@@ -2554,7 +2607,10 @@ export class Editor implements IEditor, IEditedWorld {
           this.update(this.tracks.view());
           return;
         }
-        const requests = piers.map((to) => ({ placement: null, to: { ...to, layer } }));
+        const requests = piers.map((to) => ({
+          placement: null,
+          to: { ...to, layer, group: null },
+        }));
         this.show(
           this.history.commit("lay-track", requests, change),
           eventTimeMs,
@@ -3826,10 +3882,10 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const picked = this.pickAt(ndcX, ndcY);
-    const locked = picked ? this.lockedSelectionRefusal(picked) : null;
-    if (locked !== null) {
+    const refusal = picked ? this.selectionRefusal(picked) : null;
+    if (refusal !== null) {
       this.select([]);
-      this.update({ selectionRefusal: locked });
+      this.update({ selectionRefusal: refusal });
       return;
     }
     if (picked?.kind === "track") {
@@ -3855,12 +3911,12 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode !== "select" || this.gesture) return;
     const picked = this.pickAt(ndcX, ndcY);
     if (!picked) return;
-    const locked = this.lockedSelectionRefusal(picked);
-    if (locked !== null) {
-      this.update({ selectionRefusal: locked });
+    const refusal = this.selectionRefusal(picked);
+    if (refusal !== null) {
+      this.update({ selectionRefusal: refusal });
       return;
     }
-    this.selection.toggle(picked);
+    this.selection.toggle(picked, this.grouping.withGroups([picked]));
     this.showSelection();
   }
 
@@ -3876,7 +3932,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     const members = this.trackPaths.members(picked.placement, scope);
     this.select(members);
-    this.reportLockedLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length);
+    this.reportLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length, members);
     return true;
   }
 
@@ -3899,7 +3955,7 @@ export class Editor implements IEditor, IEditedWorld {
         .map(({ slot }): SelectionMember => ({ kind: "track", placement: slot })),
     ];
     this.select(members);
-    this.reportLockedLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length);
+    this.reportLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length, members);
   }
 
   private onShownLockedLayer(member: SelectionMember): boolean {
@@ -3909,11 +3965,19 @@ export class Editor implements IEditor, IEditedWorld {
     return layers.isLocked(layer) && !layers.isHidden(layer);
   }
 
-  private reportLockedLeftOut(count: number): void {
-    if (count === 0) return;
-    this.update({
-      selectionRefusal: `${counted(count, "part", "parts")} on locked layers left out.`,
-    });
+  private reportLeftOut(locked: number, chosen: ReadonlyArray<SelectionMember>): void {
+    const inBlockedGroups = chosen.filter(
+      (member) => this.selectable(member) && !this.selection.has(member),
+    ).length;
+    const leftOut = [
+      ...(locked > 0 ? [`${counted(locked, "part", "parts")} on locked layers left out.`] : []),
+      ...(inBlockedGroups > 0
+        ? [
+            `${counted(inBlockedGroups, "part", "parts")} in groups with parts on locked or hidden layers left out.`,
+          ]
+        : []),
+    ];
+    if (leftOut.length > 0) this.update({ selectionRefusal: leftOut.join(" ") });
   }
 
   private pickAt(ndcX: number, ndcY: number): SelectionMember | null {
@@ -4070,6 +4134,7 @@ export class Editor implements IEditor, IEditedWorld {
       yPlates: pose.yPlates,
       rot: pose.rot,
       layer: this.layers.activeLayer(),
+      group: null,
     };
     const lifts = lifted.map((model) => ({ placement: model.placement, to: null }));
     this.show(this.history.commit("place", [...lifts, { placement: null, to }]), eventTimeMs);
@@ -4206,6 +4271,31 @@ export class Editor implements IEditor, IEditedWorld {
       : null;
   }
 
+  private selectionRefusal(member: SelectionMember): string | null {
+    const locked = this.lockedSelectionRefusal(member);
+    const group = this.grouping.outermostOf(member);
+    if (locked !== null || group === null) return locked;
+    const blocker = this.grouping.withGroups([member]).find((mate) => !this.selectable(mate));
+    if (!blocker) return null;
+    const layer = this.layers.table().layer(this.memberLayer(blocker) ?? BASE_LAYER_ID);
+    const state = layer?.locked ? "locked" : "hidden";
+    return `That's in group "${this.groupTable.group(group)?.name ?? ""}", which has parts on ${state} layer "${layer?.name ?? ""}", so it can't be selected.`;
+  }
+
+  private selectableWhole(chosen: ReadonlyArray<SelectionMember>): ReadonlyArray<SelectionMember> {
+    const whole = this.grouping.withGroups(chosen);
+    const blocked = new Set<number>();
+    for (const member of whole) {
+      const group = this.grouping.outermostOf(member);
+      if (group !== null && member.kind !== "train" && !this.selectable(member)) blocked.add(group);
+    }
+    return whole.filter((member) => {
+      if (member.kind === "train") return this.trainView(member.train) !== null;
+      const group = this.grouping.outermostOf(member);
+      return this.selectable(member) && (group === null || !blocked.has(group));
+    });
+  }
+
   private show(
     edit: AppliedEdit,
     eventTimeMs: number,
@@ -4215,9 +4305,14 @@ export class Editor implements IEditor, IEditedWorld {
     if (edit.notes) this.annotations.restore(edit.notes.after);
     if (edit.event) this.events.restore(edit.event.after);
     if (edit.layers) this.layers.restore(edit.layers.after);
+    if (edit.groups) this.regroupShown(edit.groups);
     const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
     const documentOnly =
-      (edit.plan !== null || edit.notes !== null || edit.event !== null || edit.layers !== null) &&
+      (edit.plan !== null ||
+        edit.notes !== null ||
+        edit.event !== null ||
+        edit.layers !== null ||
+        edit.groups !== null) &&
       edit.changes.length === 0 &&
       !trackChanged;
     this.applyConsists(edit);
@@ -4286,7 +4381,18 @@ export class Editor implements IEditor, IEditedWorld {
     });
     this.repaintTrackPreview();
     if (edit.layers) this.layersChanged();
+    if (edit.groups) this.select(this.selection.members, this.selection.rememberedPivot);
     return view;
+  }
+
+  private regroupShown(change: AppliedGroupChange): void {
+    this.groupTable = change.after;
+    if (change.pieces.length > 0) {
+      const track = this.trackWorld.drawing();
+      if (!track) throw new Error("a group edit retags track pieces with no track drawing");
+      track.regroupPieces(change.pieces);
+    }
+    this.session.groupsEdited(change);
   }
 
   private seenEarlier(
@@ -5134,10 +5240,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private select(chosen: ReadonlyArray<SelectionMember>, pivot: LatticePoint | null = null): void {
-    const shown = chosen.filter((member) =>
-      member.kind === "train" ? this.trainView(member.train) !== null : this.selectable(member),
-    );
-    this.selection.replace(shown, pivot);
+    this.selection.replace(this.selectableWhole(chosen), pivot);
     this.showSelection();
   }
 
@@ -5364,6 +5467,29 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
+  groupSelection(eventTimeMs: number): void {
+    this.regroupSelection("group", eventTimeMs);
+  }
+
+  ungroupSelection(eventTimeMs: number): void {
+    this.regroupSelection("ungroup", eventTimeMs);
+  }
+
+  private regroupSelection(action: GroupingAction, eventTimeMs: number): void {
+    if (this.state.readOnly || this.gesture || this.state.mode !== "select") return;
+    if (this.selection.members.length === 0 || this.selection.trains.length > 0) return;
+    const members = this.grouping.tagged(this.grouping.withGroups(this.selection.members));
+    const change =
+      action === "group"
+        ? groupingChange(this.groupTable, members, groupName)
+        : ungroupingChange(this.groupTable, members);
+    if (!change.ok) {
+      this.update({ selectionRefusal: GROUPING_REFUSED[action] });
+      return;
+    }
+    this.show(this.history.regroup(change.value), eventTimeMs);
+  }
+
   selectDragStart(ndcX: number, ndcY: number, additive: boolean): SelectDragKind | null {
     if (this.state.mode !== "select" || this.state.pendingItem !== null || this.gesture) {
       return null;
@@ -5401,7 +5527,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!gesture) return;
     if (gesture.kind === "box") {
       const inside = this.membersInBox(gesture, ndcX, ndcY);
-      const chosen = this.boxSelection(gesture, inside);
+      const chosen = this.selectableWhole(this.boxSelection(gesture, inside));
       this.backend.setSelectionBoxes(boxesOf(chosen, this.views));
       this.update({ gesture: { kind: "box", ...tallyOf(inside) } });
       return;
@@ -5416,7 +5542,7 @@ export class Editor implements IEditor, IEditedWorld {
       const inside = this.membersInBox(gesture, ndcX, ndcY);
       this.endGesture();
       this.select(this.boxSelection(gesture, inside));
-      this.reportLockedLeftOut(this.lockedInBox);
+      this.reportLeftOut(this.lockedInBox, inside);
       return;
     }
     const placement = this.groundHit(ndcX, ndcY) ? this.aimHeld(gesture) : gesture.placement;
@@ -5678,8 +5804,8 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.trackWorld.drawing();
     if (!track) return NO_PIECES;
     return indices.map((index) => {
-      const { piece, pose, yPlates, rise, layer } = track.laidPiece(index);
-      return { index, piece, pose, yPlates, rise, layer };
+      const { piece, pose, yPlates, rise, layer, group } = track.laidPiece(index);
+      return { index, piece, pose, yPlates, rise, layer, group };
     });
   }
 
@@ -5693,12 +5819,12 @@ export class Editor implements IEditor, IEditedWorld {
     const lay: TrackPieceAt[] = [];
     let appended = track.pieceCount;
     const active = this.layers.activeLayer();
-    pieces.forEach(({ index, piece, yPlates, rise, layer }, member) => {
+    pieces.forEach(({ index, piece, yPlates, rise, layer, group }, member) => {
       if (index !== null) lift.push(track.laidPiece(index));
       const pose = targets?.[member];
       if (!pose) return;
-      const laidOn = index === null ? active : layer;
-      lay.push({ index: index ?? appended++, piece, pose, yPlates, rise, layer: laidOn });
+      const tags = index === null ? { layer: active, group: null } : { layer, group };
+      lay.push({ index: index ?? appended++, piece, pose, yPlates, rise, ...tags });
     });
     return { lift: lift.toSorted(byIndex), lay: lay.toSorted(byIndex) };
   }
@@ -5755,8 +5881,8 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
-  private onActiveLayer(pose: LayeredPose): LayeredPose {
-    return { ...pose, layer: this.layers.activeLayer() };
+  private asNewPlacement(pose: PlacementPose): TaggedPose {
+    return { ...pose, layer: this.layers.activeLayer(), group: null };
   }
 
   private newMembersRefusal(edit: GroupEdit): RefusedClick | null {
@@ -6053,7 +6179,7 @@ export class Editor implements IEditor, IEditedWorld {
       if (!to) throw new Error(`the placement has no pose for member ${index}`);
       return member.model
         ? { placement: member.model.placement, to }
-        : { placement: null, to: this.onActiveLayer(to) };
+        : { placement: null, to: this.asNewPlacement(to) };
     });
     const change = this.trackChange(edit.pieces, placement.piecePoses);
     const view = this.show(this.history.commit(kind, requests, change), eventTimeMs);
@@ -6222,19 +6348,20 @@ export class Editor implements IEditor, IEditedWorld {
       pose,
       component: WHOLE_GROUP_COMPONENT,
     }));
-    const pieces = laid.value.map(({ piece, pose, yPlates, rise, layer }) => ({
+    const pieces = laid.value.map(({ piece, pose, yPlates, rise, layer, group }) => ({
       index: null,
       piece,
       pose,
       yPlates,
       rise,
       layer,
+      group,
     }));
     const targets = { modelPoses: poses.value, piecePoses: pieces.map((piece) => piece.pose) };
     const refusal = this.groupRefusal(this.pasteEdit(models, pieces), targets);
     if (refusal) return [{ path: plan.name, message: refusal.reason }];
     const change = this.plans.addition(plan);
-    const requests = poses.value.map((to) => ({ placement: null, to: this.onActiveLayer(to) }));
+    const requests = poses.value.map((to) => ({ placement: null, to: this.asNewPlacement(to) }));
     const opened = this.history.commit(
       "open-plan",
       requests,
@@ -6253,6 +6380,7 @@ export class Editor implements IEditor, IEditedWorld {
       track: this.trackWorld.records(),
       consists: this.consistRecords(),
       notes: this.annotations.records(),
+      groups: this.groupTable,
     };
   }
 
@@ -6524,6 +6652,7 @@ export class Editor implements IEditor, IEditedWorld {
     const restored = this.restore(stored);
     if (!restored.ok) return restored.issues;
     this.replaceWorld(restored.value);
+    this.groupTable = stored.groups;
     const noteIssues = this.annotations.load({
       notes: stored.notes,
       document: stored.document,
@@ -6742,6 +6871,7 @@ export class Editor implements IEditor, IEditedWorld {
           : [];
       }),
       placements: dumpPlacements(this.world),
+      groups: this.groupTable.groups,
       roadPlacements: this.liveRoads.models.map((model, id) => ({
         id,
         item: model.placeable.id,

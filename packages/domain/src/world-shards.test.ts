@@ -6,6 +6,8 @@ import { DirtyShards, addShards, worldPlacements } from "./world-shards.ts";
 const REFS = ["ldraw:3811", "omr:10264-1"];
 const TEN_KM_LDU = 25_000_000;
 const SCENERY_LAYER = 7;
+const STATION_GROUP = 0;
+const YARD_GROUP = 4;
 
 const ORIGIN_TRACK: TrackRecordV1 = {
   index: 0,
@@ -27,12 +29,12 @@ function shardsOf(world: World, refs: ReadonlyArray<string>) {
 
 function editedWorld(): World {
   const world = new World();
-  const first = world.add(0, 2, 0, 0, 0, 0, 0);
-  world.add(1, 0, 40, -60, 0, 1, SCENERY_LAYER);
-  world.add(0, 2, 640, 0, 0, 0, 0);
-  world.add(1, 0, TEN_KM_LDU, -TEN_KM_LDU, 0, 3, 0);
+  const first = world.add(0, 2, 0, 0, 0, 0, 0, null);
+  world.add(1, 0, 40, -60, 0, 1, SCENERY_LAYER, YARD_GROUP);
+  world.add(0, 2, 640, 0, 0, 0, 0, STATION_GROUP);
+  world.add(1, 0, TEN_KM_LDU, -TEN_KM_LDU, 0, 3, 0, null);
   world.remove(first);
-  world.add(1, 0, 20, 20, 0, 2, 0);
+  world.add(1, 0, 20, 20, 0, 2, 0, null);
   return world;
 }
 
@@ -51,9 +53,17 @@ describe("world shards", () => {
     expect(reloaded.size).toBe(4);
     expect(
       shards.flatMap((shard) =>
-        shard.placements.map((placement) => ("layer" in placement ? placement.layer : "base")),
+        shard.placements.map((placement) => [
+          "layer" in placement ? placement.layer : "base",
+          "group" in placement ? placement.group : "ungrouped",
+        ]),
       ),
-    ).toEqual([SCENERY_LAYER, "base", "base", "base"]);
+    ).toEqual([
+      [SCENERY_LAYER, YARD_GROUP],
+      ["base", STATION_GROUP],
+      ["base", "ungrouped"],
+      ["base", "ungrouped"],
+    ]);
   });
 
   it("refuses a shard naming a ref outside the catalog and adds nothing", () => {
@@ -67,8 +77,8 @@ describe("world shards", () => {
 
   it("reports an emptied super-chunk as dropped and touched ones as rewritten", () => {
     const world = new World();
-    const keep = world.add(0, 2, 0, 0, 0, 0, 0);
-    const gone = world.add(1, 0, TEN_KM_LDU, 0, 0, 0, 0);
+    const keep = world.add(0, 2, 0, 0, 0, 0, 0, null);
+    const gone = world.add(1, 0, TEN_KM_LDU, 0, 0, 0, 0, null);
     const dirty = new DirtyShards();
     world.remove(gone);
     dirty.touch(TEN_KM_LDU, 0);
@@ -83,8 +93,8 @@ describe("world shards", () => {
 
   it("puts back every super-chunk of a change whose write failed, so the next take rewrites it", () => {
     const world = new World();
-    world.add(0, 2, 0, 0, 0, 0, 0);
-    world.add(1, 0, TEN_KM_LDU, 0, 0, 0, 0);
+    world.add(0, 2, 0, 0, 0, 0, 0, null);
+    world.add(1, 0, TEN_KM_LDU, 0, 0, 0, 0, null);
     const dirty = new DirtyShards();
     dirty.touch(0, 0);
     dirty.touch(TEN_KM_LDU, 0);
@@ -101,7 +111,7 @@ describe("world shards", () => {
 
   it("rewrites a touched shard with the track pieces it holds, so saving a placement keeps them", () => {
     const world = new World();
-    world.add(0, 2, 0, 0, 0, 0, 0);
+    world.add(0, 2, 0, 0, 0, 0, 0, null);
     const dirty = new DirtyShards();
     dirty.touch(0, 0);
 
@@ -113,7 +123,7 @@ describe("world shards", () => {
 
   it("refuses a placement whose colour isn't the catalog item's", () => {
     const world = new World();
-    world.add(0, 4, 0, 0, 0, 0, 0);
+    world.add(0, 4, 0, 0, 0, 0, 0, null);
     expect(addShards(new World(), shardsOf(world, REFS), resolve).ok).toBe(false);
   });
 });

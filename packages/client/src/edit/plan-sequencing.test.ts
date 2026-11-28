@@ -9,7 +9,7 @@ import {
   PlanDelta,
   World,
   type AppliedEdit,
-  type LayeredPose,
+  type TaggedPose,
   type PlacementRef,
   type PlacementRequest,
 } from "@brr/domain";
@@ -123,7 +123,7 @@ class Sequence {
     return Math.floor(this.next() * n);
   }
 
-  pose(taken: Set<string> = new Set()): LayeredPose {
+  pose(taken: Set<string> = new Set()): TaggedPose {
     const occupied = new Set(taken);
     for (const ref of this.refs) {
       const handle = ref.handle;
@@ -146,6 +146,7 @@ class Sequence {
       yPlates: 0,
       rot: this.int(4),
       layer: 0,
+      group: null,
     };
   }
 

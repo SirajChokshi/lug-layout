@@ -59,6 +59,7 @@ function handleAt(): PlacementHandle {
     yPlates: Y_PLATES,
     rot: QUARTER_TURNS,
     layer: 0,
+    group: null,
   };
 }
 
@@ -80,6 +81,7 @@ function edit(kind: "place" | "remove", handle: PlacementHandle): AppliedEdit {
               yPlates: Y_PLATES,
               rot: QUARTER_TURNS,
               layer: 0,
+              group: null,
             }
           : null,
         removed: placing ? null : handle,
@@ -92,6 +94,7 @@ function edit(kind: "place" | "remove", handle: PlacementHandle): AppliedEdit {
     notes: null,
     event: null,
     layers: null,
+    groups: null,
   };
 }
 

@@ -14,8 +14,8 @@ import {
   type TrackRecordV2,
   type WorldShardV2,
 } from "@brr/schema/world";
-import type { LayeredPose, TrackPieceAt } from "./edit-history.ts";
-import { SLOT_LIVE, type PlacementHandle, type World } from "./world.ts";
+import type { TaggedPose, TrackPieceAt } from "./edit-history.ts";
+import { SLOT_LIVE, groupAt, type PlacementHandle, type World } from "./world.ts";
 
 export interface PlacementTarget {
   readonly refId: number;
@@ -38,6 +38,7 @@ export function worldPlacements(
       const ref = refs[refId];
       if (ref === undefined) throw new Error(`placement refId ${refId} has no catalog id`);
       const layer = chunk.layer[slot] ?? BASE_LAYER_ID;
+      const group = groupAt(chunk, slot);
       placements.push({
         ref,
         color: chunk.colorId[slot] ?? 0,
@@ -46,6 +47,7 @@ export function worldPlacements(
         yPlates: chunk.yPlates[slot] ?? 0,
         rot: chunk.rot[slot] ?? 0,
         ...(layer === BASE_LAYER_ID ? {} : { layer }),
+        ...(group === null ? {} : { group }),
       });
     }
   }
@@ -115,7 +117,7 @@ export class DirtyShards {
 export function shardPoses(
   shards: ReadonlyArray<WorldShardV2>,
   resolve: (ref: string, color: number) => PlacementTarget | null,
-): Decoded<LayeredPose[]> {
+): Decoded<TaggedPose[]> {
   const issues: Issue[] = [];
   const unknown = new Set<string>();
   for (const shard of shards) {
@@ -131,7 +133,7 @@ export function shardPoses(
     }
   }
   if (issues.length > 0) return { ok: false, issues };
-  const poses: LayeredPose[] = [];
+  const poses: TaggedPose[] = [];
   const ordered = [...shards];
   ordered.sort((a, b) => compareSuperChunks(a.superChunk, b.superChunk));
   for (const shard of ordered) {
@@ -146,6 +148,7 @@ export function shardPoses(
         yPlates: placement.yPlates,
         rot: placement.rot,
         layer: placement.layer ?? BASE_LAYER_ID,
+        group: placement.group ?? null,
       });
     }
   }
@@ -162,7 +165,16 @@ export function addShards(
   return {
     ok: true,
     value: poses.value.map((pose) =>
-      world.add(pose.refId, pose.colorId, pose.x, pose.z, pose.yPlates, pose.rot, pose.layer),
+      world.add(
+        pose.refId,
+        pose.colorId,
+        pose.x,
+        pose.z,
+        pose.yPlates,
+        pose.rot,
+        pose.layer,
+        pose.group,
+      ),
     ),
   };
 }

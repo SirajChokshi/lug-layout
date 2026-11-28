@@ -207,7 +207,7 @@ export class ImportScene implements IImportScene {
     const x = latticeCeil(this.nextX - bounds.minX);
     const z = latticeRound(-(bounds.minZ + bounds.maxZ) / 2);
     const module = this.modules.length;
-    this.world.add(module, NO_COLOR, x, z, GROUND_PLATES, NO_TURN, BASE_LAYER_ID);
+    this.world.add(module, NO_COLOR, x, z, GROUND_PLATES, NO_TURN, BASE_LAYER_ID, null);
     this.modules.push({ result, x, z, bounds });
     this.nextX = x + bounds.maxX + MODULE_GAP_LDU;
     this.frame();

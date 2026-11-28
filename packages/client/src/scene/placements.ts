@@ -1,4 +1,4 @@
-import { SLOT_LIVE, type World } from "@brr/domain";
+import { SLOT_LIVE, groupAt, type World } from "@brr/domain";
 import type { ChunkInstances } from "@brr/render";
 
 export type ChunkPartInstances = Omit<ChunkInstances, "studs">;
@@ -13,6 +13,7 @@ export interface PlacementDump {
   readonly yPlates: ReadonlyArray<number>;
   readonly rot: ReadonlyArray<number>;
   readonly layer: ReadonlyArray<number>;
+  readonly group: ReadonlyArray<number | null>;
 }
 
 export function dumpPlacements(world: World): PlacementDump {
@@ -25,6 +26,7 @@ export function dumpPlacements(world: World): PlacementDump {
   const yPlates: number[] = [];
   const rot: number[] = [];
   const layer: number[] = [];
+  const group: Array<number | null> = [];
   for (const chunk of world.chunks()) {
     for (let i = 0; i < chunk.count; i++) {
       if (((chunk.flags[i] ?? 0) & SLOT_LIVE) === 0) continue;
@@ -37,7 +39,8 @@ export function dumpPlacements(world: World): PlacementDump {
       yPlates.push(chunk.yPlates[i] ?? 0);
       rot.push(chunk.rot[i] ?? 0);
       layer.push(chunk.layer[i] ?? 0);
+      group.push(groupAt(chunk, i));
     }
   }
-  return { chunkKey, slot, refId, colorId, x, z, yPlates, rot, layer };
+  return { chunkKey, slot, refId, colorId, x, z, yPlates, rot, layer, group };
 }

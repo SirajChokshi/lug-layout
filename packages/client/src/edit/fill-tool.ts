@@ -269,6 +269,7 @@ export class FillTool {
           yPlates: this.tileY[tile] ?? 0,
           rot,
           layer,
+          group: null,
         },
       });
     }

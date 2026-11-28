@@ -41,6 +41,8 @@ export type EditorActionId =
   | "duplicate"
   | "copy"
   | "paste"
+  | "group"
+  | "ungroup"
   | "undo"
   | "redo"
   | NudgeId
@@ -328,6 +330,20 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "clipboard group insert",
   },
   {
+    id: "group",
+    title: "Group the selection, so a click on any part of it selects it all",
+    group: "Edit",
+    keys: [{ key: "g", mod: true }],
+    keywords: "group combine join nest bundle together",
+  },
+  {
+    id: "ungroup",
+    title: "Ungroup the selected groups one level",
+    group: "Edit",
+    keys: [{ key: "g", mod: true, shift: true }],
+    keywords: "ungroup split break apart separate",
+  },
+  {
     id: "undo",
     title: "Undo",
     group: "Edit",
@@ -550,8 +566,15 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
 ];
 
 export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
-  { gesture: "Click", action: "Place the part in hand, or select a model or track piece" },
-  { gesture: "Shift-click", action: "Add a model or track piece to the selection, or take it out" },
+  {
+    gesture: "Click",
+    action:
+      "Place the part in hand, or select a model or track piece, with every part of the outermost group it's in",
+  },
+  {
+    gesture: "Shift-click",
+    action: "Add a model or track piece, or its whole group, to the selection, or take it out",
+  },
   {
     gesture: "Drag",
     action: "Lay a run of track or road while drawing it, or fill an area with the part in hand",
@@ -742,6 +765,19 @@ function previewsLibraryPiece(snapshot: EditorSnapshot): boolean {
   return !snapshot.readOnly && extend?.choices[extend.index]?.kind === "piece";
 }
 
+function selectionUnits(selection: EditorSnapshot["selection"]): number {
+  return selection ? selection.groups.length + selection.loose : 0;
+}
+
+function groupingEnabled(snapshot: EditorSnapshot): boolean {
+  return (
+    snapshot.selection?.movable === true &&
+    snapshot.mode === "select" &&
+    snapshot.gesture === null &&
+    !snapshot.readOnly
+  );
+}
+
 export function commandEnabled(
   id: CommandId,
   snapshot: EditorSnapshot,
@@ -813,6 +849,10 @@ export function commandEnabled(
       return !snapshot.readOnly;
     case "copy":
       return snapshot.selection?.movable === true;
+    case "group":
+      return groupingEnabled(snapshot) && selectionUnits(snapshot.selection) > 1;
+    case "ungroup":
+      return groupingEnabled(snapshot) && (snapshot.selection?.groups.length ?? 0) > 0;
     case "paste":
       return (
         snapshot.clipboard > 0 &&
@@ -993,6 +1033,12 @@ export function runEditorAction(
       return;
     case "paste":
       editor.pasteClipboard();
+      return;
+    case "group":
+      editor.groupSelection(eventTimeMs);
+      return;
+    case "ungroup":
+      editor.ungroupSelection(eventTimeMs);
       return;
     case "nudge-left":
     case "nudge-right":
