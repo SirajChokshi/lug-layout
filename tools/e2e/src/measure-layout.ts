@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { basename, dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { STUD_LDU } from "@brr/math";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright-core";
 import type { Point } from "./show-world/show-layout.ts";
 import type { EditScript } from "./show-world/show-world-builder.ts";
@@ -597,16 +598,24 @@ class ScreenMap {
   }
 
   async aim(target: Point): Promise<{ readonly sx: number; readonly sy: number }> {
+    const found = await this.seek(target);
+    if (!found.reads) throw new Error(`no screen point reads ${target.x}, ${target.z} LDU`);
+    return found;
+  }
+
+  async seek(
+    target: Point,
+  ): Promise<{ readonly sx: number; readonly sy: number; readonly reads: boolean }> {
     let sx = this.origin.sx + (target.x - this.origin.at.x) / this.lduPerPxX;
     let sy = this.origin.sy + (target.z - this.origin.at.z) / this.lduPerPxY;
     for (let attempt = 0; attempt < AIM_ATTEMPTS; attempt++) {
       const read = await hoverAt(this.page, sx, sy);
-      if (read && read.x === target.x && read.z === target.z) return { sx, sy };
+      if (read && read.x === target.x && read.z === target.z) return { sx, sy, reads: true };
       if (!read) break;
       sx += (target.x - read.x) / this.lduPerPxX;
       sy += (target.z - read.z) / this.lduPerPxY;
     }
-    throw new Error(`no screen point reads ${target.x}, ${target.z} LDU`);
+    return { sx, sy, reads: false };
   }
 }
 
@@ -698,16 +707,22 @@ async function setPrecise(page: Page): Promise<void> {
   if ((await control.getAttribute("data-placement-mode")) !== "precise") await control.click();
 }
 
+function nearestStud(ldu: number): number {
+  return Math.round(ldu / STUD_LDU) * STUD_LDU;
+}
+
 async function zoomOnto(page: Page, script: EditScript): Promise<ScreenMap> {
-  const x = (script.module.at.x + script.track.to.x) / 2;
-  const z = (script.module.at.z + script.track.to.z) / 2;
-  await page.getByLabel("Go to x (LDU)").fill(String(Math.round(x)));
-  await page.getByLabel("Go to z (LDU)").fill(String(Math.round(z)));
+  const site = {
+    x: nearestStud((script.module.at.x + script.track.to.x) / 2),
+    z: nearestStud((script.module.at.z + script.track.to.z) / 2),
+  };
+  await page.getByLabel("Go to x (LDU)").fill(String(site.x));
+  await page.getByLabel("Go to z (LDU)").fill(String(site.z));
   await page.getByRole("button", { name: "Go to x, z" }).click();
-  const { sx, sy } = await canvasCentre(page);
   for (let step = 0; step < MAX_EDIT_ZOOM_STEPS; step++) {
     const map = await ScreenMap.fit(page);
     if (Math.abs(map.lduPerPxX) <= EDIT_LDU_PER_PX) return map;
+    const { sx, sy } = await map.seek(site);
     await page.mouse.move(sx, sy);
     await page.mouse.wheel(0, -WHEEL_STEP);
     await page.waitForTimeout(GESTURE_TAIL_MS);
