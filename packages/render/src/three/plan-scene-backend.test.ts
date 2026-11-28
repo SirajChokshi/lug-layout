@@ -10,7 +10,7 @@ import {
 } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import { PLAN_POSE_FLOATS, type PlanInstances } from "../plan-scene.ts";
-import type { ChunkInstances, PartPalette } from "../scene-backend.ts";
+import type { ChunkInstances, PartPalette, WorldBox } from "../scene-backend.ts";
 import { ThreeSceneBackend } from "./three-scene-backend.ts";
 
 const RED = 4;
@@ -110,6 +110,10 @@ function chunkWithStuds(originX: number, studMatrices: ReadonlyArray<number>): C
       matrices: Float32Array.from(studMatrices),
     },
   };
+}
+
+function markerBox(minX: number): WorldBox {
+  return { minX, minY: 0, minZ: 0, maxX: minX + 4, maxY: 3, maxZ: 20 };
 }
 
 function backendWithPalette(): ThreeSceneBackend {
@@ -220,11 +224,10 @@ describe("the plan scene", () => {
 
   it("draws every edge marker as one instanced draw, at its box's top in its kind's colour, once studs are big enough to see", () => {
     const backend = backendWithPalette();
-    const box = (minX: number) => ({ minX, minY: 0, minZ: 0, maxX: minX + 4, maxY: 3, maxZ: 20 });
     backend.setMarkers([
-      { box: box(0), kind: "joined" },
-      { box: box(20), kind: "open" },
-      { box: box(40), kind: "mismatch" },
+      { box: markerBox(0), kind: "joined" },
+      { box: markerBox(20), kind: "open" },
+      { box: markerBox(40), kind: "mismatch" },
     ]);
     const [markers] = backend.plan.root.children;
     backend.plan.prepare(1);
