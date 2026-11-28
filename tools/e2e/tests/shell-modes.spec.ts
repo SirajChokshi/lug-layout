@@ -35,7 +35,7 @@ async function view(page: Page): Promise<string | null> {
   return page.locator(".view-controls").getAttribute("data-view");
 }
 
-test("Build, Plan and Play each show their own panels and open in 3D, 2D and 3D; a running train always shows Play and leaving Play stops it; a tool picked in Play goes to Build and the table tool to Plan", async ({
+test("Build, Plan and Play each show their own panels and open in 3D, 2D and 3D; a running train always shows Play and leaving Play stops it; a tool picked in Play goes to Build and the table tool to Plan; the palette switches too", async ({
   page,
 }) => {
   const editor = await EditorPage.open(page);
@@ -95,4 +95,15 @@ test("Build, Plan and Play each show their own panels and open in 3D, 2D and 3D;
   await expect(editor.root).toHaveAttribute("data-shell-mode", "plan");
   await editor.chooseMode("build");
   await expect(editor.root).toHaveAttribute("data-mode", "select");
+
+  await editor.press("/");
+  await page.locator(".cmdk-input").fill("plan mode");
+  await expect(page.locator(".cmdk-result").first()).toHaveAttribute(
+    "data-result",
+    "command:plan-mode",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".cmdk")).toHaveCount(0);
+  await expect(editor.root).toHaveAttribute("data-shell-mode", "plan");
+  await expect(page.locator(".view-controls")).toHaveAttribute("data-view", "plan");
 });
