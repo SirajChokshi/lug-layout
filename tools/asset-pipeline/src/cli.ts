@@ -3,6 +3,7 @@ import {
   BundleLod,
   BundleManifest,
   LevelCrossingFacts,
+  OmrLibraryPin,
   SectionVocabularyFile,
   TablePlane,
   TrackCatalog,
@@ -36,6 +37,7 @@ import {
   crosswalkSources,
   inventoryPartsPath,
   readCrosswalkInputs,
+  readSetCatalog,
 } from "./catalog/inputs.ts";
 import {
   deriveLibraryParts,
@@ -81,6 +83,12 @@ import {
 } from "./catalog/produced-colors.ts";
 import { omrSetNumber, readSetExport, rebrickableSets } from "./catalog/rebrickable-sets.ts";
 import {
+  deriveOmrSets,
+  fetchOmrLibrary,
+  omrLibraryProblems,
+  type DerivedOmrSets,
+} from "./catalog/omr-sets.ts";
+import {
   readFixtureModels,
   readOmrErrata,
   readPalette,
@@ -93,6 +101,7 @@ import {
   attachLibraryConnectors,
   attachShadowLibrary,
   attachLibraryParts,
+  attachOmrSets,
   attachRollingDiagnostics,
   attachSectionVocabulary,
   MANIFEST_FILE,
@@ -140,6 +149,7 @@ const palettePath = join(repoRoot, BUNDLE_DATA_FILES.palette);
 const primitiveTablePath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const fixtureModelsPath = join(repoRoot, BUNDLE_DATA_FILES.fixtureModels);
 const omrErrataPath = join(repoRoot, BUNDLE_DATA_FILES.omrErrata);
+const omrLibraryPath = join(repoRoot, BUNDLE_DATA_FILES.omrLibrary);
 const lockPath = join(repoRoot, BUNDLE_DATA_FILES.lock);
 const fixturesRoot = join(repoRoot, FIXTURES_DIRECTORY);
 const ldrawRoot = join(repoRoot, ".cache", "ldraw");
@@ -148,6 +158,7 @@ const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
 const bundleConnectivityRoot = join(repoRoot, ".cache", "ldcad-shadow-bundle");
 const shadowLibraryRoot = join(repoRoot, ".cache", "ldcad-shadow-library");
 const omrRoot = join(repoRoot, ".cache", "omr");
+const omrLibraryRoot = join(repoRoot, ".cache", "omr-library");
 const catalogRoot = join(repoRoot, ".cache", "catalog");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const TEST_DATA_DIRECTORIES = [join("packages", "import", "test-data")];
@@ -171,6 +182,24 @@ const FIXTURE_LOD: BundleLod = "standard";
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(lockPath, "utf8")) as InputLock;
+}
+
+async function readOmrLibrary(): Promise<OmrLibraryPin> {
+  return decodedOrThrow(
+    decode(OmrLibraryPin, JSON.parse(await readFile(omrLibraryPath, "utf8"))),
+    omrLibraryPath,
+  );
+}
+
+async function omrLibraryCommand(subcommand: string | undefined): Promise<void> {
+  if (subcommand !== "fetch") {
+    process.stderr.write("usage: cli.ts omr-library fetch\n");
+    process.exitCode = 2;
+    return;
+  }
+  const pin = await fetchOmrLibrary((await readPalette(palettePath)).omrSource, omrLibraryRoot);
+  await writeFile(omrLibraryPath, `${JSON.stringify(pin, null, 2)}\n`);
+  process.stdout.write(`pinned ${Object.keys(pin.files).length} OMR models\n`);
 }
 
 async function paletteAndFixtureModels(palette: Palette): Promise<ReadonlyArray<PaletteModel>> {
@@ -304,6 +333,7 @@ async function restoreCommand(): Promise<void> {
   await restoreCatalog(lock, "inventory-check");
   await restoreCatalog(lock, "categories");
   await restoreCatalog(lock, "connectors");
+  await restoreCatalog(lock, "sets");
 }
 
 async function verifyCommand(): Promise<void> {
@@ -323,6 +353,12 @@ async function verifyCommand(): Promise<void> {
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "inventory-check")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "connectors")),
+    ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "sets")),
+    ...omrLibraryProblems(
+      await readOmrLibrary(),
+      palette.omrSource,
+      await paletteAndFixtureModels(palette),
+    ),
     ...(await verifyAllThirdParty(await readThirdPartyTrack(thirdPartyTrackPath), thirdPartyRoot)),
   ];
   if (problems.length > 0) {
@@ -331,7 +367,7 @@ async function verifyCommand(): Promise<void> {
     return;
   }
   process.stdout.write(
-    "LDraw inputs match ldraw.lock.json and omr-errata.json, third-party track matches third-party-track.json\n",
+    "LDraw inputs match ldraw.lock.json, omr-errata.json and omr-library.json, third-party track matches third-party-track.json\n",
   );
 }
 
@@ -663,7 +699,7 @@ interface LodBuild {
   readonly palette: string;
   readonly out: string;
   readonly lod: BundleLod;
-  readonly offersLibraryParts: boolean;
+  readonly offersSearchFiles: boolean;
 }
 
 interface SharedBuild {
@@ -673,13 +709,14 @@ interface SharedBuild {
   readonly ldrawParts: ReadonlyMap<string, LdrawPartFacts>;
   readonly categories: LdrawCategories;
   readonly libraryParts: DerivedLibraryParts;
+  readonly omrSets: DerivedOmrSets;
   readonly outlines: ReadonlyMap<string, PlanOutline>;
 }
 
-const LIBRARY_PARTS_LOD: BundleLod = "standard";
+const SEARCH_FILES_LOD: BundleLod = "standard";
 
 async function compileLod(
-  { palette, out, lod, offersLibraryParts }: LodBuild,
+  { palette, out, lod, offersSearchFiles }: LodBuild,
   shared: SharedBuild,
 ): Promise<void> {
   await rm(out, { recursive: true, force: true });
@@ -731,7 +768,10 @@ async function compileLod(
   await attachPartCategories(join(out, MANIFEST_FILE), shared.ldrawParts, shared.categories);
   await addVerifiedFacts(out);
   await attachCrosswalk(out, shared.crosswalk);
-  if (offersLibraryParts) await attachLibraryParts(out, shared.libraryParts.file);
+  if (offersSearchFiles) {
+    await attachLibraryParts(out, shared.libraryParts.file);
+    await attachOmrSets(out, shared.omrSets.file);
+  }
   await attachRecords(out, shared.outlines);
   await attachLibraryBake(out, join(repoRoot, BUNDLE_DATA_FILES.libraryBakePin));
   await attachLibraryConnectors(out, join(repoRoot, BUNDLE_DATA_FILES.libraryConnectorsPin));
@@ -751,6 +791,12 @@ const LIBRARY_PART_SOURCES: ReadonlyArray<CatalogSourceUse> = [
   "inventory-check",
   "categories",
 ];
+
+function reportOmrSets({ report }: DerivedOmrSets): void {
+  process.stdout.write(
+    `OMR sets: ${report.sets} Rebrickable sets listed, ${report.modelledSets} with an OMR model, ${report.models} model files\n`,
+  );
+}
 
 function reportLibraryParts({ report }: DerivedLibraryParts): void {
   process.stdout.write(
@@ -776,13 +822,13 @@ async function bundleCommand(): Promise<void> {
       palette: palettePath,
       out: join(bundleRoot, lod),
       lod,
-      offersLibraryParts: lod === LIBRARY_PARTS_LOD,
+      offersSearchFiles: lod === SEARCH_FILES_LOD,
     })),
     {
       palette: fixturePalette,
       out: join(fixtureBundleRoot, FIXTURE_LOD),
       lod: FIXTURE_LOD,
-      offersLibraryParts: false,
+      offersSearchFiles: false,
     },
   ];
   const outputs = builds.map((build) => build.out);
@@ -833,8 +879,22 @@ async function bundleCommand(): Promise<void> {
     catalogSources(catalog, LIBRARY_PART_SOURCES),
   );
   reportLibraryParts(libraryParts);
+  const omrSets = deriveOmrSets(
+    { pin: await readOmrLibrary(), ...(await readSetCatalog(catalog, catalogRoot)) },
+    catalogSources(catalog, ["sets"]),
+  );
+  reportOmrSets(omrSets);
   const outlines = await catalogPlanOutlines();
-  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, libraryParts, outlines };
+  const shared = {
+    inputs,
+    crosswalk,
+    coverCache,
+    ldrawParts,
+    categories,
+    libraryParts,
+    omrSets,
+    outlines,
+  };
   for (const build of builds) await compileLod(build, shared);
   if (!(await studAuditCommand(undefined))) {
     throw new Error("the stud audit found the bundle's studs disagreeing with LDraw");
@@ -1024,6 +1084,9 @@ switch (command) {
     if (!(await studAuditCommand(out))) process.exitCode = 1;
     break;
   }
+  case "omr-library":
+    await omrLibraryCommand(process.argv[3]);
+    break;
   case "section-vocabulary":
     await sectionVocabularyCommand(process.argv.includes("--check"));
     break;
@@ -1056,7 +1119,7 @@ switch (command) {
     break;
   default:
     process.stderr.write(
-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|sets <dir> [--check]|stud-audit [--out <file>]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|omr-library fetch|facts|colors [--check]|sets <dir> [--check]|stud-audit [--out <file>]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
     );
     process.exitCode = 2;
 }

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { catalogSourceDirectory, type CatalogLock } from "../fetch-ldraw.ts";
 import { normalizeReference } from "../ldraw/parse.ts";
 import { readGzipCsv } from "./csv.ts";
@@ -17,6 +18,9 @@ const LDCONFIG = "LDConfig.ldr";
 const LDRAW_ARCHIVE_SOURCE = "ldraw-library";
 const INVENTORY_SOURCE = "rebrickable-inventories";
 const INVENTORY_PARTS_FILE = "inventory_parts.csv.gz";
+const SET_SOURCE = "rebrickable-sets";
+const SETS_FILE = "sets.csv.gz";
+const THEMES_FILE = "themes.csv.gz";
 const SUBFILE_REFERENCE_TOKEN = 14;
 const PART_REFERENCE = /^([^/]+)\.dat$/u;
 
@@ -54,6 +58,15 @@ export function crosswalkSources(lock: CatalogLock): Record<string, CrosswalkSou
 
 export function inventoryPartsPath(lock: CatalogLock, catalogRoot: string): string {
   return sourceFile(lock, catalogRoot, INVENTORY_SOURCE, INVENTORY_PARTS_FILE);
+}
+
+export async function readSetCatalog(
+  lock: CatalogLock,
+  catalogRoot: string,
+): Promise<{ readonly setsCsv: string; readonly themesCsv: string }> {
+  const text = async (file: string): Promise<string> =>
+    gunzipSync(await readFile(sourceFile(lock, catalogRoot, SET_SOURCE, file))).toString("utf8");
+  return { setsCsv: await text(SETS_FILE), themesCsv: await text(THEMES_FILE) };
 }
 
 interface ScannedPart {

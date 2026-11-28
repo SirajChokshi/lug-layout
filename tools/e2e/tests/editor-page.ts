@@ -24,6 +24,9 @@ const MODEL_IMPORT_TIMEOUT_MS = 180_000;
 const HOVER_SETTLE_TIMEOUT_MS = 5_000;
 const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
+const PINNED_OMR = new URL("../../../.cache/omr/", import.meta.url);
+const OMR_MIRROR_MODEL = "https://raw.githubusercontent.com/*/*/*/models/*.mpd";
+const TAMPERED_LINE = "0 a line the pinned file doesn't have\n";
 const HTTP_NOT_FOUND = 404;
 const PLACEABLE = "placeable";
 
@@ -45,6 +48,11 @@ const BUNDLE_MODEL_RECORD = /\/standard\/model-[^/]+\.json$/u;
 
 export interface RawLibrary {
   served(): number;
+}
+
+export interface OmrMirror {
+  tamper(file: string): void;
+  untamper(file: string): void;
 }
 
 export interface ScreenPoint {
@@ -861,6 +869,26 @@ export class EditorPage {
     return { served: () => served };
   }
 
+  async serveOmrModels(): Promise<OmrMirror> {
+    const tampered = new Set<string>();
+    await this.page.context().route(OMR_MIRROR_MODEL, async (route) => {
+      const file = decodeURIComponent(
+        new URL(route.request().url()).pathname.split("/").at(-1) ?? "",
+      );
+      const bytes = await readFile(new URL(file, PINNED_OMR)).catch(() => null);
+      if (bytes === null) {
+        expect
+          .soft(false, `the editor asked for OMR model ${file}, which .cache/omr doesn't hold`)
+          .toBe(true);
+        await route.fulfill({ status: HTTP_NOT_FOUND });
+        return;
+      }
+      const body = tampered.has(file) ? Buffer.concat([bytes, Buffer.from(TAMPERED_LINE)]) : bytes;
+      await route.fulfill({ status: 200, body });
+    });
+    return { tamper: (file) => tampered.add(file), untamper: (file) => tampered.delete(file) };
+  }
+
   blockLibraryBake(): () => void {
     return this.bake.block();
   }
@@ -918,6 +946,34 @@ export class EditorPage {
     if (partInColor === null) throw new Error(`the library offers no ${part} in colour ${color}`);
     await swatch.click();
     return this.importOutcome(`${part} ${partInColor}.ldr`);
+  }
+
+  async searchSets(query: string): Promise<Locator> {
+    await this.page.locator(".palette-search").fill(query);
+    const sets = this.page.locator(".palette-more-sets");
+    await expect(sets).toHaveAttribute("data-omr-status", "ready", { timeout: READY_TIMEOUT_MS });
+    return sets;
+  }
+
+  async pickOmrModel(file: string): Promise<ModelImport | string> {
+    const model = this.page.locator(`.palette-more-sets [data-omr-model="${file}"]`);
+    await model.click();
+    await expect(model).not.toHaveAttribute("aria-busy", "true", {
+      timeout: MODEL_IMPORT_TIMEOUT_MS,
+    });
+    const refused = this.page.locator(`.palette-more-sets [data-omr-refused="${file}"]`);
+    if ((await refused.count()) > 0) return (await refused.textContent()) ?? "";
+    const name = await this.page.locator(".model-import").getAttribute("data-file");
+    if (name === null) throw new Error(`picking ${file} started no model import`);
+    return this.importOutcome(name);
+  }
+
+  async importOwnFileOfSet(set: string, file: string): Promise<ModelImport> {
+    await UsersOwnParts.of(this.page.context()).learn(file);
+    await this.page
+      .locator(`.palette-more-sets [data-omr-set="${set}"] input[type="file"]`)
+      .setInputFiles(file);
+    return this.importOutcome(basename(file));
   }
 
   async refs(): Promise<ReadonlyArray<string>> {

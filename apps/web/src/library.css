@@ -876,7 +876,8 @@
   color: var(--text-muted);
 }
 
-.palette-library {
+.palette-library,
+.palette-more-sets {
   margin: var(--space-5) 0 0;
   padding-top: var(--space-4);
   border-top: 1px solid var(--border-subtle);

@@ -1,7 +1,14 @@
 import type { LibraryPartList } from "@brr/catalog";
 import type { LibraryQuery, QueryTerm } from "./library-query.ts";
 import type { CatalogColorView } from "./placeable-catalog.ts";
-import { normalizedSearchText, searchWords, withSpellings } from "./search-text.ts";
+import {
+  normalizedSearchText,
+  phraseScore,
+  searchWords,
+  spaced,
+  textScore,
+  withSpellings,
+} from "./search-text.ts";
 
 export interface LibraryPartView {
   readonly id: string;
@@ -45,10 +52,6 @@ const SPACE = " ";
 const PHRASE_BREAK = "|";
 const CATALOG_NUMBER_KEYWORD = /^(?:bricklink|rebrickable)\s+(\S+)$/iu;
 
-function spaced(words: ReadonlyArray<string>): string {
-  return `${SPACE}${words.join(SPACE)}${SPACE}`;
-}
-
 function keywordNumber(keyword: string): string | null {
   return CATALOG_NUMBER_KEYWORD.exec(keyword.trim())?.[1] ?? null;
 }
@@ -58,20 +61,6 @@ function withSwappedSizes(words: ReadonlyArray<string>): ReadonlyArray<string> {
     const size = LATTICE_SIZE.exec(word);
     return size && size[1] !== size[2] ? [word, `${size[2]}x${size[1]}`] : [word];
   });
-}
-
-function textScore(text: string, word: string, exact: number, prefix: number): number {
-  if (text.includes(`${SPACE}${word}${SPACE}`)) return exact;
-  return text.includes(`${SPACE}${word}`) ? prefix : 0;
-}
-
-function phraseScore(
-  text: string,
-  words: ReadonlyArray<string>,
-  exact: number,
-  prefix: number,
-): number {
-  return textScore(text, words.join(SPACE), exact, prefix) * words.length;
 }
 
 export class LibraryPartIndex {

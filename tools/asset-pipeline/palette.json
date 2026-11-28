@@ -1507,6 +1507,18 @@
       ]
     },
     {
+      "name": "rebrickable-sets",
+      "use": "sets",
+      "describes": "Rebrickable database export of 2026-07-13 (cdn.rebrickable.com/media/downloads), mirrored unmodified: every set's number, name, year, theme and part count, and the theme tree, which the library's set search lists OMR models by",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "domdfcoding/rebrickable-db",
+        "commit": "ad9943ccaf97ab9043686d6d94a9cfdb944217d4",
+        "root": "rebrickable_db/data"
+      },
+      "files": ["sets.csv.gz", "themes.csv.gz"]
+    },
+    {
       "name": "ldraw-part-categories",
       "use": "categories",
       "describes": "The LDraw Parts Tracker's PartCategory enum (ldraw-org/ldraworg-library, MIT): every official part category, with Moved and Obsolete inactive and Minifig, Pov-RAY, Lever, Grab and Forklift retired. A part's category is its !CATEGORY meta, otherwise the first word of its title after any ~ _ = | prefix (LDrawRegex::Description, ParsedPartCollection::category())",

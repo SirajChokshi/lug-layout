@@ -26,6 +26,7 @@ import type {
   BundleManifest,
   CatalogPart,
   LibraryPartsFile,
+  OmrSetsFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import { Container } from "inversify";
@@ -206,6 +207,10 @@ export class WithFixtureModels implements IPartBundleLoader {
 
   loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
     return this.shipped.loadLibraryParts(lod);
+  }
+
+  loadOmrSets(lod: BundleLod): Promise<OmrSetsFile | null> {
+    return this.shipped.loadOmrSets(lod);
   }
 
   private from(name: string): IPartBundleLoader {

@@ -29,6 +29,8 @@ import { CachingAssetFetcher } from "./catalog/caching-asset-fetcher.ts";
 import { CatalogSearch } from "./catalog/catalog-search.ts";
 import { LibraryPartPlacer } from "./catalog/library-part-placer.ts";
 import { LibraryPartSearch } from "./catalog/library-part-search.ts";
+import { OmrSetPlacer } from "./catalog/omr-set-placer.ts";
+import { OmrSetSearch } from "./catalog/omr-set-search.ts";
 import { Palette } from "./catalog/palette.ts";
 import { PaletteCatalog } from "./catalog/palette-catalog.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
@@ -116,6 +118,8 @@ import {
   SHADOW_LIBRARY_BASE_URL,
   LIBRARY_PART_PLACER,
   LIBRARY_PART_SEARCH,
+  OMR_SET_PLACER,
+  OMR_SET_SEARCH,
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
@@ -261,6 +265,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
   bind(LIBRARY_PART_SEARCH).to(LibraryPartSearch).inSingletonScope();
   bind(LIBRARY_PART_PLACER).to(LibraryPartPlacer).inSingletonScope();
+  bind(OMR_SET_SEARCH).to(OmrSetSearch).inSingletonScope();
+  bind(OMR_SET_PLACER).to(OmrSetPlacer).inSingletonScope();
   bind(PALETTE_CATALOG).to(PaletteCatalog).inSingletonScope();
   bind(PALETTE_SEARCH).to(PaletteSearch).inSingletonScope();
   bind(COMMAND_PALETTE_SEARCH).to(CommandPaletteSearch).inSingletonScope();

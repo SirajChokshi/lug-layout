@@ -4,6 +4,7 @@ import {
   CATALOG_SEARCH,
   LIBRARY_FILTER_STORE,
   LIBRARY_PART_SEARCH,
+  OMR_SET_SEARCH,
   PALETTE_CATALOG,
   PALETTE_MEMORY,
 } from "../tokens.ts";
@@ -12,6 +13,7 @@ import type { ILibraryFilterStore, LibraryFilterScope, LibraryFilters } from "./
 import type { ILibraryPartSearch, LibrarySearchView } from "./library-part-search.ts";
 import { LIBRARY_SHELVES, SHELF_LABEL, type LibraryShelf } from "./library-shelves.ts";
 import { LibraryQuery } from "./library-query.ts";
+import type { IOmrSetSearch, OmrSetSearchView } from "./omr-set-search.ts";
 import type { IPaletteCatalog } from "./palette-catalog.ts";
 import type { IPaletteMemory } from "./palette-memory.ts";
 import {
@@ -67,6 +69,7 @@ export interface PaletteSearchSnapshot {
   readonly counts: ReadonlyMap<PaletteTab, number>;
   readonly status: CatalogSearchStatus;
   readonly library: LibrarySearchView | null;
+  readonly omrSets: OmrSetSearchView | null;
 }
 
 export interface IPaletteSearch {
@@ -154,6 +157,7 @@ export class PaletteSearch implements IPaletteSearch {
     @inject(PALETTE_MEMORY) private readonly memory: Pick<IPaletteMemory, "snapshot" | "subscribe">,
     @inject(LIBRARY_PART_SEARCH) private readonly library: ILibraryPartSearch,
     @inject(LIBRARY_FILTER_STORE) private readonly store: ILibraryFilterStore,
+    @inject(OMR_SET_SEARCH) private readonly omrSets: IOmrSetSearch,
   ) {
     this.filters = store.load();
     this.state = this.searched();
@@ -161,6 +165,7 @@ export class PaletteSearch implements IPaletteSearch {
     catalogSearch.subscribe(() => this.update());
     memory.subscribe(() => this.update());
     library.subscribe(() => this.update());
+    omrSets.subscribe(() => this.update());
     if (this.filters.current().query !== "") this.searchSources();
   }
 
@@ -205,11 +210,17 @@ export class PaletteSearch implements IPaletteSearch {
   private searchSources(): void {
     const query = this.currentQuery();
     this.catalogSearch.search(query.remoteText);
-    this.library.search(query, this.catalog.snapshot().offeredParts);
+    this.searchLibraries(query);
+  }
+
+  private searchLibraries(query: LibraryQuery): void {
+    const { offeredParts, offeredItems } = this.catalog.snapshot();
+    this.library.search(query, offeredParts);
+    this.omrSets.search(query, offeredItems);
   }
 
   private reindexed(): void {
-    this.library.search(this.currentQuery(), this.catalog.snapshot().offeredParts);
+    this.searchLibraries(this.currentQuery());
     this.update();
   }
 
@@ -258,6 +269,7 @@ export class PaletteSearch implements IPaletteSearch {
       counts: scope === "shared" ? shownCounts : this.perTabCounts(index, shownCounts, isFavorite),
       status: results.status,
       library: tab === "all" ? this.library.view() : null,
+      omrSets: tab === "all" || tab === "sets" ? this.omrSets.view() : null,
     };
   }
 

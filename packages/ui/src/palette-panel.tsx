@@ -37,6 +37,7 @@ import type { IconName } from "./icons/glyphs.ts";
 import { Icon } from "./icons/icon.tsx";
 import { FirstChord } from "./keys.tsx";
 import { LibraryPartResults } from "./library-part-results.tsx";
+import { OmrSetResults } from "./omr-set-results.tsx";
 import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
 import { Thumbnail, ThumbnailsContext } from "./thumbnail.tsx";
@@ -813,6 +814,7 @@ export const PalettePanel = memo(function PalettePanel({
     counts,
     status,
     library,
+    omrSets,
   } = usePaletteSearchSnapshot(search);
   const nothingListed = hits.length === 0 && unplaceable.length === 0;
   const [highlight, setHighlight] = useState(0);
@@ -981,17 +983,28 @@ export const PalettePanel = memo(function PalettePanel({
                 readOnly={snapshot.readOnly}
               />
             )}
+            {searching && omrSets !== null && (
+              <OmrSetResults
+                sets={omrSets}
+                placer={palette.omrSetPlacer}
+                editor={editor}
+                readOnly={snapshot.readOnly}
+              />
+            )}
             {searching && status === "offline" && (
               <p className="palette-hint" data-search-offline>
                 Search offline: showing palette matches only.
               </p>
             )}
-            {searching && nothingListed && (library?.hits.length ?? 0) === 0 && (
-              <p className="palette-empty" data-no-results>
-                Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part
-                number like 3811, a size like 16x16, or a colour like tan.
-              </p>
-            )}
+            {searching &&
+              nothingListed &&
+              (library?.hits.length ?? 0) === 0 &&
+              (omrSets?.hits.length ?? 0) === 0 && (
+                <p className="palette-empty" data-no-results>
+                  Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part
+                  number like 3811, a size like 16x16, or a colour like tan.
+                </p>
+              )}
             {!searching && tab === "favorites" && nothingListed && (
               <p className="palette-empty" data-no-favorites>
                 No favourites yet. Star a part with ☆ to keep it here.

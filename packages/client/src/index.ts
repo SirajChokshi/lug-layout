@@ -537,6 +537,9 @@ export type {
   LibraryPlacementTarget,
   LibraryPlacementView,
 } from "./catalog/library-part-placer.ts";
+export type { OmrModelView, OmrSetView } from "./catalog/omr-set-index.ts";
+export type { OmrSetSearchView } from "./catalog/omr-set-search.ts";
+export type { IOmrSetPlacer, OmrPlacementView } from "./catalog/omr-set-placer.ts";
 export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 export type { IPalette } from "./catalog/palette.ts";
 export type { IPanelLayout, PanelId } from "./panels/panel-layout.ts";
