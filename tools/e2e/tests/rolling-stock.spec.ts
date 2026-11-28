@@ -2,14 +2,7 @@ import { expect, test } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  EditorPage,
-  TRACK_ITEM,
-  nearestLattice,
-  routeMiddle,
-  type LatticePoint,
-  type TrackRoute,
-} from "./editor-page.ts";
+import { EditorPage, TRACK_ITEM, curveFarthestFrom, nearestLattice } from "./editor-page.ts";
 
 const LOCOMOTIVE = "omr:10133-1";
 const OFFICIAL_CABOOSE = new URL("../../../.cache/omr/10014-1.mpd", import.meta.url);
@@ -33,24 +26,6 @@ async function writeMyBlueCaboose(path: string): Promise<void> {
     .map((line) => line.replace(/^1 0 /u, "1 1 "))
     .join("\n");
   await writeFile(path, custom);
-}
-
-function isCurve(route: TrackRoute): boolean {
-  return (route.to.heading - route.from.heading + HEADINGS) % HEADINGS !== HEADINGS / 2;
-}
-
-function curveFarthestFrom(
-  routes: ReadonlyArray<TrackRoute>,
-  taken: ReadonlyArray<LatticePoint>,
-): LatticePoint {
-  const clearance = (point: LatticePoint) =>
-    Math.min(...taken.map((other) => Math.hypot(point.x - other.x, point.z - other.z)));
-  const farthest = routes
-    .filter(isCurve)
-    .map(routeMiddle)
-    .toSorted((a, b) => clearance(b) - clearance(a))[0];
-  if (!farthest) throw new Error("the oval has no curve");
-  return farthest;
 }
 
 test("trains set by hand on a hand-drawn oval, imported ones included, couple when held on a standing train, run from where they stand and are still on the rails after a reload", async ({

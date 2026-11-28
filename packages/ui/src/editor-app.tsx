@@ -52,6 +52,7 @@ import { SceneLabels } from "./scene-labels.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { ShellModeSwitch, ShellSection } from "./shell-mode.tsx";
+import { SwitchLevers } from "./switch-levers.tsx";
 import { TrackExtendPanel, TrackHeightPanel, TrackLoopsPanel } from "./track-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
@@ -288,6 +289,7 @@ export function EditorApp({
       />
       <NoteTexts notes={notes} />
       <SceneLabels editor={editor} snapshot={snapshot} />
+      <SwitchLevers play={play} />
       <ToolHud
         snapshot={snapshot}
         play={playSnapshot}
