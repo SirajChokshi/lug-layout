@@ -284,6 +284,42 @@ describe("ConnectionSolver with lattice studs", () => {
     expect([candidates.yPlates[0], candidates.votes[0]]).toEqual([BRICK_LDU / PLATE_LDU, 4]);
   });
 
+  it("mates each receptor that lands on a placed stud when a lower group of receptors lands on none", () => {
+    const engine = latticeOnly();
+    const twoPlates = 2 * PLATE_LDU;
+    engine.insert(
+      upStuds([
+        [STUD_LDU + HALF, twoPlates, HALF],
+        [STUD_LDU + HALF, twoPlates, 2 * STUD_LDU + HALF],
+      ]),
+      pose(0, 0, 0),
+      1,
+    );
+    const receptors = downReceptors([
+      [HALF, 0, STUD_LDU + HALF],
+      [STUD_LDU + HALF, 0, STUD_LDU + HALF],
+      [2 * STUD_LDU + HALF, 0, STUD_LDU + HALF],
+      [HALF, twoPlates, HALF],
+      [2 * STUD_LDU + HALF, twoPlates, HALF],
+    ]);
+    const report = evaluated(engine, receptors, pose(2 * STUD_LDU, 0, 0, 3));
+    const rows: number[][] = [];
+    for (let k = 0; k < report.count; k++) {
+      rows.push([
+        report.connector[k] ?? 0,
+        report.shape[k] ?? 0,
+        report.gender[k] ?? 0,
+        report.partnerShape[k] ?? 0,
+        report.partnerGender[k] ?? 0,
+        report.partner[k] ?? 0,
+      ]);
+    }
+    expect(rows).toEqual([
+      [3, PLATE_RECEPTOR, GENDER_FEMALE, STUD, GENDER_MALE, NO_PARTNER],
+      [4, PLATE_RECEPTOR, GENDER_FEMALE, STUD, GENDER_MALE, NO_PARTNER],
+    ]);
+  });
+
   it("keeps a connector placed twice until both placements are removed", () => {
     const engine = latticeOnly();
     const base = single(baseplate(2, 2));
@@ -1245,6 +1281,29 @@ describe("ConnectionSolver with sparse connectors", () => {
         [HALF, STUD_LDU, 1, 1],
       ],
     });
+  });
+
+  it("proposes a receptor lined up with the stud at each edge of the window, in the order of their cells, on each of two turns", () => {
+    const solver = sparseOnly();
+    solver.insert(
+      upStuds([[STUD_LDU + QUARTER_STUD, PLATE_LDU, HALF + QUARTER_STUD]]),
+      pose(0, 0, 0),
+      1,
+    );
+    const receptors = downReceptors([
+      [2 * STUD_LDU + QUARTER_STUD, 0, HALF + QUARTER_STUD],
+      [QUARTER_STUD, 0, HALF + QUARTER_STUD],
+      [STUD_LDU + QUARTER_STUD, 0, STUD_LDU + HALF + QUARTER_STUD],
+      [STUD_LDU + QUARTER_STUD, 0, -QUARTER_STUD],
+      [-HALF - QUARTER_STUD, 0, STUD_LDU + QUARTER_STUD],
+    ]);
+    expect(proposedOnLattice(solver, receptors, window(pose(0, 0, 1), 1, 0, 2))).toEqual([
+      [0, STUD_LDU, 1, 0],
+      [STUD_LDU, 0, 1, 0],
+      [-STUD_LDU, 0, 1, 0],
+      [0, -STUD_LDU, 1, 0],
+      [0, 0, 1, 1],
+    ]);
   });
 
   it("rejects an x shift that is plate-aligned but not stud-aligned", () => {

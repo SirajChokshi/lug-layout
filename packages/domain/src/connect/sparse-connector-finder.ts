@@ -59,6 +59,7 @@ const AXIAL_GROUP = -1;
 const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
 const PHASE_RADIX = STUD_SIXTEENTHS;
 const UNBUILT_OFF_AXIS_PHASES = new Int32Array(0);
+const UNBUILT_ROWS = new Int32Array(0);
 const JOINT_KEY_INTS = 6;
 const LINE_KEY_INTS = 4;
 
@@ -99,6 +100,22 @@ function latticeKey(pose: LatticePose): number {
   );
 }
 
+function writeLineKey(
+  position: Int32Array,
+  axis: Int8Array,
+  n: number,
+  size: number,
+  m: number,
+  key: Int32Array,
+): void {
+  const dimension = axisDimension(axis[m] ?? 0);
+  const at = m * VECTOR_FLOATS;
+  key[0] = Math.floor(m / n);
+  key[1] = dimension;
+  key[2] = cellOf(position[at + ((dimension + 1) % VECTOR_FLOATS)] ?? 0, size);
+  key[3] = cellOf(position[at + ((dimension + 2) % VECTOR_FLOATS)] ?? 0, size);
+}
+
 function lineIndex(
   position: Int32Array,
   axis: Int8Array,
@@ -111,12 +128,7 @@ function lineIndex(
   const lines = new IntKeyMap(MODEL_KEY_INTS);
   let count = 0;
   for (let m = 0; m < total; m++) {
-    const dimension = axisDimension(axis[m] ?? 0);
-    const at = m * VECTOR_FLOATS;
-    key[0] = Math.floor(m / n);
-    key[1] = dimension;
-    key[2] = cellOf(position[at + ((dimension + 1) % VECTOR_FLOATS)] ?? 0, size);
-    key[3] = cellOf(position[at + ((dimension + 2) % VECTOR_FLOATS)] ?? 0, size);
+    writeLineKey(position, axis, n, size, m, key);
     let line = lines.get(key);
     if (line === MISSING) {
       line = count++;
@@ -182,6 +194,71 @@ function offAxisPhaseIndex(turned: TurnedModel, n: number): Int32Array<ArrayBuff
   return keys.slice(0, distinct);
 }
 
+function rowIndex(
+  turned: TurnedModel,
+  n: number,
+): readonly [
+  Int32Array<ArrayBuffer>,
+  Int32Array<ArrayBuffer>,
+  Int32Array<ArrayBuffer>,
+  Int32Array<ArrayBuffer>,
+  Int32Array<ArrayBuffer>,
+] {
+  const lines = turned.columnStart.length - 1;
+  const key = new Int32Array(MODEL_KEY_INTS);
+  const lineTurnedDimension = new Int32Array(lines);
+  const lineAcross = new Int32Array(lines);
+  const lineBeyond = new Int32Array(lines);
+  for (let line = 0; line < lines; line++) {
+    writeLineKey(
+      turned.position,
+      turned.axis,
+      n,
+      CELL_SIXTEENTHS,
+      turned.columnOrder[turned.columnStart[line] ?? 0] ?? 0,
+      key,
+    );
+    lineTurnedDimension[line] = (key[0] ?? 0) * VECTOR_FLOATS + (key[1] ?? 0);
+    lineAcross[line] = key[2] ?? 0;
+    lineBeyond[line] = key[3] ?? 0;
+  }
+  const order = Int32Array.from({ length: lines }, (_, line) => line).toSorted(
+    (a, b) =>
+      (lineTurnedDimension[a] ?? 0) - (lineTurnedDimension[b] ?? 0) ||
+      (lineAcross[a] ?? 0) - (lineAcross[b] ?? 0) ||
+      (lineBeyond[a] ?? 0) - (lineBeyond[b] ?? 0),
+  );
+  const turnedDimensions = QUARTER_TURNS * VECTOR_FLOATS;
+  const dimensionRowStart = new Int32Array(turnedDimensions + 1);
+  const rowAcross = new Int32Array(lines);
+  const rowStart = new Int32Array(lines + 1);
+  let rows = 0;
+  let rowTurnedDimension = -1;
+  let filledTurnedDimensions = 0;
+  for (let k = 0; k < lines; k++) {
+    const line = order[k] ?? 0;
+    const turnedDimension = lineTurnedDimension[line] ?? 0;
+    const across = lineAcross[line] ?? 0;
+    if (turnedDimension === rowTurnedDimension && across === (rowAcross[rows - 1] ?? 0)) continue;
+    for (; filledTurnedDimensions <= turnedDimension; filledTurnedDimensions++)
+      dimensionRowStart[filledTurnedDimensions] = rows;
+    rowTurnedDimension = turnedDimension;
+    rowAcross[rows] = across;
+    rowStart[rows] = k;
+    rows++;
+  }
+  for (; filledTurnedDimensions <= turnedDimensions; filledTurnedDimensions++)
+    dimensionRowStart[filledTurnedDimensions] = rows;
+  rowStart[rows] = lines;
+  return [
+    dimensionRowStart,
+    rowAcross.slice(0, rows),
+    rowStart.slice(0, rows + 1),
+    Int32Array.from(order, (line) => lineBeyond[line] ?? 0),
+    order,
+  ];
+}
+
 function hasOffAxisPhase(
   turned: TurnedModel,
   rot: number,
@@ -221,6 +298,11 @@ class TurnedModel {
   columnOrder = new Int32Array(0);
   columnAlong = new Int32Array(0);
   offAxisPhases: Int32Array<ArrayBuffer> = UNBUILT_OFF_AXIS_PHASES;
+  dimensionRowStart: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
+  rowAcross: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
+  rowStart: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
+  rowBeyond: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
+  rowLine: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
   lineShared = new Uint8Array(0);
 }
 
@@ -366,6 +448,15 @@ export class SparseConnectorFinder implements MateFinder {
     const turned = this.turn(model);
     if (latticeOnly && turned.offAxisPhases === UNBUILT_OFF_AXIS_PHASES) {
       turned.offAxisPhases = offAxisPhaseIndex(turned, model.count);
+    }
+    if (latticeOnly && turned.rowStart === UNBUILT_ROWS) {
+      [
+        turned.dimensionRowStart,
+        turned.rowAcross,
+        turned.rowStart,
+        turned.rowBeyond,
+        turned.rowLine,
+      ] = rowIndex(turned, model.count);
     }
     const reach = this.modelTravel(turned);
     const spanXZ = window.cells * STUD_SIXTEENTHS + reach;
@@ -1001,17 +1092,31 @@ export class SparseConnectorFinder implements MateFinder {
     const beyond = (dimension + 2) % VECTOR_FLOATS;
     const alongLow = (block[dimension] ?? 0) * CELL_SIXTEENTHS;
     const alongHigh = ((block[dimension + VECTOR_FLOATS] ?? 0) + 1) * CELL_SIXTEENTHS - 1;
+    const acrossHigh = block[across + VECTOR_FLOATS] ?? 0;
+    const beyondLow = block[beyond] ?? 0;
+    const beyondHigh = block[beyond + VECTOR_FLOATS] ?? 0;
+    const turnedDimension = rot * VECTOR_FLOATS + dimension;
+    const rowsEnd = turned.dimensionRowStart[turnedDimension + 1] ?? 0;
     const connectors = turned.connectorClass.length;
     const classCount = turned.classCount;
     let found = 0;
-    for (let a = block[across] ?? 0; a <= (block[across + VECTOR_FLOATS] ?? 0); a++) {
-      for (let b = block[beyond] ?? 0; b <= (block[beyond + VECTOR_FLOATS] ?? 0); b++) {
-        this.modelKey[0] = rot;
-        this.modelKey[1] = dimension;
-        this.modelKey[2] = a;
-        this.modelKey[3] = b;
-        const line = turned.columnLines.get(this.modelKey);
-        if (line === MISSING) continue;
+    for (
+      let r = firstAtLeast(
+        turned.rowAcross,
+        turned.dimensionRowStart[turnedDimension] ?? 0,
+        rowsEnd,
+        block[across] ?? 0,
+      );
+      r < rowsEnd && (turned.rowAcross[r] ?? 0) <= acrossHigh;
+      r++
+    ) {
+      const rowEnd = turned.rowStart[r + 1] ?? 0;
+      for (
+        let c = firstAtLeast(turned.rowBeyond, turned.rowStart[r] ?? 0, rowEnd, beyondLow);
+        c < rowEnd && (turned.rowBeyond[c] ?? 0) <= beyondHigh;
+        c++
+      ) {
+        const line = turned.rowLine[c] ?? 0;
         const end = turned.columnStart[line + 1] ?? 0;
         for (
           let k = firstAtLeast(turned.columnAlong, turned.columnStart[line] ?? 0, end, alongLow);
