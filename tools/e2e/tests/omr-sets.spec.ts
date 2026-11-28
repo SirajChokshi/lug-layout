@@ -17,7 +17,7 @@ test("a set the palette doesn't carry is found by name, downloaded only at its p
   const editor = await EditorPage.open(page);
   await editor.serveLdrawLibrary();
   const mirror = await editor.serveOmrModels();
-  await editor.zoom(600);
+  await editor.zoom(700);
   await editor.choose(TRACK_ITEM);
   await editor.dragTrack({ x: -400, z: 0 }, { x: 400, z: 0 });
   await editor.escape();
@@ -36,7 +36,8 @@ test("a set the palette doesn't carry is found by name, downloaded only at its p
     throw new Error(`the pinned model was refused: ${locomotive}`);
   expect(locomotive.status, locomotive.text).toBe("placeable");
   expect(locomotive.item).toMatch(IMPORT_REF);
-  await editor.placeAt(locomotive.item, ON_THE_RAILS);
+  expect(await editor.hoverAt(await editor.screenOf(ON_THE_RAILS))).toEqual(ON_THE_RAILS);
+  await editor.clickAt(ON_THE_RAILS);
   await editor.escape();
   expect(await editor.trainsOnRails()).toBe(1);
 
