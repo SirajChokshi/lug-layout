@@ -1,3 +1,4 @@
+import { INHERIT_COLOR } from "@brr/catalog";
 import { STUD_LDU } from "@brr/math";
 import {
   Color,
@@ -20,7 +21,6 @@ const GUTTER_TEXELS = 4;
 const CHANNELS = 4;
 const BYTE_MAX = 255;
 const OPAQUE_ALPHA = 255;
-const INHERIT_COLOR = 16;
 const ROOM_TEXELS = PAGE_TEXELS - 2 * GUTTER_TEXELS;
 
 export interface AtlasSlot {
