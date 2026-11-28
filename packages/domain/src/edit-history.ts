@@ -1,5 +1,6 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 import type { NoteChange } from "./notes/note-state.ts";
+import type { EventRecordV2 } from "@brr/schema/world";
 import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
 import { INT8_MAX, INT8_MIN } from "./track/track-layout.ts";
@@ -18,7 +19,8 @@ export type EditKind =
   | "throw-switch"
   | "plan"
   | "note"
-  | "open-plan";
+  | "open-plan"
+  | "event";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
@@ -41,8 +43,13 @@ export interface PlanChange {
   readonly after: PlanState;
 }
 
+export interface EventChange {
+  readonly before: EventRecordV2 | null;
+  readonly after: EventRecordV2 | null;
+}
+
 export type EditSummary =
-  | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" | "note" }
+  | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" | "note" | "event" }
   | { readonly kind: "throw-switch"; readonly switchAt: number }
   | { readonly kind: "road" | "fill"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number }
@@ -105,6 +112,7 @@ export interface AppliedEdit {
   readonly track: TrackChange;
   readonly plan: PlanChange | null;
   readonly notes: NoteChange | null;
+  readonly event: EventChange | null;
 }
 
 class Ref implements PlacementRef {
@@ -138,6 +146,7 @@ interface Edit {
   readonly track: TrackChange;
   readonly plan: PlanChange | null;
   readonly notes: NoteChange | null;
+  readonly event: EventChange | null;
 }
 
 function poseOf(handle: PlacementHandle): PlacementPose {
@@ -190,6 +199,7 @@ function summary(edit: Edit): EditSummary {
     case "remove":
     case "plan":
     case "note":
+    case "event":
       return { kind: edit.kind };
     case "throw-switch":
       return { kind: edit.kind, switchAt: edit.track.lay[0]?.index ?? 0 };
@@ -261,6 +271,7 @@ export class EditHistory {
       track: NO_TRACK_CHANGE,
       plan: null,
       notes: null,
+      event: null,
     });
   }
 
@@ -274,6 +285,7 @@ export class EditHistory {
       track: NO_TRACK_CHANGE,
       plan: null,
       notes: null,
+      event: null,
     });
   }
 
@@ -287,6 +299,7 @@ export class EditHistory {
       track: NO_TRACK_CHANGE,
       plan: null,
       notes: null,
+      event: null,
     });
   }
 
@@ -330,6 +343,7 @@ export class EditHistory {
       track,
       plan,
       notes: this.follower.follow(changes),
+      event: null,
     });
   }
 
@@ -341,6 +355,19 @@ export class EditHistory {
       track: NO_TRACK_CHANGE,
       plan: null,
       notes,
+      event: null,
+    });
+  }
+
+  editEvent(change: EventChange): AppliedEdit {
+    return this.record({
+      kind: "event",
+      changes: [],
+      consists: [],
+      track: NO_TRACK_CHANGE,
+      plan: null,
+      notes: null,
+      event: change,
     });
   }
 
@@ -415,6 +442,8 @@ export class EditHistory {
       backwards && edit.plan ? { before: edit.plan.after, after: edit.plan.before } : edit.plan;
     const notes =
       backwards && edit.notes ? { before: edit.notes.after, after: edit.notes.before } : edit.notes;
+    const event =
+      backwards && edit.event ? { before: edit.event.after, after: edit.event.before } : edit.event;
     return {
       kind: edit.kind,
       step,
@@ -423,6 +452,7 @@ export class EditHistory {
       track,
       plan,
       notes,
+      event,
     };
   }
 

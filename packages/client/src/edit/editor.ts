@@ -28,6 +28,7 @@ import {
   type TrackPieceRef,
   type EditKind,
   type EditSummary,
+  type EventChange,
   type HistoryStep,
   type NoteChange,
   type PlanChange,
@@ -102,9 +103,11 @@ import {
 import type { IPlanSheetSource, PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
+import type { IEventDetails } from "../event/event-details.ts";
 import {
   CONNECTOR_TABLES,
   EDITOR_FRAME_LOOP,
+  EVENT_DETAILS,
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   RAIL_YARD,
@@ -1191,6 +1194,8 @@ function editLabel(edit: EditSummary | null): string | null {
       return "plan edit";
     case "note":
       return "note edit";
+    case "event":
+      return "event details";
     case "open-plan":
       return `open plan (${counted(edit.placements, "placement", "placements")}, ${counted(edit.pieces, "track piece", "track pieces")})`;
     default: {
@@ -1552,6 +1557,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(TALLEST_TRAIN) private readonly tallestTrains: ITallestTrain,
     @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
     @inject(TRACK_PATH_SELECTION) private readonly trackPaths: ITrackPathSelection,
+    @inject(EVENT_DETAILS) private readonly events: IEventDetails,
   ) {
     this.history = new EditHistory(this.world, this.consists, annotations);
     this.placed = new PlacedChunks(backend, (placeable, handle) =>
@@ -1584,6 +1590,7 @@ export class Editor implements IEditor, IEditedWorld {
     plans.subscribe(() => this.plansChanged());
     plans.onEdit((change) => this.planEdited(change));
     annotations.onEdit((change) => this.notesEdited(change));
+    events.onEdit((change) => this.eventEdited(change));
   }
 
   private sessionChanged(): void {
@@ -3823,6 +3830,11 @@ export class Editor implements IEditor, IEditedWorld {
     this.show(this.history.annotate(change), performance.now());
   }
 
+  private eventEdited(change: EventChange): void {
+    if (this.state.readOnly) return;
+    this.show(this.history.editEvent(change), performance.now());
+  }
+
   private show(
     edit: AppliedEdit,
     eventTimeMs: number,
@@ -3830,9 +3842,12 @@ export class Editor implements IEditor, IEditedWorld {
   ): ViewUpdate {
     if (edit.plan) this.plans.restore(edit.plan.after);
     if (edit.notes) this.annotations.restore(edit.notes.after);
+    if (edit.event) this.events.restore(edit.event.after);
     const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
     const documentOnly =
-      (edit.plan !== null || edit.notes !== null) && edit.changes.length === 0 && !trackChanged;
+      (edit.plan !== null || edit.notes !== null || edit.event !== null) &&
+      edit.changes.length === 0 &&
+      !trackChanged;
     this.applyConsists(edit);
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     for (const model of view.removed) this.unsearchable(model);
@@ -3849,6 +3864,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (worldChanged) this.session.placementsEdited(edit);
     if (trackChanged) this.session.trackEdited(edit.track.lift);
     if (edit.notes) this.session.notesEdited();
+    if (edit.event) this.session.documentEdited();
     if (sample) {
       this.timeEdit({
         ...sample,

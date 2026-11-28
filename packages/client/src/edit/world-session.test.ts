@@ -38,7 +38,8 @@ import { IDBFactory } from "fake-indexeddb";
 import { Container } from "inversify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { EDITOR_CAMERA, WORLD_SESSION } from "../tokens.ts";
+import { eventDraft } from "../event/event-details.ts";
+import { EDITOR, EDITOR_CAMERA, EVENT_DETAILS, WORLD_SESSION } from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
@@ -428,7 +429,7 @@ async function sessionOnIndexedDb() {
   const repository = container.get(WORLD_REPOSITORY);
   const edited = new BaseplateWorld();
   await session.start(edited, "test");
-  return { session, repository, edited };
+  return { session, repository, edited, container };
 }
 
 describe("schema v2 document data", () => {
@@ -488,6 +489,44 @@ describe("schema v2 document data", () => {
       event: SHOW.event,
       notes: LABELS,
     });
+  });
+
+  it("saves an event edit as one undo step, saves the details each undo and redo restores, and brings them back when the world reopens", async () => {
+    const { session, repository, container } = await sessionOnIndexedDb();
+    const editor = container.get(EDITOR);
+    const events = container.get(EVENT_DETAILS);
+    expect(await session.importWorld(showArchive(repository, [PLATE]))).toBe(true);
+    const id = session.view().world?.id ?? "";
+    const storedEvent = async () => {
+      const stored = await repository.read(id);
+      if (!stored.ok) throw new Error("the world didn't reopen");
+      return stored.value.manifest.event ?? null;
+    };
+    const saved = (event: unknown) =>
+      vi.waitFor(async () => expect(await storedEvent()).toEqual(event));
+    const clubbed = { title: "Show layout", club: "PennLUG", startDate: "2027-03-12" };
+    expect(events.event()).toEqual(SHOW.event);
+
+    expect(
+      events.edit({ ...eventDraft(SHOW.event ?? null), club: "  PennLUG ", endDate: "" }),
+    ).toEqual({
+      kind: "recorded",
+    });
+    await saved(clubbed);
+    expect(editor.snapshot().history.undoLabel).toBe("event details");
+    editor.undo(0);
+    await saved(SHOW.event);
+    editor.redo(0);
+    await saved(clubbed);
+    expect(events.edit(eventDraft(null))).toEqual({ kind: "recorded" });
+    await saved(null);
+    editor.undo(0);
+    await saved(clubbed);
+
+    expect(await session.newWorld("Other")).toBe(true);
+    expect(events.event()).toBeNull();
+    expect(await session.openWorld(id)).toBe(true);
+    expect(events.event()).toEqual(clubbed);
   });
 
   it("refuses a world whose placements carry an owner, rather than dropping it on the next save", async () => {

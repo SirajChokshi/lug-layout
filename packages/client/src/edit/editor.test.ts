@@ -8467,6 +8467,7 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   note: "edits notes only",
   "open-plan":
     "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
+  event: "edits the event details only",
 };
 
 it.each(
