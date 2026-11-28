@@ -1716,12 +1716,20 @@ function itemsOnLayers(editor: IEditor): ReadonlyArray<string> {
 }
 
 describe("layers", () => {
-  it("takes a note on a notes layer made after the world opened, and still refuses one on a parts layer", async () => {
-    const { container } = await startImportingEditor();
+  it("draws a zone with the note tool on a notes layer made after the world opened, refuses once that layer is locked, and still refuses a note on a parts layer", async () => {
+    const { editor, backend, container } = await startEditor();
+    backend.viewHalfWidthLdu = NOTE_VIEW_HALF_WIDTH_LDU;
     const layers = container.get(LAYER_SERVICE);
     const annotations = container.get(ANNOTATION_SERVICE);
     const created = layers.create("Labels", "notes");
     if (!created.ok) throw new Error("the layer wasn't created");
+    editor.setNoteTool("zone");
+    const offered = editor.snapshot().noteTool?.layer;
+    noteDrag(editor, backend, [0, 0], [200, 200]);
+    const drawn = annotations.notes().map(({ note }) => [note.kind, note.layer]);
+    layers.setLocked(created.value, true);
+    const lockedRefusal = editor.snapshot().noteTool?.refusal;
+    noteDrag(editor, backend, [400, 0], [600, 200]);
     const label = (layer: number) =>
       annotations.add({
         kind: "text",
@@ -1734,9 +1742,18 @@ describe("layers", () => {
         color: "#000000",
       }).ok;
 
-    expect({ notes: label(created.value), parts: label(BASE_LAYER_ID) }).toEqual({
-      notes: true,
-      parts: false,
+    expect({
+      offered,
+      drawn,
+      lockedRefusal,
+      afterLocking: annotations.notes().length,
+      onParts: label(BASE_LAYER_ID),
+    }).toEqual({
+      offered: created.value,
+      drawn: [["zone", created.value]],
+      lockedRefusal: "Every notes layer is hidden or locked.",
+      afterLocking: 1,
+      onParts: false,
     });
   }, 120_000);
 

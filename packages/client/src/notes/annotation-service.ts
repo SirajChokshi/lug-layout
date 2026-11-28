@@ -46,7 +46,6 @@ export interface IAnnotationService extends PlacementFollower {
   subscribe(listener: () => void): () => void;
   version(): number;
   notes(): NoteState;
-  document(): NoteDocument;
   records(): ReadonlyArray<NoteRecordV2>;
   rulerSpan(id: string): NoteSpan | null;
   add(body: NoteBody): Decoded<string>;
@@ -102,10 +101,6 @@ export class AnnotationService implements IAnnotationService {
 
   notes(): NoteState {
     return this.entries;
-  }
-
-  document(): NoteDocument {
-    return this.openDocument;
   }
 
   records(): ReadonlyArray<NoteRecordV2> {
