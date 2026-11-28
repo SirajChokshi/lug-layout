@@ -35,7 +35,7 @@ import {
 } from "../tokens.ts";
 import type { PlanSheet, SheetPartsList, SheetPlacement, SheetVerdict } from "./plan-sheet.ts";
 import type { IPlanService, PlanPlacementsView, PlanRowSegment } from "./plan-service.ts";
-import { buildableAsPlanned, UNCHECKED_PLAN_RULES } from "./plan-verdict.ts";
+import { blockingIssueCount, buildableAsPlanned, UNCHECKED_PLAN_RULES } from "./plan-verdict.ts";
 
 export interface PlanSheetShapes {
   partsOf(segment: PlanRowSegment, source: number): number;
@@ -222,7 +222,7 @@ export class PlanSheetService implements IPlanSheetService {
     const plans = this.plans;
     return {
       buildable: buildableAsPlanned(plans, planId),
-      issues: plans.issueCount(planId),
+      issues: blockingIssueCount(plans, planId),
       unmeasured: plans.unmeasuredCount(planId),
       notChecked: UNCHECKED_PLAN_RULES.map((rule) => `${rule.text} (${rule.owner})`),
       unchecked,

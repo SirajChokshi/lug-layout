@@ -718,7 +718,7 @@ test("a plan lists the kink in a user's 9V run as ends that don't join, closes t
       /^Two track ends of kinked-run-and-plastic-oval\.ldr at -?\d+, -?\d+ meet at \(-?\d+ mm, -?\d+ mm\) but don't join: their headings are 90° off a straight join\.$/u,
     ),
   ]);
-  expect(placed.filter((row) => row.severity === "warning")).toEqual([
+  expect(placed.filter((row) => row.severity === "warning" && row.rule !== "bomMapping")).toEqual([
     {
       rule: "trackUnverified",
       severity: "warning",

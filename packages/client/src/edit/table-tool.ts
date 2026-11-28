@@ -49,6 +49,15 @@ function snapToGuideGrid(ldu: number): number {
   return Math.round(ldu / GUIDE_GRID_LDU) * GUIDE_GRID_LDU + 0;
 }
 
+export function guideGridAround(rect: LduRect): LduRect {
+  return {
+    minX: Math.floor(rect.minX / GUIDE_GRID_LDU) * GUIDE_GRID_LDU + 0,
+    minZ: Math.floor(rect.minZ / GUIDE_GRID_LDU) * GUIDE_GRID_LDU + 0,
+    maxX: Math.ceil(rect.maxX / GUIDE_GRID_LDU) * GUIDE_GRID_LDU + 0,
+    maxZ: Math.ceil(rect.maxZ / GUIDE_GRID_LDU) * GUIDE_GRID_LDU + 0,
+  };
+}
+
 function isMove(edges: TableEdges): boolean {
   return edges.minX && edges.maxX && edges.minZ && edges.maxZ;
 }

@@ -259,6 +259,7 @@ import { ANNOTATION_SERVICE, EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from ".
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
+import { placementsBox } from "../plan/placements-box.ts";
 import {
   appendTrackChange,
   appendViewUpdate,
@@ -279,7 +280,7 @@ import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
 import { MeasureTool } from "./measure-tool.ts";
-import { TableTool, type ArmedTable } from "./table-tool.ts";
+import { guideGridAround, TableTool, type ArmedTable } from "./table-tool.ts";
 import {
   FillTool,
   DEFAULT_FILL_GRID_STUDS,
@@ -673,6 +674,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setMeasuring(on: boolean): void;
   setTableTool(on: boolean): void;
   armTableType(typeId: number | null): void;
+  checkLayout(): void;
   cycleFillGrid(): void;
   fillTables(eventTimeMs: number): void;
   clearRulers(): void;
@@ -4264,6 +4266,12 @@ export class Editor implements IEditor, IEditedWorld {
     }
     tables.arm(typeId);
     this.showGuides();
+  }
+
+  checkLayout(): void {
+    const laid = placementsBox(this.plans.placements());
+    if (this.state.status !== "ready" || this.state.readOnly || laid === null) return;
+    this.plans.drawTable(guideGridAround(laid));
   }
 
   private armedTableView(): ArmedTableView | null {
