@@ -152,9 +152,18 @@ export interface TrackEndMarker {
 export const RAY_FLOATS = 6;
 export const CAMERA_FOV_DEGREES = 40;
 
+export interface GroundUnderlay {
+  readonly image: Blob;
+  readonly cornerX: number;
+  readonly cornerZ: number;
+  readonly lduPerPixel: number;
+  readonly opacity: number;
+}
+
 export interface GroundSettings {
   readonly topYLdu: number;
   readonly grid: boolean;
+  readonly underlay: GroundUnderlay | null;
 }
 
 export type GuideKind = "ruler" | "axis" | "draft" | "refused";

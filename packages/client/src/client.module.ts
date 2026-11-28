@@ -68,6 +68,7 @@ import { SheetSets } from "./sheets/sheet-sets.ts";
 import { CourierTypeface } from "./sheets/sheet-typeface.ts";
 import { SvgSheetWriter } from "./sheets/svg-sheet-writer.ts";
 import { SheetTiler } from "./sheets/tile-grid.ts";
+import { UnderlayService } from "./underlay/underlay-service.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { OwnedPartsService } from "./bom/owned-parts-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
@@ -149,6 +150,7 @@ import {
   SHEET_SETS,
   EVENT_DETAILS,
   LAYOUT_SIZE,
+  UNDERLAY_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
@@ -205,6 +207,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(SHEET_SETS).to(SheetSets).inSingletonScope();
   bind(EVENT_DETAILS).to(EventDetailsService).inSingletonScope();
   bind(LAYOUT_SIZE).to(LayoutSizeMeter).inSingletonScope();
+  bind(UNDERLAY_SERVICE).to(UnderlayService).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();

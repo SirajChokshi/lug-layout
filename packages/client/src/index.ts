@@ -153,7 +153,7 @@ export type {
 export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
-export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";
+export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm, mmFromLdu } from "@brr/math";
 export { NO_ROW, lowestFreeTableNumber, placedTableCounts, tableName } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
@@ -224,6 +224,12 @@ export {
   type SizeMeasure,
   type SizeUnit,
 } from "./event/layout-size.ts";
+export {
+  UNDERLAY_DEFAULT_OPACITY_PERCENT,
+  type IUnderlayService,
+  type UnderlayPatch,
+  type UnderlayView,
+} from "./underlay/underlay-service.ts";
 export type {
   IssueSeverity,
   LduRect,
@@ -265,6 +271,7 @@ export {
   SHEET_SETS,
   EVENT_DETAILS,
   LAYOUT_SIZE,
+  UNDERLAY_SERVICE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,

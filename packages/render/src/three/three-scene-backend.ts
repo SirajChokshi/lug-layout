@@ -695,6 +695,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     addContainerGroup(this.scene),
     SKY_COLOR,
     CAMERA_FAR_LDU,
+    () => {
+      this.changed = true;
+    },
   );
   private readonly selectionGroup = addContainerGroup(this.scene);
   private readonly perspective = new PerspectiveCamera(
@@ -1618,6 +1621,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.positionAnchored(anchored);
       this.planOverlayGroup.add(anchored.object);
     }
+    this.ground.setRoomFloors(overlays.length > 0);
+    this.aimGround();
   }
 
   private tableMaterial(srgb: number): MeshStandardNodeMaterial {
@@ -1632,15 +1637,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const z = room.minZ;
     const group = new Group();
     group.matrixAutoUpdate = false;
-    const floor = boxMesh(
-      { ...room, minY: room.minY - FLOOR_THICKNESS_LDU },
-      x,
-      z,
-      new MeshStandardNodeMaterial({
-        color: overlay.active ? FLOOR_COLOR : INACTIVE_FLOOR_COLOR,
-        roughness: 1,
-      }),
+    const floorMaterial = new MeshStandardNodeMaterial({ roughness: 1 });
+    floorMaterial.colorNode = this.ground.underlaid(
+      overlay.active ? FLOOR_COLOR : INACTIVE_FLOOR_COLOR,
     );
+    const floor = boxMesh({ ...room, minY: room.minY - FLOOR_THICKNESS_LDU }, x, z, floorMaterial);
     const outlineY = room.maxY + GRID_LIFT_LDU;
     const w = room.maxX - x;
     const d = room.maxZ - z;
@@ -2321,6 +2322,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
     this.guides.place(this.renderOriginX, this.renderOriginZ);
+    this.ground.rebase(this.renderOriginX, this.renderOriginZ);
     if (this.rebases.length === REBASE_LOG_LIMIT) this.rebases.shift();
     this.rebaseCount++;
     this.rebases.push({

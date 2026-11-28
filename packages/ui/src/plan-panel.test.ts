@@ -5,6 +5,7 @@ import {
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
   SHEET_SETS,
+  UNDERLAY_SERVICE,
 } from "@brr/client";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Container } from "inversify";
@@ -56,6 +57,7 @@ function renderPanel(container: Container): void {
       plans: container.get(PLAN_SERVICE),
       sheets: container.get(PLAN_SHEET_SERVICE),
       sheetSets: container.get(SHEET_SETS),
+      underlay: container.get(UNDERLAY_SERVICE),
       ready: true,
       readOnly: false,
       armedType: null,

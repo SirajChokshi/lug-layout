@@ -27,9 +27,11 @@ export const IMPORT_DIRECTORY = "imports/";
 export const IMPORT_REF_PREFIX = "import:";
 
 const CATALOG_REF = /^[a-z][a-z0-9]*:[A-Za-z0-9._-]+$/;
+export const SHA256_HEX = /^[0-9a-f]{64}$/u;
 
 export const SafeInteger = v.pipe(v.number(), v.safeInteger("must be an integer"));
 export const Count = v.pipe(SafeInteger, v.minValue(0, "must not be negative"));
+export const Sha256 = v.pipe(v.string(), v.regex(SHA256_HEX, "must be a SHA-256 in lowercase hex"));
 export const CatalogRef = v.pipe(
   v.string(),
   v.regex(CATALOG_REF, "is not a namespaced catalog id"),

@@ -12,6 +12,7 @@ export type {
   GhostVerdict,
   GraphicsApi,
   GroundSettings,
+  GroundUnderlay,
   GuideKind,
   GuideSegment,
   ISceneBackend,

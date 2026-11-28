@@ -44,6 +44,7 @@ import {
   type SavedViewV1,
   type TrackRecordV1,
   type TrackRecordV2,
+  type UnderlayRecordV2,
   type WorldDocument,
   type WorldFiles,
   type WorldHeader,
@@ -81,6 +82,7 @@ import {
   PLAN_SHEET_SERVICE,
   TRADEMARK_DISCLAIMER,
 } from "../tokens.ts";
+import { NOT_AN_UNDERLAY_IMAGE, underlayImageType } from "../underlay/underlay-image.ts";
 import { errorText } from "./error-text.ts";
 import { creditsForPlan, creditsForWorld, exportFileName, planFileName } from "./world-credits.ts";
 
@@ -102,6 +104,11 @@ export interface ExportedWorld {
   readonly bytes: Uint8Array;
 }
 
+export interface WorldUnderlay {
+  readonly record: UnderlayRecordV2;
+  readonly file: ImportedFile;
+}
+
 export interface WorldSessionView {
   readonly world: WorldFileView | null;
   readonly worlds: ReadonlyArray<WorldIndexEntry>;
@@ -109,6 +116,7 @@ export interface WorldSessionView {
   readonly storageError: string | null;
   readonly readOnly: boolean;
   readonly unsavedEdits: boolean;
+  readonly underlay: WorldUnderlay | null;
 }
 
 export interface WorldContents {
@@ -178,6 +186,7 @@ export interface IWorldSession extends IWorldFiles {
   notesEdited(): void;
   documentEdited(): void;
   plansEdited(plans: PlanState): void;
+  setUnderlay(underlay: WorldUnderlay | null): Promise<void>;
   pollCamera(): void;
   addModelFile(file: ModelFileInput, notice: ModelImportNotice): Promise<ModelFileOutcome>;
   importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean>;
@@ -226,7 +235,11 @@ function storedContents(
   };
 }
 
-function documentTables({ event: _event, ...tables }: WorldDocument): WorldDocument {
+function documentTables({
+  event: _event,
+  underlay: _underlay,
+  ...tables
+}: WorldDocument): WorldDocument {
   return tables;
 }
 
@@ -240,6 +253,20 @@ function openable(
     throw new Error(`world "${manifest.name}" can't be opened: ${issueText(stored.issues)}`);
   }
   return stored.value;
+}
+
+async function underlayOf(
+  manifest: WorldManifestV2,
+  fileOf: (sha256: string) => Promise<ImportedFile | undefined>,
+): Promise<WorldUnderlay | null> {
+  const record = manifest.underlay;
+  if (!record) return null;
+  const file = await fileOf(record.image);
+  if (!file) throw new Error(`its floor-plan underlay (sha256 ${record.image}) isn't stored here`);
+  if (underlayImageType(file.bytes) === null) {
+    throw new Error(`its floor-plan underlay ${file.name} ${NOT_AN_UNDERLAY_IMAGE}`);
+  }
+  return { record, file };
 }
 
 interface TaggedRecord {
@@ -306,6 +333,7 @@ export class WorldSession implements IWorldSession {
     storageError: null,
     readOnly: false,
     unsavedEdits: false,
+    underlay: null,
   };
   private edited: IEditedWorld | null = null;
   private bundleVersion = "";
@@ -368,6 +396,7 @@ export class WorldSession implements IWorldSession {
   private header(current: OpenWorld): WorldHeader {
     const { consists } = this.editedWorld().contents();
     const event = this.events.event();
+    const { underlay } = this.state;
     return {
       name: current.name,
       bundleVersion: this.bundleVersion,
@@ -376,6 +405,7 @@ export class WorldSession implements IWorldSession {
       ...(consists.length > 0 ? { consists: [...consists] } : {}),
       ...withPlanState(current.document, this.plans),
       ...(event === null ? {} : { event }),
+      ...(underlay ? { underlay: underlay.record } : {}),
     };
   }
 
@@ -418,6 +448,18 @@ export class WorldSession implements IWorldSession {
     if (this.state.readOnly) return;
     this.plansDirty = true;
     this.scheduleSave();
+  }
+
+  setUnderlay(underlay: WorldUnderlay | null): Promise<void> {
+    return this.inFileQueue(async () => {
+      const newFile = underlay !== null && underlay.file !== this.state.underlay?.file;
+      if (newFile && this.state.storageError === null) {
+        await this.repository.putImportedFile(underlay.file);
+      }
+      this.documentDirty = true;
+      this.update({ underlay });
+      this.scheduleSave();
+    });
   }
 
   private unsavedContent(): boolean {
@@ -604,7 +646,7 @@ export class WorldSession implements IWorldSession {
       document: DEFAULT_WORLD_DOCUMENT,
     };
     await this.loadEditedWorld(current.name, NOTHING_STORED);
-    this.finishOpen(null, current, [], null, NOTHING_STORED.plans);
+    this.finishOpen(null, current, [], null, NOTHING_STORED.plans, null);
     this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
     this.update({ storageError: reason, worlds: [] });
   }
@@ -653,6 +695,7 @@ export class WorldSession implements IWorldSession {
     notes: ReadonlyArray<NoteShardV2>,
     event: EventRecordV2 | null,
     plans: PlanState,
+    underlay: WorldUnderlay | null,
   ): void {
     this.camera.restoreView(savedView);
     this.camera.copyView(this.lastView);
@@ -668,7 +711,7 @@ export class WorldSession implements IWorldSession {
     this.plansDirty = false;
     this.saveFailed = false;
     this.lastSaveError = null;
-    this.update({ fileError: null });
+    this.update({ fileError: null, underlay });
     this.syncUnsaved();
   }
 
@@ -694,7 +737,7 @@ export class WorldSession implements IWorldSession {
       document: DEFAULT_WORLD_DOCUMENT,
     };
     await this.loadEditedWorld(name, NOTHING_STORED);
-    this.finishOpen(null, current, [], null, NOTHING_STORED.plans);
+    this.finishOpen(null, current, [], null, NOTHING_STORED.plans, null);
     this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
   }
 
@@ -712,6 +755,7 @@ export class WorldSession implements IWorldSession {
     stored: Omit<WorldFiles, "imports">,
     contents: StoredContents,
     started: number,
+    underlay: WorldUnderlay | null,
   ): Promise<void> {
     const { manifest, notes } = stored;
     await this.loadEditedWorld(manifest.name, contents);
@@ -722,7 +766,7 @@ export class WorldSession implements IWorldSession {
       openMs: performance.now() - started,
       document: documentTables(worldDocument(manifest)),
     };
-    this.finishOpen(manifest.view, opened, notes, manifest.event ?? null, contents.plans);
+    this.finishOpen(manifest.view, opened, notes, manifest.event ?? null, contents.plans, underlay);
     this.setWorldView(opened, {
       placements: manifest.placements,
       track: manifest.track,
@@ -737,8 +781,10 @@ export class WorldSession implements IWorldSession {
     if (!stored.ok) throw new Error(`world ${id} can't be read: ${issueText(stored.issues)}`);
     const { manifest, shards, notes } = stored.value;
     const contents = openable(manifest, shards, notes);
-    await this.ensureImports(contents, (sha256) => this.repository.importedFile(sha256));
-    await this.loadShards(id, stored.value, contents, started);
+    const fileOf = (sha256: string) => this.repository.importedFile(sha256);
+    await this.ensureImports(contents, fileOf);
+    const underlay = await underlayOf(manifest, fileOf);
+    await this.loadShards(id, stored.value, contents, started, underlay);
   }
 
   private async ensureImports(
@@ -857,11 +903,13 @@ export class WorldSession implements IWorldSession {
         shards.map(shardEntry),
         notes.map(noteShardEntry),
       );
-      const imports = [...referencedImports(shards, contents.consists)].map((sha256) => {
+      const models = [...referencedImports(shards, contents.consists)].map((sha256) => {
         const file = this.importedFiles.get(sha256);
         if (!file) throw new Error(`the imported file with sha256 ${sha256} isn't loaded`);
         return file;
       });
+      const { underlay } = this.state;
+      const imports = underlay ? [...models, underlay.file] : models;
       return {
         fileName: exportFileName(current.name),
         bytes: this.repository.packArchive({ manifest, shards, notes, credits, imports }),
@@ -1002,14 +1050,16 @@ export class WorldSession implements IWorldSession {
       const unkept = unkeptTagIssues(shards);
       if (unkept.length > 0) throw new Error(issueText(unkept));
       const carried = new Map(imports.map((file) => [file.sha256, file]));
-      await this.ensureImports(stored, async (sha256) => carried.get(sha256));
+      const fileOf = async (sha256: string) => carried.get(sha256);
+      await this.ensureImports(stored, fileOf);
+      const underlay = await underlayOf(manifest, fileOf);
       if (this.state.storageError === null) {
         for (const file of imports) await this.repository.putImportedFile(file);
       }
       const issues = this.editedWorld().validate(stored);
       if (issues.length > 0) throw new Error(issueText(issues));
       if (this.state.storageError !== null) {
-        await this.loadShards(null, archive.value, stored, started);
+        await this.loadShards(null, archive.value, stored, started, underlay);
         return;
       }
       const summary = await this.repository.create(worldHeader(manifest), shards, notes);

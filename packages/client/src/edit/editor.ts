@@ -1342,6 +1342,7 @@ export class Editor implements IEditor, IEditedWorld {
     storageError: null,
     readOnly: false,
     unsavedEdits: false,
+    underlay: null,
     catalogError: null,
     coldStartMs: null,
     roadKits: [],

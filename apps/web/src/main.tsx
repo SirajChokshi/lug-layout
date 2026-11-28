@@ -23,6 +23,7 @@ import {
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
   SHEET_SETS,
+  UNDERLAY_SERVICE,
   type IViewerScene,
 } from "@brr/client";
 import { AboutPage, CreditsPage, EditorApp, IconSheetPage } from "@brr/ui";
@@ -160,6 +161,7 @@ function root(): ReactNode {
         sheetSets={container.get(SHEET_SETS)}
         events={container.get(EVENT_DETAILS)}
         layoutSize={container.get(LAYOUT_SIZE)}
+        underlay={container.get(UNDERLAY_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
         ownedParts={container.get(OWNED_PARTS)}
         play={container.get(TRAIN_PLAY)}
