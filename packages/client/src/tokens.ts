@@ -13,6 +13,8 @@ import type { IScaleBar } from "./camera/scale-bar.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
 import type { ILibraryPartPlacer } from "./catalog/library-part-placer.ts";
 import type { ILibraryPartSearch } from "./catalog/library-part-search.ts";
+import type { IOmrSetPlacer } from "./catalog/omr-set-placer.ts";
+import type { IOmrSetSearch } from "./catalog/omr-set-search.ts";
 import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteCatalog } from "./catalog/palette-catalog.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
@@ -116,6 +118,10 @@ export const LIBRARY_PART_SEARCH: ServiceIdentifier<ILibraryPartSearch> = Symbol
 export const LIBRARY_PART_PLACER: ServiceIdentifier<ILibraryPartPlacer> = Symbol.for(
   "brr.client.LibraryPartPlacer",
 );
+export const OMR_SET_SEARCH: ServiceIdentifier<IOmrSetSearch> =
+  Symbol.for("brr.client.OmrSetSearch");
+export const OMR_SET_PLACER: ServiceIdentifier<IOmrSetPlacer> =
+  Symbol.for("brr.client.OmrSetPlacer");
 export const PALETTE_DRAG: ServiceIdentifier<IPaletteDrag> = Symbol.for("brr.client.PaletteDrag");
 export const PALETTE_PREFETCH: ServiceIdentifier<IPalettePrefetch> = Symbol.for(
   "brr.client.PalettePrefetch",

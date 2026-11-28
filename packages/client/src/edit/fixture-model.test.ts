@@ -17,8 +17,12 @@ async function json(url: URL): Promise<unknown> {
   return JSON.parse(await readFile(url, "utf8"));
 }
 
-it("loads every test fixture model fully baked from its own bundle, and the shipped bundle carries none of them", async () => {
-  const { models } = decodedOrThrow(decode(FixtureModels, await json(fixtureList)), "fixtures");
+it("loads every generated test fixture model fully baked from its own bundle, and the shipped bundle carries none of them", async () => {
+  const { models: fixtures } = decodedOrThrow(
+    decode(FixtureModels, await json(fixtureList)),
+    "fixtures",
+  );
+  const models = fixtures.filter((model) => model.origin === "generated");
   const index = decodedOrThrow(decode(BundleIndex, await json(shippedManifest)), "shipped");
   const shipped = new Set(index.models.map((entry) => entry.name));
   expect(models.map((model) => model.name)).toContain("road-baseplates");

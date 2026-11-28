@@ -27,7 +27,13 @@ export interface ILibraryPartPlacer {
 }
 
 const IDENTITY_AT_ORIGIN = "0 0 0 1 0 0 0 1 0 0 0 1";
-const UNREADABLE_REFUSAL = "the part could not be imported";
+const UNREADABLE_REFUSAL = "it could not be imported";
+
+export function importRefusal(editor: Pick<IEditor, "snapshot">, fileName: string): string {
+  const { modelImport, fileError } = editor.snapshot();
+  if (modelImport?.file === fileName && modelImport.reason !== null) return modelImport.reason;
+  return fileError ?? UNREADABLE_REFUSAL;
+}
 
 export function libraryPartFile(
   part: Pick<LibraryPartView, "id" | "title">,
@@ -66,15 +72,9 @@ export class LibraryPartPlacer implements ILibraryPartPlacer {
     const placed = await this.editor.importModelFile(file);
     this.set({
       pending: null,
-      refused: placed ? null : { ...target, reason: this.refusal(file) },
+      refused: placed ? null : { ...target, reason: importRefusal(this.editor, file.name) },
     });
     return placed;
-  }
-
-  private refusal(file: ModelFileInput): string {
-    const { modelImport, fileError } = this.editor.snapshot();
-    if (modelImport?.file === file.name && modelImport.reason !== null) return modelImport.reason;
-    return fileError ?? UNREADABLE_REFUSAL;
   }
 
   private set(next: LibraryPlacementView): void {

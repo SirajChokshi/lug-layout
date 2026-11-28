@@ -363,6 +363,7 @@ function withRollingWheel() {
 }
 
 const LIBRARY_PARTS = "library-parts.json";
+const OMR_SETS = "omr-sets.json";
 const MODEL_GLYPH = "model-scene.glyph";
 const GLYPH_MAGIC = "BRRGLYF1";
 const EMPTY_GLYPH_BYTES = 38;
@@ -398,6 +399,17 @@ function withLibraryParts(colors: ReadonlyArray<number>) {
     };
     const file = { format: 1, sources: {}, categories: ["Brick"], parts };
     files.set(LIBRARY_PARTS, Buffer.from(JSON.stringify(file)));
+  };
+}
+
+function withOmrSets(modelSet: number) {
+  return ({ manifest, files }: CompiledBundle) => {
+    Object.assign(manifest, { omrSets: { file: OMR_SETS } });
+    const mirror = { kind: "github-mirror", repo: "anteloc/ldraw-lib", commit: "c", root: "models" };
+    const sets = { number: ["4551-1"], name: ["Crocodile"], year: [1991], theme: [0], parts: [314] };
+    const models = { file: ["4551-1.mpd"], sha256: ["a".repeat(64)], bytes: [1], set: [modelSet] };
+    const file = { format: 1, mirror, sources: {}, themes: [["Train"]], sets, models };
+    files.set(OMR_SETS, Buffer.from(JSON.stringify(file)));
   };
 }
 
@@ -751,6 +763,11 @@ describe("publishBundle", () => {
       file: "a library part index whose colours disagree with its colour counts",
       edit: withLibraryParts([4]),
       refusal: "library part columns are inconsistent",
+    },
+    {
+      file: "an OMR set index whose model names a set it doesn't list",
+      edit: withOmrSets(1),
+      refusal: "OMR set columns are inconsistent",
     },
     {
       file: "a thumbnail of the wrong size",

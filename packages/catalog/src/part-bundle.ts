@@ -16,6 +16,7 @@ import {
   type LibraryBakeIndexRef,
   type LibraryConnectorsIndexRef,
   type LibraryPartsFile,
+  type OmrSetsFile,
   type ShadowLibraryIndexRef,
   type ManifestPart,
   type ModelSection,
@@ -274,6 +275,7 @@ export interface IPartBundleLoader {
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null>;
   loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null>;
+  loadOmrSets(lod: BundleLod): Promise<OmrSetsFile | null>;
 }
 
 export interface IAssetFetcher {

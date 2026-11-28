@@ -25,6 +25,7 @@ import type {
   BundleManifest,
   CatalogPart,
   LibraryPartsFile,
+  OmrSetsFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
@@ -145,6 +146,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
     return this.loader.loadLibraryParts(lod);
+  }
+
+  loadOmrSets(lod: BundleLod): Promise<OmrSetsFile | null> {
+    return this.loader.loadOmrSets(lod);
   }
 
   importContext(lod: BundleLod): Promise<ImportContext> {

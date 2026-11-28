@@ -17,6 +17,7 @@ import {
   CreditTableFile,
   CrosswalkFile,
   LibraryPartsFile,
+  OmrSetsFile,
   ModelFile,
   PartShape,
   PartTableFile,
@@ -679,6 +680,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     const { libraryParts } = await this.loadIndex(lod);
     if (libraryParts === undefined) return null;
     return this.json(LibraryPartsFile, `${lod}/${libraryParts.file}`);
+  }
+
+  async loadOmrSets(lod: BundleLod): Promise<OmrSetsFile | null> {
+    const { omrSets } = await this.loadIndex(lod);
+    if (omrSets === undefined) return null;
+    return this.json(OmrSetsFile, `${lod}/${omrSets.file}`);
   }
 
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {

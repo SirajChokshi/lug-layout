@@ -10,6 +10,7 @@ export interface PaletteCatalogSnapshot {
   readonly skipped: EditorSnapshot["catalogSkipped"];
   readonly unplaceable: PaletteIndex;
   readonly offeredParts: ReadonlySet<string>;
+  readonly offeredItems: ReadonlySet<string>;
 }
 
 export interface IPaletteCatalog {
@@ -30,6 +31,13 @@ function offeredParts(catalog: EditorSnapshot["catalog"]): ReadonlySet<string> {
       item.group.startsWith(LDRAW_GROUP) ? [item.group.slice(LDRAW_GROUP.length)] : [],
     ),
   );
+}
+
+function offeredItems(
+  catalog: EditorSnapshot["catalog"],
+  skipped: EditorSnapshot["catalogSkipped"],
+): ReadonlySet<string> {
+  return new Set([...catalog.map((item) => item.id), ...skipped.map((model) => model.item.id)]);
 }
 
 function trackTerms(track: EditorSnapshot["track"]): ReadonlyArray<string> {
@@ -57,6 +65,10 @@ function indexCatalog(
         ? previous.unplaceable
         : new PaletteIndex(catalogSkipped.map((model) => model.item)),
     offeredParts: previous?.catalog === catalog ? previous.offeredParts : offeredParts(catalog),
+    offeredItems:
+      previous?.catalog === catalog && sameSkipped
+        ? previous.offeredItems
+        : offeredItems(catalog, catalogSkipped),
   };
 }
 

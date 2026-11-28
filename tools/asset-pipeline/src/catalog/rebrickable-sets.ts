@@ -37,12 +37,21 @@ interface Theme {
   readonly parent: string;
 }
 
-function records(text: string): ReadonlyArray<Readonly<Record<string, string>>> {
+export function csvRecords(text: string): ReadonlyArray<Readonly<Record<string, string>>> {
   const [header = [], ...rows] = parseCsv(text);
   return rows.map((row) => Object.fromEntries(header.map((name, i) => [name, row[i] ?? ""])));
 }
 
-function themePath(themes: ReadonlyMap<string, Theme>, id: string): ReadonlyArray<string> {
+export function themeTable(themesCsv: string): ReadonlyMap<string, Theme> {
+  return new Map(
+    csvRecords(themesCsv).map((row): [string, Theme] => [
+      row["id"] ?? "",
+      { name: row["name"] ?? "", parent: row["parent_id"] ?? "" },
+    ]),
+  );
+}
+
+export function themePath(themes: ReadonlyMap<string, Theme>, id: string): ReadonlyArray<string> {
   const path: string[] = [];
   for (let at = id; at !== "";) {
     const theme = themes.get(at);
@@ -58,13 +67,8 @@ export function rebrickableSets(
   input: SetExport,
   setNumbers: ReadonlyArray<string>,
 ): ReadonlyMap<string, ModelSet> {
-  const themes = new Map(
-    records(input.themesCsv).map((row): [string, Theme] => [
-      row["id"] ?? "",
-      { name: row["name"] ?? "", parent: row["parent_id"] ?? "" },
-    ]),
-  );
-  const rows = new Map(records(input.setsCsv).map((row) => [row["set_num"] ?? "", row]));
+  const themes = themeTable(input.themesCsv);
+  const rows = new Map(csvRecords(input.setsCsv).map((row) => [row["set_num"] ?? "", row]));
   return new Map(
     setNumbers.map((number): [string, ModelSet] => {
       const row = rows.get(number);

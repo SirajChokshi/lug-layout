@@ -26,6 +26,7 @@
         "palette.json",
         "fixture-models.json",
         "omr-errata.json",
+        "omr-library.json",
         "primitive-connectors.json",
         "inferred-connectors.json",
         "section-vocabulary.json",

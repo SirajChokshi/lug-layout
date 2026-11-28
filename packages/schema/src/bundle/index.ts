@@ -1021,6 +1021,7 @@ export const BundleIndex = v.object({
   thumbnails: v.array(BundleThumbnail),
   rollingDiagnostics: v.optional(RollingDiagnosticsRef),
   libraryParts: v.optional(FileRef),
+  omrSets: v.optional(FileRef),
 });
 export type BundleIndex = v.InferOutput<typeof BundleIndex>;
 
@@ -1139,6 +1140,50 @@ export const LibraryPartsFile = v.pipe(
   }, "library part columns are inconsistent"),
 );
 export type LibraryPartsFile = v.InferOutput<typeof LibraryPartsFile>;
+
+export const OmrLibraryPin = v.strictObject({
+  source: BundleSource,
+  files: v.record(
+    v.string(),
+    v.strictObject({ sha256: Sha256Hex, bytes: v.pipe(Count, v.minValue(1)) }),
+  ),
+});
+export type OmrLibraryPin = v.InferOutput<typeof OmrLibraryPin>;
+
+export const OMR_SETS_FORMAT = 1;
+
+export const OmrSetsFile = v.pipe(
+  v.strictObject({
+    format: v.literal(OMR_SETS_FORMAT),
+    mirror: BundleSource,
+    sources: v.record(v.string(), CrosswalkSourcePin),
+    themes: v.array(v.pipe(v.array(v.string()), v.minLength(1))),
+    sets: v.strictObject({
+      number: v.array(v.string()),
+      name: v.array(v.string()),
+      year: v.array(Integer),
+      theme: v.array(Count),
+      parts: v.array(Count),
+    }),
+    models: v.strictObject({
+      file: v.array(v.string()),
+      sha256: v.array(Sha256Hex),
+      bytes: v.array(v.pipe(Count, v.minValue(1))),
+      set: v.array(Count),
+    }),
+  }),
+  v.check(({ themes, sets, models }) => {
+    const setCount = sets.number.length;
+    const modelCount = models.file.length;
+    return (
+      [sets.name, sets.year, sets.theme, sets.parts].every((c) => c.length === setCount) &&
+      [models.sha256, models.bytes, models.set].every((c) => c.length === modelCount) &&
+      sets.theme.every((theme) => theme < themes.length) &&
+      models.set.every((set) => set < setCount)
+    );
+  }, "OMR set columns are inconsistent"),
+);
+export type OmrSetsFile = v.InferOutput<typeof OmrSetsFile>;
 
 export const VehicleGuideKind = v.picklist(["bogiePivot", "fixedAxle"]);
 export type VehicleGuideKind = v.InferOutput<typeof VehicleGuideKind>;
@@ -1912,6 +1957,7 @@ export const CatalogSourceUse = v.picklist([
   "inventory-check",
   "categories",
   "connectors",
+  "sets",
 ]);
 export type CatalogSourceUse = v.InferOutput<typeof CatalogSourceUse>;
 

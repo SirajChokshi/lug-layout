@@ -3325,6 +3325,19 @@
         "sets.csv.gz": "f1a170ad535b8c6505b50344b921c141e572be5f7a68dc481975e90314802724"
       }
     },
+    "rebrickable-sets": {
+      "use": "sets",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "domdfcoding/rebrickable-db",
+        "commit": "ad9943ccaf97ab9043686d6d94a9cfdb944217d4",
+        "root": "rebrickable_db/data"
+      },
+      "files": {
+        "sets.csv.gz": "f1a170ad535b8c6505b50344b921c141e572be5f7a68dc481975e90314802724",
+        "themes.csv.gz": "998d6bb3d3b0c1275e6641667833a4cd70b7d1524fbf7099c1675e1e88ab57a5"
+      }
+    },
     "ldraw-part-categories": {
       "use": "categories",
       "source": {
