@@ -2126,7 +2126,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
   private loopView(closure: LoopClosure): LoopClosureView {
     const counts = new Map<string, LoopPartCount>();
     for (const move of closure.moves) {
-      const { element, title } = this.pieceSet.element(this.kitPart(move).catalogIndex);
+      const { element, title } = this.pieceSet.element(this.movePart(move).catalogIndex);
       const counted = counts.get(element)?.count ?? 0;
       counts.set(element, { part: element.replace(/^[a-z]+:/u, ""), title, count: counted + 1 });
     }
