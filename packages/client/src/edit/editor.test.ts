@@ -149,6 +149,7 @@ import {
 import { InThreadSim } from "../sim/in-thread-sim.test-support.ts";
 import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/domain";
 import type { BomScope } from "../bom/bom-service.ts";
+import type { ShoppingGroup } from "../bom/shopping-list.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { chainedPoses, instancesAt } from "../connect/track-instances.test-support.ts";
@@ -1926,6 +1927,85 @@ it.each([
   },
   120_000,
 );
+
+function shoppingLines(groups: ReadonlyArray<ShoppingGroup> | undefined) {
+  return groups?.map(({ section, lines }) => [
+    section,
+    lines.map(({ label, quantity, partsEach }) => [label, quantity, partsEach]),
+  ]);
+}
+
+function shoppedParts(groups: ReadonlyArray<ShoppingGroup> | undefined): number {
+  const lines = groups?.flatMap((group) => group.lines) ?? [];
+  return lines.reduce((sum, line) => sum + line.quantity * line.partsEach, 0);
+}
+
+it("lists a layout for a shopper by what each placement is, from its parts and where it came from: track by piece, baseplates and road plates by part and colour however they were placed, a set as one set, the user's own model as theirs and a single part as a loose part, and shows the set as its parts on request, counting every part once either way", async () => {
+  const set = `omr:${PLACEABLE_SET}`;
+  const { editor, backend, container } = await startImportingEditor(undefined, [PLACEABLE_SET]);
+  const place = placer(editor, backend);
+  const ownBaseplate = await importUserFile(
+    editor,
+    "my-baseplate.ldr",
+    userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]),
+  );
+  const cottage = await importUserFile(
+    editor,
+    "my-cottage.ldr",
+    new TextEncoder().encode(MY_COTTAGE),
+  );
+  const brick = await importUserFile(
+    editor,
+    "my-brick.ldr",
+    userRoadFile("my-brick.ldr", ["1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat"]),
+  );
+  await place(BASEPLATE, 0, 0);
+  await place(ownBaseplate, 960, 320);
+  await place(ROAD_STRAIGHT, 0, -1280);
+  await place(set, 3_200, 0);
+  await place(cottage, -1280, 1280);
+  await place(brick, -1600, -1600);
+  editor.chooseItem(null);
+  trackDrawer(editor, backend)([-480, -2560], [480, -2560]);
+  editor.chooseItem(null);
+  const setParts = editor.snapshot().catalog.find((item) => item.id === set)?.parts;
+
+  const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, { kind: "world" });
+
+  const laidRun = ["74746 Train Track 9V Straight, Dark Bluish Grey", 3, 1];
+  const baseplates = ["baseplates", [["3811 Baseplate 32 x 32, Green", 2, 1]]];
+  const road = [
+    "road",
+    [
+      [
+        "44336p04 Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern, Dark Bluish Grey",
+        1,
+        1,
+      ],
+    ],
+  ];
+  const models = ["models", [["my-cottage.ldr", 1, 11]]];
+  expect(editor.snapshot().placements).toBe(6);
+  expect(shoppingLines(bom.shopping?.asSets)).toEqual([
+    ["track", [laidRun]],
+    baseplates,
+    road,
+    ["sets", [["7936-1 Level Crossing (2010)", 1, setParts]]],
+    models,
+    ["parts", [["3001 Brick 2 x 4, Red", 1, 1]]],
+  ]);
+  expect(shoppingLines(bom.shopping?.asParts)?.slice(0, -1)).toEqual([
+    ["track", [["53401 Train Track 6 Studs Wide Straight, Dark Bluish Grey", 4, 1], laidRun]],
+    baseplates,
+    road,
+    models,
+  ]);
+  expect(bom.shopping?.asParts.at(-1)?.section).toBe("parts");
+  expect({
+    asSets: shoppedParts(bom.shopping?.asSets),
+    asParts: shoppedParts(bom.shopping?.asParts),
+  }).toEqual({ asSets: bom.parts, asParts: bom.parts });
+}, 120_000);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
   const { editor, manifest } = await startEditor();

@@ -53,7 +53,6 @@ import {
   type TrackClearance,
   type MoveFrame,
   type OutlineRing,
-  type BomCounter,
   type PartSink,
   type DrawingKit,
   type EndGap,
@@ -1045,18 +1044,16 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return count;
   }
 
-  countParts(counter: BomCounter, region: PlacementRegion | null): number {
-    let counted = 0;
+  piecesIn(region: PlacementRegion | null): number[] {
+    const pieces: number[] = [];
     for (let p = 0; p < this.layout.count; p++) {
-      const placed = this.placedAt(p);
       if (region !== null) {
-        const origin = partCentre(placed);
+        const origin = partCentre(this.placedAt(p));
         if (!regionHolds(region, origin.x, origin.z)) continue;
       }
-      this.countPiece(counter, p);
-      counted++;
+      pieces.push(p);
     }
-    return counted;
+    return pieces;
   }
 
   countPiece(counter: PartSink, placement: number): void {

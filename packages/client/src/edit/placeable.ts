@@ -484,8 +484,25 @@ export function modelPlaceable(
   };
 }
 
-const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
+export const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 const IDENTITY_TRANSFORM = Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
+const PART_ITEM = /^(?<partId>.+)@(?<ldrawColor>\d+)$/u;
+
+export function partItemId(partId: string, ldrawColor: number): string {
+  return `${partId}@${ldrawColor}`;
+}
+
+export function partOfItem(
+  itemId: string,
+): { readonly partId: string; readonly ldrawColor: number } | null {
+  const groups = PART_ITEM.exec(itemId)?.groups;
+  if (groups?.["partId"] === undefined || groups["ldrawColor"] === undefined) return null;
+  return { partId: groups["partId"], ldrawColor: Number(groups["ldrawColor"]) };
+}
+
+export function partTitle(partId: string, title: string): string {
+  return `${partId.replace("ldraw:", "")} ${title}`;
+}
 
 function lowestStudLayerY(part: PartShapeAsset): number | null {
   const m = part.studMatrices;
@@ -534,10 +551,10 @@ export function partPlaceable(
   const placedCells = partCells(part, shift);
   const { road, flatTopSixteenths } = roadCells(partTransforms, partBoxes, placedCells, parts);
   return {
-    id: `${part.id}@${ldrawColor}`,
-    label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
+    id: partItemId(part.id, ldrawColor),
+    label: `${partTitle(part.id, part.title)}, ${colorName}`,
     group: part.id,
-    groupLabel: `${part.id.replace("ldraw:", "")} ${part.title}`,
+    groupLabel: partTitle(part.id, part.title),
     kind: road ? "road-plate" : "baseplate",
     worldColor: ldrawColor,
     parts: local,
