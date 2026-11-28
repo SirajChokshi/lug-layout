@@ -118,7 +118,7 @@ Adding a vendor later means writing a source adapter, the vendor's connector dat
 
 | Component | Runs in | Tech | Responsibility |
 |---|---|---|---|
-| UI shell | main thread | TypeScript, React | Catalog browser, placement tools, inspector, BOM panel, Build and Run modes, import report |
+| UI shell | main thread | TypeScript, React | Catalog browser, placement tools, inspector, BOM panel, Build, Plan and Play modes, import report |
 | Layout core | main thread, pure TS module | TypeScript | World document (sparse chunks), placement poses, joins, undo/redo command stack, live validation. Headless and unit-tested. |
 | Planner | main thread, pure TS module | TypeScript | Plan regions and physical footprints (room, tables, obstacles, aisles, in mm), footprint-fit and reach rules, the BOM for each plan (models, baseplates, track, road plates, module substructure), "own vs buy", printable plan export (SVG, then PDF) |
 | Import worker | Web Worker | Rust → WASM (`brick-compile`, `import` feature) | Parse and bake models (§3.3), compute badges L1 and L2 (L3 is unscheduled) |
@@ -785,7 +785,7 @@ The backend and its glyphs are described in §6, *2D plan backend*.
 - **B2.4 `PlanSceneBackend`** in `render`: chunked, instanced, unlit glyph quads; baseplates with stud dots; track outlines and centrelines from the bundle's `trackShapes` and track routes; tables, room and obstacles; typed-array instance pages. `client` adapts domain data into its buffers.
 - **B2.5 2D overlays:** open ends, joins, selection, the ghost tinted with its reason chip, height labels and issue markers.
 - **B2.6 Notes in 2D:** zones, text, rulers and the legend, hiding a label that would overlap one already shown, as scene labels do since #725.
-- **B2.7 View controller:** 2D by default, P for 3D and back, split view, the navigation of §6, and display grids at 1, 8, 32 and 96 studs with cell indices.
+- **B2.7 View controller:** Plan mode opens in 2D, where checking and printing happen, and Build and Play open in 3D, where buildings and trains read; P switches 2D and 3D in any mode, split view, the navigation of §6, and display grids at 1, 8, 32 and 96 studs with cell indices.
 - **B2.8 Mesh-free start:** the editor is ready with glyphs and connector records; GLBs stream only for 3D or a 3D ghost.
 - **B2.9 Colour modes and level filter:** colour by layer, contributor, track system and radius, or height; the level filter dims and locks other height bands.
 - **B2.10 Gate** on the show-scale world. Evidence: the numbers, plus side-by-side 2D and 3D shots that include a custom `.io`.
