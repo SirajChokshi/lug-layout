@@ -520,15 +520,6 @@
   text-transform: uppercase;
 }
 
-.toolbar .placement-mode {
-  display: flex;
-  flex-wrap: wrap;
-  grid-column: 1 / -1;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px 8px;
-}
-
 .toolbar .placement-mode[aria-checked="true"],
 .toolbar .placement-mode[data-effective-mode="precise"] {
   border-color: #00b8ff;
@@ -536,10 +527,9 @@
 }
 
 .placement-mode-state {
-  margin-left: 6px;
   white-space: nowrap;
-  padding: 0 6px;
-  border-radius: 999px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-xs);
   background: #e8f0ec;
   color: #1a7f37;
   font-size: 11px;
