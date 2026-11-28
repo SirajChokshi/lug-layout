@@ -3955,7 +3955,7 @@ export class Editor implements IEditor, IEditedWorld {
         .map(({ slot }): SelectionMember => ({ kind: "track", placement: slot })),
     ];
     this.select(members);
-    this.reportLockedLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length);
+    this.reportLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length, members);
   }
 
   private onShownLockedLayer(member: SelectionMember): boolean {

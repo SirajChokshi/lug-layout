@@ -2668,6 +2668,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         yPlates,
         rise: 0,
         layer: BASE_LAYER_ID,
+        group: null,
       })),
     };
   }
