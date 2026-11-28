@@ -1151,6 +1151,7 @@ export class TrackEditSession implements ITrackEditSession {
       toggleable: true,
       listedUnder: null,
       customParts: 0,
+      shelf: null,
     };
   }
 
@@ -1180,6 +1181,7 @@ export class TrackEditSession implements ITrackEditSession {
         toggleable: true,
         listedUnder: trackToolId(kit.piece.system),
         customParts: 0,
+        shelf: null,
         ...(kit.piece.thirdParty ? { thirdPartyVendor: kit.piece.thirdParty.vendor } : {}),
         ...(kit.piece.status === "unverified" ? { unverified: true as const } : {}),
       };
@@ -1211,6 +1213,7 @@ export class TrackEditSession implements ITrackEditSession {
       toggleable: true,
       listedUnder: trackToolId(system),
       customParts: 0,
+      shelf: null,
     }));
   }
 

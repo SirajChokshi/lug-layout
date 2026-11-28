@@ -54,6 +54,7 @@ import { chosen } from "../edit/editor-choice.test-support.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import type { ICommandPaletteSearch } from "../commands/command-palette-search.ts";
 import type { ImportResult, LayoutPart, RollingDiagnosticsRows } from "@brr/import";
+import { InThreadModelImporter } from "../import/in-thread-importer.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_LOOK: LookSettings = {
@@ -87,6 +88,10 @@ const WORKER_UNREACHABLE = "the import worker is unreachable";
 const PUBLISHED_KEY = "0123456789abcdef";
 const PUBLISHED_MANIFEST = `manifest.${PUBLISHED_KEY}.json`;
 const CATALOG_WORKER = "https://catalog.test";
+const MY_WAGONS = new URL(
+  "../../../import/test-data/my-container-and-tank-wagons.ldr",
+  import.meta.url,
+);
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   readonly paths: string[] = [];
@@ -441,6 +446,69 @@ describe("palette search over the editor's catalog", () => {
       notFavourite: [],
       favourite: [UNPLACEABLE_SET],
     });
+  }, 120_000);
+
+  it("shelves the sets by their Rebrickable theme and own rolling stock, and a user's own train under Your models, for browsing", async () => {
+    const { container, editor } = await startEditor((loading) => {
+      loading
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(loading.get(PART_BUNDLE_LOADER)));
+    });
+    const search = container.get(PALETTE_SEARCH);
+    expect(
+      await editor.importModelFile({
+        name: "my-container-and-tank-wagons.ldr",
+        bytes: await readFile(MY_WAGONS),
+      }),
+    ).toBe(true);
+    const wagons = editor.snapshot().modelImport?.item;
+    search.setTab("sets");
+
+    expect(
+      sectionOf(search, "sets").shelves.map((shelf) => [
+        shelf.label,
+        [
+          ...shelf.rows.flatMap((row) => row.items.map((item) => item.id)),
+          ...shelf.unplaceable.map((model) => `${model.item.id} (not placeable)`),
+        ],
+      ]),
+    ).toEqual([
+      ["Buildings", ["omr:10264-1", "omr:10185-1", "omr:10190-1", "omr:10218-1"]],
+      ["Stations", ["omr:7936-1", "omr:2150-1", "omr:4554-1", "omr:4555-1"]],
+      [
+        "Trains",
+        [
+          "omr:10133-1",
+          "omr:10014-1",
+          "omr:10020-1",
+          "omr:10022-1_Dining-Car",
+          "omr:10025-1_Baggage-Car",
+          "omr:10205-1",
+          "omr:10017-1",
+          "omr:10013-1 (not placeable)",
+          "omr:10016-1 (not placeable)",
+        ],
+      ],
+      [
+        "Modules",
+        [
+          "generated:mils-plain",
+          "generated:mils-road-straight",
+          "generated:mils-road-curve",
+          "generated:mils-road-t-junction",
+          "generated:mils-road-crossroads",
+          "generated:mils-track-straight",
+          "generated:mils-track-curve",
+          "generated:mils-path-straight",
+          "generated:mils-path-curve",
+          "generated:mils-river-straight",
+          "generated:mils-river-curve",
+          "generated:mils-rail-straight",
+        ],
+      ],
+      ["Your models", [wagons]],
+      ["Other sets", ["omr:10128-1"]],
+    ]);
   }, 120_000);
 
   it("finds the Draw track entry by the part number of a piece it lays, and not by an unrelated part", async () => {

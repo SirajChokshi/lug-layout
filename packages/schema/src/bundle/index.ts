@@ -362,7 +362,12 @@ export type BundleModelCover = v.InferOutput<typeof BundleModelCover>;
 export const ModelOrigin = v.picklist(["omr", "generated"]);
 export type ModelOrigin = v.InferOutput<typeof ModelOrigin>;
 
-export const ModelSet = v.object({ name: v.string(), year: Integer, source: v.string() });
+export const ModelSet = v.object({
+  name: v.string(),
+  year: Integer,
+  theme: v.optional(v.pipe(v.array(v.string()), v.minLength(1))),
+  source: v.string(),
+});
 export type ModelSet = v.InferOutput<typeof ModelSet>;
 
 export const ModelRole = v.picklist(["mils-module"]);

@@ -933,7 +933,8 @@
       "set": {
         "name": "Level Crossing",
         "year": 2010,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["City", "Trains"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -946,7 +947,8 @@
       "set": {
         "name": "Corner Garage",
         "year": 2019,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Modular Buildings"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -959,7 +961,8 @@
       "set": {
         "name": "Green Grocer",
         "year": 2008,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Modular Buildings"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -972,7 +975,8 @@
       "set": {
         "name": "Market Street",
         "year": 2007,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Modular Buildings"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -991,7 +995,8 @@
       "set": {
         "name": "Pet Shop",
         "year": 2011,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Modular Buildings"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1004,7 +1009,8 @@
       "set": {
         "name": "Train Station",
         "year": 1996,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1017,7 +1023,8 @@
       "set": {
         "name": "Metro Station",
         "year": 1991,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1030,7 +1037,8 @@
       "set": {
         "name": "Cargo Station",
         "year": 1995,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1043,7 +1051,8 @@
       "set": {
         "name": "Train Level Crossing",
         "year": 2003,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Town", "World City"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1056,7 +1065,8 @@
       "set": {
         "name": "Burlington Northern Santa Fe Locomotive",
         "year": 2004,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1069,7 +1079,8 @@
       "set": {
         "name": "Caboose",
         "year": 2001,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1082,7 +1093,8 @@
       "set": {
         "name": "Santa Fe Super Chief",
         "year": 2002,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1095,7 +1107,8 @@
       "set": {
         "name": "Santa Fe Cars - Set II (Dining, Observation, or Sleeping Car)",
         "year": 2002,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1108,7 +1121,8 @@
       "set": {
         "name": "Santa Fe Cars - Set I (Mail or Baggage Car)",
         "year": 2002,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1121,7 +1135,8 @@
       "set": {
         "name": "Locomotive",
         "year": 2002,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1134,7 +1149,8 @@
       "set": {
         "name": "Open Freight Wagon",
         "year": 2001,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1147,7 +1163,8 @@
       "set": {
         "name": "Tanker",
         "year": 2001,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {
@@ -1160,7 +1177,8 @@
       "set": {
         "name": "Hopper Wagon",
         "year": 2001,
-        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+        "theme": ["Train", "9V"],
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739) and themes.csv.gz (sha256 c8fa2edf3f2b884f6500d1d6d96a5ca6a314fb446ff7793847d34a0f25800c7c), retrieved 2026-11-16"
       }
     },
     {

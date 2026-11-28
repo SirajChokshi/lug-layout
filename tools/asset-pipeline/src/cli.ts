@@ -79,6 +79,7 @@ import {
   readProducedColorInputs,
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
+import { omrSetNumber, readSetExport, rebrickableSets } from "./catalog/rebrickable-sets.ts";
 import {
   readFixtureModels,
   readOmrErrata,
@@ -507,6 +508,36 @@ async function colorsCommand(
   }
   await writeFile(palettePath, text);
   process.stdout.write(`produced colours for ${report.parts.size} catalog parts\n`);
+}
+
+async function setsCommand(
+  rebrickableDirectory: string | undefined,
+  check: boolean,
+): Promise<void> {
+  if (rebrickableDirectory === undefined) {
+    throw new Error("usage: cli.ts sets <directory with the S13 Rebrickable export> [--check]");
+  }
+  const palette = await readPalette(palettePath);
+  const numbers = palette.models.flatMap((model) =>
+    model.origin === "omr" ? [omrSetNumber(model.name)] : [],
+  );
+  const sets = rebrickableSets(await readSetExport(rebrickableDirectory), numbers);
+  const updated: Palette = {
+    ...palette,
+    models: palette.models.map((model) => {
+      const set = model.origin === "omr" ? sets.get(omrSetNumber(model.name)) : undefined;
+      return set ? { ...model, set } : model;
+    }),
+  };
+  if (check) {
+    if (JSON.stringify(updated) !== JSON.stringify(palette)) {
+      process.stderr.write("palette.json OMR sets differ from the Rebrickable export\n");
+      process.exitCode = 1;
+    }
+    return;
+  }
+  await writeFile(palettePath, `${JSON.stringify(updated, null, 2)}\n`);
+  process.stdout.write(`Rebrickable name, year and theme for ${sets.size} OMR sets\n`);
 }
 
 const COMPILER_TARGET = "wasm32-wasip1";
@@ -1002,6 +1033,12 @@ switch (command) {
       process.argv.includes("--check"),
     );
     break;
+  case "sets":
+    await setsCommand(
+      process.argv.slice(3).find((arg) => !arg.startsWith("--")),
+      process.argv.includes("--check"),
+    );
+    break;
   case "manifest-file":
     process.stdout.write(`${currentManifestFile()}\n`);
     break;
@@ -1019,7 +1056,7 @@ switch (command) {
     break;
   default:
     process.stderr.write(
-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|stud-audit [--out <file>]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|sets <dir> [--check]|stud-audit [--out <file>]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
     );
     process.exitCode = 2;
 }

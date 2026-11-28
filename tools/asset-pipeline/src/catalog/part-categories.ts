@@ -188,11 +188,20 @@ export function paletteCategoryProblems(
     return misfiled === null ? [] : [`${label} ${misfiled}`];
   });
   const models = palette.models
-    .filter((model) => model.origin === "omr" && model.set === undefined)
-    .map(
-      (model) =>
-        `${model.name} is an OMR set with no Rebrickable set name, so the palette would list it by file name`,
-    );
+    .filter((model) => model.origin === "omr")
+    .flatMap((model) => {
+      if (model.set === undefined) {
+        return [
+          `${model.name} is an OMR set with no Rebrickable set name, so the palette would list it by file name`,
+        ];
+      }
+      if (model.set.theme === undefined) {
+        return [
+          `${model.name} is an OMR set with no Rebrickable theme, so the library can't shelve it`,
+        ];
+      }
+      return [];
+    });
   return [...rulesProblems(categories), ...parts, ...models];
 }
 
