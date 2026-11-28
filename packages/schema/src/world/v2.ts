@@ -199,7 +199,7 @@ function compareTags(a: RecordTagsOf, b: RecordTagsOf): number {
   );
 }
 
-function comparePlacements(a: PlacementRecordV2, b: PlacementRecordV2): number {
+export function comparePlacements(a: PlacementRecordV2, b: PlacementRecordV2): number {
   if (a.ref !== b.ref) return a.ref < b.ref ? -1 : 1;
   return (
     a.color - b.color ||

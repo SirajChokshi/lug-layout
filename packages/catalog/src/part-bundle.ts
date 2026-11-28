@@ -18,6 +18,7 @@ import {
   type LibraryPartsFile,
   type ShadowLibraryIndexRef,
   type ManifestPart,
+  type ModelLdrawFile,
   type ModelSection,
   type ModelVehicle,
   type PartRole,
@@ -251,6 +252,7 @@ export interface IPartBundleLoader {
   loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>>;
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord>;
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord>;
+  loadModelLdraw(lod: BundleLod, name: string): Promise<ModelLdrawFile>;
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh>;
   setPartMeshPriority(lod: BundleLod, file: string, priority: FetchPriority): void;
   loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null>;

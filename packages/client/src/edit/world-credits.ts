@@ -21,6 +21,10 @@ export function planFileName(planName: string): string {
   return `${fileStem(planName, "plan")}${PLAN_ARCHIVE_EXTENSION}`;
 }
 
+export function worldFileStem(worldName: string): string {
+  return fileStem(worldName, "world");
+}
+
 export function creditsForWorld(
   view: CreditsView,
   placed: ReadonlyArray<ModelCredit>,

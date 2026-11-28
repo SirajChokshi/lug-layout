@@ -953,6 +953,17 @@ fn run(args: &Args) -> Result<(), String> {
             None => Value::Null,
         };
         let model_file = format!("model-{}.json", stem(name));
+        let ldraw_file = format!("model-ldraw-{}.json", stem(name));
+        let ldraw_name = Path::new(file)
+            .file_name()
+            .and_then(|base| base.to_str())
+            .unwrap_or(file);
+        fs::write(
+            args.out.join(&ldraw_file),
+            serde_json::to_string(&json!({ "name": ldraw_name, "text": text }))
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         let sections: Vec<Value> = baked
             .sections
             .iter()
@@ -1012,6 +1023,7 @@ fn run(args: &Args) -> Result<(), String> {
                 format!("model-{}.glyph", stem(name)),
                 baker.glyph(&drawn),
             )?,
+            "ldraw": { "file": ldraw_file },
         });
         if !not_drawn.is_empty() {
             manifest_entry["notDrawn"] = json!(not_drawn);

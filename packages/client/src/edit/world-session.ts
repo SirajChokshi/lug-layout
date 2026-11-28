@@ -70,12 +70,14 @@ import type {
 import type { IBomService } from "../bom/bom-service.ts";
 import type { IEventDetails } from "../event/event-details.ts";
 import type { IPlanSheetService, IPlanSheetSource } from "../plan/plan-sheet-service.ts";
+import type { ILdrawExporter, LdrawLayout } from "./ldraw-export.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import {
   BOM_SERVICE,
   CREDITS,
   EDITOR_CAMERA,
   EVENT_DETAILS,
+  LDRAW_EXPORTER,
   PLAN_SHEET_SERVICE,
   TRADEMARK_DISCLAIMER,
 } from "../tokens.ts";
@@ -145,6 +147,7 @@ export interface StoredPlan {
 
 export interface IEditedWorld extends IPlanSheetSource {
   contents(): WorldContents;
+  ldrawLayout(): LdrawLayout;
   placedCredits(): ReadonlyArray<ModelCredit>;
   validate(stored: StoredContents): ReadonlyArray<Issue>;
   load(stored: StoredContents): Promise<ReadonlyArray<Issue>>;
@@ -164,6 +167,7 @@ export interface IWorldFiles {
   importWorld(bytes: Uint8Array): Promise<boolean>;
   exportPlan(planId: string): Promise<ExportedWorld | null>;
   openPlan(bytes: Uint8Array): Promise<boolean>;
+  exportLdraw(): Promise<ExportedWorld | null>;
 }
 
 export interface IWorldSession extends IWorldFiles {
@@ -330,6 +334,7 @@ export class WorldSession implements IWorldSession {
     @inject(PLAN_SHEET_SERVICE) private readonly sheets: IPlanSheetService,
     @inject(BOM_SERVICE) private readonly boms: IBomService,
     @inject(EVENT_DETAILS) private readonly events: Pick<IEventDetails, "event" | "restore">,
+    @inject(LDRAW_EXPORTER) private readonly ldraw: ILdrawExporter,
   ) {}
 
   view(): WorldSessionView {
@@ -914,6 +919,30 @@ export class WorldSession implements IWorldSession {
         imports: files.map(({ file }) => file),
       }),
     };
+  }
+
+  async exportLdraw(): Promise<ExportedWorld | null> {
+    let exported: ExportedWorld | null = null;
+    await this.fileAction(
+      "the LDraw export",
+      async () => {
+        const current = this.current;
+        if (!current) throw new Error("no world is open");
+        const edited = this.editedWorld();
+        const credits = this.credits.exportText(
+          creditsForWorld(await this.loadCredits(), edited.placedCredits()),
+        );
+        exported = await this.ldraw.exportMpd(
+          current.name,
+          edited.ldrawLayout(),
+          (sha256) => this.importedFiles.get(sha256),
+          credits,
+        );
+        this.update({ fileError: null });
+      },
+      true,
+    );
+    return exported;
   }
 
   openPlan(bytes: Uint8Array): Promise<boolean> {

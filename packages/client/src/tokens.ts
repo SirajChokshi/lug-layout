@@ -39,6 +39,7 @@ import type { ILayoutSize } from "./event/layout-size.ts";
 import type { ITableGround } from "./ground/table-ground.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
+import type { ILayoutSubmodels, ILdrawExporter } from "./edit/ldraw-export.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IAnnotationService } from "./notes/annotation-service.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
@@ -140,6 +141,12 @@ export const IMPORT_WORKER_POOL: ServiceIdentifier<IImportWorkerPool> = Symbol.f
 );
 export const MODEL_IMPORTER: ServiceIdentifier<IModelImporter> = Symbol.for(
   "brr.client.ModelImporter",
+);
+export const LAYOUT_SUBMODELS: ServiceIdentifier<ILayoutSubmodels> = Symbol.for(
+  "brr.client.LayoutSubmodels",
+);
+export const LDRAW_EXPORTER: ServiceIdentifier<ILdrawExporter> = Symbol.for(
+  "brr.client.LdrawExporter",
 );
 export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.client.ImportScene");
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");

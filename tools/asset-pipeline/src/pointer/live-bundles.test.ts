@@ -119,6 +119,7 @@ it("the bundle manifest's fields, its model entries' and its compiler's are exac
       "errata",
       "farMesh",
       "glyph",
+      "ldraw",
     ],
     compiler: [
       "file",

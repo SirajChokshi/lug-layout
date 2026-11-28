@@ -48,7 +48,7 @@ import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./pa
 import { chosen } from "../edit/editor-choice.test-support.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import type { ICommandPaletteSearch } from "../commands/command-palette-search.ts";
-import type { ImportResult, LayoutPart, RollingDiagnosticsRows } from "@brr/import";
+import type { ImportResult, LayoutPart, RollingDiagnosticsRows, StudioLdraw } from "@brr/import";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_LOOK: LookSettings = {
@@ -237,6 +237,10 @@ class UnreachableWorkerImporter implements IModelImporter {
   async importStudio(name: string): Promise<ImportResult> {
     this.files.push({ name, text: "" });
     throw new Error(WORKER_UNREACHABLE);
+  }
+
+  studioLdraw(fileName: string): Promise<StudioLdraw> {
+    return Promise.reject(new Error(`${fileName}: no Studio file is exported in this test`));
   }
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {

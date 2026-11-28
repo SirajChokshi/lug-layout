@@ -29,6 +29,7 @@ import type {
   BundleModelEntry,
   CatalogPart,
   LibraryPartsFile,
+  ModelLdrawFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
@@ -64,13 +65,20 @@ import {
 import { LevelCrossingFacts } from "@brr/schema/bundle";
 import { decode, decodedOrThrow, issueText } from "@brr/schema/decode";
 import crossingJson from "../../../../docs/verified-facts/level-crossing.json" with { type: "json" };
-import { PLATE_LDU, STUD_LDU, pose16, zeta16 } from "@brr/math";
+import {
+  IDENTIFICATION_REPRESENTATION_GUARD_LDU,
+  PLATE_LDU,
+  STUD_LDU,
+  pose16,
+  zeta16,
+} from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
+  encodeTrackPosition,
   noteShardEntry,
   noteShards,
   shardEntry,
@@ -115,6 +123,7 @@ import type {
   LayoutPart,
   PlacementListener,
   RollingDiagnosticsRows,
+  StudioLdraw,
 } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import {
@@ -152,6 +161,7 @@ import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { chainedPoses, instancesAt } from "../connect/track-instances.test-support.ts";
+import { modelTrackEnds } from "../connect/model-track-ends.ts";
 import { rampChunkKey } from "./crossing-ramps.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
@@ -279,6 +289,13 @@ class ModelSubsetLoader implements IPartBundleLoader {
     }
     const record = await this.userLoader.loadModelRecord(lod, name);
     return { ...record, entry: importedByUser(record.entry) };
+  }
+
+  loadModelLdraw(lod: BundleLod, name: string): Promise<ModelLdrawFile> {
+    if (!this.userLoader || !this.userModels.includes(name)) {
+      return this.loader.loadModelLdraw(lod, name);
+    }
+    return this.userLoader.loadModelLdraw(lod, name);
   }
 
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
@@ -1667,6 +1684,193 @@ it("keeps an opened plan open, and says so, when its carried model files can't b
   );
   expect(posesOf(opening.editor)).toEqual(posesOf(saving.editor));
   expect(opening.editor.snapshot().history.undo).toBe("open-plan");
+}, 240_000);
+
+function mySignalBox(): Uint8Array {
+  return new TextEncoder().encode(
+    [
+      "0 My signal box, a user's own plain LDraw file of official parts",
+      "0 Name: my-signal-box.ldr",
+      "0 Author: lug-layout test",
+      "1 71 0 0 0 1 0 0 0 1 0 0 0 1 3035.dat",
+      "1 4 0 -24 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 15 10 -24 40 0 0 1 0 1 0 -1 0 0 3010.dat",
+      "",
+    ].join("\r\n"),
+  );
+}
+
+interface DrawnPart {
+  readonly part: string;
+  readonly color: number;
+  readonly matrix: ReadonlyArray<number>;
+}
+
+const QUARTER_TURN_COS = [1, 0, -1, 0];
+const QUARTER_TURN_SIN = [0, 1, 0, -1];
+const TRANSLATION_COLUMN = 3;
+
+function translatedBy(column: number, by: number): number {
+  return column === TRANSLATION_COLUMN ? by : 0;
+}
+
+function posedOnLattice(
+  local: Float64Array,
+  instance: number,
+  pose: { readonly x: number; readonly yLdu: number; readonly z: number; readonly rot: number },
+): ReadonlyArray<number> {
+  const cos = QUARTER_TURN_COS[pose.rot] ?? 1;
+  const sin = QUARTER_TURN_SIN[pose.rot] ?? 0;
+  const at = (row: number, column: number) =>
+    local[instance * INSTANCE_MATRIX_FLOATS + row * 4 + column] ?? 0;
+  const columns = [0, 1, 2, 3];
+  return [
+    ...columns.map((c) => cos * at(0, c) + sin * at(2, c) + translatedBy(c, pose.x)),
+    ...columns.map((c) => at(1, c) + translatedBy(c, pose.yLdu)),
+    ...columns.map((c) => cos * at(2, c) - sin * at(0, c) + translatedBy(c, pose.z)),
+  ];
+}
+
+function drawnPlacements(editor: IEditor, catalog: IPlaceableCatalog): DrawnPart[] {
+  const { placements } = editor.dump();
+  const parts = catalog.parts();
+  return placements.refId.flatMap((refId, i) => {
+    const placeable = catalog.placeables()[refId];
+    if (!placeable) throw new Error(`placement ${i} has no loaded placeable`);
+    const pose = {
+      x: placements.x[i] ?? 0,
+      yLdu: (placements.yPlates[i] ?? 0) * PLATE_LDU,
+      z: placements.z[i] ?? 0,
+      rot: placements.rot[i] ?? 0,
+    };
+    const { partIndex, matrices, count } = placeable.partTransforms;
+    return Array.from({ length: count }, (_, k) => ({
+      part: parts[partIndex[k] ?? 0]?.id ?? "",
+      color: catalog.colors().codeAt(placeable.parts.colorIndex[k] ?? 0),
+      matrix: posedOnLattice(matrices, k, pose),
+    }));
+  });
+}
+
+function reimportedParts(result: ImportResult): DrawnPart[] {
+  return Array.from({ length: result.instanceCount }, (_, i) => ({
+    part: result.partIds[result.partIndex[i] ?? 0] ?? "",
+    color: result.ldrawColor[i] ?? 0,
+    matrix: [...result.partTransforms.subarray(i * 12, i * 12 + 12)],
+  }));
+}
+
+function unmatched(
+  expected: ReadonlyArray<DrawnPart>,
+  found: ReadonlyArray<DrawnPart>,
+): { readonly missing: DrawnPart[]; readonly extra: DrawnPart[] } {
+  const left = [...found];
+  const missing = expected.filter((drawn) => {
+    const at = left.findIndex(
+      (other) =>
+        other.part === drawn.part &&
+        other.color === drawn.color &&
+        other.matrix.every(
+          (value, k) =>
+            Math.abs(value - (drawn.matrix[k] ?? Number.NaN)) <=
+            IDENTIFICATION_REPRESENTATION_GUARD_LDU,
+        ),
+    );
+    if (at < 0) return true;
+    left.splice(at, 1);
+    return false;
+  });
+  return { missing, extra: left };
+}
+
+function nonEmptyLines(text: string): ReadonlyArray<string> {
+  return text.split(/\r?\n/u).filter((line) => line !== "");
+}
+
+function embeddedVerbatim(exported: string, original: string): boolean {
+  const all = nonEmptyLines(exported);
+  const own = nonEmptyLines(original);
+  const start = all.indexOf(own[0] ?? "");
+  return start >= 0 && own.every((line, k) => all[start + k] === line);
+}
+
+it("exports the layout as one LDraw MPD that a fresh import draws part for part where the editor draws it, the user's own files and an official set embedded as their own files, and laid track identifying back to its exact poses", async () => {
+  const { editor, backend, container } = await startImportingEditor(undefined, [PLACEABLE_SET]);
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const loader = container.get(PART_BUNDLE_LOADER);
+  const cottageFile = userFileWithOwnPart("my-cottage.mpd", CC_BY_4);
+  const cottage = await importUserFile(editor, "my-cottage.mpd", cottageFile);
+  const signalBox = await importUserFile(editor, "my-signal-box.ldr", mySignalBox());
+  drawOval(editor, backend);
+  const place = settledPlacer(editor, backend);
+  await place(BASEPLATE, 1600, 1600);
+  await place(cottage, 1600, 1600);
+  await chosen(editor, signalBox);
+  editor.rotate(0, 1);
+  backend.aim(1880, 1360);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  await queueSettled(editor);
+  await place(`omr:${PLACEABLE_SET}`, -3200, 3200);
+  editor.chooseItem(null);
+
+  const exported = await editor.exportLdraw();
+  if (!exported) throw new Error(`nothing was exported: ${editor.snapshot().fileError}`);
+  const exportedText = new TextDecoder().decode(exported.bytes);
+  const reimported = await new InThreadModelImporter(loader).importText(
+    exported.fileName,
+    exportedText,
+  );
+  const { trackCatalog } = await loader.loadIndex("standard");
+  const trackPartIds = new Set(trackCatalog.pieces.map((piece) => piece.part));
+  const drawn = drawnPlacements(editor, catalog);
+  const found = reimportedParts(reimported);
+  const isTrack = (part: DrawnPart) => trackPartIds.has(part.part);
+  const trackAssets = catalog.parts().filter((part) => trackPartIds.has(part.id));
+  const foundTrack = found.filter(isTrack);
+  const identified = modelTrackEnds(
+    {
+      count: foundTrack.length,
+      partIndex: foundTrack.map(({ part }) => trackAssets.findIndex((asset) => asset.id === part)),
+      matrices: Float64Array.from(foundTrack.flatMap(({ matrix }) => matrix)),
+    },
+    trackAssets,
+    trackCatalog,
+  );
+  const identifiedPoses = identified.pieces.map((piece) => ({
+    ref: trackCatalog.pieces[piece.catalogIndex]?.id,
+    heading: piece.placement.heading,
+    position: encodeTrackPosition(piece.placement.position),
+    yPlates: piece.yPlates,
+  }));
+  const laidPoses = editor.dump().laidTrack.map(({ ref, heading, position, yPlates }) => ({
+    ref,
+    heading,
+    position,
+    yPlates,
+  }));
+  const setSource = await pinnedOmrModel(`${PLACEABLE_SET}.mpd`);
+
+  expect(editor.snapshot().placements).toBe(4);
+  expect(exported.fileName).toBe("World-1.mpd");
+  expect(embeddedVerbatim(exportedText, new TextDecoder().decode(cottageFile))).toBe(true);
+  expect(embeddedVerbatim(exportedText, new TextDecoder().decode(mySignalBox()))).toBe(true);
+  expect(embeddedVerbatim(exportedText, setSource)).toBe(true);
+  expect(nonEmptyLines(exportedText)).toContain(
+    "0 // LDraw parts are copyright their authors and are redistributed under the license named in each file's !LICENSE header.",
+  );
+  expect(
+    unmatched(
+      drawn.filter((part) => !isTrack(part)),
+      found.filter((part) => !isTrack(part)),
+    ),
+  ).toEqual({ missing: [], extra: [] });
+  expect(foundTrack).toHaveLength(laidPoses.length + drawn.filter(isTrack).length);
+  expect(identified.uncertified).toEqual([]);
+  expect(identifiedPoses).toEqual(expect.arrayContaining(laidPoses));
+  expect(identifiedPoses.length + identified.runs.flatMap((run) => run.pieces).length).toBe(
+    laidPoses.length + drawn.filter(isTrack).length,
+  );
 }, 240_000);
 
 it("keeps the trains on the rails in the one undo history and in the saved world: delete, undo and redo a train, and reopen the world", async () => {
@@ -3943,6 +4147,10 @@ class RefusingModelImporter implements IModelImporter {
     return refusedBake(fileName);
   }
 
+  studioLdraw(fileName: string): Promise<StudioLdraw> {
+    return Promise.reject(new Error(`${fileName}: no Studio file is exported in this test`));
+  }
+
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
   }
@@ -4067,6 +4275,10 @@ class GatedModelImporter implements IModelImporter {
     onPlaced?: PlacementListener,
   ): Promise<ImportResult> {
     return this.importText(fileName, "", lod, onPlaced);
+  }
+
+  studioLdraw(fileName: string): Promise<StudioLdraw> {
+    return Promise.reject(new Error(`${fileName}: no Studio file is exported in this test`));
   }
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
@@ -4539,6 +4751,10 @@ class BakedRecordImporter implements IModelImporter {
 
   async importStudio(fileName: string): Promise<ImportResult> {
     return this.imported(fileName);
+  }
+
+  studioLdraw(fileName: string): Promise<StudioLdraw> {
+    return Promise.reject(new Error(`${fileName}: no Studio file is exported in this test`));
   }
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
@@ -8594,6 +8810,10 @@ class ImporterBringing implements IModelImporter {
     return this.importText(fileName);
   }
 
+  studioLdraw(fileName: string): Promise<StudioLdraw> {
+    return Promise.reject(new Error(`${fileName}: no Studio file is exported in this test`));
+  }
+
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
   }
@@ -10292,6 +10512,10 @@ class StudsLandLaterImporter implements IModelImporter {
 
   importStudio(): Promise<ImportResult> {
     throw new Error("piers are LDraw files");
+  }
+
+  studioLdraw(fileName: string): Promise<StudioLdraw> {
+    return Promise.reject(new Error(`${fileName}: no Studio file is exported in this test`));
   }
 
   rollingDiagnostics(): Promise<RollingDiagnosticsRows> {

@@ -15,6 +15,7 @@ import {
   ShadowLibraryPin,
   LibraryPartsFile,
   ModelFile,
+  ModelLdrawFile,
   PartShape,
   PartTableFile,
   RollingDiagnosticsFile,
@@ -348,6 +349,9 @@ export async function publishBundle(
   }
   await publishJson(PartTableFile, manifest.partTable.file);
   for (const { file } of manifest.models) await publishJson(ModelFile, file);
+  for (const { ldraw } of manifest.models) {
+    if (ldraw) await publishJson(ModelLdrawFile, ldraw.file);
+  }
   for (const { farMesh } of manifest.models) {
     if (farMesh) {
       decodeDeclared(

@@ -12,6 +12,7 @@ import { ImportReportDetails } from "./import-report.tsx";
 import { LAYOUT_FILE_ACCEPT, MODEL_FILE_ACCEPT, importModelFiles } from "./model-files.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const LDRAW_MPD_TYPE = "application/x-multi-part-ldraw";
 
 interface WorldMenuProps {
   readonly editor: IEditor;
@@ -191,6 +192,13 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
       );
   };
 
+  const onExportLdraw = (): void => {
+    void editor.exportLdraw().then((file) => {
+      if (file)
+        downloadBlob(file.fileName, new Blob([file.bytes.slice()], { type: LDRAW_MPD_TYPE }));
+    });
+  };
+
   const onImportModel = (event: ChangeEvent<HTMLInputElement>): void => {
     const input = event.currentTarget;
     void importModelFiles(editor, input.files ?? []).finally(() => {
@@ -360,6 +368,9 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
           aria-label="Import an LDraw file's submodels as a layout (.ldr, .mpd)"
           onChange={onImportLayout}
         />
+        <button type="button" data-action="export-ldraw" disabled={!ready} onClick={onExportLdraw}>
+          Export LDraw .mpd
+        </button>
       </div>
       {modelImport && <ModelImportStatus view={modelImport} />}
       {snapshot.fileError !== null && <p className="error">{snapshot.fileError}</p>}

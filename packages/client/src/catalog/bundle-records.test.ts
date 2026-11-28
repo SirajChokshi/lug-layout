@@ -20,6 +20,7 @@ import {
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { Container } from "inversify";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
@@ -214,6 +215,24 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
     },
     BUNDLE_SWEEP_TIMEOUT_MS,
   );
+
+  it("ship the LDraw each model is baked from: its pinned source with only the errata its entry lists", async () => {
+    const unpinned: string[] = [];
+    for (const entry of manifestOf(lod).models) {
+      const { text } = await loader.loadModelLdraw(lod, entry.name);
+      const lines = text.split(/(?<=\n)/u);
+      for (const erratum of entry.errata ?? []) {
+        const line = lines[erratum.line - 1] ?? "";
+        const content = line.replace(/\r?\n$/u, "");
+        expect(content, `${entry.name} line ${erratum.line}`).toBe(erratum.to);
+        lines[erratum.line - 1] = `${erratum.from}${line.slice(content.length)}`;
+      }
+      const sha256 = createHash("sha256").update(lines.join(""), "utf8").digest("hex");
+      if (sha256 !== entry.sha256) unpinned.push(entry.name);
+    }
+
+    expect(unpinned).toEqual([]);
+  });
 
   it("load a placed part's rolling surfaces into its model record as its GLB measured them", async () => {
     const manifest = manifestOf(lod);

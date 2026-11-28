@@ -475,6 +475,12 @@ export interface TrackBomLine {
   readonly count: number;
 }
 
+export interface LaidTrackPart {
+  readonly partId: string;
+  readonly ldrawColor: number;
+  readonly matrix: Float64Array;
+}
+
 export interface PreviewGhost {
   readonly instances: ChunkInstances;
   readonly x: number;
@@ -586,7 +592,7 @@ function partTransform(placement: Pose16, frame: TrackPartFrame): PartTransform 
 }
 
 function writeMatrix(
-  out: Float32Array,
+  out: Float32Array | Float64Array,
   slot: number,
   placement: Pose16,
   frame: TrackPartFrame,
@@ -3127,6 +3133,17 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       });
     }
     return records;
+  }
+
+  laidParts(): LaidTrackPart[] {
+    return Array.from({ length: this.layout.count }, (_, index) => {
+      const placed = this.placedAt(index);
+      const { part } = placed;
+      const matrix = new Float64Array(INSTANCE_MATRIX_FLOATS);
+      const yLdu = part.yLdu + placed.yPlates * PLATE_LDU;
+      writeMatrix(matrix, 0, placed.placement, part.piece.partFrame, yLdu, 0, 0, rampShear(placed));
+      return { partId: part.piece.part, ldrawColor: this.colors.codeAt(part.color), matrix };
+    });
   }
 
   restore(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<number>> {

@@ -132,6 +132,7 @@ export type {
   IImportWorkerPool,
   ImportRun,
   ImportWorkerFactory,
+  StudioLdrawRun,
 } from "./import/import-worker-pool.ts";
 export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
 export type {

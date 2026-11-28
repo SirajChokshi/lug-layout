@@ -7,6 +7,7 @@ import {
   LibraryConnectorStore,
   PlanGlyphCache,
   ShadowMirror,
+  studioLdraw,
   type BrickCompiler,
   type FetchFunction,
   type IBakeHelper,
@@ -23,6 +24,8 @@ import {
   type RollingDiagnosticsRequest,
   type RollingDiagnosticsRows,
   type ShadowLibrarySource,
+  type StudioLdraw,
+  type StudioLdrawRequest,
 } from "@brr/import";
 import { ASSET_CACHE, type IAssetCache } from "@brr/storage";
 import { inject, injectable } from "inversify";
@@ -39,6 +42,7 @@ import {
 export interface IImportWorkerService {
   run(request: ImportWorkerRequest, onPlaced?: PlacementListener): Promise<ImportResult>;
   rollingDiagnostics(request: RollingDiagnosticsRequest): Promise<RollingDiagnosticsRows>;
+  studioLdraw(request: StudioLdrawRequest): Promise<StudioLdraw>;
 }
 
 export type LdrawMirrorFactory = (source: MirrorSource, baseUrl: string | undefined) => LdrawMirror;
@@ -132,6 +136,12 @@ export class ImportWorkerService implements IImportWorkerService {
     const records = this.partRecords(request.libraryBake);
     if (records === null) return {};
     return Object.fromEntries(await records.rollingDiagnostics(request.partIds));
+  }
+
+  async studioLdraw(request: StudioLdrawRequest): Promise<StudioLdraw> {
+    const compiler = await this.compilers.load(request.compilerUrl);
+    const mirror = this.createMirror(request.input.job.source, request.ldrawLibraryUrl);
+    return studioLdraw(compiler, mirror, request.input);
   }
 
   async run(

@@ -528,3 +528,5 @@ export {
   type RampCandidate,
   type RampPart,
 } from "./level-crossings.ts";
+export { latticeAffine, ldrawAffine, libraryReference } from "./ldraw/ldraw-text.ts";
+export { mpdText, type LdrawOriginal, type SubmodelLine } from "./ldraw/mpd-document.ts";
