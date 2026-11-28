@@ -59,6 +59,7 @@ import { PlanService } from "./plan/plan-service.ts";
 import { PlanSheetService } from "./plan/plan-sheet-service.ts";
 import { PdfSheetWriter } from "./sheets/pdf-sheet-writer.ts";
 import { PlanDrawing } from "./sheets/plan-drawing.ts";
+import { PngSheetWriter } from "./sheets/png-sheet-writer.ts";
 import { SheetComposer } from "./sheets/sheet-composer.ts";
 import { SheetSets } from "./sheets/sheet-sets.ts";
 import { CourierTypeface } from "./sheets/sheet-typeface.ts";
@@ -140,6 +141,7 @@ import {
   SHEET_TYPEFACE,
   SVG_SHEET_WRITER,
   PDF_SHEET_WRITER,
+  PNG_SHEET_WRITER,
   SHEET_SETS,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
@@ -192,6 +194,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(SHEET_COMPOSER).to(SheetComposer).inSingletonScope();
   bind(SVG_SHEET_WRITER).to(SvgSheetWriter).inSingletonScope();
   bind(PDF_SHEET_WRITER).to(PdfSheetWriter).inSingletonScope();
+  bind(PNG_SHEET_WRITER).to(PngSheetWriter).inSingletonScope();
   bind(SHEET_SETS).to(SheetSets).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();

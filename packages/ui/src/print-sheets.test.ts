@@ -60,11 +60,11 @@ function setUp() {
   const all: Array<{ requests: ReadonlyArray<SheetRequest>; format: SheetFormat }> = [];
   const sheets: IPlanSheetService = {
     printable: () => "",
-    download: (_source, _planId, request) => {
+    download: async (_source, _planId, request) => {
       single.push(request);
       return file(`${request.selection.name}.${request.format}`, 3, request.format);
     },
-    downloadAll: (_source, _planId, requests, format) => {
+    downloadAll: async (_source, _planId, requests, format) => {
       all.push({ requests, format });
       return file(`all.${format}`, 9, format);
     },
@@ -84,12 +84,12 @@ function setUp() {
   return { single, all, downloads, sheetSets };
 }
 
-it("downloads the sheet chosen with its saved layers, layout and format, remembers edits to it, and downloads every sheet in one file", () => {
+it("downloads the sheet chosen with its saved layers, layout and format, remembers edits to it, and downloads every sheet in one file", async () => {
   const { single, all, downloads, sheetSets } = setUp();
   const download = screen.getByRole("button", { name: "Download sheet" });
 
   fireEvent.click(download);
-  const note = screen.getByText(/prints as "\?"/u).textContent;
+  const note = (await screen.findByText(/prints as "\?"/u)).textContent;
   fireEvent.change(field("sheet-set"), { target: { value: sheetSets.sets(PLAN.id)[1]?.id } });
   const tablePlanForm = {
     content: field("sheet-content").value,
@@ -101,7 +101,9 @@ it("downloads the sheet chosen with its saved layers, layout and format, remembe
   fireEvent.click(field("sheet-layer-obstacles"));
   fireEvent.change(field("sheet-format"), { target: { value: "svg" } });
   fireEvent.click(download);
+  await screen.findByText(/^Saved 3 pages as Setup crew\.svg/u);
   fireEvent.click(screen.getByRole("button", { name: "Download all sheets" }));
+  await screen.findByText(/^Saved 9 pages as all\.svg/u);
 
   expect(single.map(({ selection, layout, format }) => ({ selection, layout, format }))).toEqual([
     {
@@ -132,7 +134,34 @@ it("downloads the sheet chosen with its saved layers, layout and format, remembe
   });
   expect(all).toEqual([{ requests: single, format: "svg" }]);
   expect(downloads).toEqual(["Main plan.pdf", "Setup crew.svg", "all.svg"]);
-  expect(screen.getByText(/^Saved 9 pages as all\.svg/u)).toBeDefined();
+});
+
+it("downloads an image at the whole pixels per stud chosen as a PNG, and refuses a count past the one that draws at 1:1", async () => {
+  const { single, downloads } = setUp();
+  const download = screen.getByRole("button", { name: "Download sheet" });
+
+  fireEvent.change(field("sheet-layout"), { target: { value: "image" } });
+  const imageForm = {
+    format: field("sheet-format").value,
+    pixelsDisabled: field("sheet-pixels-per-stud").disabled,
+    paperDisabled: field("sheet-paper").disabled,
+  };
+  fireEvent.change(field("sheet-pixels-per-stud"), { target: { value: "33" } });
+  const refused = {
+    single: download.hasAttribute("disabled"),
+    message: screen.queryByText(/1 to 32 whole pixels per stud/u) !== null,
+  };
+  fireEvent.change(field("sheet-pixels-per-stud"), { target: { value: "16" } });
+  fireEvent.click(download);
+  const saved = await screen.findByText(/^Saved 3 pages as Main plan\.png/u);
+
+  expect(imageForm).toEqual({ format: "png", pixelsDisabled: false, paperDisabled: true });
+  expect(refused).toEqual({ single: true, message: true });
+  expect(single.map(({ layout, format }) => ({ layout, format }))).toEqual([
+    { layout: { kind: "image", pixelsPerStud: 16 }, format: "png" },
+  ]);
+  expect(saved.textContent).toBe("Saved 3 pages as Main plan.png.");
+  expect(downloads).toEqual(["Main plan.png"]);
 });
 
 it("adds and deletes sheets, and refuses to download a tiling whose overlap the registration marks can't fit in", () => {

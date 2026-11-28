@@ -180,8 +180,11 @@ export type {
 } from "./plan/plan-sheet-service.ts";
 export {
   DEFAULT_OVERLAP_MM,
+  DEFAULT_PIXELS_PER_STUD,
   MAX_OVERLAP_MM,
+  MAX_PIXELS_PER_STUD,
   MIN_OVERLAP_MM,
+  MIN_PIXELS_PER_STUD,
   sheetLayoutProblems,
   type SheetContent,
   type SheetFile,

@@ -159,6 +159,9 @@ export const SVG_SHEET_WRITER: ServiceIdentifier<ISvgSheetWriter> = Symbol.for(
 export const PDF_SHEET_WRITER: ServiceIdentifier<ISheetWriter> = Symbol.for(
   "brr.client.PdfSheetWriter",
 );
+export const PNG_SHEET_WRITER: ServiceIdentifier<ISheetWriter> = Symbol.for(
+  "brr.client.PngSheetWriter",
+);
 export const SHEET_SETS: ServiceIdentifier<ISheetSets> = Symbol.for("brr.client.SheetSets");
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",
