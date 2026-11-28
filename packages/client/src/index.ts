@@ -96,9 +96,11 @@ export type {
 } from "./edit/editor.ts";
 export type {
   CatalogPartView,
+  KeptPieceView,
   TrackCommitResult,
   TrackHeightView,
   TrackPieceView,
+  TrackReplaceView,
   TrackView,
 } from "./edit/track-edit-session.ts";
 export type { TrackBomLine } from "./edit/track-drawing.ts";
@@ -282,7 +284,7 @@ export type {
   StarterWorldView,
   WelcomeView,
 } from "./starters/starter-worlds.ts";
-export { TRACK_ITEM_ID } from "./edit/track-edit-session.ts";
+export { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./edit/track-edit-session.ts";
 export type {
   RollingDiagnosticsPanel,
   RollingDiagnosticsPartView,

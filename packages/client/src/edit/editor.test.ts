@@ -8670,6 +8670,8 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   ],
   road: "lays road plates by road joins, not by the placement search",
   "lay-track": "lays track against the drawing's own obstacles, which wait on seats",
+  "replace-track":
+    "swaps laid track pieces through the same lay as track, not the placement search",
   "throw-switch": "throws a switch without placing a model",
   plan: "edits plan regions only",
   note: "edits notes only",
@@ -9572,6 +9574,96 @@ it("offers the gap in a user's own track file as a one-click close naming its pi
   );
   expect(editor.dump().laidTrack).toEqual(laid);
   expect(trackTally(editor)).toEqual(closed);
+}, 120_000);
+
+const PLASTIC_STRAIGHT_PIECE = `${TRACK_PIECE_PREFIX}ldraw:53401`;
+const CURVE_PIECE = `${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`;
+const REPLACED_RUN_STRAIGHTS = 6;
+const TRAIN_AT_STRAIGHT = 4;
+
+function replaceState(editor: IEditor) {
+  const { laidTrack, trackEnds } = editor.dump();
+  const { track, history, selection } = editor.snapshot();
+  return {
+    refs: laidTrack.map((record) => record.ref),
+    ends: trackEnds
+      .map((end) => `${end.xLdu},${end.zLdu},${end.yPlates},${end.heading}`)
+      .toSorted(),
+    joins: track?.joins,
+    undo: history.undoLabel,
+    selected: selection?.primary.item ?? null,
+    report: track?.lastReplace ?? null,
+  };
+}
+
+it("replaces every laid 9V straight with a plastic straight whose ends land exactly on its ends, still joined to a user's track model, lists the pieces a train stands on and every piece a curve can't replace, and undoes it as one step", async () => {
+  const { editor, backend, catalog, container } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [USER_TRACK],
+  );
+  const model = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, model);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(model, 0, 0);
+  const from = editor
+    .dump()
+    .trackEnds.find(
+      (open) =>
+        open.heading === 0 &&
+        Number.isInteger(open.xLdu / STUD) &&
+        Number.isInteger(open.zLdu / STUD),
+    );
+  if (!from) throw new Error(`${USER_TRACK} has no open end on the stud grid facing +x`);
+  const run = (straight: number) => from.xLdu + straight * ONE_STRAIGHT_LDU;
+  trackDrawer(editor, backend)([from.xLdu, from.zLdu], [run(REPLACED_RUN_STRAIGHTS), from.zLdu]);
+  await placer(editor, backend)(LOCOMOTIVE, run(TRAIN_AT_STRAIGHT), from.zLdu);
+  const yard = container.get(RAIL_YARD);
+  const laid = replaceState(editor);
+  const standing = laid.refs.flatMap((_, index) => (yard.standingOn(index) ? [index] : []));
+  const swapped = laid.refs.length - standing.length;
+  const kept = (indices: ReadonlyArray<number>, reason: string) =>
+    indices.map((index) => ({ xLdu: run(index + 0.5), zLdu: from.zLdu, reason }));
+
+  selectAt(editor, backend, run(0.5), from.zLdu);
+  editor.replaceTrackPieces(STRAIGHT_PIECE, PLASTIC_STRAIGHT_PIECE, 0);
+  const replaced = replaceState(editor);
+  editor.undo(0);
+  const undone = replaceState(editor);
+  editor.redo(0);
+  const redone = replaceState(editor);
+  editor.replaceTrackPieces(PLASTIC_STRAIGHT_PIECE, CURVE_PIECE, 0);
+  const unmatched = replaceState(editor);
+
+  expect(new Set(laid.refs)).toEqual(new Set([NINE_VOLT_STRAIGHT]));
+  expect(standing.length).toBeGreaterThan(0);
+  expect(swapped).toBeGreaterThan(0);
+  expect(replaced).toEqual({
+    ...laid,
+    refs: laid.refs.map((ref, index) => (standing.includes(index) ? ref : "ldraw:53401")),
+    undo: `replace ${swapped} pieces`,
+    selected: PLASTIC_STRAIGHT_PIECE,
+    report: {
+      from: STRAIGHT_PIECE,
+      to: PLASTIC_STRAIGHT_PIECE,
+      swapped,
+      kept: kept(standing, `${LOCOMOTIVE_LABEL} stands on it`),
+    },
+  });
+  expect(undone).toEqual({ ...laid, selected: STRAIGHT_PIECE, report: replaced.report });
+  expect(redone).toEqual(replaced);
+  expect(unmatched).toEqual({
+    ...replaced,
+    report: {
+      from: PLASTIC_STRAIGHT_PIECE,
+      to: CURVE_PIECE,
+      swapped: 0,
+      kept: kept(
+        laid.refs.flatMap((_, index) => (standing.includes(index) ? [] : [index])),
+        "Train Track 9V Curved has no pose whose ends land exactly on this piece's ends",
+      ),
+    },
+  });
 }, 120_000);
 
 function overlapIssues(issues: ReadonlyArray<string>): number {

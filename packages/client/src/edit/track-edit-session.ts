@@ -1,6 +1,6 @@
 import type { PartAsset, PartShapeAsset } from "@brr/catalog";
 import type { PoseStatus } from "@brr/schema/bundle";
-import type { TrackChange } from "@brr/domain";
+import type { TrackChange, TrackPieceAt } from "@brr/domain";
 import { PLATE_LDU, QUARTER_TURN_16, STUD_LDU, ZETA16_ORDER, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type TrackEndMarker } from "@brr/render";
 import { inject, injectable } from "inversify";
@@ -92,7 +92,21 @@ export interface TrackView {
   readonly placingPiers: boolean;
   readonly lowClearance: number | null;
   readonly lastLowClearance: TrackLowClearanceView | null;
+  readonly lastReplace: TrackReplaceView | null;
   readonly height: TrackHeightView;
+}
+
+export interface KeptPieceView {
+  readonly xLdu: number;
+  readonly zLdu: number;
+  readonly reason: string;
+}
+
+export interface TrackReplaceView {
+  readonly from: string;
+  readonly to: string;
+  readonly swapped: number;
+  readonly kept: ReadonlyArray<KeptPieceView>;
 }
 
 export interface TrackHeightView {
@@ -147,7 +161,8 @@ export type LayOrigin =
       readonly firstLaid: number;
     }
   | { readonly kind: "loop"; readonly goal: Pose16; readonly firstLaid: number }
-  | { readonly kind: "held"; readonly joinsBefore: number; readonly firstLaid: number };
+  | { readonly kind: "held"; readonly joinsBefore: number; readonly firstLaid: number }
+  | { readonly kind: "replace"; readonly report: TrackReplaceView };
 
 export interface TrackLayRequest {
   readonly change: TrackChange;
@@ -226,6 +241,7 @@ export interface ITrackEditSession {
   throwSwitchAt(hitX: number, hitZ: number): SwitchAttempt;
   throwSwitch(piece: number, hitX: number, hitZ: number): SwitchAttempt;
   switchRefusal(piece: number, x: number, z: number): TrackClickRefusal | null;
+  replacePieces(from: string, to: string): TrackLayRequest | null;
   finishLay(lay: TrackLayRequest): void;
   settleLay(lay: TrackLayRequest): void;
   finishThrow(thrown: SwitchThrowRequest): void;
@@ -360,6 +376,8 @@ export class TrackEditSession implements ITrackEditSession {
   private trackRampPlates = 0;
   private trackTallest: TallestTrain | null = null;
   private lastLow: TrackLowClearanceView | null = null;
+  private lastReplace: TrackReplaceView | null = null;
+  private trackLastReplace: TrackReplaceView | null = null;
   private placingPiers = false;
   private blockedSnap: PieceSnap | null = null;
   private blockedBands = -1;
@@ -742,17 +760,80 @@ export class TrackEditSession implements ITrackEditSession {
   }
 
   switchRefusal(piece: number, x: number, z: number): TrackClickRefusal | null {
+    const train = this.trainOn(piece);
+    if (train === null) return null;
+    return {
+      item: TRACK_ITEM_ID,
+      x: Math.round(x),
+      z: Math.round(z),
+      reason: `${train} stands on this switch, so it can't be thrown under it.`,
+    };
+  }
+
+  private trainOn(piece: number): string | null {
     const standing = this.railYard.standingOn(piece);
     if (!standing) return null;
     const refId = standing.pose.refId;
     const holder = this.catalog.placeables()[refId];
     if (!holder) throw new Error(`no catalog item has ref id ${refId}`);
-    return {
-      item: TRACK_ITEM_ID,
-      x: Math.round(x),
-      z: Math.round(z),
-      reason: `${holder.label} stands on this switch, so it can't be thrown under it.`,
+    return holder.label;
+  }
+
+  replacePieces(from: string, to: string): TrackLayRequest | null {
+    const track = this.trackWorld.drawing();
+    if (!track || this.worldSession.view().readOnly) return null;
+    const found = this.trackPieceIndex(track, from);
+    const wanted = this.trackPieceIndex(track, to);
+    if (found === null || wanted === null || found === wanted) return null;
+    this.trackWorld.ensureObstacles();
+    const label = track.pieceByIndex(wanted).piece.title;
+    const kept: Array<{ readonly placement: number; readonly reason: string }> = [];
+    const free = track.placementsOf(found).filter((placement) => {
+      const train = this.trainOn(placement);
+      if (train !== null) kept.push({ placement, reason: `${train} stands on it` });
+      return train === null;
+    });
+    const lay: TrackPieceAt[] = [];
+    for (const swap of track.swaps(free, wanted)) {
+      switch (swap.kind) {
+        case "swap":
+          lay.push(swap.lay);
+          break;
+        case "unmatched":
+          kept.push({
+            placement: swap.placement,
+            reason: `${label} has no pose whose ends land exactly on this piece's ends`,
+          });
+          break;
+        case "blocked":
+          kept.push({
+            placement: swap.placement,
+            reason: `${label} would ${trackBlockText(swap.block)}`,
+          });
+          break;
+        default: {
+          const unhandled: never = swap;
+          throw new Error(`unhandled swap ${String(unhandled)}`);
+        }
+      }
+    }
+    const report: TrackReplaceView = {
+      from,
+      to,
+      swapped: lay.length,
+      kept: kept
+        .toSorted((a, b) => a.placement - b.placement)
+        .map(({ placement, reason }) => {
+          const { xLdu, zLdu } = track.laidPieceView(placement);
+          return { xLdu, zLdu, reason };
+        }),
     };
+    if (lay.length === 0) {
+      this.lastReplace = report;
+      return null;
+    }
+    const change = { lift: lay.map((at) => track.laidPiece(at.index)), lay };
+    return { change, sample: null, origin: { kind: "replace", report } };
   }
 
   finishLay(lay: TrackLayRequest): void {
@@ -782,6 +863,9 @@ export class TrackEditSession implements ITrackEditSession {
         this.lastUnsupported = this.trackWorld.unsupportedSince(origin.firstLaid);
         this.lastLow = this.trackWorld.lowClearanceSince(origin.firstLaid);
         return;
+      case "replace":
+        this.lastReplace = origin.report;
+        return;
       default: {
         const unhandled: never = origin;
         throw new Error(`unhandled lay origin ${String(unhandled)}`);
@@ -798,6 +882,7 @@ export class TrackEditSession implements ITrackEditSession {
         return;
       case "extension":
       case "loop":
+      case "replace":
         return;
       case "held": {
         const held = this.held;
@@ -1069,6 +1154,7 @@ export class TrackEditSession implements ITrackEditSession {
       this.placingPiers === this.trackPiers &&
       lowClearance === this.trackLowCount &&
       this.lastLow === this.trackLastLow &&
+      this.lastReplace === this.trackLastReplace &&
       track.drawingPlates === this.trackDrawingPlates &&
       track.rampPlates === this.trackRampPlates &&
       track.tallestTrain === this.trackTallest
@@ -1100,6 +1186,7 @@ export class TrackEditSession implements ITrackEditSession {
       placingPiers: this.placingPiers,
       lowClearance,
       lastLowClearance: this.lastLow,
+      lastReplace: this.lastReplace,
       height: {
         drawingPlates: track.drawingPlates,
         drawingLdu: track.drawingPlates * PLATE_LDU,
@@ -1128,6 +1215,7 @@ export class TrackEditSession implements ITrackEditSession {
     this.trackPiers = this.placingPiers;
     this.trackLowCount = lowClearance;
     this.trackLastLow = this.lastLow;
+    this.trackLastReplace = this.lastReplace;
     this.trackDrawingPlates = track.drawingPlates;
     this.trackRampPlates = track.rampPlates;
     this.trackTallest = track.tallestTrain;

@@ -1,5 +1,6 @@
 import {
   STUD_LDU,
+  TRACK_PIECE_PREFIX,
   ZETA16_ORDER,
   altKeyName,
   effectivePlacementMode,
@@ -22,6 +23,7 @@ import {
   type SelectionView,
   type ShellCommandId,
   type RollingDiagnosticsPanel,
+  type TrackReplaceView,
   type TrainSelectionView,
   type UndrawnPart,
 } from "@brr/client";
@@ -592,6 +594,66 @@ function TrainFacts({
   );
 }
 
+const LISTED_KEPT = 8;
+
+function replaceSummary(snapshot: EditorSnapshot, report: TrackReplaceView): string {
+  const found = report.swapped + report.kept.length;
+  return `Replaced ${integer.format(report.swapped)} of ${integer.format(found)}: ${itemLabel(snapshot, report.from)} with ${itemLabel(snapshot, report.to)}.`;
+}
+
+function ReplacePieces({ editor, snapshot, from }: PanelProps & { readonly from: string }) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const choices = snapshot.catalog.filter(
+    (item) => item.id.startsWith(TRACK_PIECE_PREFIX) && item.id !== from,
+  );
+  const to = (choices.find((item) => item.id === picked) ?? choices[0])?.id ?? null;
+  const report = snapshot.track?.lastReplace ?? null;
+  const more = (report?.kept.length ?? 0) - LISTED_KEPT;
+  return (
+    <div
+      className="selection-replace"
+      data-swapped={report?.swapped ?? ""}
+      data-kept={report?.kept.length ?? ""}
+    >
+      <label className="selection-field">
+        <span className="selection-field-label">{`Replace every ${itemLabel(snapshot, from)} with`}</span>
+        <select value={to ?? ""} onChange={(event) => setPicked(event.target.value)}>
+          {choices.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="selection-actions">
+        <button
+          type="button"
+          disabled={to === null || snapshot.readOnly}
+          onClick={(event) => {
+            if (to !== null) editor.replaceTrackPieces(from, to, event.timeStamp);
+          }}
+        >
+          Replace all
+        </button>
+      </div>
+      {report && <p role="status">{replaceSummary(snapshot, report)}</p>}
+      {report && report.kept.length > 0 && (
+        <ul aria-label="Pieces not swapped">
+          {report.kept.slice(0, LISTED_KEPT).map((kept, index) => (
+            <li key={`${index}-${kept.xLdu}-${kept.zLdu}`}>
+              <button type="button" onClick={() => editor.goTo(kept.xLdu, kept.zLdu)}>
+                {`Stud ${studs(kept.xLdu)}, ${studs(kept.zLdu)}`}
+              </button>
+              {`: ${kept.reason}.`}
+            </li>
+          ))}
+          {more > 0 && <li>{`${integer.format(more)} more`}</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function selectionMeta(selection: SelectionView, size: string, items: string): string {
   const { primary, members } = selection;
   if (members.length > 1) return `${size} · ${items}`;
@@ -705,6 +767,9 @@ export function SelectionPanel({
       </div>
       {single && primary.kind !== "track" && (
         <RollingDiagnostics key={primary.item} editor={editor} item={primary.item} />
+      )}
+      {primary.kind === "track" && (
+        <ReplacePieces editor={editor} snapshot={snapshot} from={primary.item} />
       )}
     </section>
   );

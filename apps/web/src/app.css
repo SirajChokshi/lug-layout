@@ -756,6 +756,7 @@ footer {
 }
 
 .selection-field input,
+.selection-field select,
 .selection-field output {
   width: 100%;
   height: var(--control-height-sm);
@@ -806,6 +807,33 @@ footer {
 
 .selection-actions .selection-delete {
   margin-left: auto;
+}
+
+.selection-replace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.selection-replace p,
+.selection-replace ul {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.selection-replace ul {
+  padding-left: var(--space-5);
+}
+
+.selection-replace li button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .rolling-diagnostics-load,
