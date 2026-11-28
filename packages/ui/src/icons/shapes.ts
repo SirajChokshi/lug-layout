@@ -10,7 +10,6 @@ export type IconTone =
   | "paper"
   | "tint"
   | "accent"
-  | "deep"
   | "wood"
   | "steel"
   | "go"

@@ -20,18 +20,16 @@ const SLEEPER = 1.6;
 const SLEEPERS_SMALL = [196, 218, 240, 262] as const;
 const SLEEPERS_LARGE = [192, 208, 224, 240, 256] as const;
 
-function curvedTrack(railTone: "steel" | "accent"): Glyph {
-  return [
-    ...SLEEPERS_SMALL.map((degrees) =>
-      radialBar(CURVE_CENTER, 5.5, 15.5, degrees, SLEEPER, "wood", { sizes: [16, 20] }),
-    ),
-    ...SLEEPERS_LARGE.map((degrees) =>
-      radialBar(CURVE_CENTER, 5.5, 15.5, degrees, SLEEPER, "wood", { sizes: [24] }),
-    ),
-    arcBand(CURVE_CENTER, 7, 7 + RAIL, 180, 270, railTone),
-    arcBand(CURVE_CENTER, 12, 12 + RAIL, 180, 270, railTone),
-  ];
-}
+const CURVED_TRACK: Glyph = [
+  ...SLEEPERS_SMALL.map((degrees) =>
+    radialBar(CURVE_CENTER, 5.5, 15.5, degrees, SLEEPER, "wood", { sizes: [16, 20] }),
+  ),
+  ...SLEEPERS_LARGE.map((degrees) =>
+    radialBar(CURVE_CENTER, 5.5, 15.5, degrees, SLEEPER, "wood", { sizes: [24] }),
+  ),
+  arcBand(CURVE_CENTER, 7, 7 + RAIL, 180, 270, "steel"),
+  arcBand(CURVE_CENTER, 12, 12 + RAIL, 180, 270, "steel"),
+];
 
 const POINTER: ReadonlyArray<Point> = [
   [2, 1],
@@ -42,10 +40,6 @@ const POINTER: ReadonlyArray<Point> = [
   [7, 9],
   [11, 9],
 ];
-
-function scaledPointer(scale: number, offset: Point): ReadonlyArray<Point> {
-  return POINTER.map(([x, y]) => [offset[0] + x * scale, offset[1] + y * scale] as const);
-}
 
 function rulerTicks(): Glyph {
   const inward: Point = [Math.SQRT1_2, Math.SQRT1_2];
@@ -77,10 +71,6 @@ function magnifier(lens: "tint" | "paper"): Glyph {
   ];
 }
 
-function tray(): Glyph {
-  return [rect(1, 10, 2, 5, "ink"), rect(13, 10, 2, 5, "ink"), rect(1, 13, 14, 2, "ink")];
-}
-
 const UNDO: Glyph = [
   path("ink", [
     { op: "M", to: [5, 4] },
@@ -106,11 +96,7 @@ export const ICON_GLYPHS = {
     rect(9, 9, 5, 5, "tint"),
     poly("ink", POINTER, { halo: true }),
   ],
-  "path-select": [
-    ...curvedTrack("accent"),
-    poly("ink", scaledPointer(0.62, [0, 0]), { halo: true }),
-  ],
-  track: curvedTrack("steel"),
+  track: CURVED_TRACK,
   ruler: [
     poly("ink", [
       [0, 11],
@@ -141,33 +127,6 @@ export const ICON_GLYPHS = {
       [9, 12],
     ]),
   ],
-  zone: [
-    rect(3, 4, 10, 8, "warn", { opacity: 0.3 }),
-    poly("warn", [
-      [3, 9],
-      [8, 4],
-      [10, 4],
-      [3, 11],
-    ]),
-    poly("warn", [
-      [5, 12],
-      [13, 4],
-      [13, 6],
-      [7, 12],
-    ]),
-    rect(5, 3, 2, 1, "ink"),
-    rect(9, 3, 2, 1, "ink"),
-    rect(5, 12, 2, 1, "ink"),
-    rect(9, 12, 2, 1, "ink"),
-    rect(2, 7, 1, 2, "ink"),
-    rect(13, 7, 1, 2, "ink"),
-    ...[
-      [1, 2],
-      [12, 2],
-      [1, 11],
-      [12, 11],
-    ].flatMap(([x = 0, y = 0]) => [rect(x, y, 3, 3, "ink"), rect(x + 1, y + 1, 1, 1, "paper")]),
-  ],
   text: [
     rect(1, 2, 11, 2, "ink"),
     rect(1, 2, 2, 4, "ink"),
@@ -177,34 +136,6 @@ export const ICON_GLYPHS = {
     rect(14, 5, 1, 9, "accent"),
     rect(13, 5, 3, 1, "accent"),
     rect(13, 13, 3, 1, "accent"),
-  ],
-  layer: [
-    poly("ink", [
-      [8, 8],
-      [15, 11.5],
-      [8, 15],
-      [1, 11.5],
-    ]),
-    poly(
-      "tone",
-      [
-        [8, 4.5],
-        [15, 8],
-        [8, 11.5],
-        [1, 8],
-      ],
-      { halo: true },
-    ),
-    poly(
-      "accent",
-      [
-        [8, 1],
-        [15, 4.5],
-        [8, 8],
-        [1, 4.5],
-      ],
-      { halo: true },
-    ),
   ],
   table: [
     poly("wood", [
@@ -228,13 +159,6 @@ export const ICON_GLYPHS = {
     rect(11, 7, 5, 2, "ink"),
     circle(8, 8, 1, "accent"),
   ],
-  magnet: [
-    arcBand([8, 7], 2, 6, 180, 360, "stop"),
-    rect(2, 7, 4, 5, "stop"),
-    rect(10, 7, 4, 5, "stop"),
-    rect(2, 12, 4, 3, "tone"),
-    rect(10, 12, 4, 3, "tone"),
-  ],
   "track-straight": [
     rect(2, 2, 12, 2, "wood"),
     rect(2, 7, 12, 2, "wood"),
@@ -252,20 +176,6 @@ export const ICON_GLYPHS = {
     arcBand(SWITCH_CENTER, 11, 11 + RAIL, 180, 240, "accent"),
     circle(13, 13, 3, "ink", { sizes: [20, 24] }),
     circle(13, 13, 2, "warn", { sizes: [20, 24] }),
-  ],
-  height: [
-    poly("tone", [
-      [1, 15],
-      [15, 7],
-      [15, 15],
-    ]),
-    bar([1, 14], [15, 6], 2, "steel"),
-    rect(3, 4, 2, 5, "accent"),
-    poly("accent", [
-      [1, 5],
-      [4, 1],
-      [7, 5],
-    ]),
   ],
   train: [
     rect(2, 2, 3, 4, "ink"),
@@ -288,7 +198,6 @@ export const ICON_GLYPHS = {
       [4, 14],
     ]),
   ],
-  pause: [rect(4, 3, 3, 10, "ink"), rect(9, 3, 3, 10, "ink")],
   stop: [rect(3, 3, 10, 10, "stop", { radius: 1 })],
   all: [
     rect(2, 2, 5, 5, "ink", { radius: 1 }),
@@ -306,32 +215,6 @@ export const ICON_GLYPHS = {
     ...[4, 8, 12].flatMap((y) =>
       [4, 8, 12].map((x) => circle(x, y, 1.5, "paper", { opacity: 0.45, sizes: [24] })),
     ),
-  ],
-  brick: [
-    poly("accent", [
-      [1, 5],
-      [8, 8.5],
-      [8, 15],
-      [1, 11.5],
-    ]),
-    poly("deep", [
-      [8, 8.5],
-      [15, 5],
-      [15, 11.5],
-      [8, 15],
-    ]),
-    poly("tint", [
-      [8, 1.5],
-      [15, 5],
-      [8, 8.5],
-      [1, 5],
-    ]),
-    ...[
-      [8, 3.25],
-      [11.5, 5],
-      [4.5, 5],
-      [8, 6.75],
-    ].map(([x = 0, y = 0]) => circle(x, y, 1.2, "accent")),
   ],
   set: [
     poly("ink", [
@@ -458,24 +341,6 @@ export const ICON_GLYPHS = {
     rect(4, 7, 8, 6, "accent", { radius: 3 }),
     rect(6, 9, 4, 2, "paper", { radius: 1 }),
   ],
-  import: [
-    ...tray(),
-    rect(7, 1, 2, 6, "accent"),
-    poly("accent", [
-      [3, 6],
-      [13, 6],
-      [8, 11],
-    ]),
-  ],
-  export: [
-    ...tray(),
-    rect(7, 6, 2, 6, "accent"),
-    poly("accent", [
-      [3, 6],
-      [13, 6],
-      [8, 1],
-    ]),
-  ],
   plan: [
     rect(1, 2, 14, 12, "accent", { radius: 1 }),
     rect(1, 6, 14, 1, "paper", { opacity: 0.3 }),
@@ -485,12 +350,6 @@ export const ICON_GLYPHS = {
     rect(3, 4, 8, 7, "paper"),
     rect(4, 5, 6, 5, "accent"),
     rect(12, 4, 1, 7, "paper"),
-  ],
-  "parts-list": [
-    rect(2, 2, 12, 14, "ink", { radius: 1 }),
-    rect(3, 4, 10, 11, "paper"),
-    rect(5, 1, 6, 3, "tone"),
-    ...[6, 9, 12].flatMap((y) => [rect(4, y, 2, 2, "accent"), rect(7, y + 1, 5, 1, "tone")]),
   ],
   stats: [
     rect(1, 14, 14, 1, "ink"),
