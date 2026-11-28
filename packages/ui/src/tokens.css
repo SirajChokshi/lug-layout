@@ -16,7 +16,12 @@
   --ref-blue-500: #2a72dc;
   --ref-blue-600: #1d63c9;
   --ref-blue-800: #154a96;
+  --ref-amber-50: #fbf2df;
   --ref-amber-600: #9a5b00;
+  --ref-green-50: #e9f4ea;
+  --ref-green-600: #2e7d32;
+  --ref-red-50: #fbe9e9;
+  --ref-red-600: #c42b2b;
   --ref-gold-500: #c89200;
   --ref-wood-500: #a8693b;
   --ref-steel-600: #4a5563;
@@ -50,7 +55,12 @@
   --accent-ink: var(--ref-blue-800);
   --focus-ring: 0 0 0 1px var(--accent);
 
+  --status-ok: var(--ref-green-600);
+  --status-ok-soft: var(--ref-green-50);
   --status-warn: var(--ref-amber-600);
+  --status-warn-soft: var(--ref-amber-50);
+  --status-danger: var(--ref-red-600);
+  --status-danger-soft: var(--ref-red-50);
   --favorite: var(--ref-gold-500);
 
   --icon-ink: var(--ref-gray-800);
@@ -70,7 +80,7 @@
   --text-caption: 10px;
   --text-small: 11px;
   --text-body: 12px;
-  --text-title: 12px;
+  --text-heading: 13px;
   --leading-body: 1.4;
   --weight-medium: 500;
   --weight-strong: 600;
@@ -82,15 +92,15 @@
   --space-4: 8px;
   --space-5: 10px;
   --space-6: 12px;
+  --space-7: 16px;
 
   --radius-xs: 2px;
   --radius-sm: 3px;
   --radius-md: 3px;
 
-  --elevation-1: 0 0 0 1px var(--border-chrome), 0 1px 2px rgb(0 0 0 / 0.06);
-
   --control-height: 22px;
   --control-height-sm: 20px;
+  --control-height-lg: 26px;
 
   --menubar-height: 28px;
   --toolstrip-height: 32px;
