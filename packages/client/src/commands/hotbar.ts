@@ -4,6 +4,8 @@ import { EDITOR } from "../tokens.ts";
 import type { KeyChord } from "./key-chord.ts";
 
 export const HOTBAR_SLOTS = 9;
+export const RECENT_SLOTS = 4;
+export const PINNED_SLOTS = HOTBAR_SLOTS - RECENT_SLOTS;
 
 export const KEY_FOR_SLOT: ReadonlyArray<KeyChord> = Array.from(
   { length: HOTBAR_SLOTS },
@@ -13,6 +15,7 @@ export const KEY_FOR_SLOT: ReadonlyArray<KeyChord> = Array.from(
 export interface HotbarSlot {
   readonly item: string;
   readonly lastUsed: number;
+  readonly pinned: boolean;
 }
 
 export interface Hotbar {
@@ -22,32 +25,56 @@ export interface Hotbar {
 
 export const EMPTY_HOTBAR: Hotbar = { slots: [], clock: 0 };
 
-function leastRecentSlot(slots: ReadonlyArray<HotbarSlot>): number {
-  let oldest = 0;
-  for (let slot = 1; slot < slots.length; slot++) {
-    if ((slots[slot]?.lastUsed ?? 0) < (slots[oldest]?.lastUsed ?? 0)) oldest = slot;
+function pinnedCount(slots: ReadonlyArray<HotbarSlot>): number {
+  return slots.filter((slot) => slot.pinned).length;
+}
+
+function leastRecentUnpinned(slots: ReadonlyArray<HotbarSlot>): number {
+  let oldest = -1;
+  for (let slot = 0; slot < slots.length; slot++) {
+    const candidate = slots[slot];
+    if (!candidate || candidate.pinned) continue;
+    if (oldest < 0 || candidate.lastUsed < (slots[oldest]?.lastUsed ?? 0)) oldest = slot;
   }
   return oldest;
 }
 
+export function canPin(hotbar: Hotbar): boolean {
+  return pinnedCount(hotbar.slots) < PINNED_SLOTS;
+}
+
 export function hotbarWith(hotbar: Hotbar, item: string): Hotbar {
   const clock = hotbar.clock + 1;
-  const existing = hotbar.slots.findIndex((slot) => slot.item === item);
-  const slot =
-    existing >= 0
-      ? existing
-      : hotbar.slots.length < HOTBAR_SLOTS
-        ? hotbar.slots.length
-        : leastRecentSlot(hotbar.slots);
   const slots = [...hotbar.slots];
-  slots[slot] = { item, lastUsed: clock };
+  const existing = slots.findIndex((slot) => slot.item === item);
+  const kept = slots[existing];
+  if (kept) {
+    slots[existing] = { ...kept, lastUsed: clock };
+    return { slots, clock };
+  }
+  const used = { item, lastUsed: clock, pinned: false };
+  if (slots.length - pinnedCount(slots) < RECENT_SLOTS) slots.push(used);
+  else slots[leastRecentUnpinned(slots)] = used;
   return { slots, clock };
+}
+
+export function hotbarWithPinToggled(hotbar: Hotbar, slot: number): Hotbar {
+  const target = hotbar.slots[slot];
+  if (!target || (!target.pinned && !canPin(hotbar))) return hotbar;
+  const clock = hotbar.clock + 1;
+  const slots = hotbar.slots.map((kept, at) =>
+    at === slot ? { ...kept, pinned: !kept.pinned, lastUsed: clock } : kept,
+  );
+  if (slots.length - pinnedCount(slots) <= RECENT_SLOTS) return { slots, clock };
+  const evicted = leastRecentUnpinned(slots);
+  return { slots: slots.filter((_, at) => at !== evicted), clock };
 }
 
 export interface IHotbar {
   subscribe(listener: () => void): () => void;
   snapshot(): Hotbar;
   pick(slot: number): void;
+  togglePin(slot: number): void;
 }
 
 @injectable()
@@ -74,11 +101,20 @@ export class HotbarService implements IHotbar {
     if (item !== undefined) this.editor.chooseItem(item);
   }
 
+  togglePin(slot: number): void {
+    this.set(hotbarWithPinToggled(this.hotbar, slot));
+  }
+
   private notice(active: string | null): void {
     if (active === this.lastActive) return;
     this.lastActive = active;
     if (active === null) return;
-    this.hotbar = hotbarWith(this.hotbar, active);
+    this.set(hotbarWith(this.hotbar, active));
+  }
+
+  private set(hotbar: Hotbar): void {
+    if (hotbar === this.hotbar) return;
+    this.hotbar = hotbar;
     for (const listener of this.listeners) listener();
   }
 }

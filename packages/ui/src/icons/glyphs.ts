@@ -205,6 +205,18 @@ export const ICON_GLYPHS = {
     rect(2, 9, 5, 5, "tone", { radius: 1 }),
     rect(9, 9, 5, 5, "accent", { radius: 1 }),
   ],
+  pin: [
+    rect(4, 1, 8, 2, "accent"),
+    rect(5, 3, 6, 5, "accent"),
+    rect(3, 8, 10, 2, "accent"),
+    rect(7, 10, 2, 5, "ink"),
+  ],
+  "pin-off": [
+    rect(4, 1, 8, 2, "tone"),
+    rect(5, 3, 6, 5, "tone"),
+    rect(3, 8, 10, 2, "tone"),
+    rect(7, 10, 2, 5, "tone"),
+  ],
   favorite: [star([8, 8.5], 7.5, 3.2, "gold")],
   "favorite-off": [star([8, 8.5], 7.5, 3.2, "tone"), star([8, 8.6], 4.5, 1.9, "paper")],
   baseplate: [

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogItemView } from "../catalog/placeable-catalog.ts";
 import type { RoadKitView } from "../edit/road-drawing.ts";
-import { EMPTY_HOTBAR, hotbarWith } from "./hotbar.ts";
+import { EMPTY_HOTBAR, hotbarWith, hotbarWithPinToggled } from "./hotbar.ts";
 import { hotbarView } from "./hotbar-view.ts";
 
 const GREEN = { code: 2, name: "Green", rgb: "#237841" };
@@ -48,8 +48,11 @@ const ROAD_KIT: RoadKitView = {
 };
 
 describe("hotbar view", () => {
-  it("draws each footprint as a share of the largest one in the hotbar, in the catalog colour when there is one", () => {
-    const hotbar = [PLATE.id, IMPORTED.id, MISSING].reduce(hotbarWith, EMPTY_HOTBAR);
+  it("draws each footprint as a share of the largest one in the hotbar, in the catalog colour when there is one, and marks pinned slots", () => {
+    const hotbar = hotbarWithPinToggled(
+      [PLATE.id, IMPORTED.id, MISSING].reduce(hotbarWith, EMPTY_HOTBAR),
+      0,
+    );
 
     expect(hotbarView(hotbar, [PLATE, IMPORTED])).toEqual([
       {
@@ -58,6 +61,8 @@ describe("hotbar view", () => {
         caption: "Baseplate 32 x 32, Green",
         footprint: { studsWide: 32, studsDeep: 32, wideShare: 1, deepShare: 1 },
         color: GREEN.rgb,
+        pinned: true,
+        pinnable: true,
       },
       {
         item: IMPORTED.id,
@@ -65,8 +70,18 @@ describe("hotbar view", () => {
         caption: "Custom_yard",
         footprint: { studsWide: 16, studsDeep: 8, wideShare: 0.5, deepShare: 0.25 },
         color: null,
+        pinned: false,
+        pinnable: true,
       },
-      { item: MISSING, label: MISSING, caption: MISSING, footprint: null, color: null },
+      {
+        item: MISSING,
+        label: MISSING,
+        caption: MISSING,
+        footprint: null,
+        color: null,
+        pinned: false,
+        pinnable: true,
+      },
     ]);
   });
 
@@ -79,6 +94,8 @@ describe("hotbar view", () => {
       caption: "Road",
       footprint: { studsWide: 32, studsDeep: 32, wideShare: 1, deepShare: 1 },
       color: null,
+      pinned: false,
+      pinnable: true,
     });
   });
 });

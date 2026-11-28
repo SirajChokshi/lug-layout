@@ -2,6 +2,7 @@ import {
   altKeyName,
   commandSpec,
   hotbarView,
+  PINNED_SLOTS,
   toolHints,
   type EditorSnapshot,
   type HotbarSlotView,
@@ -12,6 +13,7 @@ import {
   type ToolSpeech,
 } from "@brr/client";
 import { useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { Icon } from "./icons/icon.tsx";
 import { Chord, PLATFORM } from "./keys.tsx";
 import { pendingSearch, useLateCue, useSteadySpeech } from "./late-cue.ts";
 import { useHotbarSnapshot } from "./use-hotbar.ts";
@@ -154,12 +156,40 @@ function SlotButton({ slot, keyLabel, pressed, disabled, onPick }: SlotButtonPro
   );
 }
 
+function pinTitle(slot: HotbarSlotView): string {
+  if (slot.pinned) return `Unpin ${slot.label}: it leaves once four newer parts are used`;
+  if (slot.pinnable) return `Pin ${slot.label}: it stays while you try other parts`;
+  return `${PINNED_SLOTS} slots are pinned: unpin one to pin ${slot.label}`;
+}
+
+function PinButton({
+  slot,
+  onToggle,
+}: {
+  readonly slot: HotbarSlotView;
+  readonly onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="hotbar-pin"
+      aria-pressed={slot.pinned}
+      aria-label={`Pin ${slot.label}`}
+      title={pinTitle(slot)}
+      disabled={!slot.pinnable}
+      onClick={onToggle}
+    >
+      <Icon name={slot.pinned ? "pin" : "pin-off"} />
+    </button>
+  );
+}
+
 function HotbarSlots({ snapshot, hotbar, slots }: HotbarSlotsProps) {
   const { keys } = commandSpec("pick-slot");
   return (
     <ol className="hotbar" aria-label="Hotbar">
       {slots.map((slot, index) => (
-        <li key={slot.item}>
+        <li key={slot.item} data-pinned={slot.pinned}>
           <SlotButton
             slot={slot}
             keyLabel={keys[index]?.key ?? ""}
@@ -167,6 +197,7 @@ function HotbarSlots({ snapshot, hotbar, slots }: HotbarSlotsProps) {
             disabled={snapshot.readOnly}
             onPick={() => hotbar.pick(index)}
           />
+          <PinButton slot={slot} onToggle={() => hotbar.togglePin(index)} />
         </li>
       ))}
     </ol>

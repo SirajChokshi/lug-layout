@@ -391,7 +391,7 @@ export {
   shownShellMode,
   type ShellMode,
 } from "./commands/shell-mode.ts";
-export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
+export { PINNED_SLOTS, type Hotbar, type IHotbar } from "./commands/hotbar.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
 export { trackBlockText } from "./edit/track-drag.ts";
 export type { TallestTrain } from "./trains/tallest-train.ts";
