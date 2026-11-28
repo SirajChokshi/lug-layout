@@ -6,14 +6,13 @@ use std::path::Path;
 
 use brick_compile::affine::Affine;
 use brick_compile::bake::ModelBaker;
-use brick_compile::colors::parse_ldconfig;
+use brick_compile::colors::{parse_ldconfig, translucent_codes};
 use brick_compile::compile::stud_primitives_from_table;
 use brick_compile::glyph::{Glyph, GlyphBaker, GlyphInstance, StudMeshes};
 use brick_compile::model::bake_model;
 use brick_compile::{compile_part, CompileOptions, Library};
 use common::{fixture_library, MemoryLibrary};
 
-const OPAQUE: u8 = 255;
 const FULL: u8 = 16;
 const SAMPLES_PER_PIXEL_SIDE: i64 = 4;
 const PIXELS_PER_STUD: i64 = 8;
@@ -42,11 +41,7 @@ fn stud_primitives() -> Vec<String> {
 fn translucent() -> HashSet<u32> {
     let ldconfig =
         String::from_utf8(repository_file(".cache/ldraw/LDConfig.ldr")).expect("LDConfig is UTF-8");
-    parse_ldconfig(&ldconfig)
-        .into_iter()
-        .filter(|colour| colour.alpha < OPAQUE)
-        .map(|colour| colour.code)
-        .collect()
+    translucent_codes(&parse_ldconfig(&ldconfig))
 }
 
 fn table_depth() -> f64 {

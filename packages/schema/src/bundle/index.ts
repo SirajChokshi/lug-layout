@@ -397,6 +397,8 @@ export const BundleFarMesh = v.object({
 });
 export type BundleFarMesh = v.InferOutput<typeof BundleFarMesh>;
 
+const FileRef = v.object({ file: v.string() });
+
 export const BundleModelEntry = v.object({
   name: v.string(),
   file: v.string(),
@@ -416,6 +418,7 @@ export const BundleModelEntry = v.object({
   notDrawn: v.optional(v.array(NotDrawnSection)),
   errata: v.optional(v.array(ModelErratum)),
   farMesh: v.optional(v.nullable(BundleFarMesh)),
+  glyph: v.optional(FileRef),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
 
@@ -441,6 +444,7 @@ export const ManifestPart = v.object({
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
+  glyph: v.optional(FileRef),
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 
@@ -703,8 +707,6 @@ export const PartShape = v.object({
   outline: v.optional(PlanOutline),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
-
-const FileRef = v.object({ file: v.string() });
 
 export const CatalogPart = v.object({ ...ManifestPart.entries, shape: FileRef });
 export type CatalogPart = v.InferOutput<typeof CatalogPart>;
@@ -1817,10 +1819,16 @@ export const LibraryBakeOptions = v.strictObject({
   studPrimitives: StringList,
   unofficialAllowlist: StringList,
   primitives: PrimitiveConnectorTable,
+  translucentColors: v.optional(v.array(Count)),
 });
 export type LibraryBakeOptions = v.InferOutput<typeof LibraryBakeOptions>;
 
-export const LibraryBakePart = v.strictObject({ record: v.string(), glb: v.string() });
+export const LibraryBakePart = v.strictObject({
+  record: v.string(),
+  glb: v.string(),
+  glyph: v.optional(v.string()),
+  glyphIssue: v.optional(v.string()),
+});
 export type LibraryBakePart = v.InferOutput<typeof LibraryBakePart>;
 
 export const LIBRARY_BAKE_BUCKETS = 256;

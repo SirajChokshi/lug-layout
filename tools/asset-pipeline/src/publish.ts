@@ -7,6 +7,7 @@ import {
   type ConnectorPacks,
   CreditTableFile,
   CrosswalkFile,
+  decodePlanGlyph,
   FarMeshGltfDocument,
   GltfDocument,
   LibraryBakePin,
@@ -22,7 +23,7 @@ import {
   SectionVocabularyFile,
   type SectionVocabularyRef,
 } from "@brr/schema/bundle";
-import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { decode, decodedOrThrow, issueText } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, extname, join, relative, sep } from "node:path";
@@ -310,6 +311,11 @@ export async function publishBundle(
   const servedParts = new Map<string, v.InferOutput<typeof GltfDocument>>();
   for (const { id, file } of partTable.parts) {
     servedParts.set(id, decodeDeclared(GltfDocument, glbJson(await publish(file), file), file));
+  }
+  for (const { glyph } of [...partTable.parts, ...manifest.models]) {
+    if (glyph === undefined) continue;
+    const decoded = decodePlanGlyph(await publish(glyph.file));
+    if (!decoded.ok) throw new Error(`${glyph.file}: ${issueText(decoded.issues)}`);
   }
   const diagnosticsRef = manifest.rollingDiagnostics;
   if (diagnosticsRef === undefined) throw new Error(`${manifestPath} names no rolling diagnostics`);

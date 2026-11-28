@@ -1,10 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::compile::{rolling_mode_from_studs, stud_primitives_from_table};
 use brick_compile::cover::PartSolid;
+use brick_compile::glyph::{GlyphBaker, StudMeshes};
 use brick_compile::record::BakeRecord;
 use brick_compile::vehicle::part_bounds;
 use brick_compile::{compile_part, CompileOptions, Lod, TechnicPrimitives};
@@ -14,14 +15,26 @@ use serde_json::{json, Value};
 const PART_ID_PREFIX: &str = "ldraw:";
 const RECORD_FOLDER: &str = "records";
 const GLB_FOLDER: &str = "standard";
+const GLYPH_FOLDER: &str = "glyphs";
 
 struct Args {
     ldraw: PathBuf,
     palette: PathBuf,
     primitives: PathBuf,
+    translucent: HashSet<u32>,
     out: PathBuf,
     shard: usize,
     shards: usize,
+}
+
+fn colour_codes(list: &str) -> Result<HashSet<u32>, String> {
+    list.split(',')
+        .filter(|code| !code.is_empty())
+        .map(|code| {
+            code.parse()
+                .map_err(|e| format!("--translucent-colors {code}: {e}"))
+        })
+        .collect()
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -51,6 +64,7 @@ fn parse_args() -> Result<Args, String> {
         ldraw: take("--ldraw")?.into(),
         palette: take("--palette")?.into(),
         primitives: take("--primitives")?.into(),
+        translucent: colour_codes(&take("--translucent-colors")?)?,
         out: take("--out")?.into(),
         shard,
         shards,
@@ -61,6 +75,7 @@ fn bake_part(
     library: &DirectoryLibrary,
     reference: &str,
     options: &CompileOptions,
+    glyphs: &GlyphBaker,
     out: &Path,
     stem: &str,
 ) -> Result<Value, String> {
@@ -96,6 +111,15 @@ fn bake_part(
         .map(|file| file.header.license.as_deref().unwrap_or_default())
         .collect();
     let mut entry = json!({ "record": record_file, "glb": glb_file, "licenses": licenses });
+    match glyphs.part(&compiled.mesh, &compiled.studs) {
+        Ok(glyph) => {
+            let glyph_file = format!("{GLYPH_FOLDER}/{stem}.glyph");
+            fs::write(out.join(&glyph_file), glyph.encode())
+                .map_err(|e| format!("{glyph_file}: {e}"))?;
+            entry["glyph"] = json!(glyph_file);
+        }
+        Err(issue) => entry["glyphIssue"] = json!(issue.to_string()),
+    }
     let diagnostics = compiled.rolling_diagnostics();
     if !diagnostics.is_empty() {
         entry["rollingDiagnostics"] = json!(diagnostics);
@@ -121,7 +145,14 @@ fn run(args: &Args) -> Result<usize, String> {
         unofficial_allowlist: strings(&palette, "unofficialAllowlist")?,
         technic: TechnicPrimitives::from_table(&primitive_table)?,
     };
-    for folder in [RECORD_FOLDER, GLB_FOLDER] {
+    let studs = StudMeshes::compile(
+        &library,
+        &options.stud_primitives,
+        &options.unofficial_allowlist,
+    )
+    .map_err(|e| format!("stud primitives: {e}"))?;
+    let glyphs = GlyphBaker::new(&studs, &args.translucent);
+    for folder in [RECORD_FOLDER, GLB_FOLDER, GLYPH_FOLDER] {
         fs::create_dir_all(args.out.join(folder)).map_err(|e| format!("{folder}: {e}"))?;
     }
     let mut listing = Vec::new();
@@ -131,7 +162,7 @@ fn run(args: &Args) -> Result<usize, String> {
         .filter(|(i, _)| i % args.shards == args.shard)
     {
         let stem = reference.trim_end_matches(PART_EXTENSION);
-        let mut entry = bake_part(&library, reference, &options, &args.out, stem)?;
+        let mut entry = bake_part(&library, reference, &options, &glyphs, &args.out, stem)?;
         entry["id"] = json!(format!("{PART_ID_PREFIX}{stem}"));
         entry["part"] = json!(reference);
         listing.push(entry);

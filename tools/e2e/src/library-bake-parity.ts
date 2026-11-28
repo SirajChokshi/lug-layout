@@ -1,5 +1,6 @@
 import { BrickCompiler } from "@brr/import";
 import {
+  decodePlanGlyph,
   LibraryBakeBucket,
   LibraryBakeIndex,
   libraryBakeBucket,
@@ -8,7 +9,7 @@ import {
   type LibraryBakeOptions,
   type LibraryBakePart,
 } from "@brr/schema/bundle";
-import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { decode, decodedOrThrow, issueText } from "@brr/schema/decode";
 import { readdir, readFile } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join, relative } from "node:path";
@@ -36,12 +37,14 @@ interface ShardJob {
   readonly wasm: string;
   readonly ldraw: string;
   readonly options: LibraryBakeOptions;
+  readonly translucentColors: ReadonlyArray<number>;
   readonly inference: InferenceInputs;
   readonly expected: ReadonlyArray<Expected>;
 }
 
 interface ShardResult {
   readonly identical: number;
+  readonly glyphs: number;
   readonly mismatches: ReadonlyArray<string>;
 }
 
@@ -72,6 +75,7 @@ async function compareShard(job: ShardJob): Promise<ShardResult> {
   const paths = await libraryPaths(job.ldraw);
   const library = { key: LIBRARY_KEY, files: new Map<string, string>(), absent: new Set<string>() };
   let identical = 0;
+  let glyphs = 0;
   const mismatches: string[] = [];
   for (let start = 0; start < job.expected.length; start += BATCH_PARTS) {
     const batch = job.expected.slice(start, start + BATCH_PARTS);
@@ -89,6 +93,7 @@ async function compareShard(job: ShardJob): Promise<ShardResult> {
       model: "",
       inlineChecks: [],
       records: true,
+      glyphs: { translucentColors: job.translucentColors },
     };
     let output = compiler.compile(request, library);
     for (;;) {
@@ -121,20 +126,37 @@ async function compareShard(job: ShardJob): Promise<ShardResult> {
         mismatches.push(`${expected.id}: WASM ${outcome.status}`);
         continue;
       }
-      const [record, glb] = await Promise.all([
-        readFile(join(job.records, expected.part.record)),
-        readFile(join(job.records, expected.part.glb)),
+      const { part } = expected;
+      const [record, glb, glyph] = await Promise.all([
+        readFile(join(job.records, part.record)),
+        readFile(join(job.records, part.glb)),
+        part.glyph === undefined ? null : readFile(join(job.records, part.glyph)),
       ]);
-      const recordSame = sameBytes(outcome.record, record);
-      const glbSame = sameBytes(outcome.glb, glb);
-      if (recordSame && glbSame) identical++;
-      else
-        mismatches.push(
-          `${expected.id}: ${[recordSame ? null : "record", glbSame ? null : "GLB"].filter((x) => x !== null).join(" and ")} differ`,
-        );
+      const differing = [
+        sameBytes(outcome.record, record) ? null : "record",
+        sameBytes(outcome.glb, glb) ? null : "GLB",
+        sameGlyph(outcome, glyph, part.glyphIssue),
+      ].filter((difference) => difference !== null);
+      if (glyph !== null) {
+        const decoded = decodePlanGlyph(glyph);
+        if (decoded.ok) glyphs++;
+        else differing.push(`glyph (${issueText(decoded.issues)})`);
+      }
+      if (differing.length === 0) identical++;
+      else mismatches.push(`${expected.id}: ${differing.join(" and ")} differ`);
     }
   }
-  return { identical, mismatches };
+  return { identical, glyphs, mismatches };
+}
+
+function sameGlyph(
+  outcome: { readonly glyph: Uint8Array | null; readonly glyphIssue?: string },
+  glyph: Uint8Array | null,
+  issue: string | undefined,
+): string | null {
+  if (glyph === null)
+    return outcome.glyph === null && outcome.glyphIssue === issue ? null : "glyph";
+  return outcome.glyph !== null && sameBytes(outcome.glyph, glyph) ? null : "glyph";
 }
 
 async function expectedParts(records: string): Promise<{
@@ -213,6 +235,8 @@ async function main(): Promise<void> {
   const workers = Number(values.workers);
   const started = performance.now();
   const { options, expected } = await expectedParts(values.records);
+  const { translucentColors } = options;
+  if (translucentColors === undefined) throw new Error(`${INDEX_FILE} records no clear colours`);
   const inference = await inferenceInputs(values.vocabulary, values.inferred);
   const shards = Array.from({ length: workers }, (): Expected[] => []);
   for (const [i, part] of expected.entries()) shards[i % workers]?.push(part);
@@ -223,16 +247,18 @@ async function main(): Promise<void> {
         wasm: values.wasm,
         ldraw: values.ldraw,
         options,
+        translucentColors,
         inference,
         expected: shard,
       }),
     ),
   );
   const identical = results.reduce((sum, result) => sum + result.identical, 0);
+  const glyphs = results.reduce((sum, result) => sum + result.glyphs, 0);
   const mismatches = results.flatMap((result) => result.mismatches).toSorted();
   const seconds = ((performance.now() - started) / 1000).toFixed(0);
   process.stdout.write(
-    `library bake parity: ${identical} of ${expected.length} parts identical between the native pipeline and the shipped WASM compiler (records, standard GLBs and failures) in ${seconds} s on ${workers} workers\n`,
+    `library bake parity: ${identical} of ${expected.length} parts identical between the native pipeline and the shipped WASM compiler (records, standard GLBs, plan glyphs and failures), ${glyphs} glyphs decoded by @brr/schema, in ${seconds} s on ${workers} workers\n`,
   );
   for (const mismatch of mismatches.slice(0, MISMATCHES_SHOWN))
     process.stdout.write(`  ${mismatch}\n`);
