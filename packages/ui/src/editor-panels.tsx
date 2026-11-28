@@ -291,7 +291,6 @@ export function PlacementToolbar({
           icon={icon}
           label={label}
           command={id}
-          labelled
           data-action={id}
           aria-pressed={commandActive(id, snapshot)}
           disabled={!commandEnabled(id, snapshot, play)}
