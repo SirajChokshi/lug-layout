@@ -472,7 +472,7 @@ async function importOutsideTheBundle(
 }
 
 it(
-  "announces placement once, before the result, with every field the result has but the stud cover, and listening changes nothing in the result",
+  "announces placement once, before the result, with every field the result has but the stud cover and the plan glyph, and listening changes nothing in the result",
   async () => {
     const text = [
       "0 two stacked bricks beside a plate",
@@ -492,9 +492,13 @@ it(
     const quiet = await importOutsideTheBundle("stacked.ldr", text, null);
     const { bake, report, studio: _studio, ...shape } = listened;
     if (!bake) throw new Error("the stacked bricks did not bake");
-    const { studCover, ...placement } = bake;
+    const { studCover, glyph, glyphIssue, ...placement } = bake;
 
     expect(studCover.covered).toBeGreaterThan(0);
+    expect({ glyph: glyph instanceof Uint8Array, glyphIssue }).toEqual({
+      glyph: true,
+      glyphIssue: null,
+    });
     expect(comparable(listened)).toEqual(comparable(quiet));
     expect(announced).toEqual([
       {
