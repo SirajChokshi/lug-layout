@@ -2334,6 +2334,7 @@ export class Editor implements IEditor, IEditedWorld {
       grabX: pivot.x,
       grabZ: pivot.z,
       placement: null,
+      kitName: null,
     });
     return true;
   }
