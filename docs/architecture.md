@@ -727,7 +727,7 @@ The backend and its glyphs are described in §6, *2D plan backend*.
 - **B4.5 Inventories:** per contributor, a Rebrickable collection CSV (extending today's own vs buy), a BlueBrick `.bbb` (through B5.2's mapping) or quick counts. The event budget is their sum.
 - **B4.6 Budget on the library:** tiles show used and available. Over budget is a warning that feeds the shortfall Wanted List and never blocks "Buildable as planned", since missing parts can be bought. The parts list gains per-contributor and missing columns.
 - **B4.7 Member sheets:** "what you bring" lists and per-contributor Wanted Lists.
-- **B4.8 Show sheets** from the 2D draw list: SVG and vector PDF, true scale tiled over A4, Letter or A3 with overlap and registration marks, or fitted to one page; a title block and legend; the table plan sheet (numbers, sizes, heights, colours); and named sheets as layer sets ("Table plan", "Main plan", "Yard plan"). The PDF comes from a small vector PDF writer in `client`, with no dependency, fed by the same draw list as the SVG, so its bytes are deterministic. Three PRs: the draw list and tiling, the PDF writer, the sheet sets.
+- **B4.8 Show sheets** (landed in #811, #814 and #820; §7.3, *Plan outputs*): one draw list, `PlanDrawing`, laid out by `SheetComposer` as one 1:1 sheet, fitted to one page, or tiled at true scale over A4, Letter or A3 with overlap and registration marks; a title block and legend; the table plan sheet (numbers, sizes, heights, colours); and named sheet sets as layer sets ("Main plan", "Table plan", or a user's "Yard plan"). It writes SVG, and PDF through a small vector PDF writer in `client` (`PDF_SHEET_WRITER`) with no dependency, fed by the same draw list, so its bytes are deterministic. Sheet sets persist with the world from B1.2, and document layers join the draw list's layers from B1.3.
 - **B4.9 PNG export** at a chosen number of pixels per stud, tiled.
 - **B4.10 LDraw `.mpd` export:** one submodel per layer, each placement a type-1 line at its exact pose, imported models embedded as their original files. Evidence: a round trip into LDCad or Studio.
 
@@ -799,7 +799,7 @@ These built the engine. An item they list that is still open follows D6: a B mil
 | P1: the "designate bogie" metadata tool | Unscheduled: Play internals are frozen |
 | P1: Rebrickable API collection sync | Unscheduled. Inventories come from a collection CSV, a BlueBrick `.bbb` or quick counts (B4.5) |
 | P1: BrickLink price estimates and a cost total per plan | *Not doing* (prices) |
-| P1: PDF plans | B4.8 |
+| P1: PDF plans | B4.8, landed |
 | P1: build-phase splits, and a moving and storage view | Unscheduled |
 | P1: floor plans or room photos for tracing | B4.3 for a floor-plan image; room photos are unscheduled |
 | P1: elevation with grade parts | Ramps and raised track exist (§7.2, *Raised track*); nothing more is scheduled |
