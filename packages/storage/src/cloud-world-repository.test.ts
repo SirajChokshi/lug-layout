@@ -1,6 +1,8 @@
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import {
+  BASE_LAYER,
   importRef,
+  noteShards,
   worldShards,
   type ImportedFile,
   type PlacementRecordV1,
@@ -108,7 +110,22 @@ const header: WorldHeader = {
   bundleVersion: "e5124ec7210e6f35",
   view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0.78, pitch: 0.75 },
   disclaimer: "disclaimer",
+  layers: [BASE_LAYER, { ...BASE_LAYER, id: 1, name: "Notes", kind: "notes" }],
 };
+
+const stationSign = noteShards([
+  {
+    kind: "text",
+    index: 0,
+    layer: 1,
+    text: "Station",
+    x: 0,
+    z: 200,
+    rot: 0,
+    heightStuds: 2,
+    color: "#1f2937",
+  },
+]);
 
 function baseplateAt(x: number): PlacementRecordV1 {
   return { ref: "ldraw:3811", color: 2, x, z: 0, yPlates: 0, rot: 0 };
@@ -127,7 +144,7 @@ async function createWorld(cloud: ICloudWorlds, placements: ReadonlyArray<Placem
   await cloud.putImportedFile(signalBox);
   const shards = worldShards(placements, []);
   expect(shards).toHaveLength(2);
-  return (await cloud.create(header, shards)).id;
+  return (await cloud.create(header, shards, stationSign)).id;
 }
 
 async function edit(
@@ -137,7 +154,13 @@ async function edit(
   view = header.view,
 ): Promise<void> {
   const shards = worldShards(placements, []);
-  await cloud.save(id, { header: { ...header, view }, put: shards, drop: [] });
+  await cloud.save(id, {
+    header: { ...header, view },
+    put: shards,
+    drop: [],
+    putNotes: [],
+    dropNotes: [],
+  });
 }
 
 async function placementsOf(cloud: ICloudWorlds, id: string) {
@@ -163,13 +186,13 @@ describe("CloudWorldRepository against the layout API Worker", () => {
     const idb = new IDBFactory();
     const beforeSignIn = await pageLoad(idb, "");
     const id = await createWorld(beforeSignIn, [baseplateAt(0), signalBoxOnFarTable]);
-    const blank = (await beforeSignIn.create({ ...header, name: "World 1" }, [])).id;
+    const blank = (await beforeSignIn.create({ ...header, name: "World 1" }, [], [])).id;
     expect(beforeSignIn.view()).toMatchObject({ signIn: "signed-out", waiting: 0 });
 
     const firstSync = requestsDuring();
     const cloud = await signedInDevice("builder@example.test", idb);
     await cloud.syncNow();
-    expect(uploads("shards", firstSync())).toHaveLength(2);
+    expect(uploads("shards", firstSync())).toHaveLength(3);
     expect(uploads("imports", firstSync())).toEqual([
       expect.stringContaining(`/imports/${signalBox.sha256}`),
     ]);
@@ -206,6 +229,8 @@ describe("CloudWorldRepository against the layout API Worker", () => {
     expect(inAccount?.name).toBe("Club show");
     const shared = inAccount?.id ?? "";
     expect(await placementsOf(tablet, shared)).toEqual([baseplateAt(0), signalBoxOnFarTable]);
+    const pulled = await tablet.read(shared);
+    expect(pulled.ok && pulled.value.notes).toEqual(stationSign);
     expect((await tablet.importedFile(signalBox.sha256))?.bytes).toEqual(signalBox.bytes);
     expect(tablet.view().accountWorlds).toEqual([]);
 

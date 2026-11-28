@@ -12,15 +12,19 @@ import {
   type WorldSnapshot,
 } from "@brr/schema/layout-api";
 import {
-  WorldShardV1,
+  NoteShardV2,
   canonicalJson,
+  decodeShardV2,
   parseJsonText,
   referencedImports,
   shardName,
   worldHeader,
+  type ShardDecoder,
+  type SuperChunk,
   type WorldHeader,
   type WorldIndexEntry,
-  type WorldManifestV1,
+  type WorldManifestV2,
+  type WorldShardV2,
 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import {
@@ -92,8 +96,9 @@ interface SnapshotFiles {
 }
 
 interface DownloadedVersion {
-  readonly manifest: WorldManifestV1;
-  readonly shards: ReadonlyArray<WorldShardV1>;
+  readonly manifest: WorldManifestV2;
+  readonly shards: ReadonlyArray<WorldShardV2>;
+  readonly notes: ReadonlyArray<NoteShardV2>;
   readonly content: string;
 }
 
@@ -105,6 +110,19 @@ function textSha256(text: string): Promise<string> {
 
 function contentKey(snapshot: WorldSnapshot): Promise<string> {
   return textSha256(canonicalJson({ ...snapshot, manifest: { ...snapshot.manifest, view: null } }));
+}
+
+const decodeNoteShard: ShardDecoder<NoteShardV2> = (value, path) =>
+  decode(NoteShardV2, value, path);
+
+function dropped(
+  before: ReadonlyArray<{ readonly superChunk: SuperChunk }>,
+  after: ReadonlyArray<{ readonly superChunk: SuperChunk }>,
+): SuperChunk[] {
+  const kept = new Set(after.map((shard) => shardName(shard.superChunk)));
+  return before
+    .map((entry) => entry.superChunk)
+    .filter((superChunk) => !kept.has(shardName(superChunk)));
 }
 
 function withSyncLock<T>(task: () => Promise<T>): Promise<T> {
@@ -221,9 +239,10 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
 
   override async create(
     header: WorldHeader,
-    shards: ReadonlyArray<WorldShardV1>,
+    shards: ReadonlyArray<WorldShardV2>,
+    notes: ReadonlyArray<NoteShardV2>,
   ): Promise<WorldIndexEntry> {
-    const entry = await super.create(header, shards);
+    const entry = await super.create(header, shards, notes);
     this.schedule(entry.id);
     return entry;
   }
@@ -315,7 +334,8 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
     if (!stored.ok) return;
     const files = await this.snapshotFiles(stored.value);
     const link = await this.link(id, accountId);
-    if (link === null ? stored.value.shards.length === 0 : link.content === files.content) return;
+    const empty = stored.value.shards.length + stored.value.notes.length === 0;
+    if (link === null ? empty : link.content === files.content) return;
     const world =
       link?.world ?? (await this.createAccountWorld(id, accountId, stored.value.manifest.name));
     const parent = link?.version ?? null;
@@ -387,15 +407,18 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
     );
   }
 
-  private async snapshotFiles({ manifest, shards }: StoredWorld): Promise<SnapshotFiles> {
+  private async snapshotFiles({ manifest, shards, notes }: StoredWorld): Promise<SnapshotFiles> {
     const texts = new Map<string, string>();
-    const named: Record<string, string> = {};
-    for (const shard of shards) {
-      const text = canonicalJson(shard);
-      const sha256 = await textSha256(text);
-      texts.set(sha256, text);
-      named[shardName(shard.superChunk)] = sha256;
-    }
+    const hashed = async (stored: ReadonlyArray<{ readonly superChunk: SuperChunk }>) => {
+      const named: Record<string, string> = {};
+      for (const shard of stored) {
+        const text = canonicalJson(shard);
+        const sha256 = await textSha256(text);
+        texts.set(sha256, text);
+        named[shardName(shard.superChunk)] = sha256;
+      }
+      return named;
+    };
     const imports: Array<{ sha256: string; name: string }> = [];
     for (const sha256 of [...referencedImports(shards, manifest.consists ?? [])].toSorted()) {
       const file = await super.importedFile(sha256);
@@ -408,7 +431,8 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
       format: SNAPSHOT_FORMAT,
       schemaVersion: SNAPSHOT_SCHEMA_VERSION,
       manifest,
-      shards: named,
+      shards: await hashed(shards),
+      notes: await hashed(notes),
       imports,
     };
     return { snapshot, shards: texts, content: await contentKey(snapshot) };
@@ -440,12 +464,13 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
 
   private async replace(id: string, version: DownloadedVersion): Promise<void> {
     const local = await super.read(id);
-    const kept = new Set(version.shards.map((shard) => shardName(shard.superChunk)));
-    const stale = local.ok ? local.value.manifest.shards.map((entry) => entry.superChunk) : [];
+    const before = local.ok ? local.value.manifest : { shards: [], noteShards: [] };
     await super.save(id, {
       header: worldHeader(version.manifest),
       put: version.shards,
-      drop: stale.filter((superChunk) => !kept.has(shardName(superChunk))),
+      drop: dropped(before.shards, version.shards),
+      putNotes: version.notes,
+      dropNotes: dropped(before.noteShards, version.notes),
     });
   }
 
@@ -454,15 +479,19 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
       await this.send(`/v1/worlds/${world}/versions/${version}`),
       (json) => decode(VersionResponse, json),
     );
-    const shards: WorldShardV1[] = [];
+    const shards: WorldShardV2[] = [];
     for (const entry of snapshot.manifest.shards) {
       const name = shardName(entry.superChunk);
-      const sha256 = snapshot.shards[name] ?? "";
-      const text = await ensureOk(await this.send(`/v1/worlds/${world}/shards/${sha256}`));
-      if ((await textSha256(text)) !== sha256) throw new Error(`shard ${name} isn't ${sha256}`);
-      const json = parseJsonText(text, `shard ${name}`);
-      const shard = json.ok ? decode(WorldShardV1, json.value, `shard ${name}`) : json;
-      shards.push(decodedOrThrow(shard, `version ${version} can't be read`));
+      shards.push(
+        await this.downloadShard(world, version, snapshot.shards[name], name, decodeShardV2),
+      );
+    }
+    const notes: NoteShardV2[] = [];
+    for (const entry of snapshot.manifest.noteShards) {
+      const name = shardName(entry.superChunk);
+      notes.push(
+        await this.downloadShard(world, version, snapshot.notes[name], name, decodeNoteShard),
+      );
     }
     for (const { sha256, name } of snapshot.imports) {
       if ((await super.importedFile(sha256)) !== undefined) continue;
@@ -472,7 +501,23 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
       if ((await contentSha256(bytes)) !== sha256) throw new Error(`${name} isn't ${sha256}`);
       await super.putImportedFile({ sha256, name, bytes });
     }
-    return { manifest: snapshot.manifest, shards, content: await contentKey(snapshot) };
+    return { manifest: snapshot.manifest, shards, notes, content: await contentKey(snapshot) };
+  }
+
+  private async downloadShard<T>(
+    world: string,
+    version: number,
+    sha256: string | undefined,
+    name: string,
+    read: ShardDecoder<T>,
+  ): Promise<T> {
+    const text = await ensureOk(await this.send(`/v1/worlds/${world}/shards/${sha256 ?? ""}`));
+    if ((await textSha256(text)) !== sha256) throw new Error(`shard ${name} isn't ${sha256}`);
+    const json = parseJsonText(text, `shard ${name}`);
+    return decodedOrThrow(
+      json.ok ? read(json.value, `shard ${name}`) : json,
+      `version ${version} can't be read`,
+    );
   }
 
   private async refreshAccountWorlds(accountId: string): Promise<void> {
