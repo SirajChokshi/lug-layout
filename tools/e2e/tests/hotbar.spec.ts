@@ -3,6 +3,18 @@ import { writeFile } from "node:fs/promises";
 import { EditorPage, TRACK_ITEM } from "./editor-page.ts";
 
 const GREEN_BASEPLATE = "ldraw:3811@2";
+const TAN_BASEPLATE = "ldraw:3811@19";
+const ROAD_CROSSROADS = "ldraw:44343p03@72";
+const ROAD_STRAIGHT = "ldraw:44336p04@72";
+const RAISED_ROAD = "ldraw:69958@72";
+const EIGHT_STUD_CROSSROADS = "ldraw:611p01@2";
+const TRIED = [
+  TAN_BASEPLATE,
+  ROAD_CROSSROADS,
+  ROAD_STRAIGHT,
+  RAISED_ROAD,
+  EIGHT_STUD_CROSSROADS,
+] as const;
 const IMPORT_REF = /^import:[0-9a-f]{64}$/u;
 const YARD_STUDS = "16×16";
 
@@ -56,4 +68,34 @@ test("an imported model takes the next hotbar slot by its footprint, and digits 
   await expect(sheet).toHaveCount(0);
   await expect(pressed).toHaveAttribute("data-item", TRACK_ITEM);
   expect(await slotItems()).toEqual([GREEN_BASEPLATE, TRACK_ITEM, yard.item]);
+});
+
+test("a pinned slot stays through any number of parts tried after it, beside the last four used", async ({
+  page,
+}) => {
+  const editor = await EditorPage.open(page);
+  const slots = page.locator(".hotbar .hotbar-slot");
+  const slotItems = () => slots.evaluateAll((buttons) => buttons.map((b) => b.dataset["item"]));
+
+  await editor.choose(GREEN_BASEPLATE);
+  await editor.choose(TRACK_ITEM);
+  const greenSlot = page.locator(".hotbar li").first();
+  await greenSlot.hover();
+  await greenSlot.locator(".hotbar-pin").click();
+  await expect(greenSlot).toHaveAttribute("data-pinned", "true");
+  for (const item of TRIED) await editor.choose(item);
+
+  expect(await slotItems()).toEqual([
+    GREEN_BASEPLATE,
+    RAISED_ROAD,
+    EIGHT_STUD_CROSSROADS,
+    ROAD_CROSSROADS,
+    ROAD_STRAIGHT,
+  ]);
+  await expect(page.locator('.hotbar li[data-pinned="true"]')).toHaveCount(1);
+  await editor.press("1");
+  await expect(page.locator('.hotbar .hotbar-slot[aria-pressed="true"]')).toHaveAttribute(
+    "data-item",
+    GREEN_BASEPLATE,
+  );
 });

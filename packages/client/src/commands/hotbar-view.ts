@@ -1,6 +1,6 @@
 import type { CatalogItemView } from "../catalog/placeable-catalog.ts";
 import type { RoadKitView } from "../edit/road-drawing.ts";
-import type { Hotbar } from "./hotbar.ts";
+import { canPin, type Hotbar } from "./hotbar.ts";
 
 export interface HotbarFootprint {
   readonly studsWide: number;
@@ -15,6 +15,8 @@ export interface HotbarSlotView {
   readonly caption: string;
   readonly footprint: HotbarFootprint | null;
   readonly color: string | null;
+  readonly pinned: boolean;
+  readonly pinnable: boolean;
 }
 
 interface SlotItem {
@@ -71,7 +73,8 @@ export function hotbarView(
 ): ReadonlyArray<HotbarSlotView> {
   const items = hotbar.slots.map(({ item }) => slotItem(item, catalog, roadKits));
   const longest = Math.max(0, ...items.map(longestSide));
-  return hotbar.slots.map(({ item: id }, slot) => {
+  const pinsLeft = canPin(hotbar);
+  return hotbar.slots.map(({ item: id, pinned }, slot) => {
     const item = items[slot];
     return {
       item: id,
@@ -87,6 +90,8 @@ export function hotbarView(
             }
           : null,
       color: item?.color ?? null,
+      pinned,
+      pinnable: pinned || pinsLeft,
     };
   });
 }
