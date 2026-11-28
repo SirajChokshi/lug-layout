@@ -2,7 +2,6 @@ import {
   ASSET_FETCHER,
   AssetResponseError,
   AssetStalledError,
-  DEFAULT_LINK_SILENCE_LIMIT_MS,
   LINK_PROGRESS_SHARE,
   NETWORK_ASSET_FETCHER,
   type IAssetFetcher,
@@ -16,7 +15,7 @@ const BUCKET = "https://bucket.test/";
 const PART = "standard/part.0123456789abcdef.glb";
 const WHOLE_FILE = "the whole file";
 const ALL_WAITS_MS = 31_000;
-const SILENCE_LIMIT_MS = DEFAULT_LINK_SILENCE_LIMIT_MS;
+const SILENCE_LIMIT_MS = 55_000;
 const utf8 = new TextEncoder();
 
 type Attempt = () => Promise<ArrayBuffer>;
@@ -190,7 +189,7 @@ it("reads Retry-After from a response in seconds, and falls back to the schedule
   }
 });
 
-it("doesn't count a wait between attempts as silence: the next attempt still waits 50 s of its own", async () => {
+it("doesn't count a wait between attempts as silence: the next attempt still waits 55 s of its own", async () => {
   fakeClock();
   const refusedAtMs = SILENCE_LIMIT_MS - 1_000;
   const refusedLate: Answer = () =>

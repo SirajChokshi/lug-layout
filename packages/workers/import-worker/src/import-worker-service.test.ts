@@ -41,6 +41,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { IImportWorkerService } from "./import-worker-service.ts";
 import { importWorkerModules } from "./import-worker.module.ts";
+import { SharedProgress } from "./shared-progress.test-support.ts";
 import { IMPORT_CLOCK, IMPORT_FETCH, IMPORT_WORKER_SERVICE } from "./tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -79,16 +80,6 @@ const OFFICIAL_BRICK_ID = "ldraw:3001";
 const runFile = promisify(execFile);
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
-
-class SharedProgress implements ILinkProgressShare {
-  shared = 0;
-
-  share(): void {
-    this.shared += 1;
-  }
-
-  listen(): void {}
-}
 
 function importWorker(
   indexedDb?: IDBFactory,
