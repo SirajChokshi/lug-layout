@@ -12,11 +12,6 @@ export const SPOT_DISTANCE = 2;
 const FULL_TURN = 2 * Math.PI;
 const QUARTER_TURN = Math.PI / 2;
 const ROUNDING_FACTOR = 2 ** -32;
-const QUERY_X = 0;
-const QUERY_Z = 1;
-const QUERY_RADIUS = 2;
-const QUERY_GAP = 3;
-const QUERY_FLOATS = 4;
 
 export class RailNetwork {
   private diskIndex: SegmentDiskIndex | null = null;
@@ -314,7 +309,6 @@ class SegmentDiskIndex {
   private readonly chunkZ: Int32Array;
   private readonly starts: Int32Array;
   private readonly members: Int32Array;
-  private readonly query = new Float64Array(QUERY_FLOATS);
   private readonly visited: Uint32Array;
   private visit = 0;
 
@@ -340,26 +334,13 @@ class SegmentDiskIndex {
   }
 
   nearDisk(x: number, z: number, radius: number, gap: number): boolean {
-    const query = this.query;
-    query[QUERY_X] = x;
-    query[QUERY_Z] = z;
-    query[QUERY_RADIUS] = radius;
-    query[QUERY_GAP] = gap;
-    return this.answerQuery();
-  }
-
-  private answerQuery(): boolean {
-    const { track, chunkX: xs, chunkZ: zs, starts, members, query, visited } = this;
+    const { track, chunkX: xs, chunkZ: zs, starts, members, visited } = this;
     this.visit = (this.visit + 1) >>> 0;
     if (this.visit === 0) {
       visited.fill(0);
       this.visit = 1;
     }
     const visit = this.visit;
-    const x = query[QUERY_X] ?? 0;
-    const z = query[QUERY_Z] ?? 0;
-    const radius = query[QUERY_RADIUS] ?? 0;
-    const gap = query[QUERY_GAP] ?? 0;
     const extent =
       radius +
       gap +
