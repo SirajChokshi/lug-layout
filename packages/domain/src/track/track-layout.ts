@@ -7,6 +7,7 @@ import {
   type Pose16,
 } from "@brr/math";
 import { BASE_LAYER_ID, LAYER_ID_MAX } from "@brr/schema/world";
+import { NO_OWNER, isOwnerId } from "../world.ts";
 import { WORLD_TRACK_FRAME, type TrackFrame } from "./end-gaps.ts";
 
 export interface TrackRoute {
@@ -64,6 +65,7 @@ export class TrackLayout {
   private positionOf = new BigInt64Array(INITIAL_CAPACITY * ZETA16_COEFFICIENT_COUNT);
   private frameOf = new Uint32Array(INITIAL_CAPACITY);
   private layerOf = new Uint16Array(INITIAL_CAPACITY);
+  private ownerOf = new Int32Array(INITIAL_CAPACITY);
   private readonly frames = new Map<number, TrackFrame>([
     [WORLD_TRACK_FRAME.id, WORLD_TRACK_FRAME],
   ]);
@@ -94,6 +96,7 @@ export class TrackLayout {
     risePlates = 0,
     frame: TrackFrame = WORLD_TRACK_FRAME,
     layer = BASE_LAYER_ID,
+    owner = NO_OWNER,
   ): number {
     if (!isIntegerIn(at, 0, this.size)) {
       throw new RangeError(`track placement ${at} is outside 0-${this.size}`);
@@ -118,6 +121,7 @@ export class TrackLayout {
     if (!isIntegerIn(layer, 0, LAYER_ID_MAX)) {
       throw new RangeError(`track layer ${layer} is not a layer id`);
     }
+    if (!isOwnerId(owner)) throw new RangeError(`track owner ${owner} is not a contributor id`);
     for (const coefficient of placement.position) {
       if (BigInt.asIntN(INT64_BITS, coefficient) !== coefficient) {
         throw new RangeError(`track position coefficient ${coefficient} does not fit int64 studs`);
@@ -140,6 +144,7 @@ export class TrackLayout {
     this.yPlatesOf[at] = yPlates;
     this.riseOf[at] = risePlates;
     this.layerOf[at] = layer;
+    this.ownerOf[at] = owner;
     this.positionOf.set(placement.position, at * ZETA16_COEFFICIENT_COUNT);
     return at;
   }
@@ -161,6 +166,7 @@ export class TrackLayout {
     this.yPlatesOf.copyWithin(to, from, this.size);
     this.riseOf.copyWithin(to, from, this.size);
     this.layerOf.copyWithin(to, from, this.size);
+    this.ownerOf.copyWithin(to, from, this.size);
     this.positionOf.copyWithin(
       to * ZETA16_COEFFICIENT_COUNT,
       from * ZETA16_COEFFICIENT_COUNT,
@@ -204,6 +210,11 @@ export class TrackLayout {
   layer(placement: number): number {
     this.checkPlacement(placement);
     return this.layerOf[placement] ?? BASE_LAYER_ID;
+  }
+
+  owner(placement: number): number {
+    this.checkPlacement(placement);
+    return this.ownerOf[placement] ?? NO_OWNER;
   }
 
   endYPlates(placement: number, connector: number): number {
@@ -259,5 +270,8 @@ export class TrackLayout {
     const layerOf = new Uint16Array(this.capacity);
     layerOf.set(this.layerOf);
     this.layerOf = layerOf;
+    const ownerOf = new Int32Array(this.capacity);
+    ownerOf.set(this.ownerOf);
+    this.ownerOf = ownerOf;
   }
 }

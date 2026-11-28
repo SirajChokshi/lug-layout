@@ -10,6 +10,7 @@ import {
   type IEditor,
   type IEditorCamera,
   type IEventDetails,
+  type IContributorService,
   type IHotbar,
   type ILayoutSize,
   type ILayerService,
@@ -34,6 +35,7 @@ import { EditorCanvas } from "./editor-canvas.tsx";
 import { EditorFooter, EditorHud, PlacementToolbar, SelectionPanel } from "./editor-panels.tsx";
 import { EventPanel } from "./event-panel.tsx";
 import { LayersPanel } from "./layers-panel.tsx";
+import { ContributorsPanel } from "./contributors-panel.tsx";
 import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
@@ -71,6 +73,7 @@ interface EditorAppProps {
   readonly plans: IPlanService;
   readonly annotations: IAnnotationService;
   readonly layers: ILayerService;
+  readonly contributors: IContributorService;
   readonly sheets: IPlanSheetService;
   readonly sheetSets: ISheetSets;
   readonly events: IEventDetails;
@@ -169,6 +172,7 @@ export function EditorApp({
   plans,
   annotations,
   layers,
+  contributors,
   sheets,
   sheetSets,
   events,
@@ -270,10 +274,16 @@ export function EditorApp({
           editor={editor}
           snapshot={snapshot}
           layers={layers}
+          contributors={contributors}
           play={playSnapshot}
           onEditorAction={runAction}
         />
         <LayersPanel editor={editor} layers={layers} contents={editor.layerContents()} />
+        <ContributorsPanel
+          editor={editor}
+          contributors={contributors}
+          contents={editor.ownerContents()}
+        />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}

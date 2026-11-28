@@ -1,5 +1,5 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
-import { EditHistory, World, type PlacementRef } from "@brr/domain";
+import { EditHistory, World, type PlacementRef, NO_OWNER } from "@brr/domain";
 import {
   SCENE_BACKEND,
   type BufferMemory,
@@ -106,6 +106,7 @@ it("removes, in one edit, two placements whose columns share a chunk", async () 
       yPlates: 0,
       rot: 0,
       layer: 0,
+      owner: NO_OWNER,
     });
     placed.apply(edit, () => placeable);
     return edit.changes[0]?.placement ?? null;

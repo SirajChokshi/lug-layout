@@ -12,6 +12,7 @@ import {
   solveClosure,
   type PlanIssue,
   type TrackChange,
+  NO_OWNER,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -239,6 +240,7 @@ function layFrom(at: Room, start: Pose16, partIds: ReadonlyArray<string>): Track
       yPlates: 0,
       rise: 0,
       layer: 0,
+      owner: NO_OWNER,
     })),
   };
 }
@@ -528,6 +530,7 @@ function layAt(at: Room, pieces: ReadonlyArray<readonly [string, Pose16]>): Trac
       yPlates: 0,
       rise: 0,
       layer: 0,
+      owner: NO_OWNER,
     })),
   };
 }

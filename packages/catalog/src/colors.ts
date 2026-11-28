@@ -10,3 +10,7 @@ export function isDirectColor(code: number): boolean {
 export function directColorSrgb(code: number): number {
   return code & RGB_MASK;
 }
+
+export function directColorCode(srgb: number): number {
+  return DIRECT_COLOR_MIN | (srgb & RGB_MASK);
+}

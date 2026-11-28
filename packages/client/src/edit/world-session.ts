@@ -72,9 +72,11 @@ import type { IBomService } from "../bom/bom-service.ts";
 import type { IEventDetails } from "../event/event-details.ts";
 import type { IPlanSheetService, IPlanSheetSource } from "../plan/plan-sheet-service.ts";
 import type { ILayerService } from "../layers/layer-service.ts";
+import type { IContributorService } from "../contributors/contributor-service.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import {
   BOM_SERVICE,
+  CONTRIBUTOR_SERVICE,
   CREDITS,
   EDITOR_CAMERA,
   EVENT_DETAILS,
@@ -202,7 +204,7 @@ const NOTHING_STORED: StoredContents = {
   notes: [],
   document: DEFAULT_WORLD_DOCUMENT,
 };
-const UNKEPT_TAGS = "is in a group or owned by a contributor, which this editor can't keep yet";
+const UNKEPT_TAGS = "is in a group, which this editor can't keep yet";
 
 function storedContents(
   manifest: WorldManifestV2,
@@ -222,12 +224,11 @@ function documentTables({ event: _event, ...tables }: WorldDocument): WorldDocum
 }
 
 interface TaggedRecord {
-  readonly owner?: number;
   readonly group?: number;
 }
 
 function tagged(record: TaggedRecord): boolean {
-  return record.owner !== undefined || record.group !== undefined;
+  return record.group !== undefined;
 }
 
 function layerTable(document: WorldDocument): LayerTable {
@@ -340,8 +341,21 @@ export class WorldSession implements IWorldSession {
     @inject(EVENT_DETAILS) private readonly events: Pick<IEventDetails, "event" | "restore">,
     @inject(LAYER_SERVICE)
     private readonly layers: Pick<ILayerService, "table" | "reset" | "guardRemoval">,
+    @inject(CONTRIBUTOR_SERVICE)
+    private readonly contributors: Pick<IContributorService, "roster" | "restore" | "guardRemoval">,
   ) {
     layers.guardRemoval((layer) => this.savedDocumentRefusal(layer));
+    contributors.guardRemoval((owner) => this.ownedNotesRefusal(owner));
+  }
+
+  private ownedNotesRefusal(owner: number): string | null {
+    if (!this.current) return null;
+    const notes = this.editedWorld()
+      .contents()
+      .notes.filter((note) => note.owner === owner).length;
+    return notes === 0
+      ? null
+      : `owns ${notes} ${notes === 1 ? "note" : "notes"} saved with this world, which this editor can't reassign yet`;
   }
 
   private savedDocumentRefusal(layer: number): string | null {
@@ -388,15 +402,18 @@ export class WorldSession implements IWorldSession {
   private header(current: OpenWorld): WorldHeader {
     const { consists } = this.editedWorld().contents();
     const event = this.events.event();
+    const { contributors: _opened, ...document } = worldDocument(current.document);
+    const roster = this.contributors.roster();
     return {
       name: current.name,
       bundleVersion: this.bundleVersion,
       view: this.camera.savedView(),
       disclaimer: this.disclaimer,
       ...(consists.length > 0 ? { consists: [...consists] } : {}),
-      ...worldDocument(current.document),
+      ...document,
       ...(event === null ? {} : { event }),
       layers: [...this.layers.table().layers],
+      ...(roster.length > 0 ? { contributors: [...roster] } : {}),
     };
   }
 
@@ -709,6 +726,7 @@ export class WorldSession implements IWorldSession {
       throw new Error(`world "${name}" can't be opened: ${issueText(issues)}`);
     }
     this.layers.reset(layerTable(stored.document));
+    this.contributors.restore(stored.document.contributors ?? []);
   }
 
   private async loadShards(

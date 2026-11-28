@@ -19,6 +19,7 @@ import {
   solveClosure,
   type TrackSegment,
   type TurnSign,
+  NO_OWNER,
 } from "@brr/domain";
 import {
   addZeta16,
@@ -1541,6 +1542,7 @@ function placeGround(items: ReadonlyArray<GroundItem>): ReadonlyArray<PlacedMode
       yPlates: item.yPlates ?? 0,
       rot: 0,
       layer: 0,
+      owner: NO_OWNER,
     });
     placed.apply(edit, refOf);
   });
@@ -2466,7 +2468,10 @@ async function bareDrawing(): Promise<TrackDrawing> {
 function layAt(layout: TrackDrawing, pose: Pose16, yPlates: number, rise = 0): number {
   const index = layout.pieceCount;
   const piece = placeableIndex(layout, NINE_VOLT_STRAIGHT);
-  layout.applyTrack({ lift: [], lay: [{ index, piece, pose, yPlates, rise, layer: 0 }] });
+  layout.applyTrack({
+    lift: [],
+    lay: [{ index, piece, pose, yPlates, rise, layer: 0, owner: NO_OWNER }],
+  });
   return index;
 }
 
@@ -3026,15 +3031,15 @@ it("returns the same solve for the same field, poses and owners, and solves agai
   const twin = new DragField([], NO_TRACK_OBSTACLES, NOTHING_SUPPORTED);
   const closures = new FieldClosures(layout.kit, kitOutlines);
   const other = new FieldClosures(layout.kit, kitOutlines);
-  const NO_OWNER = -1;
+  const NO_CLOSURE_OWNER = -1;
   const ANOTHER_OWNER = 0;
 
-  const solved = closures.closeWhole(start, goal, field, NO_OWNER, NO_OWNER);
-  const again = closures.closeWhole(start, goal, field, NO_OWNER, NO_OWNER);
-  const onTwin = closures.closeWhole(start, goal, twin, NO_OWNER, NO_OWNER);
-  const anotherOwner = closures.closeWhole(start, goal, field, ANOTHER_OWNER, NO_OWNER);
-  const anotherGoalOwner = closures.closeWhole(start, goal, field, NO_OWNER, ANOTHER_OWNER);
-  const anotherCache = other.closeWhole(start, goal, field, NO_OWNER, NO_OWNER);
+  const solved = closures.closeWhole(start, goal, field, NO_CLOSURE_OWNER, NO_CLOSURE_OWNER);
+  const again = closures.closeWhole(start, goal, field, NO_CLOSURE_OWNER, NO_CLOSURE_OWNER);
+  const onTwin = closures.closeWhole(start, goal, twin, NO_CLOSURE_OWNER, NO_CLOSURE_OWNER);
+  const anotherOwner = closures.closeWhole(start, goal, field, ANOTHER_OWNER, NO_CLOSURE_OWNER);
+  const anotherGoalOwner = closures.closeWhole(start, goal, field, NO_CLOSURE_OWNER, ANOTHER_OWNER);
+  const anotherCache = other.closeWhole(start, goal, field, NO_CLOSURE_OWNER, NO_CLOSURE_OWNER);
 
   expect(solved.kind).toBe("exact");
   expect(again).toBe(solved);

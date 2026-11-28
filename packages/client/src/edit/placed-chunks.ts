@@ -1082,6 +1082,10 @@ function inWorldOrder(entries: ReadonlySet<PlacedEntry>): PlacedEntry[] {
 
 export type PlacedModels = Pick<PlacedChunks, "models" | "version">;
 
+export type OwnerPaint = (owner: number) => number | null;
+
+const UNPAINTED: OwnerPaint = () => null;
+
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
   private changes = 0;
@@ -1102,6 +1106,7 @@ export class PlacedChunks {
   private readonly footprints = new CellWindowIndex(false);
   private readonly columns = new CellWindowIndex(true);
   private cullingEpoch = 0;
+  private paint = UNPAINTED;
   private readonly indexFootprints = (entry: PlacedEntry): void =>
     entry.indexFootprints(this.footprints);
   private readonly indexColumns = (entry: PlacedEntry): void => {
@@ -1133,8 +1138,17 @@ export class PlacedChunks {
     return this.rebuild([...keys].toSorted((a, b) => a - b));
   }
 
+  repaint(paint: OwnerPaint): RebuildReport {
+    this.paint = paint;
+    for (const entry of this.entries) {
+      if (this.farModelOf(entry.placeable) !== null) this.showFarModel(entry);
+    }
+    return this.rebuild([...this.byChunk.keys()].toSorted((a, b) => a - b));
+  }
+
   private showFarModel(entry: PlacedEntry): void {
-    const farModel = this.farModelOf(entry.placeable);
+    const farModel =
+      this.paint(entry.handle.owner) === null ? this.farModelOf(entry.placeable) : null;
     this.backend.setFarModel(
       entry.id,
       farModel === null ? null : entry.farModelPlacement(farModel),
@@ -1459,11 +1473,12 @@ export class PlacedChunks {
       const { parts, studs } = entry.placeable;
       const firstPart = partSlot;
       partSlot = entry.writeParts(chunkX, chunkZ, matrices, partSlot, selectedParts);
-      const voxel = this.farModelOf(entry.placeable) === null ? 0 : 1;
+      const painted = this.paint(entry.handle.owner);
+      const voxel = painted === null && this.farModelOf(entry.placeable) !== null ? 1 : 0;
       for (let slot = firstPart; slot < partSlot; slot++) {
         const i = selectedParts[slot] ?? 0;
         partIndex[slot] = parts.partIndex[i] ?? 0;
-        colorIndex[slot] = parts.colorIndex[i] ?? 0;
+        colorIndex[slot] = painted ?? parts.colorIndex[i] ?? 0;
         voxelized[slot] = voxel;
       }
       const firstStud = studSlot;
@@ -1479,7 +1494,7 @@ export class PlacedChunks {
       for (let slot = firstStud; slot < studSlot; slot++) {
         const i = selectedStuds[slot] ?? 0;
         studPrimitives[slot] = studs.primitiveIndex[i] ?? 0;
-        studColors[slot] = studs.colorIndex[i] ?? 0;
+        studColors[slot] = painted ?? studs.colorIndex[i] ?? 0;
       }
     }
     const chunk: ChunkInstances = {

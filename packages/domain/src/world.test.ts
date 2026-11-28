@@ -56,10 +56,11 @@ describe("World.add", () => {
       n,
       n % 4,
       (n * 331) % 65_536,
+      ((n * 977) % 65_537) - 1,
     ]);
     const handles = poses.map(
-      ([refId = 0, colorId = 0, x = 0, z = 0, yPlates = 0, rot = 0, layer = 0]) =>
-        world.add(refId, colorId, x, z, yPlates, rot, layer),
+      ([refId = 0, colorId = 0, x = 0, z = 0, yPlates = 0, rot = 0, layer = 0, owner = 0]) =>
+        world.add(refId, colorId, x, z, yPlates, rot, layer, owner),
     );
     const [removed] = handles.splice(4, 1);
     if (removed) world.remove(removed);
@@ -79,15 +80,19 @@ describe("World.add", () => {
         handle.yPlates,
         handle.rot,
         handle.layer,
+        handle.owner,
       ]),
     ).toEqual(poses);
   });
 
-  it("refuses a layer that isn't a 16-bit layer id", () => {
+  it("refuses a layer or an owner that isn't a 16-bit id", () => {
     const world = new World();
 
     for (const layer of [-1, 65_536, 1.5]) {
       expect(() => world.add(1, 0, 20, 20, 0, 0, layer)).toThrow(/not a layer id/u);
+    }
+    for (const owner of [-2, 65_536, 1.5]) {
+      expect(() => world.add(1, 0, 20, 20, 0, 0, 0, owner)).toThrow(/not a contributor id/u);
     }
     expect(world.size).toBe(0);
   });

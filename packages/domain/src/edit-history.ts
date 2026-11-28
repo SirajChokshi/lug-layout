@@ -1,11 +1,12 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
+import type { ContributorRecordV2 } from "@brr/schema/world";
 import type { NoteChange } from "./notes/note-state.ts";
 import type { EventRecordV2 } from "@brr/schema/world";
 import type { LayerAction, LayerChange } from "./layers/layer-table.ts";
 import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
 import { INT8_MAX, INT8_MIN } from "./track/track-layout.ts";
-import { isLayerId, type PlacementHandle, type World } from "./world.ts";
+import { isLayerId, isOwnerId, type PlacementHandle, type World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
 
@@ -23,7 +24,9 @@ export type EditKind =
   | "open-plan"
   | "event"
   | "layer"
-  | "move-to-layer";
+  | "move-to-layer"
+  | "contributor"
+  | "assign-owner";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
@@ -33,6 +36,7 @@ export interface TrackPieceAt {
   readonly yPlates: number;
   readonly rise: number;
   readonly layer: number;
+  readonly owner: number;
 }
 
 export interface LayerLocks {
@@ -58,6 +62,16 @@ export interface EventChange {
   readonly after: EventRecordV2 | null;
 }
 
+export type Roster = ReadonlyArray<ContributorRecordV2>;
+export type RosterAction = "add" | "rename" | "recolour" | "remove";
+
+export interface RosterChange {
+  readonly action: RosterAction;
+  readonly contributor: number;
+  readonly before: Roster;
+  readonly after: Roster;
+}
+
 export type EditSummary =
   | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" | "note" | "event" }
   | { readonly kind: "throw-switch"; readonly switchAt: number }
@@ -65,7 +79,9 @@ export type EditSummary =
   | { readonly kind: "lay-track"; readonly pieces: number }
   | { readonly kind: "open-plan"; readonly placements: number; readonly pieces: number }
   | { readonly kind: "layer"; readonly action: LayerAction; readonly name: string }
-  | { readonly kind: "move-to-layer"; readonly members: number; readonly layer: number };
+  | { readonly kind: "move-to-layer"; readonly members: number; readonly layer: number }
+  | { readonly kind: "contributor"; readonly action: RosterAction; readonly name: string }
+  | { readonly kind: "assign-owner"; readonly members: number; readonly owner: number };
 
 export interface PlacementPose {
   readonly refId: number;
@@ -78,7 +94,10 @@ export interface PlacementPose {
 
 export interface LayeredPose extends PlacementPose {
   readonly layer: number;
+  readonly owner: number;
 }
+
+export type RecordTag = "layer" | "owner";
 
 export interface PlacementRef {
   readonly handle: PlacementHandle | null;
@@ -130,6 +149,7 @@ export interface AppliedEdit {
   readonly notes: NoteChange | null;
   readonly event: EventChange | null;
   readonly layers: LayerChange | null;
+  readonly contributors: RosterChange | null;
 }
 
 class Ref implements PlacementRef {
@@ -165,6 +185,7 @@ interface Edit {
   readonly notes: NoteChange | null;
   readonly event: EventChange | null;
   readonly layers: LayerChange | null;
+  readonly contributors: RosterChange | null;
 }
 
 function poseOf(handle: PlacementHandle): LayeredPose {
@@ -176,11 +197,16 @@ function poseOf(handle: PlacementHandle): LayeredPose {
     yPlates: handle.yPlates,
     rot: handle.rot,
     layer: handle.layer,
+    owner: handle.owner,
   };
 }
 
 function checkLayer(layer: number): void {
   if (!isLayerId(layer)) throw new RangeError(`layer ${layer} is not a layer id`);
+}
+
+function checkOwner(owner: number): void {
+  if (!isOwnerId(owner)) throw new RangeError(`owner ${owner} is not a contributor id`);
 }
 
 function checkPose(pose: LayeredPose): void {
@@ -191,11 +217,12 @@ function checkPose(pose: LayeredPose): void {
   }
   if (!isRot90(pose.rot)) throw new Error(`rotation ${pose.rot} is not a quarter turn 0-3`);
   checkLayer(pose.layer);
+  checkOwner(pose.owner);
 }
 
 function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof TrackChange): void {
   let previous = -1;
-  for (const { index, piece, yPlates, rise, layer } of pieces) {
+  for (const { index, piece, yPlates, rise, layer, owner } of pieces) {
     if (!Number.isInteger(index) || index <= previous) {
       throw new RangeError(`track ${role} indices must be ascending non-negative integers`);
     }
@@ -203,6 +230,7 @@ function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof Track
       throw new RangeError(`track piece ${piece} is not a catalog index`);
     }
     checkLayer(layer);
+    checkOwner(owner);
     if (!isLatticePose(0, 0, yPlates)) {
       throw new RangeError(`track height ${yPlates} plates is not an int16`);
     }
@@ -245,6 +273,18 @@ function summary(edit: Edit): EditSummary {
       const layer = edit.changes[0]?.after?.layer ?? edit.track.lay[0]?.layer;
       if (layer === undefined) throw new Error("a move to a layer moves nothing");
       return { kind: edit.kind, members: edit.changes.length + edit.track.lay.length, layer };
+    }
+    case "contributor": {
+      const change = edit.contributors;
+      if (!change) throw new Error("a contributor edit carries no roster change");
+      const named = (row: ContributorRecordV2): boolean => row.id === change.contributor;
+      const contributor = change.after.find(named) ?? change.before.find(named);
+      return { kind: edit.kind, action: change.action, name: contributor?.name ?? "" };
+    }
+    case "assign-owner": {
+      const owner = edit.changes[0]?.after?.owner ?? edit.track.lay[0]?.owner;
+      if (owner === undefined) throw new Error("an assignment assigns nothing");
+      return { kind: edit.kind, members: edit.changes.length + edit.track.lay.length, owner };
     }
     default: {
       const unhandled: never = edit.kind;
@@ -329,6 +369,7 @@ export class EditHistory {
       notes: null,
       event: null,
       layers: null,
+      contributors: null,
     });
   }
 
@@ -344,6 +385,7 @@ export class EditHistory {
       notes: null,
       event: null,
       layers: null,
+      contributors: null,
     });
   }
 
@@ -359,6 +401,7 @@ export class EditHistory {
       notes: null,
       event: null,
       layers: null,
+      contributors: null,
     });
   }
 
@@ -372,6 +415,21 @@ export class EditHistory {
       notes: null,
       event: null,
       layers: change,
+      contributors: null,
+    });
+  }
+
+  contributorEdit(change: RosterChange): AppliedEdit {
+    return this.record({
+      kind: "contributor",
+      changes: [],
+      consists: [],
+      track: NO_TRACK_CHANGE,
+      plan: null,
+      notes: null,
+      event: null,
+      layers: null,
+      contributors: change,
     });
   }
 
@@ -390,17 +448,38 @@ export class EditHistory {
     placements: ReadonlyArray<PlacementRef>,
     pieces: ReadonlyArray<TrackPieceAt>,
     layer: number,
+    created: LayerChange | null = null,
   ): AppliedEdit | null {
     checkLayer(layer);
+    return this.retag("move-to-layer", placements, pieces, "layer", layer, created);
+  }
+
+  assignOwner(
+    placements: ReadonlyArray<PlacementRef>,
+    pieces: ReadonlyArray<TrackPieceAt>,
+    owner: number,
+  ): AppliedEdit | null {
+    checkOwner(owner);
+    return this.retag("assign-owner", placements, pieces, "owner", owner, null);
+  }
+
+  private retag(
+    kind: EditKind,
+    placements: ReadonlyArray<PlacementRef>,
+    pieces: ReadonlyArray<TrackPieceAt>,
+    tag: RecordTag,
+    value: number,
+    layers: LayerChange | null,
+  ): AppliedEdit | null {
     const requests: PlacementRequest[] = [];
     for (const placement of placements) {
       const pose = poseOf(this.liveHandle(placement));
-      if (pose.layer !== layer) requests.push({ placement, to: { ...pose, layer } });
+      if (pose[tag] !== value) requests.push({ placement, to: { ...pose, [tag]: value } });
     }
-    const lift = pieces.filter((piece) => piece.layer !== layer);
+    const lift = pieces.filter((piece) => piece[tag] !== value);
     if (requests.length + lift.length === 0) return null;
-    const lay = lift.map((piece) => ({ ...piece, layer }));
-    return this.commit("move-to-layer", requests, { lift, lay });
+    const lay = lift.map((piece) => ({ ...piece, [tag]: value }));
+    return this.commit(kind, requests, { lift, lay }, null, layers);
   }
 
   commit(
@@ -408,6 +487,7 @@ export class EditHistory {
     requests: ReadonlyArray<PlacementRequest>,
     track: TrackChange = NO_TRACK_CHANGE,
     plan: PlanChange | null = null,
+    layers: LayerChange | null = null,
   ): AppliedEdit {
     checkTrackPieces(track.lift, "lift");
     checkTrackPieces(track.lay, "lay");
@@ -435,7 +515,8 @@ export class EditHistory {
       plan,
       notes: this.follower.follow(changes),
       event: null,
-      layers: null,
+      layers,
+      contributors: null,
     });
   }
 
@@ -449,6 +530,7 @@ export class EditHistory {
       notes,
       event: null,
       layers: null,
+      contributors: null,
     });
   }
 
@@ -462,6 +544,7 @@ export class EditHistory {
       notes: null,
       event: change,
       layers: null,
+      contributors: null,
     });
   }
 
@@ -526,7 +609,7 @@ export class EditHistory {
       const from = backwards ? change.after : change.before;
       const to = backwards ? change.before : change.after;
       const added = to
-        ? this.world.add(to.refId, to.colorId, to.x, to.z, to.yPlates, to.rot, to.layer)
+        ? this.world.add(to.refId, to.colorId, to.x, to.z, to.yPlates, to.rot, to.layer, to.owner)
         : null;
       if (added) change.ref.handle = added;
       changes.push({ placement: change.ref, from, to, removed: removed[index] ?? null, added });
@@ -542,6 +625,10 @@ export class EditHistory {
       backwards && edit.layers
         ? { ...edit.layers, before: edit.layers.after, after: edit.layers.before }
         : edit.layers;
+    const contributors =
+      backwards && edit.contributors
+        ? { ...edit.contributors, before: edit.contributors.after, after: edit.contributors.before }
+        : edit.contributors;
     return {
       kind: edit.kind,
       step,
@@ -552,6 +639,7 @@ export class EditHistory {
       notes,
       event,
       layers,
+      contributors,
     };
   }
 

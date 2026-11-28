@@ -1,4 +1,4 @@
-import { NO_TRACK_CHANGE, type PlacementHandle } from "@brr/domain";
+import { NO_TRACK_CHANGE, type PlacementHandle, NO_OWNER } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { BufferMemory, ISceneBackend, RebaseEvent } from "@brr/render";
 import type { TrackCatalog } from "@brr/schema/bundle";
@@ -189,6 +189,7 @@ function liveHandle(
     },
     rot,
     layer: 0,
+    owner: NO_OWNER,
     kill() {
       live = false;
     },
@@ -253,6 +254,7 @@ class GeneratedWorld {
               yPlates: handle.yPlates,
               rot: handle.rot,
               layer: handle.layer,
+              owner: handle.owner,
             },
             removed: null,
             added: handle,
@@ -264,6 +266,7 @@ class GeneratedWorld {
         notes: null,
         event: null,
         layers: null,
+        contributors: null,
       },
       this.placeableOf,
     );

@@ -1,10 +1,10 @@
 import {
   BASE_LAYER_ID,
   OPACITY_PERCENT_MAX,
-  layerTallyText,
+  tagTallyText,
   type IEditor,
   type ILayerService,
-  type LayerTally,
+  type TagTally,
   type SelectionItemView,
 } from "@brr/client";
 import type { Issue } from "@brr/schema/decode";
@@ -12,23 +12,27 @@ import type { LayerRecordV2 } from "@brr/schema/world";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useLayers } from "./use-layers.ts";
 
-const NOTHING: LayerTally = { models: 0, pieces: 0 };
+const NOTHING: TagTally = { models: 0, pieces: 0 };
 const WHOLE_PERCENT = /^\s*\d+\s*$/u;
 
-function refusalText(subject: string, issues: ReadonlyArray<Issue>): string | null {
+export function refusalText(subject: string, issues: ReadonlyArray<Issue>): string | null {
   if (issues.length === 0) return null;
   return `${subject} ${issues.map((issue) => issue.message).join("; ")}.`;
 }
 
-function totalOf(tally: LayerTally): number {
+export function totalOf(tally: TagTally): number {
   return tally.models + tally.pieces;
 }
 
-function nextLayerName(layers: ReadonlyArray<LayerRecordV2>): string {
-  const taken = new Set(layers.map((layer) => layer.name));
-  let n = layers.length;
-  while (taken.has(`Layer ${n}`)) n++;
-  return `Layer ${n}`;
+export function freeName(
+  stem: string,
+  rows: ReadonlyArray<{ readonly name: string }>,
+  from: number,
+): string {
+  const taken = new Set(rows.map((row) => row.name));
+  let n = from;
+  while (taken.has(`${stem} ${n}`)) n++;
+  return `${stem} ${n}`;
 }
 
 function EyeIcon({ open }: { readonly open: boolean }) {
@@ -60,12 +64,14 @@ function LockIcon({ closed }: { readonly closed: boolean }) {
   );
 }
 
-function RenameField({
+export function RenameField({
   name,
+  label,
   onCommit,
   onCancel,
 }: {
   readonly name: string;
+  readonly label: string;
   readonly onCommit: (name: string) => void;
   readonly onCancel: () => void;
 }) {
@@ -86,7 +92,7 @@ function RenameField({
     <input
       ref={input}
       className="layer-rename"
-      aria-label={`Rename layer "${name}"`}
+      aria-label={label}
       value={draft}
       onChange={(event) => setDraft(event.currentTarget.value)}
       onBlur={() => finish(true)}
@@ -138,7 +144,7 @@ function OpacityField({
 
 interface LayerRowProps {
   readonly layer: LayerRecordV2;
-  readonly tally: LayerTally;
+  readonly tally: TagTally;
   readonly active: boolean;
   readonly current: boolean;
   readonly renaming: boolean;
@@ -207,7 +213,12 @@ function LayerRow({
         <LockIcon closed={layer.locked} />
       </button>
       {renaming ? (
-        <RenameField name={layer.name} onCommit={onRenamed} onCancel={onRenameCancelled} />
+        <RenameField
+          name={layer.name}
+          label={`Rename layer "${layer.name}"`}
+          onCommit={onRenamed}
+          onCancel={onRenameCancelled}
+        />
       ) : (
         <button
           type="button"
@@ -222,7 +233,7 @@ function LayerRow({
           {layer.kind !== "parts" && <span className="layer-kind">{layer.kind}</span>}
         </button>
       )}
-      <span className="layer-count" title={`${layerTallyText(tally)} on this layer`}>
+      <span className="layer-count" title={`${tagTallyText(tally)} on this layer`}>
         {totalOf(tally)}
       </span>
     </li>
@@ -292,7 +303,7 @@ export function LayersPanel({
 }: {
   readonly editor: IEditor;
   readonly layers: ILayerService;
-  readonly contents: ReadonlyMap<number, LayerTally>;
+  readonly contents: ReadonlyMap<number, TagTally>;
 }) {
   const { table, active } = useLayers(layers);
   const [open, setOpen] = useState(false);
@@ -318,7 +329,7 @@ export function LayersPanel({
     report(`"${layer.name}"`, layers.setActiveLayer(layer.id));
   };
   const create = (): void => {
-    const created = layers.create(nextLayerName(table.layers), "parts");
+    const created = layers.create(freeName("Layer", table.layers, table.layers.length), "parts");
     if (!created.ok) {
       report("A new layer", created.issues);
       return;
