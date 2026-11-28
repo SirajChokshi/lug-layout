@@ -4146,7 +4146,10 @@ export class Editor implements IEditor, IEditedWorld {
         held.pieces.some(({ index }) => index !== null && !this.selectablePiece(index)));
     if (heldOnUnselectable) this.cancelGesture();
     this.select(this.selection.members, this.selection.rememberedPivot);
-    this.rehover();
+    if (this.active && this.hovering) {
+      this.assist.leave();
+      this.rehover();
+    }
     this.session.documentEdited();
   }
 

@@ -5905,6 +5905,57 @@ it.each([
   120_000,
 );
 
+it("my own module won't lift plates on a locked layer and is refused naming the plate, is refused on a locked active layer, and once both are unlocked lifts the plates onto the active layer as one undo step", async () => {
+  const { editor, module, place, hintAtCentre, container } = await myModuleOverFourPlates();
+  const layers = container.get(LAYER_SERVICE);
+  const table = itemsOnLayers(editor);
+  const created = layers.create("Modules", "parts");
+  if (!created.ok) throw new Error("the layer wasn't created");
+  const modules = created.value;
+  layers.setLocked(BASE_LAYER_ID, true);
+  const lockedPlatesHint = await hintAtCentre();
+  const lockedPlates = await place(module, 0, 0);
+  layers.setLocked(BASE_LAYER_ID, false);
+  layers.setLocked(modules, true);
+  const lockedActiveHint = await hintAtCentre();
+  const lockedActive = await place(module, 0, 0);
+  layers.setLocked(modules, false);
+  const unlockedHint = await hintAtCentre();
+  const lifted = (await place(module, 0, 0)).placements;
+  const placed = itemsOnLayers(editor);
+  editor.undo(0);
+
+  expect({
+    lockedPlatesHint,
+    lockedPlates,
+    lockedActiveHint,
+    lockedActive,
+    unlockedHint,
+    lifted,
+    placed,
+    undone: itemsOnLayers(editor),
+  }).toEqual({
+    lockedPlatesHint: expect.stringContaining(PLATE_HIT),
+    lockedPlates: {
+      placements: 4,
+      refusedClicks: 1,
+      reason: expect.stringContaining(PLATE_HIT),
+    },
+    lockedActiveHint: expect.stringContaining(
+      'Layer "Modules" is locked, so nothing can be added to it.',
+    ),
+    lockedActive: {
+      placements: 4,
+      refusedClicks: 2,
+      reason: 'Layer "Modules" is locked, so nothing can be added to it.',
+    },
+    unlockedHint: "Magnetic · 0° · Click: lift the 4 plates under it",
+    lifted: 1,
+    placed: [`${module} on ${modules}`],
+    undone: table,
+  });
+}, 120_000);
+
 it("measures in studs and cm: a user's model reads its size held and selected, a drag lays a ruler, a click lays none, and Delete or Escape drops a ruler mid-drag before lifting a laid one", async () => {
   const { editor, backend, catalog } = await startEditor(
     ["baseplate-row"],
