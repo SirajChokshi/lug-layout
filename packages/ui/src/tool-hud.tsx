@@ -20,6 +20,7 @@ interface ToolHudProps {
   readonly snapshot: EditorSnapshot;
   readonly play: PlaySnapshot;
   readonly hotbar: IHotbar;
+  readonly hotbarShown: boolean;
 }
 
 interface HotbarSlotsProps {
@@ -172,7 +173,7 @@ function HotbarSlots({ snapshot, hotbar, slots }: HotbarSlotsProps) {
   );
 }
 
-export function ToolHud({ snapshot, play, hotbar }: ToolHudProps) {
+export function ToolHud({ snapshot, play, hotbar, hotbarShown }: ToolHudProps) {
   const view = toolHints(snapshot, play);
   const hotbarSnapshot = useHotbarSnapshot(hotbar);
   const slots = useMemo(
@@ -185,7 +186,9 @@ export function ToolHud({ snapshot, play, hotbar }: ToolHudProps) {
   return (
     <>
       <div className="tool-hud" data-tone={view.tone}>
-        {slots.length > 0 && <HotbarSlots snapshot={snapshot} hotbar={hotbar} slots={slots} />}
+        {hotbarShown && slots.length > 0 && (
+          <HotbarSlots snapshot={snapshot} hotbar={hotbar} slots={slots} />
+        )}
         <div
           className="tool-status"
           role="status"

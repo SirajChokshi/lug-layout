@@ -3,6 +3,7 @@ import { STARTER_SHELF_FILE, StarterShelfV1, starterFilePath } from "@brr/schema
 import { MANIFEST_FILE, decodeWorldManifest } from "@brr/schema/world";
 import { expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { chooseShellMode } from "./editor-page.ts";
 
 const STARTERS = new URL("../../../apps/web/starters/", import.meta.url);
 export const STARTER_VIEWPORT = { width: 1024, height: 768 } as const;
@@ -115,7 +116,9 @@ export async function walkEveryStarter(page: Page): Promise<void> {
     await expect(worldName).toHaveText(starter.name);
     await expect(welcome).toHaveCount(0);
     opened.push(await openedWorld(page));
+    await chooseShellMode(page, "play");
     play.push(await runATrain(page));
+    await chooseShellMode(page, "build");
   }
 
   const cardOnScreen =

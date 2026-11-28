@@ -78,6 +78,7 @@ test("tables drawn in a world, the plan's reach limit and a user's own model on 
   const otherTab = await page.context().newPage();
   const other = await EditorPage.open(otherTab);
   await expect.poll(() => planOf(other)).toEqual(drawn);
+  await other.chooseMode("plan");
   const panel = otherTab.locator(".plan-panel");
   for (const control of [
     panel.locator('input[name="max-reach"]'),

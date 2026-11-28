@@ -92,7 +92,7 @@ footer {
   --side-column: 296px;
 }
 
-.editor:has(> .library[data-open="false"]) {
+.editor:has(> .library:is([data-open="false"], [hidden])) {
   --library-reach: 0px;
 }
 
@@ -211,7 +211,7 @@ footer {
   margin: 0;
 }
 
-.side-panel > details > summary,
+.shell-section > details > summary,
 .stats-section > summary {
   display: flex;
   align-items: baseline;
@@ -222,28 +222,28 @@ footer {
   user-select: none;
 }
 
-.side-panel > details > summary::-webkit-details-marker,
+.shell-section > details > summary::-webkit-details-marker,
 .stats-section > summary::-webkit-details-marker {
   display: none;
 }
 
-.side-panel > details > summary::before,
+.shell-section > details > summary::before,
 .stats-section > summary::before {
   content: "▸";
   color: var(--text-muted);
   transition: transform var(--motion-fast) var(--ease-out);
 }
 
-.side-panel > details[open] > summary {
+.shell-section > details[open] > summary {
   margin-bottom: var(--space-3);
 }
 
-.side-panel > details[open] > summary::before,
+.shell-section > details[open] > summary::before,
 .stats-section[open] > summary::before {
   transform: rotate(90deg);
 }
 
-.side-panel > details > summary h2,
+.shell-section > details > summary h2,
 .stats-section > summary h3 {
   margin: 0;
 }
@@ -319,8 +319,11 @@ footer {
   color: var(--text-primary);
 }
 
-.side-panel > * {
+.shell-section {
   flex-shrink: 0;
+}
+
+.shell-section > * {
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -869,7 +872,8 @@ button.plan-issue:hover {
   display: none;
 }
 
-.view-segment {
+.view-segment,
+.mode-switch {
   display: flex;
   gap: var(--space-1);
 }
@@ -1539,7 +1543,7 @@ footer a {
   border-top: 1px solid var(--border-subtle);
 }
 
-.side-panel > .bom {
+.shell-section > .bom {
   margin-top: 0;
   border-top: 0;
 }

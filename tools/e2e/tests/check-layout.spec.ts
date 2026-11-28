@@ -82,6 +82,7 @@ test("Check this layout plans what's laid, a user's own model over a baseplate e
   await editor.zoom(400);
   const panel = page.locator(".plan-panel");
   const check = panel.locator('[data-action="check-layout"]');
+  await editor.chooseMode("plan");
   await panel.locator("> summary").click();
   await expect(check).toBeDisabled();
 

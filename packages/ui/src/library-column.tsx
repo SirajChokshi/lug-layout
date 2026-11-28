@@ -7,14 +7,16 @@ const LIBRARY_BODY_ID = "library-body";
 
 export function LibraryColumn({
   panels,
+  hidden,
   children,
 }: {
   readonly panels: IPanelLayout;
+  readonly hidden: boolean;
   readonly children: ReactNode;
 }) {
   const { library: open } = usePanelLayout(panels);
   return (
-    <aside className="library" data-open={open} aria-label="Library">
+    <aside className="library" data-open={open} hidden={hidden} aria-label="Library">
       <header className="library-bar">
         <button
           type="button"

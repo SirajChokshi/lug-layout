@@ -123,7 +123,7 @@ function hintScene(first: Partial<PlacementHover> = { settled: false }) {
     return createElement(
       Fragment,
       null,
-      createElement(ToolHud, { snapshot, play, hotbar }),
+      createElement(ToolHud, { snapshot, play, hotbar, hotbarShown: true }),
       createElement(PlacementChip, { snapshot }),
     );
   };
@@ -405,6 +405,7 @@ function switchScene(snapshot: (editor: IEditor) => EditorSnapshot, playing = fa
       editor,
       snapshot: snapshot(editor),
       play: shownPlay,
+      editing: true,
       onEditorAction: (id: EditorActionId) => asked.push(id),
       onShellCommand: () => {},
     }),
