@@ -3923,7 +3923,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     const members = this.trackPaths.members(picked.placement, scope);
     this.select(members);
-    this.reportLockedLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length);
+    this.reportLeftOut(members.filter((member) => this.onShownLockedLayer(member)).length, members);
     return true;
   }
 
@@ -3956,11 +3956,19 @@ export class Editor implements IEditor, IEditedWorld {
     return layers.isLocked(layer) && !layers.isHidden(layer);
   }
 
-  private reportLockedLeftOut(count: number): void {
-    if (count === 0) return;
-    this.update({
-      selectionRefusal: `${counted(count, "part", "parts")} on locked layers left out.`,
-    });
+  private reportLeftOut(locked: number, chosen: ReadonlyArray<SelectionMember>): void {
+    const inBlockedGroups = chosen.filter(
+      (member) => this.selectable(member) && !this.selection.has(member),
+    ).length;
+    const leftOut = [
+      ...(locked > 0 ? [`${counted(locked, "part", "parts")} on locked layers left out.`] : []),
+      ...(inBlockedGroups > 0
+        ? [
+            `${counted(inBlockedGroups, "part", "parts")} in groups with parts on locked or hidden layers left out.`,
+          ]
+        : []),
+    ];
+    if (leftOut.length > 0) this.update({ selectionRefusal: leftOut.join(" ") });
   }
 
   private pickAt(ndcX: number, ndcY: number): SelectionMember | null {
@@ -5525,18 +5533,7 @@ export class Editor implements IEditor, IEditedWorld {
       const inside = this.membersInBox(gesture, ndcX, ndcY);
       this.endGesture();
       this.select(this.boxSelection(gesture, inside));
-      const blockedByGroup = inside.filter((member) => !this.selection.has(member)).length;
-      const leftOut = [
-        ...(this.lockedInBox > 0
-          ? [`${counted(this.lockedInBox, "part", "parts")} on locked layers left out.`]
-          : []),
-        ...(blockedByGroup > 0
-          ? [
-              `${counted(blockedByGroup, "part", "parts")} in groups with parts on locked or hidden layers left out.`,
-            ]
-          : []),
-      ];
-      if (leftOut.length > 0) this.update({ selectionRefusal: leftOut.join(" ") });
+      this.reportLeftOut(this.lockedInBox, inside);
       return;
     }
     const placement = this.groundHit(ndcX, ndcY) ? this.aimHeld(gesture) : gesture.placement;
