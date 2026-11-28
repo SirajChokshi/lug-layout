@@ -45,6 +45,7 @@ import { eventDraft } from "../event/event-details.ts";
 import { EDITOR, EDITOR_CAMERA, EVENT_DETAILS, LAYER_SERVICE, WORLD_SESSION } from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
+import { NO_PLANS } from "../plan/plan-document.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import type {
   IEditedWorld,
@@ -605,7 +606,7 @@ describe("schema v2 document data", () => {
     });
   });
 
-  it("refuses to remove a layer the world's saved notes or plan regions sit on, and saves the table without a layer it removes", async () => {
+  it("refuses to remove a layer the world's notes or plan regions sit on, lets the plan layer go once no plan is left, and saves the table without the layers it removes", async () => {
     const { session, repository, layers } = await sessionOnIndexedDb();
     const tables: LayerRecordV2 = {
       id: 4,
@@ -641,24 +642,26 @@ describe("schema v2 document data", () => {
 
     const refused = { labels: layers.remove(1), tables: layers.remove(4) };
     expect(layers.remove(2)).toEqual([]);
+    session.plansEdited(NO_PLANS);
+    expect(layers.remove(4)).toEqual([]);
     session.documentEdited();
     const storedLayers = async () => {
       const stored = await repository.read(id);
       return stored.ok ? stored.value.manifest.layers.map((layer) => layer.id) : null;
     };
-    await vi.waitFor(async () => expect(await storedLayers()).toEqual([1, 0, 4]));
+    await vi.waitFor(async () => expect(await storedLayers()).toEqual([1, 0]));
 
     expect(refused).toEqual({
       labels: [
         {
           path: "layer 1",
-          message: "holds 1 note saved with this world, which this editor can't move yet",
+          message: "holds 1 note, which this editor can't move to another layer yet",
         },
       ],
       tables: [
         {
           path: "layer 4",
-          message: "holds 2 plan regions saved with this world, which this editor can't move yet",
+          message: "holds 2 plan regions, which this editor can't move to another layer yet",
         },
       ],
     });
