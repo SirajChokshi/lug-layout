@@ -60,6 +60,7 @@ export type PlanRuleId =
   | "trackJoin"
   | "trackUnverified"
   | "trackUnidentified"
+  | "trackReversing"
   | "trackOffTable"
   | "trackSeam";
 export type IssueSeverity = "error" | "warning";

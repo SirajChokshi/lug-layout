@@ -43,6 +43,7 @@ export {
   type MirrorStats,
 } from "./ldraw-mirror.ts";
 export { ShadowMirror, type IShadowLibrary } from "./shadow-mirror.ts";
+export { layoutParts, type LayoutPart } from "./layout-parts.ts";
 export {
   bundlePartId,
   ModelImportEngine,
@@ -83,6 +84,7 @@ export {
   type ImportWorkerPlaced,
   type ImportWorkerRequest,
   type ImportWorkerResponse,
+  type LayoutPartsRequest,
   type LdrawTextInput,
   type LibraryBakeSource,
   type LibraryConnectorsSource,

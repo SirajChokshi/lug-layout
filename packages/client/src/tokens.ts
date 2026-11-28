@@ -17,6 +17,7 @@ import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteCatalog } from "./catalog/palette-catalog.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
+import type { ILibraryFilterStore } from "./catalog/library-filters.ts";
 import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
@@ -30,14 +31,23 @@ import type { IEditor } from "./edit/editor.ts";
 import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IRoadEditSession } from "./edit/road-edit-session.ts";
 import type { ITrackEditSession } from "./edit/track-edit-session.ts";
+import type { ITrackPathSelection } from "./edit/track-path-selection.ts";
 import type { ITrackWorld } from "./edit/track-world.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
 import type { ITableGround } from "./ground/table-ground.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
+import type { IAnnotationService } from "./notes/annotation-service.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
+import type { IPlanDrawing } from "./sheets/plan-drawing.ts";
+import type { ISheetComposer } from "./sheets/sheet-composer.ts";
+import type { ISheetWriter } from "./sheets/sheet-document.ts";
+import type { ISheetSets } from "./sheets/sheet-sets.ts";
+import type { ISheetTypeface } from "./sheets/sheet-typeface.ts";
+import type { ISvgSheetWriter } from "./sheets/svg-sheet-writer.ts";
+import type { ISheetTiler } from "./sheets/tile-grid.ts";
 import type { IBomService } from "./bom/bom-service.ts";
 import type { IOwnedParts } from "./bom/owned-parts-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -68,6 +78,9 @@ export const EDITOR_FRAME_LOOP: ServiceIdentifier<IEditorFrameLoop> = Symbol.for
 export const TRACK_WORLD: ServiceIdentifier<ITrackWorld> = Symbol.for("brr.client.TrackWorld");
 export const TRACK_EDIT_SESSION: ServiceIdentifier<ITrackEditSession> = Symbol.for(
   "brr.client.TrackEditSession",
+);
+export const TRACK_PATH_SELECTION: ServiceIdentifier<ITrackPathSelection> = Symbol.for(
+  "brr.client.TrackPathSelection",
 );
 export const ROAD_EDIT_SESSION: ServiceIdentifier<IRoadEditSession> = Symbol.for(
   "brr.client.RoadEditSession",
@@ -130,9 +143,30 @@ export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.cli
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
+export const ANNOTATION_SERVICE: ServiceIdentifier<IAnnotationService> = Symbol.for(
+  "brr.client.AnnotationService",
+);
 export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
   "brr.client.PlanSheetService",
 );
+export const SHEET_TYPEFACE: ServiceIdentifier<ISheetTypeface> = Symbol.for(
+  "brr.client.SheetTypeface",
+);
+export const SHEET_TILER: ServiceIdentifier<ISheetTiler> = Symbol.for("brr.client.SheetTiler");
+export const PLAN_DRAWING: ServiceIdentifier<IPlanDrawing> = Symbol.for("brr.client.PlanDrawing");
+export const SHEET_COMPOSER: ServiceIdentifier<ISheetComposer> = Symbol.for(
+  "brr.client.SheetComposer",
+);
+export const SVG_SHEET_WRITER: ServiceIdentifier<ISvgSheetWriter> = Symbol.for(
+  "brr.client.SvgSheetWriter",
+);
+export const PDF_SHEET_WRITER: ServiceIdentifier<ISheetWriter> = Symbol.for(
+  "brr.client.PdfSheetWriter",
+);
+export const PNG_SHEET_WRITER: ServiceIdentifier<ISheetWriter> = Symbol.for(
+  "brr.client.PngSheetWriter",
+);
+export const SHEET_SETS: ServiceIdentifier<ISheetSets> = Symbol.for("brr.client.SheetSets");
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",
 );
@@ -153,6 +187,9 @@ export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symb
 );
 export const PALETTE_MEMORY: ServiceIdentifier<IPaletteMemory> = Symbol.for(
   "brr.client.PaletteMemory",
+);
+export const LIBRARY_FILTER_STORE: ServiceIdentifier<ILibraryFilterStore> = Symbol.for(
+  "brr.client.LibraryFilterStore",
 );
 export const HOTBAR: ServiceIdentifier<IHotbar> = Symbol.for("brr.client.Hotbar");
 export const PALETTE_THUMBNAILS: ServiceIdentifier<IPaletteThumbnails> = Symbol.for(

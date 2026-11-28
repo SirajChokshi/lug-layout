@@ -1,4 +1,5 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
+import type { NoteChange } from "./notes/note-state.ts";
 import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
 import { INT8_MAX, INT8_MIN } from "./track/track-layout.ts";
@@ -16,6 +17,7 @@ export type EditKind =
   | "lay-track"
   | "throw-switch"
   | "plan"
+  | "note"
   | "open-plan";
 export type HistoryStep = "do" | "undo" | "redo";
 
@@ -40,7 +42,7 @@ export interface PlanChange {
 }
 
 export type EditSummary =
-  | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" }
+  | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" | "note" }
   | { readonly kind: "throw-switch"; readonly switchAt: number }
   | { readonly kind: "road" | "fill"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number }
@@ -58,6 +60,17 @@ export interface PlacementPose {
 export interface PlacementRef {
   readonly handle: PlacementHandle | null;
 }
+
+export interface PoseChange {
+  readonly before: PlacementPose | null;
+  readonly after: PlacementPose | null;
+}
+
+export interface PlacementFollower {
+  follow(changes: ReadonlyArray<PoseChange>): NoteChange | null;
+}
+
+const NOTHING_FOLLOWS: PlacementFollower = { follow: () => null };
 
 export interface PlacementRequest {
   readonly placement: PlacementRef | null;
@@ -91,6 +104,7 @@ export interface AppliedEdit {
   readonly consists: ReadonlyArray<AppliedConsistChange>;
   readonly track: TrackChange;
   readonly plan: PlanChange | null;
+  readonly notes: NoteChange | null;
 }
 
 class Ref implements PlacementRef {
@@ -123,6 +137,7 @@ interface Edit {
   readonly consists: ReadonlyArray<ConsistChange>;
   readonly track: TrackChange;
   readonly plan: PlanChange | null;
+  readonly notes: NoteChange | null;
 }
 
 function poseOf(handle: PlacementHandle): PlacementPose {
@@ -174,6 +189,7 @@ function summary(edit: Edit): EditSummary {
     case "move":
     case "remove":
     case "plan":
+    case "note":
       return { kind: edit.kind };
     case "throw-switch":
       return { kind: edit.kind, switchAt: edit.track.lay[0]?.index ?? 0 };
@@ -198,6 +214,7 @@ export class EditHistory {
   constructor(
     private readonly world: World,
     private readonly trains: ConsistLayout = new ConsistLayout(),
+    private readonly follower: PlacementFollower = NOTHING_FOLLOWS,
   ) {}
 
   get undoDepth(): number {
@@ -243,6 +260,7 @@ export class EditHistory {
       consists: [{ ref: new TrainRef(this), before: null, after: pose }],
       track: NO_TRACK_CHANGE,
       plan: null,
+      notes: null,
     });
   }
 
@@ -255,6 +273,7 @@ export class EditHistory {
       consists: [{ ref, before: ref.handle.pose, after: pose }],
       track: NO_TRACK_CHANGE,
       plan: null,
+      notes: null,
     });
   }
 
@@ -267,6 +286,7 @@ export class EditHistory {
       consists: [{ ref, before: ref.handle.pose, after: null }],
       track: NO_TRACK_CHANGE,
       plan: null,
+      notes: null,
     });
   }
 
@@ -303,7 +323,25 @@ export class EditHistory {
       seen.add(ref);
       changes.push({ ref, before: poseOf(this.liveHandle(ref)), after: request.to });
     }
-    return this.record({ kind, changes, consists: [], track, plan });
+    return this.record({
+      kind,
+      changes,
+      consists: [],
+      track,
+      plan,
+      notes: this.follower.follow(changes),
+    });
+  }
+
+  annotate(notes: NoteChange): AppliedEdit {
+    return this.record({
+      kind: "note",
+      changes: [],
+      consists: [],
+      track: NO_TRACK_CHANGE,
+      plan: null,
+      notes,
+    });
   }
 
   private record(edit: Edit): AppliedEdit {
@@ -375,6 +413,8 @@ export class EditHistory {
     const track = backwards ? { lift: edit.track.lay, lay: edit.track.lift } : edit.track;
     const plan =
       backwards && edit.plan ? { before: edit.plan.after, after: edit.plan.before } : edit.plan;
+    const notes =
+      backwards && edit.notes ? { before: edit.notes.after, after: edit.notes.before } : edit.notes;
     return {
       kind: edit.kind,
       step,
@@ -382,6 +422,7 @@ export class EditHistory {
       consists: this.applyConsists(edit, step),
       track,
       plan,
+      notes,
     };
   }
 

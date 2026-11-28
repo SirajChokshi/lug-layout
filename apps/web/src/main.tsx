@@ -1,4 +1,5 @@
 import {
+  ANNOTATION_SERVICE,
   BOM_SERVICE,
   CREDITS,
   EDITOR,
@@ -19,6 +20,7 @@ import {
   type IImportScene,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
+  SHEET_SETS,
   type IViewerScene,
 } from "@brr/client";
 import { AboutPage, CreditsPage, EditorApp } from "@brr/ui";
@@ -149,7 +151,9 @@ function root(): ReactNode {
         camera={container.get(EDITOR_CAMERA)}
         scaleBar={container.get(SCALE_BAR)}
         plans={container.get(PLAN_SERVICE)}
+        annotations={container.get(ANNOTATION_SERVICE)}
         sheets={container.get(PLAN_SHEET_SERVICE)}
+        sheetSets={container.get(SHEET_SETS)}
         bomService={container.get(BOM_SERVICE)}
         ownedParts={container.get(OWNED_PARTS)}
         play={container.get(TRAIN_PLAY)}

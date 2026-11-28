@@ -174,6 +174,25 @@ export async function extractLibrary(
   };
 }
 
+export async function readLibraryFile(
+  archivePath: string,
+  lock: InputLock,
+  path: string,
+): Promise<Buffer> {
+  const { root } = pinnedArchive(lock).mirror;
+  const found: Buffer[] = [];
+  await readTarGz(
+    archivePath,
+    (entryPath) => libraryPath(entryPath, root) === path,
+    (_, bytes) => found.push(bytes),
+  );
+  const [bytes] = found;
+  if (bytes === undefined || found.length > 1) {
+    throw new Error(`${archivePath} holds ${found.length} files at ${path}, not one`);
+  }
+  return bytes;
+}
+
 function emptyIndex(archive: PinnedArchive): LibraryIndex {
   return {
     format: INDEX_FORMAT,

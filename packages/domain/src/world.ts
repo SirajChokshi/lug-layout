@@ -237,4 +237,24 @@ export class World {
   chunks(): ReadonlyArray<ChunkView> {
     return this.ordered.map((chunk) => chunk.view());
   }
+
+  has(refId: number, colorId: number, x: number, z: number, yPlates: number, rot: number): boolean {
+    if (!isLatticePose(x, z, yPlates)) return false;
+    const chunk = this.byKey.get(chunkKey(chunkOf(x), chunkOf(z)));
+    if (!chunk) return false;
+    for (let slot = 0; slot < chunk.count; slot++) {
+      if (
+        ((chunk.flags[slot] ?? 0) & SLOT_LIVE) !== 0 &&
+        chunk.refId[slot] === refId &&
+        chunk.colorId[slot] === colorId &&
+        chunk.x[slot] === x &&
+        chunk.z[slot] === z &&
+        chunk.yPlates[slot] === yPlates &&
+        chunk.rot[slot] === rot
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
 }

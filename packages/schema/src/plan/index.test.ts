@@ -5,7 +5,7 @@ import {
   canonicalJson,
   importRef,
   shardEntry,
-  worldShards,
+  worldShardsV1,
   type PlacementRecordV1,
   type TrackRecordV1,
 } from "../world/index.ts";
@@ -62,7 +62,7 @@ function byValue(records: ReadonlyArray<PlacementRecordV1>): PlacementRecordV1[]
 }
 
 function planFiles(): Map<string, string> {
-  const shards = worldShards(placements, track);
+  const shards = worldShardsV1(placements, track);
   const manifest = planManifest(
     { bundleVersion: "1fd935a2278f8b65", plan, disclaimer: "disclaimer" },
     shards.map(shardEntry),

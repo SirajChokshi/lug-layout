@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Colour {
     pub name: String,
@@ -20,6 +22,14 @@ fn parse_hex_rgb(token: &str) -> Option<[u8; 3]> {
 fn value_after<'a>(tokens: &[&'a str], key: &str) -> Option<&'a str> {
     let position = tokens.iter().position(|t| *t == key)?;
     tokens.get(position + 1).copied()
+}
+
+pub fn translucent_codes(colours: &[Colour]) -> HashSet<u32> {
+    colours
+        .iter()
+        .filter(|colour| colour.alpha < OPAQUE)
+        .map(|colour| colour.code)
+        .collect()
 }
 
 pub fn parse_ldconfig(source: &str) -> Vec<Colour> {

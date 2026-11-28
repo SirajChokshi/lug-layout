@@ -29,6 +29,7 @@ import {
   type EditKind,
   type EditSummary,
   type HistoryStep,
+  type NoteChange,
   type PlanChange,
   type PlacementHandle,
   type PlacementContents,
@@ -56,6 +57,7 @@ import {
 import {
   BRICK_LDU,
   CHUNK_LDU,
+  IDENTIFICATION_ACCEPTED_DEVIATION_LDU,
   PLATE_LDU,
   SIXTEENTHS_PER_LDU,
   STUD_LDU,
@@ -80,7 +82,7 @@ import {
   type WorldBox,
 } from "@brr/render";
 import type { Decoded, Issue } from "@brr/schema/decode";
-import type { ImportReport, StudioReport } from "@brr/import";
+import type { ImportReport, LayoutPart, StudioReport } from "@brr/import";
 import {
   importRef,
   importedSha256,
@@ -111,12 +113,15 @@ import {
   TRACK_PIERS,
   SNAP_SHAPES,
   TRACK_EDIT_SESSION,
+  TRACK_PATH_SELECTION,
   TRACK_WORLD,
   WORLD_SESSION,
 } from "../tokens.ts";
 import { NOTHING_REBUILT, type ITrackWorld } from "./track-world.ts";
+import type { ITrackPathSelection, TrackPathScope } from "./track-path-selection.ts";
 import {
   TRACK_PIECE_PREFIX,
+  type ExtensionAttempt,
   type ITrackEditSession,
   type SwitchAttempt,
   type SwitchThrowRequest,
@@ -240,8 +245,9 @@ import {
   type TrackSelectionView,
   type TrainSelectionView,
 } from "./selection.ts";
-import { EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
+import { ANNOTATION_SERVICE, EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
+import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import {
   appendTrackChange,
@@ -277,6 +283,7 @@ import type {
   IWorldFiles,
   IWorldSession,
   ModelFileInput,
+  ModelFileOutcome,
   ModelImportNotice,
   PlanContents,
   PlanImport,
@@ -455,7 +462,13 @@ export interface PlaceableCoverView {
   readonly heightPlates: number;
 }
 
-export type ModelImportStatus = "importing" | "checking" | "placeable" | "check-failed" | "refused";
+export type ModelImportStatus =
+  | "importing"
+  | "checking"
+  | "placeable"
+  | "check-failed"
+  | "refused"
+  | "held";
 
 export interface ModelImportView {
   readonly file: string;
@@ -599,6 +612,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   pointerLeave(): void;
   click(ndcX: number, ndcY: number, eventTimeMs: number): void;
   toggleSelected(ndcX: number, ndcY: number): void;
+  selectTrackPath(ndcX: number, ndcY: number, scope: TrackPathScope): boolean;
   selectDragStart(ndcX: number, ndcY: number, additive: boolean): SelectDragKind | null;
   selectDragMove(ndcX: number, ndcY: number): void;
   selectDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
@@ -631,6 +645,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setPlacementModeOverride(held: boolean): void;
   goTo(x: number, z: number): void;
   importModelFile(file: ModelFileInput): Promise<boolean>;
+  importLayoutFile(file: ModelFileInput): Promise<boolean>;
   measureFrames(): void;
   cycleTier(): void;
   trackRoutes(): ReadonlyArray<TrackRouteView>;
@@ -1008,8 +1023,9 @@ class RoadSnapQuery {
     this.snap = snap;
   }
 }
-const OPENED_PLAN_COMPONENT = 0;
+const WHOLE_GROUP_COMPONENT = 0;
 const NO_PIECES: ReadonlyArray<PieceMember> = [];
+const NOTHING_DRAWN = "nothing in the file is drawn";
 const WORLD_FRAME: PlacementPose = { refId: -1, colorId: -1, x: 0, z: 0, yPlates: 0, rot: 0 };
 const PASTE_REFUSED = "Can't paste here.";
 const DELETE_REFUSED = "Can't delete.";
@@ -1027,6 +1043,48 @@ function poseOf(model: PlacedModel): PlacementPose {
     z: handle.z,
     yPlates: handle.yPlates,
     rot: handle.rot,
+  };
+}
+
+interface LayoutPiece {
+  readonly refId: number;
+  readonly placeable: Placeable;
+}
+
+interface LayoutMembers {
+  readonly members: ReadonlyArray<ModelMember>;
+  readonly leftOut: ReadonlyArray<string>;
+}
+
+function layoutMembers(pieces: ReadonlyArray<LayoutPiece>): LayoutMembers {
+  const [anchor] = pieces;
+  if (!anchor) return { members: [], leftOut: [] };
+  const [anchorX, anchorY, anchorZ] = anchor.placeable.frameShift;
+  const members: ModelMember[] = [];
+  const leftOut: string[] = [];
+  for (const { refId, placeable } of pieces) {
+    const [shiftX, shiftY, shiftZ] = placeable.frameShift;
+    const plates = (anchorY - shiftY) / PLATE_LDU;
+    const yPlates = Math.round(plates);
+    if (Math.abs(plates - yPlates) * PLATE_LDU > IDENTIFICATION_ACCEPTED_DEVIATION_LDU) {
+      leftOut.push(
+        `${placeable.label}: its height isn't a whole number of plates from ${anchor.placeable.label}'s`,
+      );
+      continue;
+    }
+    const x = anchorX - shiftX + 0;
+    const z = anchorZ - shiftZ + 0;
+    const pose = { refId, colorId: placeable.worldColor, x, z, yPlates, rot: 0 };
+    members.push({ model: null, placeable, pose, component: WHOLE_GROUP_COMPONENT });
+  }
+  const lowest = Math.min(...members.map(({ pose }) => pose.yPlates));
+  const resting = RESTS_ON_TABLE_Y_PLATES - lowest;
+  return {
+    members: members.map((member) => ({
+      ...member,
+      pose: { ...member.pose, yPlates: member.pose.yPlates + resting },
+    })),
+    leftOut,
   };
 }
 
@@ -1128,6 +1186,8 @@ function editLabel(edit: EditSummary | null): string | null {
       return "throw switch";
     case "plan":
       return "plan edit";
+    case "note":
+      return "note edit";
     case "open-plan":
       return `open plan (${counted(edit.placements, "placement", "placements")}, ${counted(edit.pieces, "track piece", "track pieces")})`;
     default: {
@@ -1287,7 +1347,7 @@ export class Editor implements IEditor, IEditedWorld {
   };
   private world = new World();
   private consists = new ConsistLayout();
-  private history = new EditHistory(this.world, this.consists);
+  private history: EditHistory;
   private readonly consistRefs = new Map<ConsistHandle, ConsistRef>();
   private activeTrain: PlayModel | null = null;
   private trainAim: RailAim | null = null;
@@ -1473,6 +1533,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
+    @inject(ANNOTATION_SERVICE) private readonly annotations: IAnnotationService,
     @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
     @inject(EDITOR_FRAME_LOOP) private readonly frames: IEditorFrameLoop,
@@ -1487,7 +1548,9 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(ROAD_EDIT_SESSION) private readonly roads: IRoadEditSession,
     @inject(TALLEST_TRAIN) private readonly tallestTrains: ITallestTrain,
     @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
+    @inject(TRACK_PATH_SELECTION) private readonly trackPaths: ITrackPathSelection,
   ) {
+    this.history = new EditHistory(this.world, this.consists, annotations);
     this.placed = new PlacedChunks(backend, (placeable, handle) =>
       this.trackWorld.carriedTrackAt(placeable, handle),
     );
@@ -1517,6 +1580,7 @@ export class Editor implements IEditor, IEditedWorld {
     });
     plans.subscribe(() => this.plansChanged());
     plans.onEdit((change) => this.planEdited(change));
+    annotations.onEdit((change) => this.notesEdited(change));
   }
 
   private sessionChanged(): void {
@@ -1721,9 +1785,9 @@ export class Editor implements IEditor, IEditedWorld {
     return this.catalog.placeables().filter((placeable) => placeable !== null);
   }
 
-  async addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<string | null> {
+  async addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<ModelFileOutcome> {
     const id = importRef(file.sha256);
-    if (this.catalog.itemRefId(id) !== null) return id;
+    if (this.catalog.itemRefId(id) !== null) return { kind: "added", item: id };
     const announced = notice === "announce";
     const importing = {
       file: file.name,
@@ -1741,7 +1805,7 @@ export class Editor implements IEditor, IEditedWorld {
         if (announced) {
           this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
         }
-        return null;
+        return { kind: "refused", reason: outcome.refusal };
       }
       case "placeable": {
         const refId = this.catalog.itemRefId(outcome.item.id);
@@ -1754,7 +1818,7 @@ export class Editor implements IEditor, IEditedWorld {
           outcome.credit,
           announced ? { ...reported, status: "placeable", item: outcome.item.id } : null,
         );
-        return outcome.item.id;
+        return { kind: "added", item: outcome.item.id };
       }
       case "checking": {
         await this.connectorTables.load(outcome.pending);
@@ -1770,7 +1834,7 @@ export class Editor implements IEditor, IEditedWorld {
         );
         this.studsLanding.set(outcome.item.id, landed);
         void landed.finally(() => this.studsLanding.delete(outcome.item.id));
-        return outcome.item.id;
+        return { kind: "added", item: outcome.item.id };
       }
       default: {
         const unhandled: never = outcome;
@@ -2016,16 +2080,73 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
-    const item = await this.session.addModelFile(file, "announce");
-    if (item !== null && !this.state.readOnly) this.chooseItem(item);
-    return item !== null;
+    const added = await this.session.addModelFile(file, "announce");
+    if (added.kind === "refused") return false;
+    if (!this.state.readOnly) this.chooseItem(added.item);
+    return true;
+  }
+
+  async importLayoutFile(file: ModelFileInput): Promise<boolean> {
+    if (this.state.readOnly) return false;
+    const layout = { file: file.name, item: null, report: null, studio: null } as const;
+    this.update({ modelImport: { ...layout, status: "importing", reason: null } });
+    const parts = await this.catalog.layoutParts(file.name, file.bytes).catch(errorText);
+    if (typeof parts === "string") {
+      this.update({ modelImport: { ...layout, status: "refused", reason: parts } });
+      return false;
+    }
+    const pieces: LayoutPiece[] = [];
+    const unplaced: string[] = [];
+    for (const part of parts) {
+      const piece = await this.layoutPiece(part);
+      if (typeof piece === "string") unplaced.push(`${part.name}: ${piece}`);
+      else pieces.push(piece);
+    }
+    const { members, leftOut } = layoutMembers(pieces);
+    const omitted = [...unplaced, ...leftOut].join("; ");
+    const [frame] = members;
+    if (!frame) {
+      const reason = omitted === "" ? NOTHING_DRAWN : omitted;
+      this.update({ modelImport: { ...layout, status: "refused", reason } });
+      return false;
+    }
+    const reason = omitted === "" ? null : `Left out: ${omitted}.`;
+    this.update({ modelImport: { ...layout, status: "held", reason } });
+    this.chooseItem(null);
+    for (const { placeable } of members) this.requestMeshes(placeable);
+    const boxes = members.map(({ placeable, pose }) =>
+      posedBox(placeable.box, pose.x, pose.z, pose.yPlates * PLATE_LDU, pose.rot),
+    );
+    const pivot = latticeCentre(unionBox(boxes));
+    this.holdGroup({
+      kind: "paste",
+      ...this.pasteEdit(members, NO_PIECES),
+      frameModel: 0,
+      frame: frame.pose,
+      grabX: pivot.x,
+      grabZ: pivot.z,
+      placement: null,
+    });
+    return true;
+  }
+
+  private async layoutPiece(part: LayoutPart): Promise<LayoutPiece | string> {
+    const bytes = new TextEncoder().encode(part.text);
+    const added = await this.session.addModelFile({ name: part.name, bytes }, "quiet");
+    if (added.kind === "refused") return added.reason;
+    const refId = this.catalog.itemRefId(added.item);
+    if (refId === null) throw new Error(`${added.item} isn't in the catalog`);
+    return { refId, placeable: this.placeableAt(refId) };
   }
 
   private requestMeshes(placeable: Placeable): void {
     this.catalog.requestMeshes(new Set(placeable.parts.partIndex));
   }
 
-  private async ensureStoredPlaceables({ shards, consists }: StoredContents): Promise<void> {
+  private async ensureStoredPlaceables({
+    shards,
+    consists,
+  }: Pick<StoredContents, "shards" | "consists">): Promise<void> {
     const refIds = new Set<number>();
     const placed = [
       ...shards.flatMap((shard) => shard.placements),
@@ -2318,17 +2439,25 @@ export class Editor implements IEditor, IEditedWorld {
   extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void {
     if (this.state.mode !== "track" || this.state.readOnly || this.tracks.holding()) return;
     if (this.tracks.dragging() || this.tracks.piering()) return;
-    const attempt = this.tracks.extend(turn);
+    this.layExtension(this.tracks.extend(turn), eventTimeMs);
+  }
+
+  private appendTrackPiece(id: string): boolean {
+    if (this.state.mode !== "track") return false;
+    return this.layExtension(this.tracks.appendPiece(id), performance.now());
+  }
+
+  private layExtension(attempt: ExtensionAttempt, eventTimeMs: number): boolean {
     switch (attempt.kind) {
       case "none":
-        return;
+        return false;
       case "blocked":
         this.update(this.tracks.view());
-        return;
+        return true;
       case "lay":
         this.commitLay(attempt.lay, eventTimeMs);
         this.repaintTrackPreview();
-        return;
+        return true;
       default: {
         const unhandled: never = attempt;
         throw new Error(`unhandled extension attempt ${String(unhandled)}`);
@@ -2407,6 +2536,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.enterRoadMode(id);
       return;
     }
+    if (id !== null && this.appendTrackPiece(id)) return;
     if (id !== null && this.tracks.pick(id)) {
       this.active = null;
       this.select([]);
@@ -2577,9 +2707,14 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   cycleConnector(): void {
-    if (!this.tracks.holding()) return;
-    this.tracks.nextConnector();
-    this.showHeldPiece();
+    if (this.tracks.holding()) {
+      this.tracks.nextConnector();
+      this.showHeldPiece();
+      return;
+    }
+    if (this.state.mode !== "track" || this.state.readOnly) return;
+    const view = this.tracks.nextPreviewEnd();
+    if (view) this.update(view);
   }
 
   mirrorPiece(): void {
@@ -3455,6 +3590,14 @@ export class Editor implements IEditor, IEditedWorld {
     this.showSelection();
   }
 
+  selectTrackPath(ndcX: number, ndcY: number, scope: TrackPathScope): boolean {
+    if (this.state.mode !== "select" || this.gesture) return false;
+    const picked = this.pickAt(ndcX, ndcY);
+    if (picked?.kind !== "track") return false;
+    this.select(this.trackPaths.members(picked.placement, scope));
+    return true;
+  }
+
   private pickAt(ndcX: number, ndcY: number): SelectionMember | null {
     this.backend.rayThrough(ndcX, ndcY, this.ray);
     let best: PlacedModel | null = null;
@@ -3647,14 +3790,20 @@ export class Editor implements IEditor, IEditedWorld {
     this.show(this.history.commit("plan", [], NO_TRACK_CHANGE, change), performance.now());
   }
 
+  private notesEdited(change: NoteChange): void {
+    this.show(this.history.annotate(change), performance.now());
+  }
+
   private show(
     edit: AppliedEdit,
     eventTimeMs: number,
     sample: EditSample | null = this.sampleOf(edit),
   ): ViewUpdate {
     if (edit.plan) this.plans.restore(edit.plan.after);
+    if (edit.notes) this.annotations.restore(edit.notes.after);
     const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
-    const planOnly = edit.plan !== null && edit.changes.length === 0 && !trackChanged;
+    const documentOnly =
+      (edit.plan !== null || edit.notes !== null) && edit.changes.length === 0 && !trackChanged;
     this.applyConsists(edit);
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     for (const model of view.removed) this.unsearchable(model);
@@ -3667,9 +3816,10 @@ export class Editor implements IEditor, IEditedWorld {
       this.requestFarModel(placeable);
     }
     const track = this.applyTrackChange(edit.track);
-    const worldChanged = edit.changes.length > 0 || (!trackChanged && !planOnly);
+    const worldChanged = edit.changes.length > 0 || (!trackChanged && !documentOnly);
     if (worldChanged) this.session.placementsEdited(edit);
     if (trackChanged) this.session.trackEdited(edit.track.lift);
+    if (edit.notes) this.session.notesEdited();
     if (sample) {
       this.timeEdit({
         ...sample,
@@ -3685,7 +3835,7 @@ export class Editor implements IEditor, IEditedWorld {
       });
     }
     let carriedTrackChanged = false;
-    if (!planOnly) {
+    if (!documentOnly) {
       this.refreshRoads();
       carriedTrackChanged = this.syncModelTrack();
       if (trackChanged) this.railsChanged();
@@ -3704,7 +3854,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.plans.apply(delta);
     }
     if (view.added.length + view.removed.length > 0) this.trackWorld.invalidateObstacles();
-    if (!planOnly) {
+    if (!documentOnly) {
       if (hasTrack && this.state.mode === "track") this.trackWorld.ensureObstacles();
       this.layoutChanged();
     }
@@ -5445,7 +5595,7 @@ export class Editor implements IEditor, IEditedWorld {
       model: null,
       placeable: this.placeableAt(pose.refId),
       pose,
-      component: OPENED_PLAN_COMPONENT,
+      component: WHOLE_GROUP_COMPONENT,
     }));
     const pieces = laid.value.map(({ piece, pose, yPlates, rise }) => ({
       index: null,
@@ -5476,6 +5626,7 @@ export class Editor implements IEditor, IEditedWorld {
       refs: this.catalog.refs(),
       track: this.trackWorld.records(),
       consists: this.consistRecords(),
+      notes: this.annotations.records(),
     };
   }
 
@@ -5747,6 +5898,12 @@ export class Editor implements IEditor, IEditedWorld {
     const restored = this.restore(stored);
     if (!restored.ok) return restored.issues;
     this.replaceWorld(restored.value);
+    const noteIssues = this.annotations.load({
+      notes: stored.notes,
+      document: stored.document,
+      world: this.world,
+    });
+    if (noteIssues.length > 0) return noteIssues;
     for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);
@@ -5771,10 +5928,12 @@ export class Editor implements IEditor, IEditedWorld {
     return [];
   }
 
-  private restore({ shards, consists }: StoredContents): Decoded<RestoredWorld> {
+  private restore({ shards, consists, notes, document }: StoredContents): Decoded<RestoredWorld> {
     const world = new World();
     const handles = addShards(world, shards, (ref, color) => this.catalog.resolveRef(ref, color));
     if (!handles.ok) return handles;
+    const noteIssues = this.annotations.check({ notes, document, world });
+    if (noteIssues.length > 0) return { ok: false, issues: noteIssues };
     const trackIssues = this.trackWorld.restore(worldTrack(shards));
     if (trackIssues.length > 0) return { ok: false, issues: trackIssues };
     const issues: Issue[] = [];
@@ -5845,7 +6004,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.tracks.clearEnds();
     this.world = world;
     this.consists = new ConsistLayout();
-    this.history = new EditHistory(world, this.consists);
+    this.history = new EditHistory(world, this.consists, this.annotations);
     this.placed.addAll(
       handles.flatMap((handle) => {
         const placeable = this.catalog.placeables()[handle.refId];

@@ -11,14 +11,29 @@ import {
 } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import type { IBomSource } from "../bom/bom-service.ts";
-import { PLAN_SERVICE, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import { ringsBounds } from "../sheets/plan-drawing.ts";
+import type { ISheetComposer } from "../sheets/sheet-composer.ts";
 import {
-  planSheetSvg,
-  ringsBounds,
-  type SheetPartsList,
-  type SheetPlacement,
-  type SheetVerdict,
-} from "./plan-sheet.ts";
+  pageFilePrefix,
+  sheetFileBase,
+  sheetSetFileBase,
+  type ISheetWriter,
+  type SheetDocument,
+  type SheetFile,
+  type SheetFormat,
+  type SheetRequest,
+} from "../sheets/sheet-document.ts";
+import { WHOLE_PLAN_SELECTION } from "../sheets/sheet-sets.ts";
+import type { ISvgSheetWriter } from "../sheets/svg-sheet-writer.ts";
+import {
+  PDF_SHEET_WRITER,
+  PLAN_SERVICE,
+  PNG_SHEET_WRITER,
+  SHEET_COMPOSER,
+  SVG_SHEET_WRITER,
+  TRADEMARK_DISCLAIMER,
+} from "../tokens.ts";
+import type { PlanSheet, SheetPartsList, SheetPlacement, SheetVerdict } from "./plan-sheet.ts";
 import type { IPlanService, PlanPlacementsView, PlanRowSegment } from "./plan-service.ts";
 import { buildableAsPlanned, UNCHECKED_PLAN_RULES } from "./plan-verdict.ts";
 
@@ -35,6 +50,13 @@ export interface IPlanSheetSource extends IBomSource {
 
 export interface IPlanSheetService {
   printable(source: IPlanSheetSource, planId: string): string;
+  download(source: IPlanSheetSource, planId: string, request: SheetRequest): Promise<SheetFile>;
+  downloadAll(
+    source: IPlanSheetSource,
+    planId: string,
+    requests: ReadonlyArray<SheetRequest>,
+    format: SheetFormat,
+  ): Promise<SheetFile>;
 }
 
 function keyText(key: PlacementKey): string {
@@ -95,9 +117,65 @@ export class PlanSheetService implements IPlanSheetService {
   constructor(
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
+    @inject(SHEET_COMPOSER) private readonly composer: ISheetComposer,
+    @inject(SVG_SHEET_WRITER) private readonly svg: ISvgSheetWriter,
+    @inject(PDF_SHEET_WRITER) private readonly pdf: ISheetWriter,
+    @inject(PNG_SHEET_WRITER) private readonly png: ISheetWriter,
   ) {}
 
   printable(source: IPlanSheetSource, planId: string): string {
+    const sheet = this.sheetOf(source, planId);
+    const [page] = this.composer.compose(sheet, { kind: "whole" }, WHOLE_PLAN_SELECTION).pages;
+    if (!page) throw new Error("a whole sheet has one page");
+    return this.svg.pageSvg(page, sheet.name);
+  }
+
+  async download(
+    source: IPlanSheetSource,
+    planId: string,
+    request: SheetRequest,
+  ): Promise<SheetFile> {
+    const sheet = this.sheetOf(source, planId);
+    const document = this.composer.compose(sheet, request.layout, request.selection);
+    const base = sheetFileBase(sheet.name, request.selection.name, request.layout);
+    return this.writer(request.format).write(document, base);
+  }
+
+  async downloadAll(
+    source: IPlanSheetSource,
+    planId: string,
+    requests: ReadonlyArray<SheetRequest>,
+    format: SheetFormat,
+  ): Promise<SheetFile> {
+    const sheet = this.sheetOf(source, planId);
+    const document: SheetDocument = {
+      title: sheet.name,
+      pages: requests.flatMap((request) =>
+        this.composer.compose(sheet, request.layout, request.selection).pages.map((page) => ({
+          ...page,
+          name: `${pageFilePrefix(request.selection.name)}-${page.name}`,
+        })),
+      ),
+    };
+    return this.writer(format).write(document, sheetSetFileBase(sheet.name));
+  }
+
+  private writer(format: SheetFormat): ISheetWriter {
+    switch (format) {
+      case "svg":
+        return this.svg;
+      case "pdf":
+        return this.pdf;
+      case "png":
+        return this.png;
+      default: {
+        const unhandled: never = format;
+        throw new Error(`unhandled sheet format ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private sheetOf(source: IPlanSheetSource, planId: string): PlanSheet {
     const plans = this.plans;
     const region = plans.plans().find((plan) => plan.id === planId);
     if (!region) throw new Error(`no plan ${planId}`);
@@ -123,7 +201,7 @@ export class PlanSheetService implements IPlanSheetService {
       });
       if (segment === "model") roadway.push(...shapes.roadwayOf(id));
     }
-    return planSheetSvg({
+    return {
       name: region.name,
       originX: regionOriginX(region),
       originZ: regionOriginZ(region),
@@ -139,7 +217,7 @@ export class PlanSheetService implements IPlanSheetService {
       partsList: unchecked === null ? partsListOf(source, planId) : null,
       verdict: this.verdictOf(planId, unchecked),
       disclaimer: this.disclaimer,
-    });
+    };
   }
 
   private verdictOf(planId: string, unchecked: string | null): SheetVerdict {

@@ -2,13 +2,18 @@ import { decode, decodedOrThrow, type Decoded, type Issue } from "@brr/schema/de
 import { planArchiveFiles, readPlanFiles, type PlanArchive } from "@brr/schema/plan";
 import {
   IMPORT_DIRECTORY,
+  NoteShardV2,
+  WorldDocumentIndex,
   WorldHeader,
   WorldIndexEntry,
-  WorldManifestV1,
-  WorldShardV1,
+  WorldShardV2,
   canonicalJson,
   compareSuperChunks,
+  decodeWorldManifest,
+  decodeWorldShard,
   importPath,
+  noteShardEntry,
+  noteShardReferenceIssues,
   parseImportPath,
   parseJsonText,
   readWorldArchive,
@@ -16,14 +21,18 @@ import {
   referencedImports,
   shardEntry,
   shardName,
+  shardReferenceIssues,
   worldArchiveFiles,
   worldManifest,
   type ConsistRecordV1,
   type ImportedFile,
+  type NoteShardEntryV2,
+  type PlacedRefs,
   type ShardEntryV1,
   type SuperChunk,
   type WorldArchive,
   type WorldFiles,
+  type WorldManifestV2,
 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import { deleteDatabase, openDatabase, requestResult, transactionDone } from "./indexed-db.ts";
@@ -39,6 +48,7 @@ const WORLD_INDEX_STORE = "worlds";
 const MANIFEST_STORE = "manifest";
 const SHARD_STORE = "shards";
 const MANIFEST_KEY = "manifest";
+const NOTE_SHARD_KEY_PREFIX = "notes/";
 
 export interface ShardFile {
   readonly name: string;
@@ -49,19 +59,26 @@ export interface ShardFile {
 
 export interface StoredWorld {
   readonly id: string;
-  readonly manifest: WorldManifestV1;
-  readonly shards: ReadonlyArray<WorldShardV1>;
+  readonly manifest: WorldManifestV2;
+  readonly shards: ReadonlyArray<WorldShardV2>;
+  readonly notes: ReadonlyArray<NoteShardV2>;
 }
 
 export interface WorldChange {
   readonly header: WorldHeader;
-  readonly put: ReadonlyArray<WorldShardV1>;
+  readonly put: ReadonlyArray<WorldShardV2>;
   readonly drop: ReadonlyArray<SuperChunk>;
+  readonly putNotes: ReadonlyArray<NoteShardV2>;
+  readonly dropNotes: ReadonlyArray<SuperChunk>;
 }
 
 export interface IWorldRepository {
   list(): Promise<ReadonlyArray<WorldIndexEntry>>;
-  create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry>;
+  create(
+    header: WorldHeader,
+    shards: ReadonlyArray<WorldShardV2>,
+    notes: ReadonlyArray<NoteShardV2>,
+  ): Promise<WorldIndexEntry>;
   read(id: string): Promise<Decoded<StoredWorld>>;
   save(id: string, change: WorldChange): Promise<WorldIndexEntry>;
   remove(id: string): Promise<void>;
@@ -102,16 +119,49 @@ export function worldDatabaseName(id: string): string {
   return `${WORLD_DATABASE_PREFIX}${id}`;
 }
 
+function noteShardKey(superChunk: SuperChunk): string {
+  return `${NOTE_SHARD_KEY_PREFIX}${shardName(superChunk)}`;
+}
+
 const utf8 = new TextEncoder();
 
-function storedEntries(text: unknown): ReadonlyArray<ShardEntryV1> {
-  if (typeof text !== "string") return [];
+interface StoredEntries {
+  readonly shards: ReadonlyArray<ShardEntryV1>;
+  readonly noteShards: ReadonlyArray<NoteShardEntryV2>;
+}
+
+function storedEntries(text: unknown): StoredEntries {
+  if (typeof text !== "string") return { shards: [], noteShards: [] };
   const json = parseJsonText(text, "manifest");
-  const manifest = json.ok ? decode(WorldManifestV1, json.value, "manifest") : json;
-  return decodedOrThrow(manifest, "the stored manifest is invalid").shards;
+  const manifest = json.ok ? decodeWorldManifest(json.value, "manifest") : json;
+  return decodedOrThrow(manifest, "the stored manifest is invalid");
+}
+
+function entriesBySuperChunk<Entry extends { readonly superChunk: SuperChunk }>(
+  entries: ReadonlyArray<Entry>,
+): Map<string, Entry> {
+  return new Map(entries.map((entry) => [shardName(entry.superChunk), entry]));
 }
 
 const NOT_SAVED = "the world wasn't saved";
+
+function decodeNoteShard(value: unknown, path: string): Decoded<NoteShardV2> {
+  return decode(NoteShardV2, value, path);
+}
+
+function storedText<T>(
+  texts: ReadonlyMap<string, unknown>,
+  key: string,
+  path: string,
+  decodeStored: (value: unknown, path: string) => Decoded<T>,
+): Decoded<T> {
+  const text = texts.get(key);
+  if (typeof text !== "string") {
+    return { ok: false, issues: [{ path, message: "is in the manifest but not stored" }] };
+  }
+  const json = parseJsonText(text, path);
+  return json.ok ? decodeStored(json.value, path) : json;
+}
 
 function indexEntries(values: ReadonlyArray<unknown>): WorldIndexEntry[] {
   return values.flatMap((value) => {
@@ -125,11 +175,23 @@ interface ArchiveTexts {
     readonly shards: ReadonlyArray<ShardEntryV1>;
     readonly consists?: ReadonlyArray<ConsistRecordV1>;
   };
-  readonly shards: ReadonlyArray<WorldShardV1>;
+  readonly shards: ReadonlyArray<PlacedRefs>;
 }
 
 function changesContent(change: WorldChange): boolean {
-  return change.put.length > 0 || change.drop.length > 0;
+  return (
+    change.put.length > 0 ||
+    change.drop.length > 0 ||
+    change.putNotes.length > 0 ||
+    change.dropNotes.length > 0
+  );
+}
+
+function checkedForSave<T>(decoded: Decoded<T>, references: (value: T) => Issue[]): T {
+  const value = decodedOrThrow(decoded, NOT_SAVED);
+  const issues = references(value);
+  if (issues.length > 0) decodedOrThrow({ ok: false, issues }, NOT_SAVED);
+  return value;
 }
 
 @injectable()
@@ -185,7 +247,7 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     return indexEntries(values).toSorted((a, b) => b.savedAt - a.savedAt);
   }
 
-  private async writeSummary(id: string, manifest: WorldManifestV1): Promise<WorldIndexEntry> {
+  private async writeSummary(id: string, manifest: WorldManifestV2): Promise<WorldIndexEntry> {
     const summary: WorldIndexEntry = {
       id,
       name: manifest.name,
@@ -202,8 +264,18 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     return summary;
   }
 
-  create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
-    return this.write(crypto.randomUUID(), { header, put: shards, drop: [] });
+  create(
+    header: WorldHeader,
+    shards: ReadonlyArray<WorldShardV2>,
+    notes: ReadonlyArray<NoteShardV2>,
+  ): Promise<WorldIndexEntry> {
+    return this.write(crypto.randomUUID(), {
+      header,
+      put: shards,
+      drop: [],
+      putNotes: notes,
+      dropNotes: [],
+    });
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
@@ -213,32 +285,47 @@ export class IndexedDbWorldRepository implements IWorldRepository {
   }
 
   private async write(id: string, change: WorldChange): Promise<WorldIndexEntry> {
-    decodedOrThrow(decode(WorldHeader, change.header, "world header"), NOT_SAVED);
+    const header = decodedOrThrow(decode(WorldHeader, change.header, "world header"), NOT_SAVED);
+    const index = new WorldDocumentIndex(header);
     for (const shard of change.put) {
-      decodedOrThrow(
-        decode(WorldShardV1, shard, `shard ${shardName(shard.superChunk)}`),
-        NOT_SAVED,
+      const path = `shard ${shardName(shard.superChunk)}`;
+      checkedForSave(decode(WorldShardV2, shard, path), (value) =>
+        shardReferenceIssues(index, value, path),
+      );
+    }
+    for (const shard of change.putNotes) {
+      const path = `note shard ${shardName(shard.superChunk)}`;
+      checkedForSave(decode(NoteShardV2, shard, path), (value) =>
+        noteShardReferenceIssues(index, value, path),
       );
     }
     const manifest = await this.withWorld(id, async (db) => {
       const transaction = db.transaction([MANIFEST_STORE, SHARD_STORE], "readwrite");
       const done = transactionDone(transaction);
       const manifests = transaction.objectStore(MANIFEST_STORE);
-      const entries = new Map(
-        storedEntries(await requestResult(manifests.get(MANIFEST_KEY))).map((entry) => [
-          shardName(entry.superChunk),
-          entry,
-        ]),
-      );
+      const stored = storedEntries(await requestResult(manifests.get(MANIFEST_KEY)));
+      const entries = entriesBySuperChunk(stored.shards);
+      const noteEntries = entriesBySuperChunk(stored.noteShards);
       for (const superChunk of change.drop) entries.delete(shardName(superChunk));
       for (const shard of change.put) entries.set(shardName(shard.superChunk), shardEntry(shard));
+      for (const superChunk of change.dropNotes) noteEntries.delete(shardName(superChunk));
+      for (const shard of change.putNotes) {
+        noteEntries.set(shardName(shard.superChunk), noteShardEntry(shard));
+      }
       const next = decodedOrThrow(
-        decode(WorldManifestV1, worldManifest(change.header, [...entries.values()]), "manifest"),
+        decodeWorldManifest(
+          worldManifest(change.header, [...entries.values()], [...noteEntries.values()]),
+          "manifest",
+        ),
         NOT_SAVED,
       );
       const shards = transaction.objectStore(SHARD_STORE);
       for (const superChunk of change.drop) shards.delete(shardName(superChunk));
       for (const shard of change.put) shards.put(canonicalJson(shard), shardName(shard.superChunk));
+      for (const superChunk of change.dropNotes) shards.delete(noteShardKey(superChunk));
+      for (const shard of change.putNotes) {
+        shards.put(canonicalJson(shard), noteShardKey(shard.superChunk));
+      }
       manifests.put(canonicalJson(next), MANIFEST_KEY);
       await done;
       return next;
@@ -283,25 +370,35 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     }
     const manifestJson = parseJsonText(texts.manifest, "manifest");
     const manifest = manifestJson.ok
-      ? decode(WorldManifestV1, manifestJson.value, "manifest")
+      ? decodeWorldManifest(manifestJson.value, "manifest")
       : manifestJson;
     if (!manifest.ok) return manifest;
+    const index = new WorldDocumentIndex(manifest.value);
     const issues: Issue[] = [];
-    const shards: WorldShardV1[] = [];
+    const shards: WorldShardV2[] = [];
     for (const entry of manifest.value.shards) {
-      const name = shardName(entry.superChunk);
-      const text = texts.shards.get(name);
-      if (typeof text !== "string") {
-        issues.push({ path: `shard ${name}`, message: "is in the manifest but not stored" });
-        continue;
+      const path = `shard ${shardName(entry.superChunk)}`;
+      const shard = storedText(texts.shards, shardName(entry.superChunk), path, decodeWorldShard);
+      if (shard.ok) {
+        shards.push(shard.value);
+        issues.push(...shardReferenceIssues(index, shard.value, path));
+      } else {
+        issues.push(...shard.issues);
       }
-      const json = parseJsonText(text, `shard ${name}`);
-      const shard = json.ok ? decode(WorldShardV1, json.value, `shard ${name}`) : json;
-      if (shard.ok) shards.push(shard.value);
-      else issues.push(...shard.issues);
+    }
+    const notes: NoteShardV2[] = [];
+    for (const entry of manifest.value.noteShards) {
+      const path = `note shard ${shardName(entry.superChunk)}`;
+      const shard = storedText(texts.shards, noteShardKey(entry.superChunk), path, decodeNoteShard);
+      if (shard.ok) {
+        notes.push(shard.value);
+        issues.push(...noteShardReferenceIssues(index, shard.value, path));
+      } else {
+        issues.push(...shard.issues);
+      }
     }
     if (issues.length > 0) return { ok: false, issues };
-    return { ok: true, value: { id, manifest: manifest.value, shards } };
+    return { ok: true, value: { id, manifest: manifest.value, shards, notes } };
   }
 
   async remove(id: string): Promise<void> {

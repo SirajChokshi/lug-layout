@@ -211,6 +211,8 @@ export interface ITrackEditSession {
   ): TrackDragEnd;
   onExtension(hitX: number, hitZ: number): boolean;
   extend(turn: ExtensionTurn | null): ExtensionAttempt;
+  appendPiece(id: string): ExtensionAttempt;
+  nextPreviewEnd(): TrackEditView | null;
   cycleChoice(step: 1 | -1): TrackEditView | null;
   selectChoice(index: number): TrackEditView | null;
   dropExtension(): boolean;
@@ -611,6 +613,24 @@ export class TrackEditSession implements ITrackEditSession {
     };
   }
 
+  appendPiece(id: string): ExtensionAttempt {
+    const track = this.trackWorld.drawing();
+    if (!track || this.held || this.placingPiers || track.isDragging()) return NOTHING;
+    if (this.worldSession.view().readOnly) return NOTHING;
+    const pieceIndex = this.trackPieceIndex(track, id);
+    if (pieceIndex === null) return NOTHING;
+    if (!track.extension.append(track.pieceByIndex(pieceIndex).def)) return NOTHING;
+    const attempt = this.extend(null);
+    if (attempt.kind === "blocked") this.paint(track);
+    return attempt;
+  }
+
+  nextPreviewEnd(): TrackEditView | null {
+    const track = this.trackWorld.drawing();
+    if (!track || this.held || track.isDragging()) return null;
+    return track.extension.nextEntry() ? this.paint(track) : null;
+  }
+
   cycleChoice(step: 1 | -1): TrackEditView | null {
     const track = this.trackWorld.drawing();
     if (!track || this.held || track.isDragging()) return null;
@@ -916,11 +936,10 @@ export class TrackEditSession implements ITrackEditSession {
     return track.pieceSet.palette().map((catalogIndex) => {
       const kit = track.pieceByIndex(catalogIndex);
       const part = parts[kit.partIndex];
-      const { element, title } = track.pieceSet.element(catalogIndex);
       return {
         id: `${TRACK_PIECE_PREFIX}${kit.piece.id}`,
-        label: `${element.replace(/^[a-z]+:/u, "")} ${title}`,
-        shortLabel: title,
+        label: track.pieceSet.label(catalogIndex),
+        shortLabel: track.pieceSet.element(catalogIndex).title,
         group: TRACK_PIECE_GROUP,
         groupLabel: TRACK_PIECE_GROUP_LABEL,
         color: null,
@@ -952,12 +971,11 @@ export class TrackEditSession implements ITrackEditSession {
     const held = this.held;
     if (!held) return null;
     const kit = track.pieceByIndex(held.catalogIndex);
-    const { element, title } = track.pieceSet.element(held.catalogIndex);
     const mirror = track.pieceSet.mirrored(held.catalogIndex);
     const count = kit.def.connectors.length;
     return {
       item: kit.piece.id,
-      label: `${element.replace(/^[a-z]+:/u, "")} ${title}`,
+      label: track.pieceSet.label(held.catalogIndex),
       snapped: held.snap?.end !== null && held.snap !== null,
       joins: held.snap?.joins ?? 0,
       misses: held.snap?.misses.length ?? 0,

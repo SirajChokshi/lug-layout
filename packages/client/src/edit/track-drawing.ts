@@ -13,12 +13,16 @@ import {
   LABEL_AT,
   LABEL_NUMBERED,
   TRACK_OPEN_END,
+  TRACK_REVERSING,
   TRACK_SEGMENT,
   TRACK_UNIDENTIFIED,
   TRACK_UNJOINED_ENDS,
   TRACK_UNVERIFIED,
   TRACK_LAID_UNVERIFIED,
+  NO_REVERSING_SECTIONS,
+  ReversingSectionFinder,
   type PlanDelta,
+  type ReversingSections,
   type TrackIssueRows,
   NEAR_MISS_RADIUS_LDU,
   NO_OBSTACLE,
@@ -124,6 +128,7 @@ import {
   type ExtensionJoin,
   type ExtensionRun,
   type ExtensionSite,
+  type PieceFit,
 } from "./track-extension.ts";
 import { pieceRelativePose } from "./group-transform.ts";
 import { SolveSamples, type TrackSolveStats } from "./solve-samples.ts";
@@ -734,6 +739,9 @@ export class TrackDrawing implements ExtensionSite {
   private rampRows: ReadonlyArray<RampEndRow> = [];
   private rampRowsGraph: TrackGraph | null = null;
   private rampRowsSupport: TrackSupport | null = null;
+  private readonly reversing = new ReversingSectionFinder();
+  private reversingGraph: TrackGraph | null = null;
+  private reversingSections: ReversingSections = NO_REVERSING_SECTIONS;
   private laidStart: Pose16 | null = null;
   private laidMoves: ReadonlyArray<TrackMove> | null = null;
   private lastLaid: LaidRunEnd | null = null;
@@ -966,6 +974,10 @@ export class TrackDrawing implements ExtensionSite {
     return this.layout.count;
   }
 
+  get trackGraph(): TrackGraph {
+    return this.graph;
+  }
+
   pieceParts(): ReadonlyArray<KitPart> {
     return [...this.byCatalogIndex.values()];
   }
@@ -1149,10 +1161,8 @@ export class TrackDrawing implements ExtensionSite {
     return this.graph.joinCount;
   }
 
-  private kitPart(move: TrackMove): KitPart {
-    const part = this.byDef.get(move.piece.id);
-    if (!part) throw new Error(`${move.piece.id} is not in the drawing kit`);
-    return part;
+  private movePart(move: TrackMove): KitPart {
+    return this.placeablePiece(move.piece.id);
   }
 
   endNear(xLdu: number, zLdu: number, except: number | null): number | null {
@@ -1740,9 +1750,28 @@ export class TrackDrawing implements ExtensionSite {
     const start = this.ends[from];
     if (!start) throw new RangeError(`no open end ${from} to lay ${move.piece.id} on`);
     const { end } = layMoves(start, [move]);
-    const { endPlates } = this.pieceHeights(from, move);
+    return this.openEndJoining(end, this.pieceHeights(from, move).endPlates);
+  }
+
+  pieceFit(from: number, move: TrackMove): PieceFit {
+    const start = this.ends[from];
+    const laid = start ? layMoves(start, [move]) : null;
+    const piece = laid?.placed[0];
+    if (!laid || !piece) throw new RangeError(`no open end ${from} to lay ${move.piece.id} on`);
+    const yPlates = this.endHeight(from);
+    return {
+      joins: this.openEndJoining(laid.end, yPlates),
+      blocked: this.pieceBlock(this.movePart(move).catalogIndex, piece.placement, yPlates),
+    };
+  }
+
+  pieceLabel(piece: TrackPieceDef): string {
+    return this.pieceSet.label(this.placeablePiece(piece.id).catalogIndex);
+  }
+
+  private openEndJoining(end: Pose16, plates: number): number | null {
     const joined = this.ends.findIndex(
-      (open, index) => this.endPlates[index] === endPlates && posesJoin16(end, open),
+      (open, index) => this.endPlates[index] === plates && posesJoin16(end, open),
     );
     return joined < 0 ? null : joined;
   }
@@ -1764,7 +1793,7 @@ export class TrackDrawing implements ExtensionSite {
     if (raised) return raised.block;
     const { field } = this.bands.laying(startPlates, startPlates);
     const blocker = field.clearance.pieceBlocker(
-      this.kitPart(move).outline,
+      this.movePart(move).outline,
       placed.placement,
       field.pieceOwner(this.endOwners[from]),
       joins === null ? NO_OBSTACLE : field.pieceOwner(this.endOwners[joins]),
@@ -1832,7 +1861,7 @@ export class TrackDrawing implements ExtensionSite {
       const rise = heights.rise[at] ?? 0;
       if (!move || !piece || (rise === 0 && yPlates === startPlates)) continue;
       const block = this.pieceBlock(
-        this.kitPart(move).catalogIndex,
+        this.movePart(move).catalogIndex,
         piece.placement,
         yPlates,
         rise,
@@ -1947,9 +1976,14 @@ export class TrackDrawing implements ExtensionSite {
     return { start: run.start, moves: [], refused: choice.moves[0] ?? null, heights };
   }
 
-  private extensionHeights(run: ExtensionRun): RunHeightsResult {
-    const goal = run.choice.joins === null ? null : this.endHeight(run.choice.joins);
-    return this.runPlan(this.endHeight(run.from), run.choice.moves, goal);
+  private extensionHeights({ from, choice }: ExtensionRun): RunHeightsResult {
+    const startPlates = this.endHeight(from);
+    if (choice.kind === "piece") {
+      const level = new Int8Array(choice.moves.length);
+      return { kind: "heights", heights: runHeights(choice.moves, startPlates, level) };
+    }
+    const goal = choice.joins === null ? null : this.endHeight(choice.joins);
+    return this.runPlan(startPlates, choice.moves, goal);
   }
 
   private buildGhost({ run: route, moves, laid }: LaidPreview): PreviewGhost {
@@ -1966,7 +2000,7 @@ export class TrackDrawing implements ExtensionSite {
       const move = moves[i];
       const piece = placed[i];
       if (!move || !piece) continue;
-      const part = this.kitPart(move);
+      const part = this.movePart(move);
       partIndex[i] = part.partIndex;
       colorIndex[i] = i < route.moves.length ? part.color : this.refusedColor;
       const yPlates = route.heights.yPlates[i] ?? GROUND_PLATES;
@@ -2029,7 +2063,7 @@ export class TrackDrawing implements ExtensionSite {
     return layMoves(run.start, run.choice.moves).placed.some((piece, i) => {
       const move = run.choice.moves[i];
       if (!move) return false;
-      const box = this.pieceBox(this.kitPart(move).catalogIndex, piece.placement);
+      const box = this.pieceBox(this.movePart(move).catalogIndex, piece.placement);
       return xLdu >= box.minX && xLdu <= box.maxX && zLdu >= box.minZ && zLdu <= box.maxZ;
     });
   }
@@ -2045,7 +2079,7 @@ export class TrackDrawing implements ExtensionSite {
       const move = moves[i];
       if (!move) return;
       entries.push({
-        part: this.kitPart(move),
+        part: this.movePart(move),
         placement: piece.placement,
         yPlates: heights.yPlates[i] ?? GROUND_PLATES,
         rise: heights.rise[i] ?? 0,
@@ -2850,6 +2884,7 @@ export class TrackDrawing implements ExtensionSite {
         this.addEndOwner(rows, issue, graph.endPlacement[ends[e] ?? 0] ?? 0);
       }
     }
+    this.addReversingRows(rows);
     const carriers = this.carriers;
     for (let c = 0; c < carriers.length; c++) {
       const carrier = carriers[c];
@@ -2858,6 +2893,29 @@ export class TrackDrawing implements ExtensionSite {
       this.addPartRows(rows, TRACK_UNIDENTIFIED, carrier.unidentified, carrier.model);
     }
     this.addLaidUnverifiedRows(rows);
+  }
+
+  private addReversingRows(rows: TrackIssueRows): void {
+    const graph = this.graph;
+    const sections = this.reversingSectionsOfGraph();
+    for (let s = 0; s < sections.count; s++) {
+      const turning = sections.turningEnd[s] ?? 0;
+      const issue = rows.add(TRACK_REVERSING, "", "");
+      rows.x[issue] = graph.endXLdu[turning] ?? 0;
+      rows.z[issue] = graph.endZLdu[turning] ?? 0;
+      const last = sections.placementStart[s + 1] ?? 0;
+      for (let k = sections.placementStart[s] ?? 0; k < last; k++) {
+        this.addEndOwner(rows, issue, sections.placements[k] ?? 0);
+      }
+    }
+  }
+
+  private reversingSectionsOfGraph(): ReversingSections {
+    if (this.reversingGraph !== this.graph) {
+      this.reversingGraph = this.graph;
+      this.reversingSections = this.reversing.find(this.graph);
+    }
+    return this.reversingSections;
   }
 
   private addLaidUnverifiedRows(rows: TrackIssueRows): void {

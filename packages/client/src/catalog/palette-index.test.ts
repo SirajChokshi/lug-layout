@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { LibraryQuery } from "./library-query.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import { PaletteIndex, itemInColor } from "./palette-index.ts";
 
@@ -123,12 +124,12 @@ const index = new PaletteIndex(catalog, [
 ]);
 
 function keys(query: string, filter: Parameters<PaletteIndex["search"]>[1] = "all") {
-  return index.search(query, filter).map((hit) => hit.entry.key);
+  return index.search(LibraryQuery.parse(query), filter).map((hit) => hit.entry.key);
 }
 
 function colorsOf(query: string, key: string) {
   return index
-    .search(query, "all")
+    .search(LibraryQuery.parse(query), "all")
     .find((hit) => hit.entry.key === key)
     ?.items.map((item) => item.color?.name);
 }
@@ -232,7 +233,7 @@ it("defaults a part to the current colour, else its display colour, else its sec
   expect(pick("ldraw:3811", null)).toBe("ldraw:3811@72");
   expect(pick("ldraw:3811", TAN.code)).toBe("ldraw:3811@19");
   expect(pick("ldraw:3867", TAN.code)).toBe("ldraw:3867@2");
-  const [searched] = index.search("4186", "all");
+  const [searched] = index.search(LibraryQuery.parse("4186"), "all");
   expect(searched && index.defaultItem(searched.items, null)?.id).toBe("ldraw:4186@2");
 });
 
@@ -265,15 +266,14 @@ it("keeps colourless parts that share a group as separate parts", () => {
     trackPiece("75541-f1", "Train Track 9V Switch Right Straight"),
   ]);
   const found = (query: string) =>
-    pieces.search(query, "all").map((hit) => hit.items.map((item) => item.id));
+    pieces.search(LibraryQuery.parse(query), "all").map((hit) => hit.items.map((item) => item.id));
   expect(found("75541")).toEqual([["track-piece:ldraw:75541-f1"]]);
   expect(found("straight")).toEqual([["track-piece:ldraw:74746"], ["track-piece:ldraw:75541-f1"]]);
 });
 
 it("ranks a part named by the word above parts that only mention it", () => {
   const withSiding = new PaletteIndex([trackSiding, ...catalog]);
-  expect(withSiding.search("track", "all").map((hit) => hit.entry.key)).toEqual([
-    "track:lego-9v",
-    "generated:station-track-siding",
-  ]);
+  expect(withSiding.search(LibraryQuery.parse("track"), "all").map((hit) => hit.entry.key)).toEqual(
+    ["track:lego-9v", "generated:station-track-siding"],
+  );
 });

@@ -52,6 +52,7 @@ import {
 import {
   CandidatePoses,
   MateReport,
+  modelEnd,
   ProposalProgress,
   RoadNetwork,
   levelCrossings,
@@ -60,7 +61,7 @@ import {
   type RoadPlacement,
 } from "@brr/domain";
 import { LevelCrossingFacts } from "@brr/schema/bundle";
-import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { decode, decodedOrThrow, issueText } from "@brr/schema/decode";
 import crossingJson from "../../../../docs/verified-facts/level-crossing.json" with { type: "json" };
 import { PLATE_LDU, STUD_LDU, pose16, zeta16 } from "@brr/math";
 import { Container } from "inversify";
@@ -69,15 +70,21 @@ import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
+  noteShardEntry,
+  noteShards,
   shardEntry,
   shardName,
+  worldHeader,
   worldManifest,
   type ConsistRecordV1,
+  type LayerRecordV2,
+  type NoteRecordV2,
   type ImportedFile,
+  type NoteShardV2,
   type WorldArchive,
   type WorldHeader,
   type WorldIndexEntry,
-  type WorldShardV1,
+  type WorldShardV2,
 } from "@brr/schema/world";
 import {
   WORLD_LOCKS,
@@ -89,6 +96,8 @@ import {
   type StoredWorld,
   type WorldChange,
 } from "@brr/storage";
+import { readZip } from "@brr/storage/zip";
+import { MAIN_PLAN_LAYERS } from "../sheets/sheet-sets.ts";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
@@ -100,9 +109,15 @@ import {
   type CommandId,
 } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@brr/import";
+import type {
+  ImportResult,
+  LayoutPart,
+  PlacementListener,
+  RollingDiagnosticsRows,
+} from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import {
+  ANNOTATION_SERVICE,
   BOM_SERVICE,
   CONNECTION_SOLVER,
   CONNECTOR_TABLES,
@@ -114,6 +129,7 @@ import {
   PLACEMENT_SEARCH,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
+  SHEET_SETS,
   RAIL_YARD,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
@@ -139,6 +155,7 @@ import { rampChunkKey } from "./crossing-ramps.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./track-edit-session.ts";
+import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import type { TrackRouteView } from "./track-drawing.ts";
@@ -1126,6 +1143,244 @@ async function importUserFile(editor: IEditor, name: string, bytes: Uint8Array):
   return item;
 }
 
+const NOTES_LAYER: LayerRecordV2 = {
+  id: 1,
+  name: "Notes",
+  kind: "notes",
+  visible: true,
+  locked: false,
+  opacity: 100,
+};
+const COTTAGE_FILE = "my-cottage.mpd";
+
+async function editorWithNotesLayer(extraNotes: ReadonlyArray<NoteRecordV2> = []) {
+  const started = await startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+  });
+  const { editor, backend, container } = started;
+  const repository = container.get(WORLD_REPOSITORY);
+  const cottage = await importUserFile(
+    editor,
+    COTTAGE_FILE,
+    userFileWithOwnPart(COTTAGE_FILE, CC_BY_4),
+  );
+  await placer(editor, backend)(cottage, 0, 0);
+  const archive = await repository.readArchive((await editor.exportWorld()).bytes);
+  if (!archive.ok) throw new Error(issueText(archive.issues));
+  const { manifest, shards, credits, imports } = archive.value;
+  const notes = noteShards(extraNotes);
+  const header = { ...worldHeader(manifest), layers: [...manifest.layers, NOTES_LAYER] };
+  const reopened = await editor.importWorld(
+    repository.packArchive({
+      manifest: worldManifest(header, manifest.shards, notes.map(noteShardEntry)),
+      shards,
+      notes,
+      credits,
+      imports,
+    }),
+  );
+  const [placed] = shards.flatMap((shard) => shard.placements);
+  if (!placed) throw new Error(`${COTTAGE_FILE} wasn't placed`);
+  return {
+    ...started,
+    reopened,
+    annotations: container.get(ANNOTATION_SERVICE),
+    repository,
+    placed,
+  };
+}
+
+function selectedBox(editor: IEditor) {
+  const primary = editor.snapshot().selection?.primary;
+  if (primary?.kind !== "model") throw new Error("no model is selected");
+  return primary.box;
+}
+
+function rulerEnds(annotations: IAnnotationService) {
+  return annotations.notes().flatMap(({ id, note }) => {
+    if (note.kind !== "ruler") return [];
+    const span = annotations.rulerSpan(id);
+    return [{ on: note.from.on, a: [span?.ax, span?.az] }];
+  });
+}
+
+describe("notes", () => {
+  it("a ruler attached to a user's own imported model follows it through a move and a turn, frees its end when the model is deleted, and undo and redo walk each step", async () => {
+    const { editor, backend, annotations, placed, reopened } = await editorWithNotesLayer();
+    expect(reopened).toBe(true);
+    selectAt(editor, backend, placed.x, placed.z);
+    const placedBox = selectedBox(editor);
+    const corner = { x: placedBox.minX, z: placedBox.minZ };
+    const added = annotations.add({
+      kind: "ruler",
+      layer: NOTES_LAYER.id,
+      from: modelEnd(placed, corner),
+      to: { on: "point", x: corner.x + 400, z: corner.z },
+      color: "#ff0000",
+    });
+    expect(added.ok).toBe(true);
+    const depth = editor.snapshot().history.undoDepth;
+
+    editor.moveSelectionBy(200, 0, 0);
+    const movedBox = selectedBox(editor);
+    const moved = rulerEnds(annotations);
+    editor.turnSelectedModelTo(1, 0);
+    const turnedBox = selectedBox(editor);
+    const turned = rulerEnds(annotations);
+    editor.deleteSelection(0);
+    const freed = rulerEnds(annotations);
+    const steps = editor.snapshot().history.undoDepth - depth;
+    const undone = [];
+    for (let step = 0; step < 3; step++) {
+      editor.undo(0);
+      undone.push(rulerEnds(annotations));
+    }
+    for (let step = 0; step < 3; step++) editor.redo(0);
+
+    expect({ moved, turned, freed, steps }).toEqual({
+      moved: [{ on: "model", a: [movedBox.minX, movedBox.minZ] }],
+      turned: [{ on: "model", a: [turnedBox.minX, turnedBox.maxZ] }],
+      freed: [{ on: "point", a: [turnedBox.minX, turnedBox.maxZ] }],
+      steps: 3,
+    });
+    expect(movedBox.minX).toBe(placedBox.minX + 200);
+    expect(undone).toEqual([turned, moved, [{ on: "model", a: [corner.x, corner.z] }]]);
+    expect(rulerEnds(annotations)).toEqual(freed);
+  }, 240_000);
+
+  it("keeps every kind of note with the world: a reopened world gives the same notes, and an exported world imports and exports again byte for byte", async () => {
+    const { editor, backend, annotations, placed } = await editorWithNotesLayer();
+    const layer = NOTES_LAYER.id;
+    const ids = [
+      annotations.add({
+        kind: "zone",
+        layer,
+        name: "Yard",
+        color: "#88cc44",
+        outline: [
+          [-640, -640],
+          [-640, 640],
+          [640, 640],
+          [640, -640],
+        ],
+      }),
+      annotations.add({
+        kind: "zone",
+        layer,
+        name: "Station",
+        color: "#4488cc",
+        outline: [
+          [7000, 0],
+          [7400, 0],
+          [7400, 200],
+          [7200, 400],
+          [7000, 200],
+        ],
+      }),
+      annotations.add({
+        kind: "text",
+        layer,
+        text: "Ada's cottage",
+        x: 0,
+        z: 200,
+        rot: 1,
+        heightStuds: 3,
+        color: "#202020",
+      }),
+      annotations.add({
+        kind: "ruler",
+        layer,
+        from: modelEnd(placed, { x: placed.x + 7, z: placed.z - 3 }),
+        to: { on: "point", x: 7000, z: 0 },
+        color: "#ff0000",
+      }),
+      annotations.add({
+        kind: "legend",
+        layer,
+        x: -1280,
+        z: -1280,
+        title: "Key",
+        entries: [
+          { color: "#88cc44", label: "Yard" },
+          { color: "#4488cc", label: "Station" },
+        ],
+      }),
+    ];
+    expect(ids.map((id) => id.ok)).toEqual([true, true, true, true, true]);
+    selectAt(editor, backend, placed.x, placed.z);
+    editor.moveSelectionBy(0, 120, 0);
+    const kept = annotations.records();
+    await vi.waitFor(() => expect(editor.snapshot().world?.save).toBe("saved"));
+    const id = editor.snapshot().world?.id;
+    if (!id) throw new Error("no current world");
+
+    expect(await editor.newWorld("Other")).toBe(true);
+    const inOther = annotations.records();
+    expect(await editor.openWorld(id)).toBe(true);
+    const reopened = annotations.records();
+    const exported = (await editor.exportWorld()).bytes;
+    expect(await editor.importWorld(exported)).toBe(true);
+    const imported = annotations.records();
+    const exportedAgain = (await editor.exportWorld()).bytes;
+
+    expect(kept.map((note) => note.kind)).toEqual(["zone", "zone", "text", "ruler", "legend"]);
+    expect(inOther).toEqual([]);
+    expect(reopened).toEqual(kept);
+    expect(imported).toEqual(kept);
+    expect(exportedAgain).toEqual(exported);
+  }, 240_000);
+
+  it("refuses a note on a layer that isn't a notes layer or a ruler on a model the world doesn't place, and a world file whose ruler names one, changing nothing", async () => {
+    const { editor, annotations, placed } = await editorWithNotesLayer();
+    const depth = editor.snapshot().history.undoDepth;
+    const label = {
+      kind: "text",
+      text: "Depot",
+      x: 0,
+      z: 0,
+      rot: 0,
+      heightStuds: 2,
+      color: "#000000",
+    } as const;
+    const elsewhere = { ...placed, x: placed.x + 20 };
+    const refusals = [
+      annotations.add({ ...label, layer: 0 }),
+      annotations.add({ ...label, layer: 2 }),
+      annotations.add({
+        kind: "ruler",
+        layer: NOTES_LAYER.id,
+        from: modelEnd(elsewhere, { x: 0, z: 0 }),
+        to: { on: "point", x: 100, z: 0 },
+        color: "#ff0000",
+      }),
+    ];
+    const unplaced = `names "${placed.ref}" at (${elsewhere.x}, ${placed.yPlates}, ${placed.z}) turned ${placed.rot}, which the world doesn't place`;
+
+    expect(refusals.map((refusal) => (refusal.ok ? null : refusal.issues))).toEqual([
+      [{ path: "note.layer", message: "names layer 0, a parts layer, not a notes one" }],
+      [{ path: "note.layer", message: "names layer 2, which the manifest doesn't list" }],
+      [{ path: "note.from", message: unplaced }],
+    ]);
+    expect([annotations.notes(), editor.snapshot().history.undoDepth]).toEqual([[], depth]);
+
+    const stray = await editorWithNotesLayer([
+      {
+        kind: "ruler",
+        index: 0,
+        layer: NOTES_LAYER.id,
+        from: modelEnd(elsewhere, { x: 0, z: 0 }),
+        to: { on: "point", x: 100, z: 0 },
+        color: "#ff0000",
+      },
+    ]);
+    expect(stray.reopened).toBe(false);
+    expect(stray.editor.snapshot().fileError).toBe(`import failed: note 0.from: ${unplaced}`);
+  }, 240_000);
+});
+
 function planWithoutIds(plans: IPlanService) {
   return plans.plans().map(({ id: _plan, footprint, ...region }) => ({
     ...region,
@@ -1169,6 +1424,81 @@ it("lists a user's own file in the catalog by its name when a fresh editor reope
       .catalog.filter((item) => item.id === cottage)
       .map((item) => item.label),
   ).toEqual(["my-cottage.mpd"]);
+}, 240_000);
+
+const USERS_LAYOUT = [
+  "0 FILE brick-layout.ldr",
+  "0 A user's layout of three towers and a brick on one of them",
+  "0 Author: lug-layout test",
+  "1 4 0 -48 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 16 100 0 20 0 0 1 0 1 0 -1 0 0 tower.ldr",
+  "1 16 -100 -4 0 1 0 0 0 1 0 0 0 1 tower.ldr",
+  "1 16 0 0 0 1 0 0 0 1 0 0 0 1 tower.ldr",
+  "0 FILE tower.ldr",
+  "1 1 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 2 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "",
+].join("\n");
+
+function placedPartFrames(editor: IEditor, catalog: IPlaceableCatalog): ReadonlyArray<string> {
+  const { placements } = editor.dump();
+  const frames = placements.refId.flatMap((refId, i) => {
+    const placeable = catalog.placeables()[refId];
+    if (!placeable || placements.rot[i] !== 0) throw new Error(`placement ${i} isn't unturned`);
+    const { count, matrices } = placeable.partTransforms;
+    return Array.from({ length: count }, (_, k) => {
+      const m = matrices.subarray(k * INSTANCE_MATRIX_FLOATS, (k + 1) * INSTANCE_MATRIX_FLOATS);
+      const at: readonly [number, number, number] = [
+        (placements.x[i] ?? 0) + (m[3] ?? 0),
+        (placements.yPlates[i] ?? 0) * PLATE_LDU + (m[7] ?? 0),
+        (placements.z[i] ?? 0) + (m[11] ?? 0),
+      ];
+      return { turn: [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]].join(" "), at };
+    });
+  });
+  frames.sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1] || a.at[2] - b.at[2]);
+  const [origin] = frames;
+  return frames.map(
+    ({ turn, at }) => `${turn} at ${at.map((v, axis) => v - (origin?.at[axis] ?? 0)).join(" ")}`,
+  );
+}
+
+it("imports an LDraw file's top-level submodels as separate placements held as laid out, places them where the file puts them, and leaves out one that doesn't sit at whole plates", async () => {
+  const { editor, backend, catalog } = await startImportingEditor();
+  const notices = new Set<string>();
+  const stopWatching = editor.subscribe(() => {
+    const shown = editor.snapshot().modelImport;
+    if (shown) notices.add(`${shown.file} ${shown.status}`);
+  });
+
+  const held = await editor.importLayoutFile({
+    name: "brick-layout.ldr",
+    bytes: new TextEncoder().encode(USERS_LAYOUT),
+  });
+  stopWatching();
+  const notice = editor.snapshot().modelImport;
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0), { timeout: 60_000 });
+  backend.aim(OPEN_TABLE_X, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+
+  expect(held).toBe(true);
+  expect([...notices]).toEqual(["brick-layout.ldr importing", "brick-layout.ldr held"]);
+  expect(notice).toMatchObject({
+    file: "brick-layout.ldr",
+    status: "held",
+    reason:
+      "Left out: tower.ldr: its height isn't a whole number of plates from brick-layout.ldr's.",
+  });
+  expect(editor.snapshot()).toMatchObject({ placements: 3, refusedClicks: 0 });
+  expect([...editor.dump().placements.yPlates].toSorted()).toEqual([0, 0, 6]);
+  expect(placedPartFrames(editor, catalog)).toEqual([
+    "1 0 0 0 1 0 0 0 1 at 0 0 0",
+    "1 0 0 0 1 0 0 0 1 at 0 24 0",
+    "1 0 0 0 1 0 0 0 1 at 0 48 0",
+    "0 0 -1 0 1 0 1 0 0 at 100 0 -20",
+    "0 0 -1 0 1 0 1 0 0 at 100 24 -20",
+  ]);
 }, 240_000);
 
 it("saves a plan's tables, placements, laid track and every user file it places, whatever its own parts' licences, and a fresh editor reopens them exactly as one undo step", async () => {
@@ -1528,7 +1858,8 @@ it("offers every baseplate and road plate in exactly the produced colours the bu
 
 interface MemoryWorld {
   header: WorldHeader;
-  readonly shards: Map<string, WorldShardV1>;
+  readonly shards: Map<string, WorldShardV2>;
+  readonly notes: Map<string, NoteShardV2>;
 }
 
 class MemoryRepository implements IWorldRepository {
@@ -1583,27 +1914,36 @@ class MemoryRepository implements IWorldRepository {
     return [...this.worlds].map(([id, world]) => this.entry(id, world));
   }
 
-  async create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
+  async create(
+    header: WorldHeader,
+    shards: ReadonlyArray<WorldShardV2>,
+    notes: ReadonlyArray<NoteShardV2>,
+  ): Promise<WorldIndexEntry> {
     const id = `world-${this.nextId++}`;
-    this.worlds.set(id, { header, shards: new Map() });
-    return this.save(id, { header, put: shards, drop: [] });
+    this.worlds.set(id, { header, shards: new Map(), notes: new Map() });
+    return this.save(id, { header, put: shards, drop: [], putNotes: notes, dropNotes: [] });
   }
 
   async read(id: string): Promise<Decoded<StoredWorld>> {
     const world = this.worlds.get(id);
     if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
     const shards = [...world.shards.values()];
-    return {
-      ok: true,
-      value: { id, manifest: worldManifest(world.header, shards.map(shardEntry)), shards },
-    };
+    const notes = [...world.notes.values()];
+    const manifest = worldManifest(world.header, shards.map(shardEntry), notes.map(noteShardEntry));
+    return { ok: true, value: { id, manifest, shards, notes } };
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
-    const world = this.worlds.get(id) ?? { header: change.header, shards: new Map() };
+    const world = this.worlds.get(id) ?? {
+      header: change.header,
+      shards: new Map(),
+      notes: new Map(),
+    };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
     for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
+    for (const superChunk of change.dropNotes) world.notes.delete(shardName(superChunk));
+    for (const shard of change.putNotes) world.notes.set(shardName(shard.superChunk), shard);
     this.worlds.set(id, world);
     return this.entry(id, world);
   }
@@ -1615,7 +1955,7 @@ class MemoryRepository implements IWorldRepository {
   async copyWith(
     id: string,
     name: string,
-    extra: (placements: WorldShardV1["placements"]) => WorldShardV1["placements"],
+    extra: (placements: WorldShardV2["placements"]) => WorldShardV2["placements"],
   ): Promise<string> {
     const world = this.worlds.get(id);
     if (!world) throw new Error(`world ${id} is not stored`);
@@ -1623,7 +1963,7 @@ class MemoryRepository implements IWorldRepository {
       ...shard,
       placements: [...shard.placements, ...extra(shard.placements)],
     }));
-    return (await this.create({ ...world.header, name }, shards)).id;
+    return (await this.create({ ...world.header, name }, shards, [...world.notes.values()])).id;
   }
 
   async shardFiles(): Promise<never[]> {
@@ -2946,6 +3286,7 @@ it("undoes and redoes model and track edits in the order they happened, each tra
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
   record();
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
   backend.aim(16 * STUD, 0);
   editor.pointerMove(0, 0);
@@ -3082,6 +3423,7 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
       dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
     },
     () => {
+      editor.dropTrackEnd();
       editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
       backend.aim(16 * STUD, 0);
       editor.pointerMove(0, 0);
@@ -3599,6 +3941,10 @@ class RefusingModelImporter implements IModelImporter {
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
   }
+
+  layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
+    return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
+  }
 }
 
 it("resolves a model file the bake refuses as not imported and keeps the chosen item, so a drop places nothing", async () => {
@@ -3717,6 +4063,10 @@ class GatedModelImporter implements IModelImporter {
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
+  }
+
+  layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
+    return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
   }
 }
 
@@ -4176,6 +4526,10 @@ class BakedRecordImporter implements IModelImporter {
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
+  }
+
+  layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
+    return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
   }
 }
 
@@ -8093,6 +8447,7 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   "lay-track": "lays track against the drawing's own obstacles, which wait on seats",
   "throw-switch": "throws a switch without placing a model",
   plan: "edits plan regions only",
+  note: "edits notes only",
   "open-plan":
     "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
 };
@@ -8223,6 +8578,10 @@ class ImporterBringing implements IModelImporter {
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
+  }
+
+  layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
+    return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
   }
 }
 
@@ -8530,6 +8889,7 @@ async function supportChecked(editor: IEditor): Promise<void> {
 }
 
 function holdAndClick(editor: IEditor, backend: AimedBackend, piece: string, at: PlanPoint) {
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${piece}`);
   backend.aim(at[0], at[1]);
   editor.pointerMove(0, 0);
@@ -8674,6 +9034,209 @@ it("lets a run start from or close onto the open end of a user's track model and
     expect.objectContaining({ xLdu: onto.xLdu, zLdu: onto.zLdu }),
   );
   expect(crossing.lastBlock).toEqual({ kind: "track" });
+}, 120_000);
+
+const WEST_HEADING = 8;
+const EAST_HEADING = 0;
+const RUN_STRAIGHTS = 3;
+
+function alongQuarterTurn(
+  end: { readonly xLdu: number; readonly zLdu: number; readonly heading: number },
+  reach: number,
+) {
+  const [x, z] = outwardFrom(end, reach);
+  return [end.xLdu + Math.round(x - end.xLdu), end.zLdu + Math.round(z - end.zLdu)] as const;
+}
+
+async function runsOffUsersSwitch() {
+  const started = await startEditor([], new BundleDirectoryFetcher(), [USER_TRACK]);
+  const { editor, backend, catalog } = started;
+  const carrier = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, carrier);
+  await placer(editor, backend)(carrier, 0, 0);
+  const ends = editor.dump().trackEnds;
+  const points = ends.find((open) => open.heading === WEST_HEADING);
+  const [branch, main] = ends
+    .filter((open) => open.heading === EAST_HEADING)
+    .toSorted((a, b) => a.zLdu - b.zLdu);
+  if (!points || !main || !branch || ends.length !== 3) {
+    throw new Error(`${USER_TRACK} has no points end and two exits: ${JSON.stringify(ends)}`);
+  }
+  const draw = trackDrawer(editor, backend);
+  const runLdu = RUN_STRAIGHTS * ONE_STRAIGHT_LDU;
+  const west = draw([points.xLdu, points.zLdu], alongQuarterTurn(points, runLdu)).pieces;
+  const east = draw([main.xLdu, main.zLdu], alongQuarterTurn(main, runLdu)).pieces - west;
+  const apart = draw([-runLdu, 2 * runLdu], [runLdu, 2 * runLdu]).pieces - west - east;
+  editor.chooseItem(null);
+  return {
+    ...started,
+    carrier,
+    counts: { west, east, apart },
+    at: {
+      west: alongQuarterTurn(points, ONE_STRAIGHT_LDU / 2),
+      east: alongQuarterTurn(main, ONE_STRAIGHT_LDU / 2),
+      apart: [ONE_STRAIGHT_LDU / 2, 2 * runLdu] as const,
+      carrier: [main.xLdu - ONE_STRAIGHT_LDU / 2, main.zLdu] as const,
+    },
+  };
+}
+
+function pathSelected(
+  editor: IEditor,
+  backend: AimedBackend,
+  at: readonly [number, number],
+  scope: "run" | "network",
+) {
+  backend.aim(...at);
+  const took = editor.selectTrackPath(0, 0, scope);
+  const selection = editor.snapshot().selection;
+  const primary = selection?.primary;
+  return {
+    took,
+    tally: selection?.tally ?? null,
+    items: selectedItems(editor),
+    primary: primary?.kind === "track" ? [primary.centreX, primary.centreZ] : primary?.item,
+  };
+}
+
+function laidStraights(count: number): ReadonlyArray<string> {
+  return Array.from({ length: count }, () => STRAIGHT_PIECE);
+}
+
+describe("track path select", () => {
+  it("selects a laid run up to the switch in a user's track model, takes in the model when the run reaches that switch through the model's own track, and Shift selects all the track joined to it", async () => {
+    const { editor, backend, carrier, counts, at } = await runsOffUsersSwitch();
+
+    expect(counts).toEqual({ west: RUN_STRAIGHTS, east: RUN_STRAIGHTS, apart: expect.any(Number) });
+    expect({
+      west: pathSelected(editor, backend, at.west, "run"),
+      east: pathSelected(editor, backend, at.east, "run"),
+      network: pathSelected(editor, backend, at.west, "network"),
+      apart: pathSelected(editor, backend, at.apart, "network"),
+    }).toEqual({
+      west: {
+        took: true,
+        tally: { models: 0, pieces: counts.west, trains: 0 },
+        items: laidStraights(counts.west),
+        primary: at.west,
+      },
+      east: {
+        took: true,
+        tally: { models: 1, pieces: counts.east, trains: 0 },
+        items: [carrier, ...laidStraights(counts.east)],
+        primary: at.east,
+      },
+      network: {
+        took: true,
+        tally: { models: 1, pieces: counts.west + counts.east, trains: 0 },
+        items: [carrier, ...laidStraights(counts.west + counts.east)],
+        primary: at.west,
+      },
+      apart: {
+        took: true,
+        tally: { models: 0, pieces: counts.apart, trains: 0 },
+        items: laidStraights(counts.apart),
+        primary: at.apart,
+      },
+    });
+  }, 120_000);
+
+  it("leaves a double-click on a user's model, or on track while the track tool is held, to frame what's selected", async () => {
+    const { editor, backend, carrier, at } = await runsOffUsersSwitch();
+    selectAt(editor, backend, ...at.carrier);
+
+    const onModel = pathSelected(editor, backend, at.carrier, "run");
+    editor.chooseItem(TRACK_ITEM_ID);
+    const whileDrawing = pathSelected(editor, backend, at.west, "network");
+
+    expect(onModel).toEqual({
+      took: false,
+      tally: { models: 1, pieces: 0, trains: 0 },
+      items: [carrier],
+      primary: carrier,
+    });
+    expect(whileDrawing).toEqual({ took: false, tally: null, items: [], primary: undefined });
+  }, 120_000);
+});
+
+function eastmostEndFacing(editor: IEditor, heading: number) {
+  const ends = editor.dump().trackEnds.filter((open) => open.heading === heading);
+  const east = ends.toSorted((a, b) => b.xLdu - a.xLdu || b.zLdu - a.zLdu)[0];
+  if (!east) throw new Error(`no open end faces heading ${heading}`);
+  return east;
+}
+
+it("lays a switch clicked in the library on the end drawn from a user's own track model where the held switch drops there, previews it on the exit that carries straight on, repeats it on Enter, and turns it on Q to attach by its next end", async () => {
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    USER_TRACK,
+  ]);
+  const container = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, container);
+  await placer(editor, backend)(container, 0, 0);
+  const from = eastmostEndFacing(editor, 0);
+  trackDrawer(editor, backend)([from.xLdu, from.zLdu], outwardFrom(from, REACH_LDU));
+  const drawn = editor.dump().laidTrack.length;
+  const end = eastmostEndFacing(editor, 0);
+  const item = `${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`;
+  const label = editor.snapshot().catalog.find((entry) => entry.id === item)?.label;
+  const joinsDrawn = editor.snapshot().track?.joins ?? 0;
+  const previewed = () => {
+    const extend = editor.snapshot().track?.extend;
+    return { continuing: extend?.continuing, choice: extend?.choices[extend.index] };
+  };
+
+  editor.pointerLeave();
+  editor.chooseItem(item);
+  const clicked = {
+    mode: editor.snapshot().mode,
+    activeItem: editor.snapshot().activeItem,
+    undo: editor.snapshot().history.undoLabel,
+    joins: (editor.snapshot().track?.joins ?? 0) - joinsDrawn,
+    ...previewed(),
+  };
+  const hud = toolHints(editor.snapshot());
+  const straightExit = eastmostEndFacing(editor, end.heading);
+  editor.extendTrack(null, 0);
+  const repeated = {
+    joins: (editor.snapshot().track?.joins ?? 0) - joinsDrawn,
+    exitJoined: !editor
+      .dump()
+      .trackEnds.some((open) => open.xLdu === straightExit.xLdu && open.zLdu === straightExit.zLdu),
+  };
+  editor.cycleConnector();
+  const turned = previewed().choice;
+  editor.extendTrack(null, 0);
+  const [first, second, third] = editor.dump().laidTrack.slice(drawn);
+  for (let step = 0; step < 3; step++) editor.undo(0);
+  holdAndClick(editor, backend, RIGHT_SWITCH, [end.xLdu, end.zLdu]);
+  const dropped = editor.dump().laidTrack.slice(drawn);
+
+  expect(clicked).toEqual({
+    mode: "track",
+    activeItem: TRACK_ITEM_ID,
+    undo: "lay 1 piece",
+    joins: 1,
+    continuing: true,
+    choice: {
+      kind: "piece",
+      piece: { label, end: 0, ends: 3 },
+      straights: 1,
+      curves: 0,
+      joinsEnd: false,
+      blocked: null,
+    },
+  });
+  expect(hud.title).toBe(`Next piece: ${label}`);
+  expect(hud.hints).toContainEqual(expect.objectContaining({ command: "next-connector" }));
+  expect(straightExit.xLdu).toBeGreaterThan(end.xLdu);
+  expect(repeated).toEqual({ joins: 2, exitJoined: true });
+  expect(turned).toMatchObject({ kind: "piece", piece: { end: 1, ends: 3 }, blocked: null });
+  expect(dropped).toEqual([first]);
+  expect(second).toMatchObject({ ref: first?.ref, heading: first?.heading });
+  expect(third).toMatchObject({
+    ref: first?.ref,
+    heading: ((first?.heading ?? 0) + ZETA16_ORDER / 2) % ZETA16_ORDER,
+  });
 }, 120_000);
 
 function overlapIssues(issues: ReadonlyArray<string>): number {
@@ -8981,6 +9544,48 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   expect(sheetPaths(svg, "track").map((d) => d.split("M").length - 1)).toEqual([8, 8, 8]);
   expect(svg).toContain('class="roadway"');
   expect(sheetPaths(svg, "ramp")).toHaveLength(4);
+
+  const tiled = await container.get(PLAN_SHEET_SERVICE).download(editor, planId, {
+    selection: { name: "Main plan", content: "placements", layers: MAIN_PLAN_LAYERS },
+    format: "svg",
+    layout: { kind: "tiled", paper: "a4", orientation: "auto", denominator: 1, overlapMm: 10 },
+  });
+  const zip = await readZip(tiled.bytes);
+  const pages = new Map(
+    [...(zip.ok ? zip.value : [])].map(([name, bytes]) => [name, new TextDecoder().decode(bytes)]),
+  );
+  const tiles = [...pages].filter(([name]) => /^\d+-[A-Z]+\d+\.svg$/u.test(name));
+  const onTiles = (kind: string) => new Set(tiles.flatMap(([, page]) => sheetPaths(page, kind)));
+  expect(tiled.fileName).toBe("Plan-1.main-plan-tiled-a4-1to1.svg.zip");
+  expect([...pages.keys()][0]).toBe("01-cover.svg");
+  expect(tiles.length).toBe(tiled.pages - (pages.size - tiles.length));
+  expect(
+    new Set(
+      tiles.map(([, page]) =>
+        /<svg [^>]*width="(\d+)mm" height="(\d+)mm"/u.exec(page)?.slice(1).join("×"),
+      ),
+    ),
+  ).toEqual(new Set(["297×210"]));
+  expect(onTiles("model")).toEqual(new Set(sheetPaths(svg, "model")));
+  expect(onTiles("track")).toEqual(new Set(sheetPaths(svg, "track")));
+
+  const sheets = container.get(PLAN_SHEET_SERVICE);
+  const requests = container
+    .get(SHEET_SETS)
+    .sets(planId)
+    .map(({ layout, ...selection }) => ({ selection, layout, format: selection.format }));
+  const pack = await readZip((await sheets.downloadAll(editor, planId, requests, "svg")).bytes);
+  const packPages = [...(pack.ok ? pack.value.keys() : [])];
+  const pdfPack = await sheets.downloadAll(editor, planId, requests, "pdf");
+  const separately = await Promise.all(
+    requests.map(async (request) => (await sheets.download(editor, planId, request)).pages),
+  );
+  expect(packPages[0]).toBe("01-main-plan-cover.svg");
+  expect(packPages.filter((name) => /^\d+-table-plan-/u.test(name))).toEqual([
+    `${String((separately[0] ?? 0) + 1).padStart(2, "0")}-table-plan-sheet.svg`,
+  ]);
+  expect(pdfPack.fileName).toBe("Plan-1.sheets.pdf");
+  expect(pdfPack.pages).toBe(separately.reduce((sum, count) => sum + count, 0));
 }, 120_000);
 
 const SEAT_LEVEL_MODULE = "mils-plain";
@@ -9062,6 +9667,7 @@ async function reopenedFresh(editor: IEditor) {
 }
 
 function laySwitchAt(editor: IEditor, backend: AimedBackend, x: number, z: number): void {
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
   backend.aim(x, z);
   editor.pointerMove(0, 0);
@@ -9207,6 +9813,7 @@ it("publishes nothing for a pointer move that stays on the same stud, and the ne
   const { editor, backend } = await startEditor([]);
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`);
   backend.aim(0, 40 * STUD);
   editor.pointerMove(0, 0);
@@ -9563,6 +10170,10 @@ class StudsLandLaterImporter implements IModelImporter {
   rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return this.inner.rollingDiagnostics([], "standard");
   }
+
+  layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>> {
+    return this.inner.layoutParts(fileName, text);
+  }
 }
 
 it("waits for a generated pier's studs to be checked before laying the raised run on it, then lays the run and its piers together", async () => {
@@ -9878,6 +10489,7 @@ async function drawnWithHeightSet(late: boolean) {
   const rampedMidDrag = await dragFromEnd([-48 * STUD, 0], [-96 * STUD, 0], () =>
     editor.setTrackRampPlates(1),
   );
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
   const held = hoverAt([0, 48 * STUD], () => editor.raiseTrack(1));
   editor.click(0, 0, 0);

@@ -10,6 +10,7 @@ import { headingFootprints, planHull, verticalRange } from "@brr/domain";
 import { pieceFrameOutline } from "@brr/domain/piece-outline";
 import {
   BundleIndex,
+  decodePlanGlyph,
   ModelFile,
   PartShape,
   type BundleManifest,
@@ -161,6 +162,14 @@ async function shippedOutlines(
   return shipped;
 }
 
+function decodedGlyph(glyph: Uint8Array | undefined): boolean | string {
+  return glyph === undefined ? "no glyph" : decodePlanGlyph(glyph).ok;
+}
+
+function glyphFiles({ parts, models }: BundleManifest): ReadonlyArray<string> {
+  return [...parts, ...models].flatMap((item) => (item.glyph ? [item.glyph.file] : []));
+}
+
 async function shapeInBundle(
   lod: string,
   part: ManifestPart,
@@ -282,6 +291,26 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
       );
     }
   });
+
+  it(
+    "hand the editor every catalog part's and model's plan glyph, which decodePlanGlyph reads, as the same files at every level of detail",
+    async () => {
+      const manifest = manifestOf(lod);
+      const loaded = new Map<string, boolean | string>();
+      for (const part of manifest.catalogParts) {
+        loaded.set(part.id, decodedGlyph((await loader.loadPartShape(lod, part)).glyph));
+      }
+      for (const entry of manifest.models) {
+        loaded.set(
+          entry.name,
+          decodedGlyph((await loader.loadModelRecord(lod, entry.name)).model.glyph),
+        );
+      }
+      expect([...loaded].filter(([, ok]) => ok !== true)).toEqual([]);
+      expect(glyphFiles(manifest)).toEqual(glyphFiles(manifestOf("standard")));
+    },
+    BUNDLE_SWEEP_TIMEOUT_MS,
+  );
 
   it("ship no outline with a repeated point, a spike or a ring of fewer than three points", async () => {
     const shipped = await shippedOutlines((file) => fetcher.text(`${lod}/${file}`));

@@ -102,6 +102,7 @@ export type {
   TrackView,
 } from "./edit/track-edit-session.ts";
 export type { TrackBomLine } from "./edit/track-drawing.ts";
+export type { TrackPathScope } from "./edit/track-path-selection.ts";
 export type { TrackSolveStats } from "./edit/solve-samples.ts";
 export type {
   CrossingRampView,
@@ -166,6 +167,8 @@ export {
   type PlanRowSegment,
   type TableInput,
 } from "./plan/plan-service.ts";
+export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
+export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -177,6 +180,30 @@ export type {
   IPlanSheetSource,
   PlanSheetShapes,
 } from "./plan/plan-sheet-service.ts";
+export {
+  DEFAULT_OVERLAP_MM,
+  DEFAULT_PIXELS_PER_STUD,
+  MAX_OVERLAP_MM,
+  MAX_PIXELS_PER_STUD,
+  MIN_OVERLAP_MM,
+  MIN_PIXELS_PER_STUD,
+  sheetLayoutProblems,
+  type SheetContent,
+  type SheetFile,
+  type SheetFormat,
+  type SheetLayout,
+  type SheetRequest,
+  type SheetSelection,
+} from "./sheets/sheet-document.ts";
+export { SHEET_LAYER_IDS, type SheetLayerId } from "./sheets/plan-drawing.ts";
+export type { ISheetSets, SheetSet, SheetSetPatch } from "./sheets/sheet-sets.ts";
+export { TILED_SCALE_DENOMINATORS, scaleText } from "./sheets/drawing-scale.ts";
+export {
+  PAPER_SIZES,
+  type OrientationChoice,
+  type PaperId,
+  type PaperSize,
+} from "./sheets/paper.ts";
 export type {
   IssueSeverity,
   LduRect,
@@ -192,6 +219,7 @@ export type {
   TableTop,
 } from "@brr/domain";
 export {
+  ANNOTATION_SERVICE,
   RUNNING_GEAR,
   BOM_SERVICE,
   OWNED_PARTS,
@@ -212,6 +240,7 @@ export {
   TRAIN_PLAY,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
+  SHEET_SETS,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,
@@ -306,6 +335,7 @@ export { trackBlockText } from "./edit/track-drag.ts";
 export type { TallestTrain } from "./trains/tallest-train.ts";
 export {
   TOO_STEEP,
+  libraryPieceEndText,
   lowClearanceText,
   tallyText,
   toolHints,
@@ -359,25 +389,32 @@ export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type {
   ExtensionKind,
   ExtensionTurn,
+  TrackChoicePiece,
   TrackChoiceView,
   TrackExtendView,
   UnjoinedEndView,
 } from "./edit/track-extension.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
-export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
+export {
+  CATEGORY_LABEL,
+  PALETTE_CATEGORIES,
+  PALETTE_TABS,
+  colorDisplayName,
+} from "./catalog/palette-index.ts";
 export type {
   PaletteCategory,
   PaletteColorChoice,
   PaletteEntry,
   PaletteFilter,
+  PaletteTab,
 } from "./catalog/palette-index.ts";
+export type { LibraryFilterScope } from "./catalog/library-filters.ts";
 export type {
   IPaletteSearch,
   PaletteColors,
   PaletteRow,
   PaletteSearchSnapshot,
   PaletteSection,
-  PaletteTab,
 } from "./catalog/palette-search.ts";
 export type { IPaletteDrag } from "./catalog/palette-drag.ts";
 export type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";

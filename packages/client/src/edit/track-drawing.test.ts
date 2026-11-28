@@ -1190,6 +1190,52 @@ it(
   CLOSURE_SEARCH_TIMEOUT_MS,
 );
 
+const RAISED_PLATES = 3;
+
+function appendFromLibrary(layout: TrackDrawing, id: string): void {
+  const { def } = layout.pieceByIndex(placeableIndex(layout, id));
+  if (!layout.extension.append(def)) throw new Error(`no end is being continued to lay ${id} on`);
+}
+
+function previewedChoice(layout: TrackDrawing) {
+  const view = layout.extension.view();
+  const choice = view?.choices[view.index];
+  return { kind: choice?.kind ?? null, blocked: choice?.blocked?.kind ?? null };
+}
+
+it("lays a library piece level at the height of the end it is appended to, where the kit's straight ramps toward the drawing height", async () => {
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const end = layRun(layout, studPose(0, 0, 0), [{ kind: "straight", count: 2 }]);
+  layout.setDrawingPlates(RAISED_PLATES);
+  layout.extension.continueFrom(end);
+  layout.extension.focusOn(null);
+  const heights = () => layout.extensionPlan()?.change.lay.map((at) => [at.yPlates, at.rise]);
+
+  const straight = heights();
+  appendFromLibrary(layout, RIGHT_SWITCH);
+  const library = heights();
+
+  expect(straight).toEqual([[0, 1]]);
+  expect(library).toEqual([[0, 0]]);
+});
+
+it("previews a library piece that would run into a road plate as blocked on the end it was clicked for, and the same piece as clear without the plate", async () => {
+  const bundle = await trackAndRoadBundle();
+  const clear = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const walled = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  walled.setBands(everyBand(plateObstacles(plateRect(bundle.parts, ROAD_BASEPLATE_32, 112, 0))));
+  for (const layout of [clear, walled]) {
+    const end = layRun(layout, studPose(56, 0, 0), [{ kind: "straight", count: 2 }]);
+    layout.extension.continueFrom(end);
+    appendFromLibrary(layout, RIGHT_SWITCH);
+  }
+
+  expect(previewedChoice(clear)).toEqual({ kind: "piece", blocked: null });
+  expect(previewedChoice(walled)).toEqual({ kind: "piece", blocked: "model" });
+  expect(walled.extensionPlan()?.run.choice.blocked).toMatchObject({ kind: "model" });
+});
+
 it("closes gaps in parallel straights laid at the switch's parallel spacing", async () => {
   const bundle = await trackAndRoadBundle();
   const probe = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));

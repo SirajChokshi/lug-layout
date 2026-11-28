@@ -2,6 +2,7 @@ import type { BricklinkPartCandidates } from "@brr/catalog";
 import type { UnreadBandDiagnostic } from "@brr/schema/bundle";
 import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
 import type { LibraryConnectorsIndexRef, ShadowLibraryIndexRef } from "@brr/schema/bundle";
+import type { LayoutPart } from "./layout-parts.ts";
 import type { PinnedRecords } from "./library-bake-store.ts";
 import type { ImportResult, ImportJob, ModelBake, PlacedImport } from "./model-import.ts";
 
@@ -56,9 +57,17 @@ export interface RollingDiagnosticsRequest {
 
 export type RollingDiagnosticsRows = Readonly<Record<string, ReadonlyArray<UnreadBandDiagnostic>>>;
 
+export interface LayoutPartsRequest {
+  readonly kind: "layoutParts";
+  readonly compilerUrl: string;
+  readonly fileName: string;
+  readonly text: string;
+}
+
 export type ImportWorkerResponse =
   | { readonly kind: "imported"; readonly model: ImportResult }
   | { readonly kind: "rollingDiagnostics"; readonly rows: RollingDiagnosticsRows }
+  | { readonly kind: "layoutParts"; readonly parts: ReadonlyArray<LayoutPart> }
   | { readonly kind: "failed"; readonly message: string };
 
 export interface ImportWorkerPlaced {

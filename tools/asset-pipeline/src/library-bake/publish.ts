@@ -15,6 +15,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".json": "application/json",
   ".bin": "application/octet-stream",
   ".glb": "model/gltf-binary",
+  ".glyph": "application/octet-stream",
 };
 const LIBRARY_BAKE_FILE_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(CONTENT_TYPES));
 

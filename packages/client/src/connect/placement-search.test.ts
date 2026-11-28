@@ -449,10 +449,10 @@ function world(f: Fixture): Piece {
   };
 }
 
-function bore(fromZ: number): PartTechnic {
+function bore(fromZ: number, lineX = LINE_X): PartTechnic {
   return {
     stepsPerLdu: STEPS,
-    holes: [{ axis: Z, at: [LINE_X, LINE_Y], from: fromZ, radii: BORE_RADII }],
+    holes: [{ axis: Z, at: [lineX, LINE_Y], from: fromZ, radii: BORE_RADII }],
     shaft: null,
   };
 }
@@ -500,6 +500,39 @@ function pinnedBlock(f: Fixture, pinLength: number, extra: ReadonlyArray<Box> = 
     ]),
     volumes: boxVolumes(0, -1, 2, 2, [ownBlock, pin, ...extra]),
     parts: partsOf([ownBlock, pin, ...extra], [bore(-STUD_LDU), PIN]),
+  };
+}
+
+const TRACK_STUDS = 16;
+const TRACK_TAB_LDU = 4;
+const TRACK_WIDTH_STUDS = 8;
+
+function laidTrackAndNext(f: Fixture): Piece {
+  const laid = [
+    0,
+    0,
+    0,
+    TRACK_STUDS * STUD_LDU + TRACK_TAB_LDU,
+    PLATE_LDU,
+    TRACK_WIDTH_STUDS * STUD_LDU,
+  ];
+  place(f, LAID, {
+    connectors: f.connectors([null], [straightEnd(TRACK_STUDS, 0)]),
+    volumes: boxVolumes(0, 0, TRACK_STUDS + 1, TRACK_WIDTH_STUDS, [laid]),
+    parts: partsOf([laid]),
+  });
+  const next = [
+    -TRACK_TAB_LDU,
+    0,
+    0,
+    TRACK_STUDS * STUD_LDU,
+    PLATE_LDU,
+    TRACK_WIDTH_STUDS * STUD_LDU,
+  ];
+  return {
+    connectors: f.connectors([null], [straightEnd(0, 8)]),
+    volumes: boxVolumes(-1, 0, TRACK_STUDS + 1, TRACK_WIDTH_STUDS, [next]),
+    parts: partsOf([next]),
   };
 }
 
@@ -1070,36 +1103,78 @@ describe("PlacementSearch mate zones", () => {
     });
   });
 
+  it("joins the next track piece a stud from the cursor, where only the mated ends excuse the overlap", () => {
+    const f = fixture();
+    const next = laidTrackAndNext(f);
+    const short = (TRACK_STUDS - 1) * STUD_LDU;
+    const atTheCursor = choose(f, next, window(short, 0, 0, 0, 0));
+    const walked = choose(f, next, window(short, 0, 1, 0, 0));
+    expect({
+      atTheCursor: atTheCursor.accepted,
+      walked: [walked.accepted, walked.x, walked.z, walked.votes],
+    }).toEqual({
+      atTheCursor: false,
+      walked: [true, TRACK_STUDS * STUD_LDU, 0, 1],
+    });
+  });
+
+  it("names the later cell's overlap at the cursor when the first overlap sits inside another part's zone of the same placement", () => {
+    const f = fixture();
+    const lineX = HALF;
+    place(f, BORED, {
+      connectors: f.connectors([
+        table([
+          [f.slidingBoreEnd, GENDER_FEMALE, lineX, LINE_Y, 0, AXIS_NEG_Z],
+          [f.slidingBoreEnd, GENDER_FEMALE, lineX, LINE_Y, STUD_LDU, AXIS_POS_Z],
+        ]),
+      ]),
+      volumes: columns(2, 1, 0, BRICK_LDU),
+      parts: partsOf([BLOCK], [bore(0, lineX)]),
+    });
+    const overBlock = [0, 0, 0, 2 * STUD_LDU, BRICK_LDU, STUD_LDU];
+    const freePin = [lineX - 6, LINE_Y - 6, -HALF, lineX + 6, LINE_Y + 6, STUD_LDU + HALF];
+    const choice = choose(
+      f,
+      {
+        connectors: f.connectors([
+          null,
+          table([
+            [f.freePin, GENDER_MALE, lineX, LINE_Y, -HALF, AXIS_POS_Z],
+            [f.freePin, GENDER_MALE, lineX, LINE_Y, STUD_LDU + HALF, AXIS_NEG_Z],
+          ]),
+        ]),
+        volumes: boxVolumes(0, -1, 2, 3, [overBlock, freePin]),
+        parts: partsOf([overBlock, freePin]),
+      },
+      window(0, 0, 0, 0, 0),
+    );
+    expect([
+      choice.accepted,
+      choice.votes > 0,
+      choice.overlap.owner,
+      choice.overlap.cellX,
+      choice.overlap.cellZ,
+    ]).toEqual([false, true, BORED, 1, 0]);
+  });
+
   it("excuses two track pieces' overlap only where their mated ends join them", () => {
     const f = fixture();
-    const length = 16;
-    const tab = 4;
-    const width = 8;
-    const laid = [0, 0, 0, length * STUD_LDU + tab, PLATE_LDU, width * STUD_LDU];
-    place(f, LAID, {
-      connectors: f.connectors([null], [straightEnd(length, 0)]),
-      volumes: boxVolumes(0, 0, length + 1, width, [laid]),
-      parts: partsOf([laid]),
-    });
-    const nextPiece = [-tab, 0, 0, length * STUD_LDU, PLATE_LDU, width * STUD_LDU];
-    const next: Piece = {
-      connectors: f.connectors([null], [straightEnd(0, 8)]),
-      volumes: boxVolumes(-1, 0, length + 1, width, [nextPiece]),
-      parts: partsOf([nextPiece]),
-    };
-    const atTheEnd = window(length * STUD_LDU, 0, 0, 0, 0);
+    const next = laidTrackAndNext(f);
+    const atTheEnd = window(TRACK_STUDS * STUD_LDU, 0, 0, 0, 0);
     const joinedAtTheEnd = choose(f, next, atTheEnd);
     place(f, OTHER, {
       connectors: f.connectors([null]),
-      volumes: columns(1, 1, 0, PLATE_LDU, length - 1, 0),
-      parts: partsOf([[(length - 1) * STUD_LDU, 0, 0, length * STUD_LDU, PLATE_LDU, STUD_LDU]]),
+      volumes: columns(1, 1, 0, PLATE_LDU, TRACK_STUDS - 1, 0),
+      parts: partsOf([
+        [(TRACK_STUDS - 1) * STUD_LDU, 0, 0, TRACK_STUDS * STUD_LDU, PLATE_LDU, STUD_LDU],
+      ]),
     });
     const notTheMatedPiece = choose(f, next, atTheEnd);
     expect({
       joinedAtTheEnd: [joinedAtTheEnd.accepted, joinedAtTheEnd.x, joinedAtTheEnd.votes],
       notTheMatedPiece: [notTheMatedPiece.accepted, notTheMatedPiece.overlap.owner],
     }).toEqual({
-      joinedAtTheEnd: [true, length * STUD_LDU, 1],
+      joinedAtTheEnd: [true, TRACK_STUDS * STUD_LDU, 1],
       notTheMatedPiece: [false, OTHER],
     });
   });

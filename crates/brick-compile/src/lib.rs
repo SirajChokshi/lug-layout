@@ -13,6 +13,7 @@ pub mod ends;
 pub mod exact;
 pub mod flatten;
 pub mod glb;
+pub mod glyph;
 pub mod homogeneous;
 pub mod identify;
 pub mod inline;

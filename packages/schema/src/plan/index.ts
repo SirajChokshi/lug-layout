@@ -1,14 +1,14 @@
-import { CHUNK_LDU, isLatticePose } from "@brr/math";
 import * as v from "valibot";
 import { decode, type Decoded, type Issue } from "../decode/index.ts";
 import {
   CREDITS_FILE,
   Count,
   MANIFEST_FILE,
-  SafeInteger,
+  PlanRecordV1,
   ShardListV1,
   canonicalJson,
   compareSuperChunks,
+  decodeShardV1,
   manifestJson,
   readShardFiles,
   shardPath,
@@ -18,6 +18,14 @@ import {
   type ImportedFile,
   type ShardEntryV1,
   type WorldShardV1,
+} from "../world/index.ts";
+
+export {
+  PlanFootprintV1,
+  PlanObstacleV1,
+  PlanRecordV1,
+  PlanRectV1,
+  PlanTableV1,
 } from "../world/index.ts";
 
 export const PLAN_FORMAT = "brr.plan";
@@ -34,54 +42,6 @@ export const PLAN_OUTPUT_FILES = [
 ] as const;
 export type PlanOutputFile = (typeof PLAN_OUTPUT_FILES)[number];
 export type PlanOutputs = Readonly<Record<PlanOutputFile, string>>;
-
-const Millimetres = v.pipe(v.number(), v.finite("must be a finite number of mm"));
-
-const OriginChunk = v.config(
-  v.pipe(
-    SafeInteger,
-    v.check(
-      (chunk) => isLatticePose(chunk * CHUNK_LDU, 0, 0),
-      "puts the plan origin outside the int32 LDU range",
-    ),
-  ),
-  { abortPipeEarly: true },
-);
-
-export const PlanRectV1 = v.strictObject(
-  { x: Millimetres, z: Millimetres, width: Millimetres, depth: Millimetres },
-  strictMessage,
-);
-
-export const PlanTableV1 = v.strictObject(
-  { name: v.string(), rect: PlanRectV1, heightMm: Millimetres },
-  strictMessage,
-);
-
-export const PlanObstacleV1 = v.strictObject({ name: v.string(), rect: PlanRectV1 }, strictMessage);
-
-export const PlanFootprintV1 = v.strictObject(
-  {
-    roomWidthMm: Millimetres,
-    roomDepthMm: Millimetres,
-    tables: v.array(PlanTableV1),
-    obstacles: v.array(PlanObstacleV1),
-  },
-  strictMessage,
-);
-
-export const PlanRecordV1 = v.strictObject(
-  {
-    name: v.string(),
-    originChunkX: OriginChunk,
-    originChunkZ: OriginChunk,
-    maxOverhangMm: Millimetres,
-    maxReachMm: Millimetres,
-    footprint: PlanFootprintV1,
-  },
-  strictMessage,
-);
-export type PlanRecordV1 = v.InferOutput<typeof PlanRecordV1>;
 
 const PlanFormat = v.literal(PLAN_FORMAT, (issue) =>
   typeof issue.input === "string"
@@ -220,7 +180,7 @@ export function readPlanFiles(files: ReadonlyMap<string, string>): Decoded<PlanF
   if (!version.ok) return version;
   const manifest = decode(PlanManifestV1, json.value, MANIFEST_FILE);
   if (!manifest.ok) return manifest;
-  const read = readShardFiles(files, manifest.value.shards);
+  const read = readShardFiles(files, manifest.value.shards, decodeShardV1);
   const credits = files.get(CREDITS_FILE);
   const issues: Issue[] = [
     ...read.issues,

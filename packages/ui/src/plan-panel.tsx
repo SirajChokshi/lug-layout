@@ -12,6 +12,7 @@ import {
   type IEditorCamera,
   type IPlanService,
   type IPlanSheetService,
+  type ISheetSets,
   type MmRect,
   type PlanIssue,
   type PlanRegion,
@@ -21,6 +22,7 @@ import {
 } from "@brr/client";
 import { useRef, useState, type ChangeEvent } from "react";
 import { downloadBlob } from "./download.ts";
+import { PrintSheets } from "./print-sheets.tsx";
 import { usePlanVersion } from "./use-plan-version.ts";
 
 const DEFAULT_ROOM_MM = { width: 4000, depth: 3000 } as const;
@@ -516,6 +518,7 @@ const PLAN_CHECKS = {
   trackJoin: "Track ends that meet join exactly",
   trackUnverified: "Every track part's connector poses are verified",
   trackUnidentified: "Every model's track sits on exact track poses",
+  trackReversing: "No reversing loop or wye, which would short two-rail powered track",
   trackOffTable: "Track, laid or a model's own, stands on the tables, by its outline",
   trackSeam:
     "No track piece's body, laid or a model's own, spans a table seam; a joint may sit on one",
@@ -612,15 +615,6 @@ function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly 
   );
 }
 
-const FILE_NAME_UNSAFE = /[^A-Za-z0-9-]+/gu;
-
-function savePlanSheet(svg: string, planName: string): void {
-  downloadBlob(
-    `${planName.trim().replaceAll(FILE_NAME_UNSAFE, "-")}.plan.svg`,
-    new Blob([svg], { type: "image/svg+xml" }),
-  );
-}
-
 function ActivePlan({
   camera,
   editor,
@@ -629,6 +623,7 @@ function ActivePlan({
   fillGridStuds,
   plans,
   sheets,
+  sheetSets,
   plan,
 }: {
   readonly camera: IEditorCamera;
@@ -638,6 +633,7 @@ function ActivePlan({
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
   readonly sheets: IPlanSheetService;
+  readonly sheetSets: ISheetSets;
   readonly plan: PlanRegion;
 }) {
   return (
@@ -676,14 +672,6 @@ function ActivePlan({
         <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>
           View from above
         </button>
-        <button
-          type="button"
-          data-action="printable-plan"
-          title="Download a true-scale top view (SVG) to print at 100%"
-          onClick={() => savePlanSheet(sheets.printable(editor, plan.id), plan.name)}
-        >
-          Printable plan (SVG)
-        </button>
         <button type="button" onClick={() => plans.removePlan(plan.id)}>
           Delete plan
         </button>
@@ -698,6 +686,7 @@ function ActivePlan({
         plans={plans}
       />
       <ObstaclesEditor plan={plan} plans={plans} />
+      <PrintSheets editor={editor} sheets={sheets} sheetSets={sheetSets} plan={plan} />
       <PlanChecks plans={plans} planId={plan.id} />
     </>
   );
@@ -773,6 +762,7 @@ export function PlanPanel({
   fillGridStuds,
   plans,
   sheets,
+  sheetSets,
   ready,
   readOnly,
 }: {
@@ -783,6 +773,7 @@ export function PlanPanel({
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
   readonly sheets: IPlanSheetService;
+  readonly sheetSets: ISheetSets;
   readonly ready: boolean;
   readonly readOnly: boolean;
 }) {
@@ -830,6 +821,7 @@ export function PlanPanel({
           fillGridStuds={fillGridStuds}
           plans={plans}
           sheets={sheets}
+          sheetSets={sheetSets}
           plan={active}
         />
       ) : (

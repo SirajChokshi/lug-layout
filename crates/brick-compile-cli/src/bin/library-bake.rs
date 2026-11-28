@@ -1,29 +1,40 @@
-use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::compile::{rolling_mode_from_studs, stud_primitives_from_table};
 use brick_compile::cover::PartSolid;
+use brick_compile::glyph::{GlyphBaker, StudMeshes};
 use brick_compile::record::BakeRecord;
 use brick_compile::vehicle::part_bounds;
-use brick_compile::{compile_part, CompileOptions, Library, Lod, TechnicPrimitives};
+use brick_compile::{compile_part, CompileOptions, Lod, TechnicPrimitives};
+use brick_compile_cli::{library_parts, strings, DirectoryLibrary, PART_EXTENSION};
 use serde_json::{json, Value};
 
-const PART_FOLDER: &str = "parts";
-const PART_EXTENSION: &str = ".dat";
 const PART_ID_PREFIX: &str = "ldraw:";
 const RECORD_FOLDER: &str = "records";
 const GLB_FOLDER: &str = "standard";
+const GLYPH_FOLDER: &str = "glyphs";
 
 struct Args {
     ldraw: PathBuf,
     palette: PathBuf,
     primitives: PathBuf,
+    translucent: HashSet<u32>,
     out: PathBuf,
     shard: usize,
     shards: usize,
+}
+
+fn colour_codes(list: &str) -> Result<HashSet<u32>, String> {
+    list.split(',')
+        .filter(|code| !code.is_empty())
+        .map(|code| {
+            code.parse()
+                .map_err(|e| format!("--translucent-colors {code}: {e}"))
+        })
+        .collect()
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -53,97 +64,18 @@ fn parse_args() -> Result<Args, String> {
         ldraw: take("--ldraw")?.into(),
         palette: take("--palette")?.into(),
         primitives: take("--primitives")?.into(),
+        translucent: colour_codes(&take("--translucent-colors")?)?,
         out: take("--out")?.into(),
         shard,
         shards,
     })
 }
 
-struct DirectoryLibrary {
-    files: HashMap<String, PathBuf>,
-    read: RefCell<HashMap<String, Option<&'static str>>>,
-}
-
-impl DirectoryLibrary {
-    fn new(root: &Path) -> Result<Self, String> {
-        let mut files = HashMap::new();
-        let mut folders = vec![root.to_path_buf()];
-        while let Some(folder) = folders.pop() {
-            for entry in fs::read_dir(&folder).map_err(|e| format!("{}: {e}", folder.display()))? {
-                let path = entry.map_err(|e| e.to_string())?.path();
-                if path.is_dir() {
-                    folders.push(path);
-                    continue;
-                }
-                let key = path
-                    .strip_prefix(root)
-                    .map_err(|e| e.to_string())?
-                    .to_string_lossy()
-                    .replace('\\', "/")
-                    .to_lowercase();
-                files.entry(key).or_insert(path);
-            }
-        }
-        Ok(DirectoryLibrary {
-            files,
-            read: RefCell::new(HashMap::new()),
-        })
-    }
-}
-
-impl Library for DirectoryLibrary {
-    fn source(&self, path: &str) -> Option<&str> {
-        if let Some(&text) = self.read.borrow().get(path) {
-            return text;
-        }
-        let text = self
-            .files
-            .get(path)
-            .and_then(|file| fs::read(file).ok())
-            .map(|bytes| {
-                let text: &'static str = Box::leak(
-                    String::from_utf8_lossy(&bytes)
-                        .into_owned()
-                        .into_boxed_str(),
-                );
-                text
-            });
-        self.read.borrow_mut().insert(path.to_string(), text);
-        text
-    }
-}
-
-fn library_parts(library: &DirectoryLibrary) -> Vec<String> {
-    let prefix = format!("{PART_FOLDER}/");
-    let mut parts: Vec<String> = library
-        .files
-        .keys()
-        .filter_map(|path| path.strip_prefix(&prefix))
-        .filter(|name| !name.contains('/') && name.ends_with(PART_EXTENSION))
-        .map(str::to_string)
-        .collect();
-    parts.sort();
-    parts
-}
-
-fn strings(palette: &Value, key: &str) -> Result<Vec<String>, String> {
-    palette[key]
-        .as_array()
-        .ok_or(format!("palette.{key} must be an array"))?
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_string)
-                .ok_or(format!("palette.{key} holds a non-string"))
-        })
-        .collect()
-}
-
 fn bake_part(
     library: &DirectoryLibrary,
     reference: &str,
     options: &CompileOptions,
+    glyphs: &GlyphBaker,
     out: &Path,
     stem: &str,
 ) -> Result<Value, String> {
@@ -179,6 +111,15 @@ fn bake_part(
         .map(|file| file.header.license.as_deref().unwrap_or_default())
         .collect();
     let mut entry = json!({ "record": record_file, "glb": glb_file, "licenses": licenses });
+    match glyphs.part(&compiled.mesh, &compiled.studs) {
+        Ok(glyph) => {
+            let glyph_file = format!("{GLYPH_FOLDER}/{stem}.glyph");
+            fs::write(out.join(&glyph_file), glyph.encode())
+                .map_err(|e| format!("{glyph_file}: {e}"))?;
+            entry["glyph"] = json!(glyph_file);
+        }
+        Err(issue) => entry["glyphIssue"] = json!(issue.to_string()),
+    }
     let diagnostics = compiled.rolling_diagnostics();
     if !diagnostics.is_empty() {
         entry["rollingDiagnostics"] = json!(diagnostics);
@@ -204,7 +145,14 @@ fn run(args: &Args) -> Result<usize, String> {
         unofficial_allowlist: strings(&palette, "unofficialAllowlist")?,
         technic: TechnicPrimitives::from_table(&primitive_table)?,
     };
-    for folder in [RECORD_FOLDER, GLB_FOLDER] {
+    let studs = StudMeshes::compile(
+        &library,
+        &options.stud_primitives,
+        &options.unofficial_allowlist,
+    )
+    .map_err(|e| format!("stud primitives: {e}"))?;
+    let glyphs = GlyphBaker::new(&studs, &args.translucent);
+    for folder in [RECORD_FOLDER, GLB_FOLDER, GLYPH_FOLDER] {
         fs::create_dir_all(args.out.join(folder)).map_err(|e| format!("{folder}: {e}"))?;
     }
     let mut listing = Vec::new();
@@ -214,7 +162,7 @@ fn run(args: &Args) -> Result<usize, String> {
         .filter(|(i, _)| i % args.shards == args.shard)
     {
         let stem = reference.trim_end_matches(PART_EXTENSION);
-        let mut entry = bake_part(&library, reference, &options, &args.out, stem)?;
+        let mut entry = bake_part(&library, reference, &options, &glyphs, &args.out, stem)?;
         entry["id"] = json!(format!("{PART_ID_PREFIX}{stem}"));
         entry["part"] = json!(reference);
         listing.push(entry);

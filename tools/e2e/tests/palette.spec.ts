@@ -2,7 +2,9 @@ import { expect, test, type Locator } from "@playwright/test";
 import { EditorPage, TRACK_ITEM } from "./editor-page.ts";
 
 const GREEN_BASEPLATE = "ldraw:3811@2";
+const TAN_BASEPLATE = "ldraw:3811@19";
 const CROSSROADS = "ldraw:44343p03@72";
+const RELOAD_TIMEOUT_MS = 150_000;
 
 test("a swatch dragged out of palette search lands where it is dropped, and the tool picked before comes back", async ({
   page,
@@ -91,4 +93,37 @@ test("mirroring a held switch shows only the mirrored switch as picked", async (
   await expect(pressed).toHaveCount(1);
   await expect(pressed).toContainText("Switch");
   await expect(pressed).not.toHaveAttribute("data-item", chosen ?? "");
+});
+
+test("searching per tab, each library tab keeps its own search, and the searches come back after a reload", async ({
+  page,
+}) => {
+  const editor = await EditorPage.open(page);
+  const palette = page.locator(".palette");
+  const search = palette.locator(".palette-search");
+  const perTab = palette.locator('[data-action="search-per-tab"]');
+  const tab = (filter: string): Locator => palette.locator(`[role="tab"][data-filter="${filter}"]`);
+  const baseplateSearch = '"32 x 32" -tan';
+
+  await perTab.click();
+  await tab("baseplates").click();
+  await search.fill(baseplateSearch);
+  await tab("track").click();
+  await expect(search).toHaveValue("");
+  await search.fill("switch");
+  await tab("baseplates").click();
+  await expect(search).toHaveValue(baseplateSearch);
+  const results = palette.locator(".palette-results");
+  await expect(results.locator(`[data-item="${GREEN_BASEPLATE}"]`)).toHaveCount(1);
+  await expect(results.locator(`[data-item="${TAN_BASEPLATE}"]`)).toHaveCount(0);
+
+  await page.reload();
+  await expect(editor.root).toHaveAttribute("data-status", "ready", {
+    timeout: RELOAD_TIMEOUT_MS,
+  });
+  await expect(perTab).toHaveAttribute("aria-pressed", "true");
+  await expect(tab("baseplates")).toHaveAttribute("aria-selected", "true");
+  await expect(search).toHaveValue(baseplateSearch);
+  await expect(tab("track")).toHaveAttribute("data-filtered", "true");
+  await expect(tab("road")).toHaveAttribute("data-filtered", "false");
 });

@@ -56,6 +56,7 @@ interface Listed {
   readonly unread?: ReadonlyArray<unknown>;
   readonly rows?: ReadonlyArray<unknown>;
   readonly licenses?: ReadonlyArray<string>;
+  readonly glyphIssue?: string;
   readonly failed?: string;
 }
 
@@ -126,6 +127,7 @@ async function build(
   const directory = join(root, "build");
   await mkdir(join(directory, "records"), { recursive: true });
   await mkdir(join(directory, "standard"), { recursive: true });
+  await mkdir(join(directory, "glyphs"), { recursive: true });
   for (const [shard, parts] of shards.entries()) {
     const listing = parts.map((listed) => {
       const stem = listed.id.slice("ldraw:".length);
@@ -136,6 +138,9 @@ async function build(
         part: `${stem}.dat`,
         record: `records/${stem}.bin`,
         glb: `standard/${stem}.glb`,
+        ...(listed.glyphIssue === undefined
+          ? { glyph: `glyphs/${stem}.glyph` }
+          : { glyphIssue: listed.glyphIssue }),
         licenses: listed.licenses ?? [CA],
         ...(listed.rows === undefined ? {} : { rollingDiagnostics: listed.rows }),
       };
@@ -145,6 +150,9 @@ async function build(
       const stem = listed.id.slice("ldraw:".length);
       await writeFile(join(directory, "records", `${stem}.bin`), listed.record ?? `record ${stem}`);
       await writeFile(join(directory, "standard", `${stem}.glb`), glbBytes(stem, listed.unread));
+      if (listed.glyphIssue === undefined) {
+        await writeFile(join(directory, "glyphs", `${stem}.glyph`), `glyph ${stem}`);
+      }
     }
     await writeFile(
       join(directory, `shard-${shard}-of-${shards.length}.json`),
@@ -163,7 +171,7 @@ async function readIndex(out: string): Promise<LibraryBakeIndex> {
   return decodedOrThrow(decode(LibraryBakeIndex, raw), LIBRARY_BAKE_INDEX);
 }
 
-it("files every part under its own bucket with content-addressed records and GLBs", async () => {
+it("files every part under its own bucket with content-addressed records, GLBs and glyphs", async () => {
   const ids = ["ldraw:3001", "ldraw:3040b", "ldraw:3626c", "ldraw:60581"];
   const inputs = await build([
     ids.slice(0, 2).map((id) => ({ id })),
@@ -186,7 +194,7 @@ it("files every part under its own bucket with content-addressed records and GLB
   const index = await readIndex(inputs.out);
   expect(index.buckets).toHaveLength(LIBRARY_BAKE_BUCKETS);
   expect(index.licenses).toEqual([CA]);
-  const filed = new Map<string, { record: string; glb: string }>();
+  const filed = new Map<string, LibraryBakePart>();
   for (const [bucket, file] of index.buckets.entries()) {
     const bytes = await readFile(join(inputs.out, file));
     expect(file).toContain(sha256(bytes).slice(0, 16));
@@ -206,6 +214,7 @@ it("files every part under its own bucket with content-addressed records and GLB
     for (const [file, content] of [
       [part.record, Buffer.from(`record ${stem}`)],
       [part.glb, glbBytes(stem, undefined)],
+      [part.glyph ?? "", Buffer.from(`glyph ${stem}`)],
     ] as const) {
       expect(await readFile(join(inputs.out, file))).toEqual(content);
       expect(file).toContain(sha256(content).slice(0, 16));
@@ -213,7 +222,8 @@ it("files every part under its own bucket with content-addressed records and GLB
   }
 });
 
-it("lists failures and ships no file for them, and files a part whatever licences its sources name", async () => {
+it("lists failures and ships no file for them, files a part whatever licences its sources name, and files a glyph issue in place of its glyph", async () => {
+  const glyphIssue = "seen from above it spans 20000 × 8 glyph pixels";
   const inputs = await build([
     [
       { id: "ldraw:3001" },
@@ -222,10 +232,11 @@ it("lists failures and ships no file for them, and files a part whatever licence
         failed: "unresolved reference 6177973fc01.dat in parts/93606dyf.dat",
       },
       { id: "ldraw:9999", licenses: [CA, NOT_CA] },
+      { id: "ldraw:2x200", glyphIssue },
     ],
   ]);
   const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
-  expect(pin.records).toBe(2);
+  expect(pin.records).toBe(3);
   expect(pin.failed).toBe(1);
   const index = await readIndex(inputs.out);
   expect(index.failed).toEqual({
@@ -237,6 +248,23 @@ it("lists failures and ships no file for them, and files a part whatever licence
   );
   expect(shipped).toContain("ldraw:9999");
   expect(shipped).not.toContain("93606dyf");
+  const bucket = decodedOrThrow(
+    decode(
+      LibraryBakeBucket,
+      JSON.parse(
+        await readFile(
+          join(inputs.out, index.buckets[libraryBakeBucket("ldraw:2x200")] ?? ""),
+          "utf8",
+        ),
+      ),
+    ),
+    "bucket",
+  );
+  expect(bucket.parts["ldraw:2x200"]?.glyphIssue).toBe(glyphIssue);
+  expect(bucket.parts["ldraw:2x200"]?.glyph).toBeUndefined();
+  expect(await filesUnder(join(inputs.out, "glyphs"))).not.toContainEqual(
+    expect.stringContaining("2x200"),
+  );
 });
 
 it("files each bucket's rolling diagnostics rows in its own content-addressed file, which the bucket names with its SHA-256", async () => {
@@ -337,11 +365,12 @@ async function filesBesideIndex(out: string, pin: LibraryBakePin): Promise<strin
 const PUBLISHED_TYPES: Readonly<Record<string, string>> = {
   records: "application/octet-stream",
   standard: "model/gltf-binary",
+  glyphs: "application/octet-stream",
   buckets: "application/json",
   "rolling-diagnostics": "application/json",
 };
 
-it("publishes every file the assembly wrote under library-bake/, records as bytes and GLBs as glTF, with the pinned index under its pinned hash", async () => {
+it("publishes every file the assembly wrote under library-bake/, records and glyphs as bytes and GLBs as glTF, with the pinned index under its pinned hash", async () => {
   const inputs = await build([
     [{ id: "ldraw:3001" }, { id: "ldraw:3040b", unread: ARC_BANDS, rows: ARC_ROWS }],
     [{ id: "ldraw:3626c" }],
@@ -397,7 +426,7 @@ it("routes the CLI's served command to the committed pin's index under library-b
   }
 });
 
-it("the library-bake pointer's manifest references its index, every bucket, and every record, GLB and rolling diagnostics file", async () => {
+it("the library-bake pointer's manifest references its index, every bucket, and every record, GLB, glyph and rolling diagnostics file", async () => {
   const inputs = await build([
     [{ id: "ldraw:3001" }, { id: "ldraw:3040b", unread: ARC_BANDS, rows: ARC_ROWS }],
     [{ id: "ldraw:3626c", unread: ARC_BANDS, rows: ARC_ROWS }],
@@ -528,6 +557,6 @@ it("the library-bake index's fields, its buckets' and its parts' are exactly the
   }).toEqual({
     index: ["format", "source", "options", "licenses", "buckets", "failed"],
     bucket: ["bucket", "parts", "rollingDiagnostics"],
-    part: ["record", "glb"],
+    part: ["record", "glb", "glyph", "glyphIssue"],
   });
 });

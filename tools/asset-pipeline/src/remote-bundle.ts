@@ -8,6 +8,7 @@ import { sha256Hex, type ObjectStore } from "./r2.ts";
 const IMMUTABLE = "public, max-age=31536000, immutable";
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".glb": "model/gltf-binary",
+  ".glyph": "application/octet-stream",
   ".json": "application/json",
   ".png": "image/png",
   ".wasm": "application/wasm",

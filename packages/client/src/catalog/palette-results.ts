@@ -1,6 +1,7 @@
 import type { BundleSearchHit } from "@brr/schema/catalog-api";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import type { CatalogSearchStatus, CatalogSearchView } from "./catalog-search.ts";
+import type { LibraryQuery } from "./library-query.ts";
 import {
   PALETTE_CATEGORIES,
   type PaletteEntry,
@@ -29,15 +30,25 @@ function locate(index: PaletteIndex): ReadonlyMap<string, Located> {
   return byId;
 }
 
+export function workerHitsFor(
+  query: LibraryQuery,
+  remote: CatalogSearchView,
+): ReadonlyArray<BundleSearchHit> | null {
+  return remote.query === query.remoteText ? remote.hits : null;
+}
+
 function merged(
-  local: ReadonlyArray<PaletteHit>,
+  index: PaletteIndex,
+  query: LibraryQuery,
   remote: ReadonlyArray<BundleSearchHit>,
-  byId: ReadonlyMap<string, Located>,
 ): {
   readonly hits: ReadonlyArray<PaletteHit>;
   readonly remoteOnly: ReadonlyArray<BundleSearchHit>;
 } {
-  const hits = new Map<string, PaletteHit>(local.map((hit) => [hit.entry.key, hit]));
+  const byId = locate(index);
+  const hits = new Map<string, PaletteHit>(
+    index.search(query, "all").map((hit) => [hit.entry.key, hit]),
+  );
   const remoteOnly: BundleSearchHit[] = [];
   for (const hit of remote) {
     const located = byId.get(hit.id);
@@ -45,6 +56,7 @@ function merged(
       remoteOnly.push(hit);
       continue;
     }
+    if (!index.admits(hit.id, query)) continue;
     const existing = hits.get(located.entry.key);
     if (existing?.items.some((item) => item.id === hit.id)) continue;
     hits.set(located.entry.key, {
@@ -62,12 +74,12 @@ function inFilter(category: PaletteFilter, filter: PaletteFilter): boolean {
 
 export function paletteResults(
   index: PaletteIndex,
-  query: string,
+  query: LibraryQuery,
   filter: PaletteFilter,
   remote: CatalogSearchView,
 ): PaletteResults {
-  const current = remote.query === query.trim();
-  const all = merged(index.search(query, "all"), current ? remote.hits : [], locate(index));
+  const workerHits = workerHitsFor(query, remote);
+  const all = merged(index, query, workerHits ?? []);
   const counts = new Map<PaletteFilter, number>([
     ["all", all.hits.length],
     ...PALETTE_CATEGORIES.map(
@@ -79,6 +91,6 @@ export function paletteResults(
     hits: all.hits.filter((hit) => inFilter(hit.entry.category, filter)),
     counts,
     remoteOnly: all.remoteOnly.filter((hit) => inFilter(hit.section, filter)),
-    status: current || remote.status === "off" ? remote.status : "idle",
+    status: workerHits !== null || remote.status === "off" ? remote.status : "idle",
   };
 }

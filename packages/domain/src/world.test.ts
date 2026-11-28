@@ -80,3 +80,24 @@ describe("World.add", () => {
     ).toEqual(poses);
   });
 });
+
+describe("World.has", () => {
+  it("finds a live placement only by its whole record, and not once it is removed", () => {
+    const world = new World();
+    const kept = world.add(7, 1, -640, 1280, 2, 3);
+    const removed = world.add(7, 1, 40, 60, 0, 0);
+    world.remove(removed);
+
+    expect([
+      world.has(7, 1, -640, 1280, 2, 3),
+      world.has(8, 1, -640, 1280, 2, 3),
+      world.has(7, 2, -640, 1280, 2, 3),
+      world.has(7, 1, -620, 1280, 2, 3),
+      world.has(7, 1, -640, 1280, 1, 3),
+      world.has(7, 1, -640, 1280, 2, 0),
+      world.has(7, 1, 40, 60, 0, 0),
+      world.has(7, 1, 2 ** 40, 0, 0, 0),
+    ]).toEqual([true, false, false, false, false, false, false, false]);
+    expect(kept.live).toBe(true);
+  });
+});

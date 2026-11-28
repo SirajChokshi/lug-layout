@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "compiler-parity": "node --experimental-transform-types --no-warnings src/compiler-parity.ts",
     "library-bake-parity": "node --experimental-transform-types --no-warnings src/library-bake-parity.ts",
+    "glyph-parity": "node --experimental-transform-types --no-warnings src/glyph-parity.ts",
     "held-out": "vitest run --config held-out.config.ts"
   },
   "dependencies": {

@@ -12,7 +12,7 @@ import {
 } from "react";
 import {
   CATEGORY_LABEL,
-  PALETTE_CATEGORIES,
+  PALETTE_TABS,
   colorDisplayName,
   type CatalogItemView,
   type EditorSnapshot,
@@ -22,6 +22,8 @@ import {
   type IPaletteMemory,
   type IPalettePrefetch,
   type IPaletteThumbnails,
+  type IPaletteSearch,
+  type LibraryFilterScope,
   type PaletteColorChoice,
   type PaletteColors,
   type PaletteEntry,
@@ -439,12 +441,14 @@ function TrackSection({
                 {item.studsWide}×{item.studsDeep} studs
               </span>
             </button>
+            <FavoriteStar entryKey={item.id} title={item.label} />
           </li>
         ))}
       </ul>
       <p className="palette-hint">
-        Or pick one piece and click to lay it: near an open end it attaches exactly. Click a laid
-        switch to throw it.
+        While you draw from an end, clicking a piece lays it there exactly and Enter lays another.
+        Otherwise pick one piece and click to lay it: near an open end it attaches exactly. Click a
+        laid switch to throw it.
       </p>
       <ul className="palette-keys" aria-label="Keys while holding a piece">
         <li>
@@ -621,8 +625,6 @@ function ResultRow({
   );
 }
 
-const TABS: ReadonlyArray<PaletteTab> = ["all", "favorites", ...PALETTE_CATEGORIES];
-
 function tabLabel(tab: PaletteTab): string {
   if (tab === "all") return "All";
   if (tab === "favorites") return "★";
@@ -631,6 +633,40 @@ function tabLabel(tab: PaletteTab): string {
 
 function tabName(tab: PaletteTab): string {
   return tab === "favorites" ? "Favourites" : tabLabel(tab);
+}
+
+const SHARED_PLACEHOLDER = "Search: 3811, tan 16x16, crossroads";
+const SEARCH_SYNTAX =
+  'Words must all match. "Quote a phrase", -word excludes, #3811 matches numbers only, and a colour name narrows the colours.';
+
+function searchPlaceholder(scope: LibraryFilterScope, tab: PaletteTab): string {
+  return scope === "per-tab" ? `Search ${tabName(tab)}` : SHARED_PLACEHOLDER;
+}
+
+function ScopeToggle({
+  search,
+  scope,
+}: {
+  readonly search: IPaletteSearch;
+  readonly scope: LibraryFilterScope;
+}) {
+  const perTab = scope === "per-tab";
+  return (
+    <button
+      type="button"
+      className="palette-scope"
+      data-action="search-per-tab"
+      aria-pressed={perTab}
+      title={
+        perTab
+          ? "Each tab keeps its own search and colour, remembered across visits. Click to use one search for every tab."
+          : "One search for every tab. Click to give each tab its own search and colour, remembered across visits."
+      }
+      onClick={() => search.setScope(perTab ? "shared" : "per-tab")}
+    >
+      Search per tab
+    </button>
+  );
 }
 
 function usePaletteMemory(memory: IPaletteMemory) {
@@ -701,8 +737,19 @@ export const PalettePanel = memo(function PalettePanel({
     drag: palette.drag,
     prefetch: palette.prefetch,
   };
-  const { query, tab, color, sections, hits, counts, status, library } =
-    usePaletteSearchSnapshot(search);
+  const {
+    query,
+    searching,
+    tab,
+    scope,
+    filteredTabs,
+    color,
+    sections,
+    hits,
+    counts,
+    status,
+    library,
+  } = usePaletteSearchSnapshot(search);
   const [highlight, setHighlight] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const remembered = usePaletteMemory(memory);
@@ -713,7 +760,6 @@ export const PalettePanel = memo(function PalettePanel({
     }),
     [remembered.favorites, memory],
   );
-  const searching = query.trim() !== "";
   const listing = searching || tab === "favorites";
   const shownHighlight = Math.min(highlight, Math.max(hits.length - 1, 0));
 
@@ -756,14 +802,17 @@ export const PalettePanel = memo(function PalettePanel({
       <ThumbnailsContext value={snapshot.status === "ready" ? thumbnails : null}>
         <nav className="palette" aria-label="Parts and sets">
           <div className="palette-head">
-            <h2>Library</h2>
+            <div className="palette-title-row">
+              <h2>Library</h2>
+              <ScopeToggle search={search} scope={scope} />
+            </div>
             <div className="palette-search-field">
               <SearchIcon />
               <input
                 type="search"
                 className="palette-search"
-                placeholder="Search: 3811, tan 16x16, crossroads"
-                title='Words must all match. "Quote a phrase", -word excludes, #3811 matches numbers only.'
+                placeholder={searchPlaceholder(scope, tab)}
+                title={SEARCH_SYNTAX}
                 aria-label="Search parts and sets"
                 aria-controls="palette-results"
                 value={query}
@@ -783,15 +832,20 @@ export const PalettePanel = memo(function PalettePanel({
               )}
             </div>
             <div className="palette-tabs" role="tablist" aria-label="Categories">
-              {TABS.map((option) => (
+              {PALETTE_TABS.map((option) => (
                 <button
                   key={option}
                   type="button"
                   role="tab"
                   className="palette-tab"
                   data-filter={option}
+                  data-filtered={filteredTabs.has(option)}
                   aria-selected={tab === option}
-                  aria-label={option === "favorites" ? "Favourites" : undefined}
+                  aria-label={
+                    option === "favorites"
+                      ? `Favourites${filteredTabs.has(option) ? ", filtered" : ""}`
+                      : undefined
+                  }
                   onClick={() => {
                     search.setTab(option);
                     showFromTop();
@@ -799,6 +853,7 @@ export const PalettePanel = memo(function PalettePanel({
                 >
                   {tabLabel(option)}
                   <span className="palette-tab-count">{counts.get(option) ?? 0}</span>
+                  {filteredTabs.has(option) && <span className="visually-hidden">, filtered</span>}
                 </button>
               ))}
             </div>

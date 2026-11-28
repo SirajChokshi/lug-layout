@@ -71,6 +71,7 @@ export interface PartShapeAsset {
   readonly rolling: PartRolling | null;
   readonly topSurface: PartTopSurface | null;
   readonly outline: PlanOutline | null;
+  readonly glyph?: Uint8Array;
 }
 
 export interface PartAsset extends PartShapeAsset {
@@ -161,6 +162,7 @@ export interface PartModel {
   readonly partTransforms: Float64Array;
   readonly submodels: PartModelSubmodels;
   readonly vehicles: ReadonlyArray<PartVehicle>;
+  readonly glyph?: Uint8Array;
 }
 
 export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {

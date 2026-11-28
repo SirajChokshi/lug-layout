@@ -176,10 +176,10 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
   },
   {
     id: "next-connector",
-    title: "Attach the held track piece by its next end",
+    title: "Attach the held or previewed track piece by its next end",
     group: "Edit",
     keys: [{ key: "q" }],
-    keywords: "cycle swing connector reverse curve",
+    keywords: "cycle swing connector reverse curve hand",
   },
   {
     id: "extend-straight",
@@ -512,7 +512,12 @@ export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
     action:
       "Switch between magnetic and precise placement while held (with a two-finger scroll it still orbits)",
   },
-  { gesture: "Double-click", action: "Frame the selection" },
+  {
+    gesture: "Double-click a track piece",
+    action: "Select its run, up to the next switch or open end",
+  },
+  { gesture: "Shift-double-click a track piece", action: "Select all the track joined to it" },
+  { gesture: "Double-click a model or train", action: "Frame it" },
   { gesture: "Click a switch", action: "Throw it while a train runs" },
 ];
 
@@ -638,6 +643,11 @@ export function playCommandEnabled(id: PlayCommandId, play: PlaySnapshot | undef
   }
 }
 
+function previewsLibraryPiece(snapshot: EditorSnapshot): boolean {
+  const extend = snapshot.track?.extend;
+  return !snapshot.readOnly && extend?.choices[extend.index]?.kind === "piece";
+}
+
 export function commandEnabled(
   id: CommandId,
   snapshot: EditorSnapshot,
@@ -665,7 +675,7 @@ export function commandEnabled(
     case "flip-switch":
       return snapshot.track?.held?.mirror != null;
     case "next-connector":
-      return snapshot.track?.held != null;
+      return snapshot.track?.held != null || previewsLibraryPiece(snapshot);
     case "extend-straight":
     case "extend-left":
     case "extend-right":

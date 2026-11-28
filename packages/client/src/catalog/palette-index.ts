@@ -1,3 +1,4 @@
+import { termWords, type LibraryQuery, type QueryTerm } from "./library-query.ts";
 import type { CatalogColorView, CatalogItemView } from "./placeable-catalog.ts";
 import { normalizedSearchText, searchWords, withSpellings } from "./search-text.ts";
 
@@ -10,6 +11,10 @@ export const PALETTE_CATEGORIES: ReadonlyArray<PaletteCategory> = [
   "road",
   "sets",
 ];
+
+export type PaletteTab = PaletteFilter | "favorites";
+
+export const PALETTE_TABS: ReadonlyArray<PaletteTab> = ["all", "favorites", ...PALETTE_CATEGORIES];
 
 export interface PaletteEntry {
   readonly key: string;
@@ -274,44 +279,6 @@ function groupEntries(items: ReadonlyArray<CatalogItemView>): ReadonlyArray<Pale
   return [...entries.values()];
 }
 
-type QueryTerm =
-  | { readonly kind: "word"; readonly word: string; readonly negated: boolean }
-  | { readonly kind: "phrase"; readonly words: ReadonlyArray<string>; readonly negated: boolean }
-  | { readonly kind: "number"; readonly number: string; readonly negated: boolean };
-
-const QUERY_TERM = /(-?)(?:"([^"]*)"?|#(\S+)|(\S+))/gu;
-
-function parseQuery(query: string): ReadonlyArray<QueryTerm> {
-  const terms: QueryTerm[] = [];
-  for (const [, minus, phrase, number, plain] of normalizedSearchText(query).matchAll(QUERY_TERM)) {
-    const negated = minus === "-";
-    if (phrase !== undefined) {
-      const words = searchWords(phrase);
-      if (words.length > 0) terms.push({ kind: "phrase", words, negated });
-    } else if (number !== undefined) {
-      for (const word of searchWords(number)) terms.push({ kind: "number", number: word, negated });
-    } else if (plain !== undefined) {
-      for (const word of searchWords(plain)) terms.push({ kind: "word", word, negated });
-    }
-  }
-  return terms;
-}
-
-function termWords(term: QueryTerm): ReadonlyArray<string> {
-  switch (term.kind) {
-    case "word":
-      return [term.word];
-    case "phrase":
-      return term.words;
-    case "number":
-      return [term.number];
-    default: {
-      const unhandled: never = term;
-      throw new Error(`unhandled query term ${String(unhandled)}`);
-    }
-  }
-}
-
 function phraseScore(phrase: ReadonlyArray<string>, words: ReadonlyArray<string>): number {
   const last = phrase.length - 1;
   for (let start = 0; start + phrase.length <= words.length; start++) {
@@ -334,6 +301,7 @@ function isLatticeSize(word: string): boolean {
 
 export class PaletteIndex {
   private readonly indexed: ReadonlyArray<IndexedEntry>;
+  private readonly entryOfItem = new Map<string, IndexedEntry>();
   private readonly ranks: ReadonlyMap<number, number>;
   private readonly colorVocabulary: ReadonlyArray<string>;
   private readonly colorTokenCache = new Map<string, boolean>();
@@ -380,6 +348,9 @@ export class PaletteIndex {
     this.colorVocabulary = [
       ...new Set(this.indexed.flatMap((indexed) => indexed.colorWords.flat())),
     ].filter((word) => !HAS_DIGIT.test(word));
+    for (const indexed of this.indexed) {
+      for (const item of indexed.entry.items) this.entryOfItem.set(item.id, indexed);
+    }
   }
 
   private isColorWordOrPrefix(token: string): boolean {
@@ -449,8 +420,16 @@ export class PaletteIndex {
     return choices;
   }
 
-  search(query: string, filter: PaletteFilter): ReadonlyArray<PaletteHit> {
-    const terms = parseQuery(query);
+  admits(itemId: string, query: LibraryQuery): boolean {
+    const indexed = this.entryOfItem.get(itemId);
+    if (indexed === undefined) return false;
+    if (query.constraints.length === 0) return true;
+    const hit = this.match(indexed, query.constraints);
+    return hit !== null && hit.items.some((item) => item.id === itemId);
+  }
+
+  search(query: LibraryQuery, filter: PaletteFilter): ReadonlyArray<PaletteHit> {
+    const { terms } = query;
     const pool = this.indexed.filter(({ entry }) => filter === "all" || entry.category === filter);
     if (terms.length === 0) {
       return pool.map(({ entry }) => ({ entry, items: entry.items, score: 0 }));

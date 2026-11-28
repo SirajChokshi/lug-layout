@@ -289,6 +289,22 @@ export class ConnectionSolver {
     this.mates(model, pose, out, true);
   }
 
+  joinsPart(
+    model: ModelConnectors,
+    pose: LatticePose,
+    instance: number,
+    partner: number,
+    partnerInstance: number,
+  ): boolean {
+    this.reinsertWithdrawn();
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (!finder?.namesPartners) continue;
+      if (finder.joinsPart(model, pose, instance, partner, partnerInstance)) return true;
+    }
+    return false;
+  }
+
   private mates(
     model: ModelConnectors,
     pose: LatticePose,

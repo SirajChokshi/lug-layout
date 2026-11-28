@@ -33,6 +33,7 @@ import { Palette } from "./catalog/palette.ts";
 import { PaletteCatalog } from "./catalog/palette-catalog.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
+import { LocalStorageLibraryFilterStore } from "./catalog/library-filters.ts";
 import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
 import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
@@ -47,14 +48,24 @@ import { Editor } from "./edit/editor.ts";
 import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import { RoadEditSession } from "./edit/road-edit-session.ts";
 import { TrackEditSession } from "./edit/track-edit-session.ts";
+import { TrackPathSelection } from "./edit/track-path-selection.ts";
 import { TrackWorld } from "./edit/track-world.ts";
 import { WorldSession } from "./edit/world-session.ts";
 import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
+import { AnnotationService } from "./notes/annotation-service.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { PlanSheetService } from "./plan/plan-sheet-service.ts";
+import { PdfSheetWriter } from "./sheets/pdf-sheet-writer.ts";
+import { PlanDrawing } from "./sheets/plan-drawing.ts";
+import { PngSheetWriter } from "./sheets/png-sheet-writer.ts";
+import { SheetComposer } from "./sheets/sheet-composer.ts";
+import { SheetSets } from "./sheets/sheet-sets.ts";
+import { CourierTypeface } from "./sheets/sheet-typeface.ts";
+import { SvgSheetWriter } from "./sheets/svg-sheet-writer.ts";
+import { SheetTiler } from "./sheets/tile-grid.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { OwnedPartsService } from "./bom/owned-parts-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
@@ -71,6 +82,7 @@ import { VehicleIds } from "./trains/vehicle-ids.ts";
 import { FetchedStarterFiles } from "./starters/starter-files.ts";
 import { StarterWorlds } from "./starters/starter-worlds.ts";
 import {
+  ANNOTATION_SERVICE,
   BOM_SERVICE,
   OWNED_PARTS,
   CATALOG_SEARCH,
@@ -107,6 +119,7 @@ import {
   HOTBAR,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
+  LIBRARY_FILTER_STORE,
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
@@ -124,11 +137,20 @@ import {
   VEHICLE_IDS,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
+  PLAN_DRAWING,
+  SHEET_COMPOSER,
+  SHEET_TILER,
+  SHEET_TYPEFACE,
+  SVG_SHEET_WRITER,
+  PDF_SHEET_WRITER,
+  PNG_SHEET_WRITER,
+  SHEET_SETS,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
   ROAD_EDIT_SESSION,
   TRACK_EDIT_SESSION,
+  TRACK_PATH_SELECTION,
   TRACK_WORLD,
   STARTER_FILE_URLS,
   STARTER_FILES,
@@ -155,6 +177,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(EDITOR_FRAME_LOOP).to(EditorFrameLoop).inSingletonScope();
   bind(TRACK_WORLD).to(TrackWorld).inSingletonScope();
   bind(TRACK_EDIT_SESSION).to(TrackEditSession).inSingletonScope();
+  bind(TRACK_PATH_SELECTION).to(TrackPathSelection).inSingletonScope();
   bind(ROAD_EDIT_SESSION).to(RoadEditSession).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(SCALE_BAR).to(ScaleBar).inSingletonScope();
@@ -166,7 +189,16 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(TRACK_SCENE).to(TrackScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
+  bind(ANNOTATION_SERVICE).to(AnnotationService).inSingletonScope();
   bind(PLAN_SHEET_SERVICE).to(PlanSheetService).inSingletonScope();
+  bind(SHEET_TYPEFACE).to(CourierTypeface).inSingletonScope();
+  bind(SHEET_TILER).to(SheetTiler).inSingletonScope();
+  bind(PLAN_DRAWING).to(PlanDrawing).inSingletonScope();
+  bind(SHEET_COMPOSER).to(SheetComposer).inSingletonScope();
+  bind(SVG_SHEET_WRITER).to(SvgSheetWriter).inSingletonScope();
+  bind(PDF_SHEET_WRITER).to(PdfSheetWriter).inSingletonScope();
+  bind(PNG_SHEET_WRITER).to(PngSheetWriter).inSingletonScope();
+  bind(SHEET_SETS).to(SheetSets).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
@@ -209,6 +241,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(COMMAND_CATALOG_SEARCH).toDynamicValue(catalogSearch).inSingletonScope();
   bind(PALETTE_MEMORY_STORE).to(LocalStoragePaletteMemoryStore).inSingletonScope();
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
+  bind(LIBRARY_FILTER_STORE).to(LocalStorageLibraryFilterStore).inSingletonScope();
   bind(HOTBAR).to(HotbarService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
   bind(LIBRARY_PART_SEARCH).to(LibraryPartSearch).inSingletonScope();

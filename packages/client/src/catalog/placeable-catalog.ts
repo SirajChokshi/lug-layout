@@ -16,6 +16,7 @@ import type {
   CompiledSource,
   ImportReport,
   ImportResult,
+  LayoutPart,
   PlacedImport,
   PlacementListener,
   RefusedConnectorRecord,
@@ -154,6 +155,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   load(refId: number): Promise<Placeable>;
   itemModel(itemId: string): Promise<CatalogItemModel | null>;
   addImported(file: ImportedFile): Promise<ImportOutcome>;
+  layoutParts(name: string, bytes: Uint8Array): Promise<ReadonlyArray<LayoutPart>>;
   rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
   playModel(placeable: Placeable): PlayModel | null;
   rollingStock(): Promise<ReadonlyArray<PlayModel>>;
@@ -181,6 +183,8 @@ interface SkippedModel extends SkippedCatalogModel {
 const FAR_LOD: BundleLod = "far";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 const STUDIO_FILE = /\.io$/iu;
+const STUDIO_LAYOUT_REFUSAL =
+  "a Studio .io imports as one model; export it from Studio as LDraw (.mpd) to import its submodels as a layout";
 const IMPORTED_SOURCE = "imported file";
 const NOT_IN_BUNDLE_RECORDS = "the bundle's connector packages don't list it";
 const NOT_IN_IMPORT_RECORDS = "the import found no connector record for it";
@@ -591,6 +595,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     }
     const text = new TextDecoder().decode(file.bytes);
     return this.importer.importText(file.name, text, this.lod, onPlaced);
+  }
+
+  async layoutParts(name: string, bytes: Uint8Array): Promise<ReadonlyArray<LayoutPart>> {
+    if (STUDIO_FILE.test(name)) throw new Error(STUDIO_LAYOUT_REFUSAL);
+    return this.importer.layoutParts(name, new TextDecoder().decode(bytes));
   }
 
   async rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null> {
