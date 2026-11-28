@@ -17,7 +17,7 @@ import {
 } from "@brr/render";
 import type { BundleIndex, TrackCatalog } from "@brr/schema/bundle";
 import type { Issue } from "@brr/schema/decode";
-import type { TrackRecordV1 } from "@brr/schema/world";
+import type { TrackRecordV2 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import type { IConnectorTables } from "../connect/connector-tables.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
@@ -146,9 +146,9 @@ export interface ITrackWorld extends PlanTrackSource {
   crossings(): ReadonlyArray<SuggestedCrossing>;
   crossingViews(): ReadonlyArray<CrossingView>;
   crossingOutlines(): ReadonlyArray<PlacedOutline>;
-  restore(records: ReadonlyArray<TrackRecordV1>): ReadonlyArray<Issue>;
+  restore(records: ReadonlyArray<TrackRecordV2>): ReadonlyArray<Issue>;
   adoptRestored(): void;
-  records(): TrackRecordV1[];
+  records(): TrackRecordV2[];
   routes(): ReadonlyArray<TrackRouteView>;
   openEnds(): ReadonlyArray<TrackEndView>;
 }
@@ -597,7 +597,7 @@ export class TrackWorld implements ITrackWorld {
     return this.crossingRamps?.outlines(this.suggested) ?? [];
   }
 
-  restore(records: ReadonlyArray<TrackRecordV1>): ReadonlyArray<Issue> {
+  restore(records: ReadonlyArray<TrackRecordV2>): ReadonlyArray<Issue> {
     const bundle = this.bundle;
     const track = bundle ? this.newDrawing(bundle) : null;
     this.pendingRestored = track;
@@ -623,7 +623,7 @@ export class TrackWorld implements ITrackWorld {
     this.lowTrack = null;
   }
 
-  records(): TrackRecordV1[] {
+  records(): TrackRecordV2[] {
     return this.track?.records() ?? [];
   }
 

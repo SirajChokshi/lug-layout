@@ -41,6 +41,7 @@ import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-wor
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IAnnotationService } from "./notes/annotation-service.ts";
+import type { ILayerService } from "./layers/layer-service.ts";
 import type { INoteEditSession } from "./notes/note-edit-session.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
@@ -152,6 +153,8 @@ export const ANNOTATION_SERVICE: ServiceIdentifier<IAnnotationService> = Symbol.
 export const NOTE_EDIT_SESSION: ServiceIdentifier<INoteEditSession> = Symbol.for(
   "brr.client.NoteEditSession",
 );
+export const LAYER_SERVICE: ServiceIdentifier<ILayerService> =
+  Symbol.for("brr.client.LayerService");
 export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
   "brr.client.PlanSheetService",
 );

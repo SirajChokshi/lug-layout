@@ -1560,6 +1560,7 @@ function placeGround(items: ReadonlyArray<GroundItem>): ReadonlyArray<PlacedMode
       z: item.z,
       yPlates: item.yPlates ?? 0,
       rot: 0,
+      layer: 0,
     });
     placed.apply(edit, refOf);
   });
@@ -2485,7 +2486,7 @@ async function bareDrawing(): Promise<TrackDrawing> {
 function layAt(layout: TrackDrawing, pose: Pose16, yPlates: number, rise = 0): number {
   const index = layout.pieceCount;
   const piece = placeableIndex(layout, NINE_VOLT_STRAIGHT);
-  layout.applyTrack({ lift: [], lay: [{ index, piece, pose, yPlates, rise }] });
+  layout.applyTrack({ lift: [], lay: [{ index, piece, pose, yPlates, rise, layer: 0 }] });
   return index;
 }
 

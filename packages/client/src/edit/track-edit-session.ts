@@ -5,7 +5,14 @@ import { PLATE_LDU, QUARTER_TURN_16, STUD_LDU, ZETA16_ORDER, type Pose16 } from 
 import { SCENE_BACKEND, type ISceneBackend, type TrackEndMarker } from "@brr/render";
 import { inject, injectable } from "inversify";
 import type { CatalogItemView, IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
-import { PLACEABLE_CATALOG, RAIL_YARD, TRACK_WORLD, WORLD_SESSION } from "../tokens.ts";
+import type { ILayerService } from "../layers/layer-service.ts";
+import {
+  LAYER_SERVICE,
+  PLACEABLE_CATALOG,
+  RAIL_YARD,
+  TRACK_WORLD,
+  WORLD_SESSION,
+} from "../tokens.ts";
 import type { IRailYard } from "../trains/rail-yard.ts";
 import { blockRefusalText } from "./placement-hover-view.ts";
 import type { DragTargetView } from "./track-drag.ts";
@@ -52,6 +59,7 @@ export type TrackCommitResult =
   | "refused-limit"
   | "refused-too-steep"
   | "refused-changed"
+  | "refused-layer"
   | "switch-straight"
   | "switch-branching";
 
@@ -235,6 +243,7 @@ export interface ITrackEditSession {
   piering(): boolean;
   setPiering(on: boolean): void;
   abandonLay(): void;
+  refuseOnLayer(): void;
   raise(plates: number): number | null;
   setRampPlates(plates: number): boolean;
   interruptDrag(): void;
@@ -421,6 +430,7 @@ export class TrackEditSession implements ITrackEditSession {
     private readonly catalog: Pick<IPlaceableCatalog, "parts" | "placeables">,
     @inject(WORLD_SESSION) private readonly worldSession: Pick<IWorldSession, "view">,
     @inject(RAIL_YARD) private readonly railYard: Pick<IRailYard, "standingOn">,
+    @inject(LAYER_SERVICE) private readonly layers: Pick<ILayerService, "table">,
   ) {}
 
   start(): ReadonlyArray<CatalogItemView> {
@@ -792,7 +802,7 @@ export class TrackEditSession implements ITrackEditSession {
   }
 
   throwSwitchAt(hitX: number, hitZ: number): SwitchAttempt {
-    const placement = this.trackWorld.drawing()?.switchAt(hitX, hitZ) ?? null;
+    const placement = this.trackWorld.drawing()?.switchAt(hitX, hitZ, this.layers.table()) ?? null;
     return placement === null ? NOTHING : this.throwSwitch(placement, hitX, hitZ);
   }
 
@@ -814,6 +824,15 @@ export class TrackEditSession implements ITrackEditSession {
   }
 
   switchRefusal(piece: number, x: number, z: number): TrackClickRefusal | null {
+    const locked = this.lockedLayerName(piece);
+    if (locked !== null) {
+      return {
+        item: TRACK_ITEM_ID,
+        x: Math.round(x),
+        z: Math.round(z),
+        reason: `This switch is on locked layer "${locked}", so it can't be thrown.`,
+      };
+    }
     const train = this.trainOn(piece);
     if (train === null) return null;
     return {
@@ -831,6 +850,13 @@ export class TrackEditSession implements ITrackEditSession {
     const holder = this.catalog.placeables()[refId];
     if (!holder) throw new Error(`no catalog item has ref id ${refId}`);
     return holder.label;
+  }
+
+  private lockedLayerName(piece: number): string | null {
+    const track = this.trackWorld.drawing();
+    if (!track) return null;
+    const layer = this.layers.table().layer(track.pieceLayer(piece));
+    return layer?.locked ? layer.name : null;
   }
 
   finishLay(lay: TrackLayRequest): void {
@@ -899,6 +925,10 @@ export class TrackEditSession implements ITrackEditSession {
 
   abandonLay(): void {
     this.lastCommit = "refused-changed";
+  }
+
+  refuseOnLayer(): void {
+    this.lastCommit = "refused-layer";
   }
 
   raise(plates: number): number | null {

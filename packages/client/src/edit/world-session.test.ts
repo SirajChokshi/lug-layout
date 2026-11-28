@@ -39,7 +39,7 @@ import { Container } from "inversify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { eventDraft } from "../event/event-details.ts";
-import { EDITOR, EDITOR_CAMERA, EVENT_DETAILS, WORLD_SESSION } from "../tokens.ts";
+import { EDITOR, EDITOR_CAMERA, EVENT_DETAILS, LAYER_SERVICE, WORLD_SESSION } from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
@@ -116,7 +116,7 @@ class BaseplateWorld implements IEditedWorld {
 
   place(column: number): AppliedEdit {
     const x = column * BASEPLATE_LDU;
-    return this.history.place({ refId: 0, colorId: 2, x, z: 0, yPlates: 0, rot: 0 });
+    return this.history.place({ refId: 0, colorId: 2, x, z: 0, yPlates: 0, rot: 0, layer: 0 });
   }
 
   contents(): WorldContents {
@@ -428,9 +428,10 @@ async function sessionOnIndexedDb() {
   container.rebind(PERSISTENT_STORAGE).toConstantValue(null);
   const session = container.get(WORLD_SESSION);
   const repository = container.get(WORLD_REPOSITORY);
+  const layers = container.get(LAYER_SERVICE);
   const edited = new BaseplateWorld();
   await session.start(edited, "test");
-  return { session, repository, edited, container };
+  return { session, repository, layers, edited, container };
 }
 
 describe("schema v2 document data", () => {
@@ -442,6 +443,7 @@ describe("schema v2 document data", () => {
     layers: [
       { id: 1, name: "Labels", kind: "notes", visible: true, locked: false, opacity: 80 },
       { ...BASE_LAYER, name: "Plates", locked: true },
+      { id: 2, name: "Scenery", kind: "parts", visible: false, locked: false, opacity: 60 },
     ],
     contributors: [{ id: 3, name: "Ada", color: "#1f77b4" }],
     event: { title: "Show layout", startDate: "2027-03-12", endDate: "2027-03-14" },
@@ -530,6 +532,30 @@ describe("schema v2 document data", () => {
     expect(events.event()).toEqual(clubbed);
   });
 
+  it("opens a world whose placements are on layers, keeps each one's layer when its shard is rewritten, and saves a layer edit", async () => {
+    const { session, repository, layers, edited } = await sessionOnIndexedDb();
+    const scenic = { ...PLATE, x: BASEPLATE_LDU * 2, layer: 2 };
+    expect(await session.importWorld(showArchive(repository, [PLATE, scenic]))).toBe(true);
+    const id = session.view().world?.id ?? "";
+    expect(layers.table().layers).toEqual(SHOW.layers);
+
+    session.placementsEdited(edited.place(1));
+    expect(layers.setLocked(2, true)).toEqual([]);
+    session.documentEdited();
+    await vi.waitFor(() => expect(session.view().world?.placements).toBe(3));
+    const stored = await repository.read(id);
+    if (!stored.ok) throw new Error("the edited world didn't reopen");
+
+    expect(stored.value.manifest.layers.find((layer) => layer.id === 2)?.locked).toBe(true);
+    expect(
+      stored.value.shards.flatMap((shard) => shard.placements.map(({ x, layer }) => [x, layer])),
+    ).toEqual([
+      [0, undefined],
+      [BASEPLATE_LDU, undefined],
+      [BASEPLATE_LDU * 2, 2],
+    ]);
+  });
+
   it("refuses a world whose placements carry an owner, rather than dropping it on the next save", async () => {
     const { session, repository } = await sessionOnIndexedDb();
     const before = await repository.list();
@@ -538,7 +564,7 @@ describe("schema v2 document data", () => {
       false,
     );
     expect(session.view().fileError).toBe(
-      "import failed: shard 0_0.placements.0: is on a layer, in a group or owned by a contributor, which this editor can't keep yet",
+      "import failed: shard 0_0.placements.0: is in a group or owned by a contributor, which this editor can't keep yet",
     );
     expect(await repository.list()).toEqual(before);
   });

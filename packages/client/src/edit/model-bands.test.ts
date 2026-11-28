@@ -190,6 +190,7 @@ function liveHandle(
       return yPlates;
     },
     rot,
+    layer: 0,
     kill() {
       live = false;
     },
@@ -253,6 +254,7 @@ class GeneratedWorld {
               z: handle.z,
               yPlates: handle.yPlates,
               rot: handle.rot,
+              layer: handle.layer,
             },
             removed: null,
             added: handle,
@@ -263,6 +265,7 @@ class GeneratedWorld {
         plan: null,
         notes: null,
         event: null,
+        layers: null,
       },
       this.placeableOf,
     );

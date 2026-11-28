@@ -7,6 +7,7 @@ import {
   type PlacementRef,
   type TrackPieceAt,
 } from "./edit-history.ts";
+import { LayerTable } from "./layers/layer-table.ts";
 import { ConsistLayout } from "./rail/consist-layout.ts";
 import { SLOT_LIVE, World } from "./world.ts";
 
@@ -23,6 +24,7 @@ function livePlacements(world: World): string[] {
           view.z[slot],
           view.yPlates[slot],
           view.rot[slot],
+          view.layer[slot],
         ].join(","),
       );
     }
@@ -74,6 +76,7 @@ function straightAt(index: number, x: bigint): TrackPieceAt {
     pose: pose16(zeta16([x, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
     yPlates: 0,
     rise: 0,
+    layer: 0,
   };
 }
 
@@ -124,6 +127,7 @@ describe("EditHistory", () => {
             z: ((next() % LATTICE_SPAN) - LATTICE_SPAN / 2) * STUD_LDU,
             yPlates: next() % 3,
             rot: next() % 4,
+            layer: next() % 5,
           });
           const placement = edit.changes[0]?.placement;
           if (placement) placements.push(placement);
@@ -157,7 +161,15 @@ describe("EditHistory", () => {
   it("reports what each step removed and added so a view can follow the placement", () => {
     const world = new World();
     const history = new EditHistory(world);
-    const placed = history.place({ refId: 3, colorId: 2, x: 40, z: -60, yPlates: 0, rot: 0 });
+    const placed = history.place({
+      refId: 3,
+      colorId: 2,
+      x: 40,
+      z: -60,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+    });
     const placement = placed.changes[0]?.placement;
     if (!placement) throw new Error("place reported no change");
     const firstHandle = placement.handle;
@@ -178,7 +190,7 @@ describe("EditHistory", () => {
   it("keeps a track change as one step beside placements, handing it back reversed on undo and as made on redo", () => {
     const world = new World();
     const history = new EditHistory(world);
-    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0 });
+    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 });
     const run = { lift: [], lay: [straightAt(0, 0n), straightAt(1, 16n)] };
     const thrown = { lift: [straightAt(1, 16n)], lay: [{ ...straightAt(1, 16n), piece: 2 }] };
 
@@ -188,7 +200,7 @@ describe("EditHistory", () => {
     expect(history.undo()?.track).toEqual({ lift: thrown.lay, lay: thrown.lift });
     expect(history.undo()).toMatchObject({ kind: "lay-track", track: { lift: run.lay, lay: [] } });
     expect(history.nextUndo()?.kind).toBe("place");
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0"]);
     expect(history.nextRedo()).toEqual({ kind: "lay-track", pieces: 2, lifted: 0 });
     expect(history.redo()?.track).toBe(run);
     expect(history.redo()?.track).toBe(thrown);
@@ -206,8 +218,11 @@ describe("EditHistory", () => {
     const done = history.commit(
       "open-plan",
       [
-        { placement: null, to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0 } },
-        { placement: null, to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3 } },
+        { placement: null, to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 } },
+        {
+          placement: null,
+          to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3, layer: 0 },
+        },
       ],
       run,
       change,
@@ -224,7 +239,56 @@ describe("EditHistory", () => {
     expect(history.undoDepth).toBe(0);
 
     expect(history.redo()).toMatchObject({ track: run, plan: change });
-    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0", "3,0,40,60,1,3"]);
+    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0,0", "3,0,40,60,1,3,0"]);
+  });
+
+  it("keeps a layer change as its own step, named by the layer, handing back the earlier table on undo", () => {
+    const history = new EditHistory(new World());
+    const created = LayerTable.base.created("Scenery", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const { table, id } = created.value;
+    const change = { action: "create", layer: id, before: LayerTable.base, after: table } as const;
+
+    expect(history.layerEdit(change).layers).toBe(change);
+    expect(history.nextUndo()).toEqual({ kind: "layer", action: "create", name: "Scenery" });
+    expect(history.undo()).toMatchObject({
+      kind: "layer",
+      step: "undo",
+      changes: [],
+      layers: { before: table, after: LayerTable.base },
+    });
+    expect(history.redo()?.layers).toBe(change);
+  });
+
+  it("refuses to move, turn, remove or add a placement or track piece on a locked layer, touching nothing", () => {
+    const world = new World();
+    const locked = new Set<number>();
+    const history = new EditHistory(world, new ConsistLayout(), undefined, {
+      isLocked: (layer) => locked.has(layer),
+    });
+    const pose = { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 2 };
+    const placement = history.place(pose).changes[0]?.placement;
+    if (!placement) throw new Error("place reported no change");
+    const laid = { ...straightAt(0, 0n), layer: 2 };
+    history.commit("lay-track", [], { lift: [], lay: [laid] });
+    locked.add(2);
+    const before = livePlacements(world);
+
+    expect(() => history.rotate(placement)).toThrow(/layer 2 is locked/u);
+    expect(() => history.remove(placement)).toThrow(/layer 2 is locked/u);
+    expect(() => history.commit("move", [{ placement, to: { ...pose, layer: 0 } }])).toThrow(
+      /layer 2 is locked/u,
+    );
+    expect(() => history.place({ ...pose, x: 640 })).toThrow(/layer 2 is locked/u);
+    expect(() => history.commit("remove", [], { lift: [laid], lay: [] })).toThrow(
+      /layer 2 is locked/u,
+    );
+    expect(() =>
+      history.commit("lay-track", [], { lift: [], lay: [{ ...straightAt(1, 16n), layer: 2 }] }),
+    ).toThrow(/layer 2 is locked/u);
+    expect(livePlacements(world)).toEqual(before);
+    expect(history.undoDepth).toBe(2);
+    expect(history.place({ ...pose, x: 640, layer: 0 }).changes).toHaveLength(1);
   });
 
   it("keeps the note change its follower makes for moved placements in the same step, and keeps a note edit as its own step, both reversed on undo", () => {
@@ -234,11 +298,19 @@ describe("EditHistory", () => {
     const history = new EditHistory(world, new ConsistLayout(), {
       follow: (changes) => (changes.some((change) => change.before !== null) ? followed : null),
     });
-    const placed = history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0 });
+    const placed = history.place({
+      refId: 1,
+      colorId: 0,
+      x: 0,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+    });
     const placement = placed.changes[0]?.placement ?? null;
 
     const moved = history.commit("move", [
-      { placement, to: { refId: 1, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0 } },
+      { placement, to: { refId: 1, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0, layer: 0 } },
     ]);
     const added = { before: followed.after, after: [] };
     const annotated = history.annotate(added);
@@ -248,7 +320,7 @@ describe("EditHistory", () => {
     expect(history.undo()?.notes).toEqual({ before: [], after: followed.after });
     const undoneMove = history.undo();
     expect(undoneMove?.notes).toEqual({ before: followed.after, after: followed.before });
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0"]);
     expect(history.redo()?.notes).toBe(followed);
   });
 
@@ -277,39 +349,55 @@ describe("EditHistory", () => {
   it("drops the redo branch when a new edit follows an undo", () => {
     const world = new World();
     const history = new EditHistory(world);
-    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0 });
-    history.place({ refId: 2, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0 });
+    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 });
+    history.place({ refId: 2, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0, layer: 0 });
     history.undo();
-    history.place({ refId: 3, colorId: 0, x: 0, z: 640, yPlates: 0, rot: 0 });
+    history.place({ refId: 3, colorId: 0, x: 0, z: 640, yPlates: 0, rot: 0, layer: 0 });
 
     expect(history.redoDepth).toBe(0);
     expect(history.redo()).toBeNull();
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0", "3,0,0,640,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0", "3,0,0,640,0,0,0"]);
   });
 
   it("refuses an edit with an invalid pose without touching the world or the history", () => {
     const world = new World();
     const history = new EditHistory(world);
-    const placement = history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0 })
-      .changes[0]?.placement;
+    const placement = history.place({
+      refId: 1,
+      colorId: 0,
+      x: 0,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+    }).changes[0]?.placement;
     if (!placement) throw new Error("place reported no change");
     const before = livePlacements(world);
 
     expect(() =>
       history.commit("remove", [
         { placement, to: null },
-        { placement: null, to: { refId: 2, colorId: 0, x: 0.5, z: 0, yPlates: 0, rot: 0 } },
+        {
+          placement: null,
+          to: { refId: 2, colorId: 0, x: 0.5, z: 0, yPlates: 0, rot: 0, layer: 0 },
+        },
       ]),
     ).toThrow(RangeError);
     expect(() =>
       history.commit("rotate", [
-        { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4 } },
+        { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4, layer: 0 } },
       ]),
     ).toThrow(/quarter turn/u);
+    expect(() =>
+      history.commit("rotate", [
+        { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 1, layer: 65_536 } },
+      ]),
+    ).toThrow(/not a layer id/u);
     const straight = {
       piece: 0,
       pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
       rise: 0,
+      layer: 0,
     };
     expect(() =>
       history.commit("remove", [{ placement, to: null }], {
@@ -332,6 +420,12 @@ describe("EditHistory", () => {
         lay: [{ ...straight, index: 0, yPlates: 0, rise: 2 ** 7 }],
       }),
     ).toThrow(/int8/u);
+    expect(() =>
+      history.commit("lay-track", [], {
+        lift: [],
+        lay: [{ ...straight, index: 0, yPlates: 0, layer: -1 }],
+      }),
+    ).toThrow(/not a layer id/u);
     expect(livePlacements(world)).toEqual(before);
     expect(history.undoDepth).toBe(1);
   });
@@ -339,8 +433,15 @@ describe("EditHistory", () => {
   it("refuses placements it does not hold in the world", () => {
     const world = new World();
     const history = new EditHistory(world);
-    const placement = history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0 })
-      .changes[0]?.placement;
+    const placement = history.place({
+      refId: 1,
+      colorId: 0,
+      x: 0,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+    }).changes[0]?.placement;
     const foreign = new EditHistory(new World()).place({
       refId: 1,
       colorId: 0,
@@ -348,6 +449,7 @@ describe("EditHistory", () => {
       z: 0,
       yPlates: 0,
       rot: 0,
+      layer: 0,
     }).changes[0]?.placement;
     if (!placement || !foreign) throw new Error("place reported no change");
 

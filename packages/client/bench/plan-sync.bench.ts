@@ -653,6 +653,7 @@ function planLaid(
         pose: pose16(addZeta16(pose.position, shift), pose.heading),
         yPlates: 0,
         rise: 0,
+        layer: 0,
       };
     }),
   };
@@ -1246,6 +1247,7 @@ function openStraight(straight: number, slot: number): TrackPieceAt {
     pose: pose16(zeta16([x + 4n, 0n, 0n, 0n, z + 8n, 0n, 0n, 0n]), 0),
     yPlates: 0,
     rise: 0,
+    layer: 0,
   };
 }
 
