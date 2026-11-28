@@ -170,7 +170,7 @@ export {
 export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
 export type { ILayerService, LayerRemovalGuard } from "./layers/layer-service.ts";
-export { tagTallyText, type TagTally } from "./edit/tag-tally.ts";
+export { counted, tagTallyText, type TagTally } from "./edit/tag-tally.ts";
 export type {
   ContributorRemovalGuard,
   IContributorService,

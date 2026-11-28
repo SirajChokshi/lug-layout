@@ -67,7 +67,7 @@ test("contributors bring inventories from a collection CSV or counts of the sele
   await editor.select(ON_THE_LINE);
   expect(await editor.selectionCount()).toBe(1);
   await linus.getByRole("button", { name: "Count the selection" }).click();
-  const straights = linus.getByLabel(`Count of ${STRAIGHT} colour 0`);
+  const straights = linus.getByLabel(`Count of ${STRAIGHT} colour 72`);
   await expect(straights).toHaveValue("1");
   await straights.fill(String(laid.pieces - 1));
   await straights.blur();

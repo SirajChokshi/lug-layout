@@ -1998,7 +1998,7 @@ describe("contributors", () => {
     ).toEqual([
       ["custom", 1],
       ["ldraw:3001", 4],
-      ["ldraw:74746", 0],
+      ["ldraw:74746", 72],
     ]);
     expect({ counted, afterCount, undone, redone: inventory() }).toEqual({
       counted: [],
@@ -2007,7 +2007,7 @@ describe("contributors", () => {
           rebrickable: [],
           ldraw: [
             { part: "ldraw:3001", color: 4, quantity: 1 },
-            { part: "ldraw:74746", color: 0, quantity: 1 },
+            { part: "ldraw:74746", color: 72, quantity: 1 },
           ],
         },
         undoLabel: 'edit the inventory of "Ada"',

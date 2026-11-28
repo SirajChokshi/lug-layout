@@ -1,5 +1,6 @@
 import {
   NO_OWNER,
+  counted,
   inventoryParts,
   tagTallyText,
   type Contributor,
@@ -21,8 +22,6 @@ import {
   type RefObject,
 } from "react";
 import { RenameField, freeName, refusalText, totalOf } from "./layers-panel.tsx";
-
-const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 const NOTHING: TagTally = { models: 0, pieces: 0 };
 
@@ -104,7 +103,7 @@ function collectionText(name: string, read: OwnedPartsRead): string {
     rejected.length === 0
       ? ""
       : ` Rows not read, as they aren't a part id, a colour id and a whole quantity above 0: ${rejected.map((row) => `line ${row.line}`).join(", ")}.`;
-  return `Read ${integer.format(read.owned.total)} parts from ${name}.${skipped}`;
+  return `Read ${counted(read.owned.total, "part", "parts")} from ${name}.${skipped}`;
 }
 
 function InventoryBlock({
@@ -132,7 +131,7 @@ function InventoryBlock({
     >
       <p className="inventory-summary">
         {inventory
-          ? `Brings ${integer.format(parts)} parts: ${integer.format(inventory.rebrickable.length)} lots from a collection, ${integer.format(inventory.ldraw.length)} counted.`
+          ? `Brings ${counted(parts, "part", "parts")} in ${counted(inventory.rebrickable.length + inventory.ldraw.length, "lot", "lots")}: ${inventory.rebrickable.length} from a collection, ${inventory.ldraw.length} counted.`
           : "No inventory yet."}
       </p>
       <label className="inventory-import">
