@@ -349,10 +349,10 @@ export class WorldSession implements IWorldSession {
   }
 
   private ownedNotesRefusal(owner: number): string | null {
-    let notes = 0;
-    for (const shard of this.current?.notes ?? []) {
-      for (const note of shard.notes) if (note.owner === owner) notes++;
-    }
+    if (!this.current) return null;
+    const notes = this.editedWorld()
+      .contents()
+      .notes.filter((note) => note.owner === owner).length;
     return notes === 0
       ? null
       : `owns ${notes} ${notes === 1 ? "note" : "notes"} saved with this world, which this editor can't reassign yet`;

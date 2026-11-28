@@ -331,11 +331,15 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      owner: NO_OWNER,
     });
     const placement = placed.changes[0]?.placement ?? null;
 
     const moved = history.commit("move", [
-      { placement, to: { refId: 1, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0, layer: 0 } },
+      {
+        placement,
+        to: { refId: 1, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0, layer: 0, owner: NO_OWNER },
+      },
     ]);
     const added = { before: followed.after, after: [] };
     const annotated = history.annotate(added);
@@ -345,7 +349,7 @@ describe("EditHistory", () => {
     expect(history.undo()?.notes).toEqual({ before: [], after: followed.after });
     const undoneMove = history.undo();
     expect(undoneMove?.notes).toEqual({ before: followed.after, after: followed.before });
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0,-1"]);
     expect(history.redo()?.notes).toBe(followed);
   });
 

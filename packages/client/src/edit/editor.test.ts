@@ -1441,13 +1441,14 @@ function ownersOf(dumped: EditorDump): {
 }
 
 describe("layers", () => {
-  it("takes a note on a notes layer made after the world opened, and still refuses one on a parts layer", async () => {
+  it("takes a note on a notes layer and owned by a contributor made after the world opened, and still refuses one on a parts layer or owned by nobody listed", async () => {
     const { container } = await startImportingEditor();
     const layers = container.get(LAYER_SERVICE);
     const annotations = container.get(ANNOTATION_SERVICE);
     const created = layers.create("Labels", "notes");
-    if (!created.ok) throw new Error("the layer wasn't created");
-    const label = (layer: number) =>
+    const ada = container.get(CONTRIBUTOR_SERVICE).create("Ada");
+    if (!created.ok || !ada.ok) throw new Error("the layer or contributor wasn't created");
+    const label = (layer: number, owner?: number) =>
       annotations.add({
         kind: "text",
         layer,
@@ -1457,12 +1458,15 @@ describe("layers", () => {
         rot: 0,
         heightStuds: 2,
         color: "#000000",
+        ...(owner === undefined ? {} : { owner }),
       }).ok;
 
-    expect({ notes: label(created.value), parts: label(BASE_LAYER_ID) }).toEqual({
-      notes: true,
-      parts: false,
-    });
+    expect({
+      notes: label(created.value),
+      owned: label(created.value, ada.value),
+      parts: label(BASE_LAYER_ID),
+      unlisted: label(created.value, ada.value + 1),
+    }).toEqual({ notes: true, owned: true, parts: false, unlisted: false });
   }, 120_000);
 
   it("puts a user's imported model on the layer active when it's placed, picks through a hidden layer, refuses to select or add to a locked one, undoes each layer change as one step, and reopens with every layer kept", async () => {

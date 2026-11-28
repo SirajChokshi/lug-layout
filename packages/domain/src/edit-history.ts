@@ -426,6 +426,7 @@ export class EditHistory {
       consists: [],
       track: NO_TRACK_CHANGE,
       plan: null,
+      notes: null,
       layers: null,
       contributors: change,
     });
@@ -542,6 +543,7 @@ export class EditHistory {
       event: change,
       layers: null,
       contributors: null,
+    });
   }
 
   private record(edit: Edit): AppliedEdit {
