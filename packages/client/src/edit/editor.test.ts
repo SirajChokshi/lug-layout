@@ -669,9 +669,11 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   const ids = snapshot.catalog.map((item) => item.id);
   expect(ids).toContain(`omr:${PLACEABLE_SET}`);
   expect(ids).not.toContain(`omr:${STUDLESS_SET}`);
-  expect(snapshot.catalogSkipped).toEqual([
+  expect(
+    snapshot.catalogSkipped.map(({ item, reason }) => ({ id: item.id, label: item.label, reason })),
+  ).toEqual([
     {
-      name: STUDLESS_SET,
+      id: `omr:${STUDLESS_SET}`,
       label: `${STUDLESS_SET} Tanker (2001)`,
       reason: "no stud lattice from the bake",
     },

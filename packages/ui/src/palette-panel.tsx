@@ -381,19 +381,22 @@ function ItemButton({
   );
 }
 
-function UnplaceableItem({ model }: { readonly model: SkippedCatalogModel }) {
+function UnplaceableItem({ model: { item, reason } }: { readonly model: SkippedCatalogModel }) {
   return (
-    <li className="palette-item-row" data-unplaceable={model.name}>
+    <li className="palette-item-row" data-unplaceable={item.id}>
       <span className="palette-thumb palette-thumb-empty" aria-hidden="true" />
       <button type="button" className="catalog-item" disabled>
-        <span className="catalog-name">{model.label}</span>
+        <span className="catalog-name">{item.label}</span>
       </button>
-      <span
-        className="part-badge"
-        data-badge="not-placeable"
-        title={`Can't be placed yet: ${model.reason}`}
-      >
-        not placeable
+      <span className="palette-item-side">
+        <span
+          className="part-badge"
+          data-badge="not-placeable"
+          title={`Can't be placed yet: ${reason}`}
+        >
+          not placeable
+        </span>
+        <FavoriteStar entryKey={item.group} title={item.label} />
       </span>
     </li>
   );
@@ -569,7 +572,7 @@ function CategorySection({
               <ItemButton key={item.id} {...props} item={item} />
             ))}
             {snapshot.catalogSkipped.map((model) => (
-              <UnplaceableItem key={model.name} model={model} />
+              <UnplaceableItem key={model.item.id} model={model} />
             ))}
           </ul>
         </Section>
@@ -758,10 +761,12 @@ export const PalettePanel = memo(function PalettePanel({
     color,
     sections,
     hits,
+    unplaceable,
     counts,
     status,
     library,
   } = usePaletteSearchSnapshot(search);
+  const nothingListed = hits.length === 0 && unplaceable.length === 0;
   const [highlight, setHighlight] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const remembered = usePaletteMemory(memory);
@@ -883,23 +888,32 @@ export const PalettePanel = memo(function PalettePanel({
               Click a part, then the ground to place copies, or drag it straight onto the layout.
             </p>
             {listing ? (
-              <ul
-                id="palette-results"
-                className="palette-results"
-                role="listbox"
-                aria-label={searching ? "Search results" : "Favourites"}
-                data-results={hits.length}
-              >
-                {hits.map((row, i) => (
-                  <ResultRow
-                    key={row.entry.key}
-                    {...props}
-                    row={row}
-                    color={color}
-                    highlighted={searching && i === shownHighlight}
-                  />
-                ))}
-              </ul>
+              <>
+                <ul
+                  id="palette-results"
+                  className="palette-results"
+                  role="listbox"
+                  aria-label={searching ? "Search results" : "Favourites"}
+                  data-results={hits.length}
+                >
+                  {hits.map((row, i) => (
+                    <ResultRow
+                      key={row.entry.key}
+                      {...props}
+                      row={row}
+                      color={color}
+                      highlighted={searching && i === shownHighlight}
+                    />
+                  ))}
+                </ul>
+                {unplaceable.length > 0 && (
+                  <ul className="palette-results" aria-label="Not placeable">
+                    {unplaceable.map((model) => (
+                      <UnplaceableItem key={model.item.id} model={model} />
+                    ))}
+                  </ul>
+                )}
+              </>
             ) : (
               sections.map((section) => (
                 <CategorySection
@@ -924,13 +938,13 @@ export const PalettePanel = memo(function PalettePanel({
                 Search offline: showing palette matches only.
               </p>
             )}
-            {searching && hits.length === 0 && (library?.hits.length ?? 0) === 0 && (
+            {searching && nothingListed && (library?.hits.length ?? 0) === 0 && (
               <p className="palette-empty" data-no-results>
                 Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part
                 number like 3811, a size like 16x16, or a colour like tan.
               </p>
             )}
-            {!searching && tab === "favorites" && hits.length === 0 && (
+            {!searching && tab === "favorites" && nothingListed && (
               <p className="palette-empty" data-no-favorites>
                 No favourites yet. Star a part with ☆ to keep it here.
               </p>

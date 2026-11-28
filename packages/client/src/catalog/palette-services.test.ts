@@ -65,6 +65,7 @@ const BASEPLATE_32 = "3811";
 const GREEN_BASEPLATE = "ldraw:3811@2";
 const CROSSROADS = "ldraw:44343p03@72";
 const SET = "omr:7936-1";
+const UNPLACEABLE_SET = "omr:10016-1";
 const WHITE = 15;
 const MADE_IN_WHITE = [
   "ldraw:4186",
@@ -399,6 +400,41 @@ describe("palette search over the editor's catalog", () => {
     expect(shownItems(library)).toContain("ldraw:3811@15");
     expect(shownItems(library)).not.toContain(GREEN_BASEPLATE);
     expect(foundItems(find, query)).not.toContain(GREEN_BASEPLATE);
+  }, 120_000);
+
+  it("lists a set that can't be placed where a query or a favourite matches it on All, Sets and Favourites, never among the hits, and not on another tab or without a query", async () => {
+    const { container } = await startEditor();
+    const search = container.get(PALETTE_SEARCH);
+    const unplaceable = (): ReadonlyArray<string> =>
+      search.snapshot().unplaceable.map(({ item }) => item.id);
+
+    const browsing = unplaceable();
+    search.setQuery("tanker");
+    const all = unplaceable();
+    const hits = hitKeys(search.snapshot());
+    search.setTab("sets");
+    const sets = unplaceable();
+    search.setTab("road");
+    const road = unplaceable();
+    search.setTab("all");
+    search.setQuery("#10016");
+    const byNumber = unplaceable();
+    search.setQuery("");
+    search.setTab("favorites");
+    const notFavourite = unplaceable();
+    container.get(PALETTE_MEMORY).toggleFavorite(UNPLACEABLE_SET);
+    const favourite = unplaceable();
+
+    expect(hits).not.toContain(UNPLACEABLE_SET);
+    expect({ browsing, all, sets, road, byNumber, notFavourite, favourite }).toEqual({
+      browsing: [],
+      all: [UNPLACEABLE_SET],
+      sets: [UNPLACEABLE_SET],
+      road: [],
+      byNumber: [UNPLACEABLE_SET],
+      notFavourite: [],
+      favourite: [UNPLACEABLE_SET],
+    });
   }, 120_000);
 
   it("finds the Draw track entry by the part number of a piece it lays, and not by an unrelated part", async () => {
