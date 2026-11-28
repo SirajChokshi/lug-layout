@@ -222,7 +222,7 @@ it.each([
     },
     tone: "refused",
     lines: [
-      `${HELD} would overlap ldraw:3700's bounds in Market Street at cell 16, -7`,
+      `${HELD} would overlap ldraw:3700 in Market Street at stud 16, -7. Move it clear or turn it.`,
       "Turn it to meet the pins (2 unverified)",
     ],
   },
@@ -332,7 +332,7 @@ it.each([
     view: QUEUED,
     tone: "waiting",
     lines: [
-      "Queued: placing at -320, 320 when ready",
+      "Queued: placing at stud -16, 16 when ready",
       "Waiting for custom:road-loop.mpd's connector data…",
     ],
   },
@@ -343,7 +343,7 @@ it.each([
     tone: "mates",
     lines: [
       "2 pin holes line up flush with custom-modular-pinned, 2 pins go in",
-      "Queued: placing at -320, 320 when ready",
+      "Queued: placing at stud -16, 16 when ready",
     ],
   },
   {
@@ -351,7 +351,7 @@ it.each([
     placement: {},
     view: { ...QUEUED, pendingItem: "ldraw:3811@2", hover: { refusal: null, placement: null } },
     tone: "waiting",
-    lines: ["Queued: placing at -320, 320 when ready"],
+    lines: ["Queued: placing at stud -16, 16 when ready"],
   },
 ] as const)("states $name", (row) => {
   const { placement, tone, lines } = row;
@@ -411,7 +411,7 @@ it("reads an unsettled assist hover or a wait on connector data as neutral, neve
     settled: {
       tone: "refused",
       lines: [
-        `${HELD} would overlap Technic Brick 1 x 2 with Hole's bounds in Market Street at cell 16, -7`,
+        `${HELD} would overlap Technic Brick 1 x 2 with Hole in Market Street at stud 16, -7. Move it clear or turn it.`,
       ],
       ghost: {
         tone: "refused",
@@ -444,9 +444,9 @@ function holdingGroup(refusal: string | null): PlacementView {
 }
 
 it.each([
-  "brick-2x4 would overlap Plate 2 x 8's bounds in 10014-1 Caboose (2001) at cell 3, -2",
-  "MILS Basic Terrain Module would overlap Technic Brick 1 x 4 with Holes's bounds in MILS Basic Terrain Module at cell -11, 64",
-  "brick-2x4 has nothing to rest on here: none of its connectors mate, and it isn't on the table",
+  "brick-2x4 would overlap Plate 2 x 8 in 10014-1 Caboose (2001) at stud 3, -2. Move it clear or turn it.",
+  "MILS Basic Terrain Module would overlap Technic Brick 1 x 4 with Holes in MILS Basic Terrain Module at stud -11, 64. Move it clear or turn it.",
+  "brick-2x4 has nothing to rest on here: none of its connectors mate, and it isn't on the table. Move it onto studs or onto the table.",
 ])("presents a held group's refusal as it reads, %s, and never a snap or a mate", (refusal) => {
   expect(read(holdingGroup(refusal))).toEqual({
     tone: "refused",

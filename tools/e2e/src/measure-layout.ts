@@ -716,9 +716,13 @@ async function zoomOnto(page: Page, script: EditScript): Promise<ScreenMap> {
     x: nearestStud((script.module.at.x + script.track.to.x) / 2),
     z: nearestStud((script.module.at.z + script.track.to.z) / 2),
   };
+  const statsSummary = page.locator(".editor-hud > summary");
+  const folded = (await page.locator(".editor-hud").getAttribute("open")) === null;
+  if (folded) await statsSummary.click();
   await page.getByLabel("Go to x (LDU)").fill(String(site.x));
   await page.getByLabel("Go to z (LDU)").fill(String(site.z));
   await page.getByRole("button", { name: "Go to x, z" }).click();
+  if (folded) await statsSummary.click();
   for (let step = 0; step < MAX_EDIT_ZOOM_STEPS; step++) {
     const map = await ScreenMap.fit(page);
     if (Math.abs(map.lduPerPxX) <= EDIT_LDU_PER_PX) return map;

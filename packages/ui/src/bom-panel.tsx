@@ -11,7 +11,7 @@ import type {
   PlanRegion,
 } from "@brr/client";
 import { useState } from "react";
-import { usePlanVersion } from "./use-plan-version.ts";
+import { useActivePlan } from "./use-plan-version.ts";
 import { OwnVsBuy } from "./own-vs-buy.tsx";
 import { PartsListDownloads } from "./parts-list-downloads.tsx";
 import { ShoppingLines } from "./shopping-list.tsx";
@@ -22,7 +22,7 @@ interface BomPanelProps {
   readonly service: IBomService;
   readonly ownedParts: IOwnedParts;
   readonly source: IBomSource;
-  readonly region: PlacementRegion | null;
+  readonly region?: PlacementRegion | null;
   readonly selectionLabel: string | null;
   readonly plans: IPlanService | null;
   readonly thumbnails: IPaletteThumbnails | null;
@@ -86,12 +86,6 @@ function catalogText(catalog: CatalogBom): string {
   return `${integer.format(parts)} parts in ${integer.format(catalog.lines.length)} lots, ${integer.format(unmapped)} unmapped${keywordText}`;
 }
 
-function activePlanOf(plans: IPlanService | null): PlanRegion | null {
-  if (!plans) return null;
-  const id = plans.activePlanId();
-  return plans.plans().find((plan) => plan.id === id) ?? null;
-}
-
 function scopeOf(
   kind: BomScope["kind"],
   draft: RegionDraft,
@@ -142,11 +136,11 @@ export function BomPanel({
   plans,
   thumbnails,
 }: BomPanelProps) {
-  usePlanVersion(plans);
-  const plan = activePlanOf(plans);
+  const plan = useActivePlan(plans);
+  const offersRegion = region !== undefined;
   const [chosenKind, setScopeKind] = useState<BomScope["kind"]>(region ? "region" : "world");
   const scopeKind = chosenKind === "plan" && !plan ? "world" : chosenKind;
-  const [draft, setDraft] = useState<RegionDraft>(() => draftOf(region));
+  const [draft, setDraft] = useState<RegionDraft>(() => draftOf(region ?? null));
   const [bom, setBom] = useState<BillOfMaterials | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -174,16 +168,18 @@ export function BomPanel({
           />
           World
         </label>
-        <label>
-          <input
-            type="radio"
-            name="bom-scope"
-            value="region"
-            checked={scopeKind === "region"}
-            onChange={() => setScopeKind("region")}
-          />
-          Region (LDU, placement origins)
-        </label>
+        {offersRegion && (
+          <label>
+            <input
+              type="radio"
+              name="bom-scope"
+              value="region"
+              checked={scopeKind === "region"}
+              onChange={() => setScopeKind("region")}
+            />
+            Region (LDU, placement origins)
+          </label>
+        )}
         {selectionLabel !== null && (
           <label>
             <input

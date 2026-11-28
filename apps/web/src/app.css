@@ -1258,10 +1258,6 @@ footer a {
   text-align: center;
 }
 
-.track-height-panel .unverified {
-  color: var(--status-warn);
-}
-
 .gear-panel select {
   width: 100%;
   margin-bottom: var(--space-3);
@@ -1427,7 +1423,8 @@ footer a {
   background: var(--accent-ink);
 }
 
-.part-badge[data-badge="unverified"] {
+.part-badge[data-badge="unverified"],
+.part-badge[data-badge="not-placeable"] {
   background: var(--status-warn);
 }
 

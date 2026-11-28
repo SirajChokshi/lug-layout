@@ -13,6 +13,7 @@ import {
   type EditorSnapshot,
   type IEditor,
   type IPanelLayout,
+  type IPlanService,
   type LatencySample,
   type MeshCounts,
   type MeshProgress,
@@ -32,6 +33,7 @@ import { CreditLinks } from "./site-chrome.tsx";
 import { useId, useRef, useState, type ComponentProps, type FormEvent } from "react";
 import { TrackPanel } from "./track-panel.tsx";
 import { isCompactLayout } from "./use-compact-layout.ts";
+import { useActivePlan } from "./use-plan-version.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
@@ -729,9 +731,20 @@ export function SelectionPanel({
           Delete
         </button>
       </div>
-      {single && primary.kind !== "track" && (
-        <RollingDiagnostics key={primary.item} editor={editor} item={primary.item} />
-      )}
+    </section>
+  );
+}
+
+function SelectionRollingBands({ editor, snapshot }: PanelProps) {
+  const { selection } = snapshot;
+  if (!selection || selection.members.length !== 1 || selection.primary.kind === "track") {
+    return null;
+  }
+  const { item } = selection.primary;
+  return (
+    <section className="stats-section" aria-label="Selection rolling bands">
+      <h3>Rolling bands of {itemLabel(snapshot, item)}</h3>
+      <RollingDiagnostics key={item} editor={editor} item={item} />
     </section>
   );
 }
@@ -780,8 +793,10 @@ export function EditorHud({
   editor,
   snapshot,
   panels,
-}: PanelProps & { readonly panels: IPanelLayout }) {
+  plans,
+}: PanelProps & { readonly panels: IPanelLayout; readonly plans: IPlanService }) {
   const [open, setOpen] = useState(() => !isCompactLayout() && panels.snapshot().stats);
+  const plan = useActivePlan(plans);
   const { backend, stats } = snapshot;
   const glance = [
     ...(stats ? [`${stats.fps.toFixed(0)} fps`] : []),
@@ -818,6 +833,7 @@ export function EditorHud({
       "Cursor on lattice (LDU)",
       snapshot.hover ? `${snapshot.hover.x}, ${snapshot.hover.z}` : "off the ground",
     ],
+    ["Plan origin (chunks)", plan ? `${plan.originChunkX}, ${plan.originChunkZ}` : "no plan"],
     [
       "Lands at (plates)",
       snapshot.hover && snapshot.mode === "place" ? String(snapshot.hover.yPlates) : "–",
@@ -908,6 +924,11 @@ export function EditorHud({
           </div>
         ))}
       </dl>
+      <section className="stats-section" aria-label="Go to">
+        <h3>Go to a lattice point</h3>
+        <GoTo editor={editor} />
+      </section>
+      <SelectionRollingBands editor={editor} snapshot={snapshot} />
       <TrackPanel snapshot={snapshot} />
       <RoadJoins editor={editor} snapshot={snapshot} />
     </details>
@@ -917,16 +938,9 @@ export function EditorHud({
 const MOUSE_HINT =
   "Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the wheel zooms at the cursor. Arrows nudge selected models and track pieces one stud, otherwise pan; Shift-arrows orbit. Double-click selects a track run (Shift: all joined track).";
 
-export function EditorFooter({
-  editor,
-  disclaimer,
-}: {
-  readonly editor: IEditor;
-  readonly disclaimer: string;
-}) {
+export function EditorFooter({ disclaimer }: { readonly disclaimer: string }) {
   return (
     <footer className="editor-footer">
-      <GoTo editor={editor} />
       <p className="status-hint" title={MOUSE_HINT}>
         {MOUSE_HINT}
       </p>

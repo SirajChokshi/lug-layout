@@ -5,6 +5,7 @@ import {
   mainThreadModules,
   PALETTE,
   PANEL_LAYOUT,
+  PLAN_SERVICE,
   TRAIN_PLAY,
   type EditorOptions,
 } from "@brr/client";
@@ -44,6 +45,7 @@ function services() {
     hotbar: container.get(HOTBAR),
     paletteDrag: container.get(PALETTE).drag,
     panels: container.get(PANEL_LAYOUT),
+    plans: container.get(PLAN_SERVICE),
   };
 }
 
@@ -73,7 +75,7 @@ function StatsWithKeys({
 }: {
   readonly onShellCommand?: (id: ShellCommandId) => void;
 }) {
-  const { editor, camera, play, hotbar, paletteDrag, panels } = services();
+  const { editor, camera, play, hotbar, paletteDrag, panels, plans } = services();
   function Panel() {
     const snapshot = useEditorSnapshot(editor);
     useEditorKeys(editor, camera, {
@@ -87,7 +89,7 @@ function StatsWithKeys({
       "div",
       null,
       createElement(EditorCanvas, { editor, camera, play, paletteDrag, options: CANVAS_OPTIONS }),
-      createElement(EditorHud, { editor, snapshot, panels }),
+      createElement(EditorHud, { editor, snapshot, panels, plans }),
     );
   }
   return createElement(Panel);

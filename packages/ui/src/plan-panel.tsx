@@ -930,8 +930,8 @@ function ActivePlan({
         </div>
       </PlanEdits>
       <p className="plan-meta">
-        Origin chunk {plan.originChunkX}, {plan.originChunkZ} · {plans.insideCount(plan.id)}{" "}
-        placements in this plan · {plans.sandboxCount()} in the sandbox
+        {counted(plans.insideCount(plan.id), "placement", "placements")} in this plan ·{" "}
+        {plans.sandboxCount()} in the sandbox
       </p>
       <div className="plan-actions">
         <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>
@@ -1099,10 +1099,19 @@ export function PlanPanel({
       ) : (
         <>
           <p className="plan-meta">
-            No plan yet. Outside plans the world is a sandbox and plan rules don't apply. Draw a
-            table to start one around it.
+            No plan yet. Outside plans the world is a sandbox and plan rules don't apply. Check this
+            layout to plan it on one table under everything laid, or draw a table to start a plan
+            around it.
           </p>
           <PlanEdits readOnly={readOnly}>
+            <button
+              type="button"
+              data-action="check-layout"
+              disabled={!ready || plans.placementCount() === 0}
+              onClick={() => editor.checkLayout()}
+            >
+              Check this layout
+            </button>
             <DrawTablesButton editor={editor} drawing={drawing} label="Draw a table (B)" />
             <TableLibrary editor={editor} plans={plans} planId={null} armedType={armedType} />
           </PlanEdits>

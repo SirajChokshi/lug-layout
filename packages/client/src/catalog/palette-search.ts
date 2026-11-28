@@ -1,5 +1,5 @@
 import { inject, injectable } from "inversify";
-import type { CatalogItemView } from "./placeable-catalog.ts";
+import type { CatalogItemView, SkippedCatalogModel } from "./placeable-catalog.ts";
 import {
   CATALOG_SEARCH,
   LIBRARY_FILTER_STORE,
@@ -20,6 +20,7 @@ import {
   type PaletteCategory,
   type PaletteColorChoice,
   type PaletteEntry,
+  type PaletteHit,
   type PaletteIndex,
   type PaletteTab,
 } from "./palette-index.ts";
@@ -53,6 +54,7 @@ export interface PaletteSearchSnapshot {
   readonly color: number | null;
   readonly sections: ReadonlyArray<PaletteSection>;
   readonly hits: ReadonlyArray<PaletteRow>;
+  readonly unplaceable: ReadonlyArray<SkippedCatalogModel>;
   readonly counts: ReadonlyMap<PaletteTab, number>;
   readonly status: CatalogSearchStatus;
   readonly library: LibrarySearchView | null;
@@ -193,18 +195,17 @@ export class PaletteSearch implements IPaletteSearch {
     const { tab, scope } = filters;
     const { query, color } = filters.current();
     const parsed = LibraryQuery.parse(query);
-    const { index } = this.catalog.snapshot();
+    const { index, skipped, unplaceable } = this.catalog.snapshot();
     const favorites = new Set(this.memory.snapshot().favorites);
     const isFavorite: FavoriteTest = (hit) => favorites.has(hit.entry.key);
-    const results = paletteResults(
-      index,
-      parsed,
-      tab === "favorites" ? "all" : tab,
-      this.catalogSearch.view(),
-    );
+    const filter = tab === "favorites" ? "all" : tab;
+    const results = paletteResults(index, parsed, filter, this.catalogSearch.view());
     const searching = !parsed.isEmpty;
-    let hits = searching ? results.hits : [];
-    if (tab === "favorites") hits = results.hits.filter(isFavorite);
+    const listed = <T extends PaletteHit>(found: ReadonlyArray<T>): ReadonlyArray<T> => {
+      if (tab === "favorites") return found.filter(isFavorite);
+      return searching ? found : [];
+    };
+    const hits = listed(results.hits);
     const shownCounts = new Map<PaletteTab, number>([
       ...results.counts,
       ["favorites", localCount(index, "favorites", parsed, isFavorite)],
@@ -223,6 +224,9 @@ export class PaletteSearch implements IPaletteSearch {
         const chosen = index.defaultItem(items, color);
         return { entry, items, chosen, preview: chosen };
       }),
+      unplaceable: listed(unplaceable.search(parsed, filter)).flatMap(({ entry }) =>
+        skipped.filter((model) => model.item.id === entry.key),
+      ),
       counts: scope === "shared" ? shownCounts : this.perTabCounts(index, shownCounts, isFavorite),
       status: results.status,
       library: tab === "all" ? this.library.view() : null,

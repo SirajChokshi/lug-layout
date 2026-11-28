@@ -93,7 +93,7 @@ export interface CatalogItemView {
 }
 
 export interface SkippedCatalogModel {
-  readonly name: string;
+  readonly item: CatalogItemView;
   readonly reason: string;
 }
 
@@ -412,7 +412,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     void this.loader.prefetchPartConnectors(index.lod).catch(() => undefined);
     return {
       items: this.slots.map((slot) => slot.view),
-      skipped: skipped.map(({ name, reason }) => ({ name, reason })),
+      skipped: skipped.map(({ item, reason }) => ({ item, reason })),
       credits: [
         ...this.slots.flatMap((slot) => (slot.credit ? [slot.credit] : [])),
         ...skipped.map(({ credit }) => credit),
@@ -464,7 +464,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     for (const entry of index.models) {
       if (entry.lattice === null) {
         skipped.push({
-          name: entry.name,
+          item: { ...lazySlot(entry, thumbnails).view, draggable: false },
           reason: NO_LATTICE_REASON,
           credit: { name: entry.name, source: entry.source, sections: entry.sections },
         });

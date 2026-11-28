@@ -168,7 +168,13 @@ import type {
   PlacementMode,
 } from "./placement-hover.ts";
 import { effectivePlacementMode } from "./placement-mode.ts";
-import { failedLoadText, mateCounts, refusalText } from "./placement-hover-view.ts";
+import {
+  MOVE_CLEAR,
+  blockRefusalText,
+  failedLoadText,
+  mateCounts,
+  refusalText,
+} from "./placement-hover-view.ts";
 import { ghostSettles, ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
@@ -243,7 +249,6 @@ import {
   type LatticePoint,
 } from "./group-transform.ts";
 import { groupGhost, type GhostMember } from "./group-ghost.ts";
-import { trackBlockText } from "./track-drag.ts";
 import {
   Selection,
   boxesOf,
@@ -272,6 +277,7 @@ import {
   type NoteToolKind,
 } from "../notes/note-tool.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
+import { placementsBox } from "../plan/placements-box.ts";
 import {
   appendTrackChange,
   appendViewUpdate,
@@ -292,7 +298,7 @@ import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
 import { MeasureTool } from "./measure-tool.ts";
-import { TableTool, type ArmedTable } from "./table-tool.ts";
+import { guideGridAround, TableTool, type ArmedTable } from "./table-tool.ts";
 import {
   FillTool,
   DEFAULT_FILL_GRID_STUDS,
@@ -686,6 +692,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setMeasuring(on: boolean): void;
   setTableTool(on: boolean): void;
   armTableType(typeId: number | null): void;
+  checkLayout(): void;
   setNoteTool(tool: NoteToolKind | null): void;
   finishNote(): void;
   cycleFillGrid(): void;
@@ -749,7 +756,7 @@ function sameLatticePose(a: LatticePose, b: LatticePose): boolean {
 }
 
 function roadOverlapText(placeable: Placeable, overlapping: number): string {
-  return `${placeable.label}'s road would lie in ${overlapping} cells of placed road there, at the same height.`;
+  return `${placeable.label}'s road would lie on ${overlapping} studs of placed road there, at the same height. ${MOVE_CLEAR}`;
 }
 
 type SeatOnRails = "allowed" | "refused";
@@ -773,10 +780,6 @@ interface PlacementCheck {
 
 function railSeatRefusal(placeable: Placeable): string {
   return `${placeable.label} would stand on the rails there. Set it on the rails with a click.`;
-}
-
-function trackRefusal(placeable: Placeable, block: TrackBlockView): string {
-  return `${placeable.label} would ${trackBlockText(block)}.`;
 }
 
 function boxAround(boxes: ReadonlyArray<WorldBox>): WorldBox | null {
@@ -831,7 +834,7 @@ function placementRefusal(
   if (aim?.kind === "refused" || aim?.kind === "waiting") return aim.reason;
   if (aim?.kind === "seat") return seat === "refused" ? railSeatRefusal(placeable) : null;
   if (check.refusal) return check.refusal;
-  return check.trackBlock ? trackRefusal(placeable, check.trackBlock) : null;
+  return check.trackBlock ? blockRefusalText(placeable.label, check.trackBlock) : null;
 }
 
 const MARKER_WIDTH_LDU = 6;
@@ -3847,7 +3850,7 @@ export class Editor implements IEditor, IEditedWorld {
     const { x, z, yPlates, rot } = pose;
     const skipped = skip ?? this.trackSkip(NO_PIECES, exempt);
     const block = this.modelTrackBlock(placeable, x, z, rot, yPlates, skipped);
-    return block === null ? null : trackRefusal(placeable, block);
+    return block === null ? null : blockRefusalText(placeable.label, block);
   }
 
   private modelTrackBlock(
@@ -4311,6 +4314,12 @@ export class Editor implements IEditor, IEditedWorld {
     }
     tables.arm(typeId);
     this.showGuides();
+  }
+
+  checkLayout(): void {
+    const laid = placementsBox(this.plans.placements());
+    if (this.state.status !== "ready" || this.state.readOnly || laid === null) return;
+    this.plans.drawTable(guideGridAround(laid));
   }
 
   private armedTableView(): ArmedTableView | null {
@@ -5674,11 +5683,7 @@ export class Editor implements IEditor, IEditedWorld {
       if (!blocked) continue;
       const label = this.pieceLabel(member);
       const at = { ...latticeCentre(track.pieceBox(member.piece, pose)), rot: 0 };
-      return refusedAt(
-        this.pieceItem(member.piece),
-        at,
-        `${label} would ${trackBlockText(blocked)}.`,
-      );
+      return refusedAt(this.pieceItem(member.piece), at, blockRefusalText(label, blocked));
     }
     return null;
   }
