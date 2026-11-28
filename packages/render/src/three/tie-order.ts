@@ -55,6 +55,10 @@ export class KeyOrderedChildren {
     this.keys.length = 0;
   }
 
+  show(shown: boolean): void {
+    this.group.visible = shown;
+  }
+
   private firstIndexAtLeast(key: number): number {
     let low = 0;
     let high = this.keys.length;

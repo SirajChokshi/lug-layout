@@ -31,6 +31,7 @@ import { ColorTable } from "../scene/viewer-scene.ts";
 import { partPlaceable, type Placeable } from "./placeable.ts";
 import { PlacedChunks } from "./placed-chunks.ts";
 import { TrackDrawing } from "./track-drawing.ts";
+import { RecordingPlanScene } from "./plan-scene.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const GROUND_PARTS = ["ldraw:3811", "ldraw:30225b"];
@@ -102,7 +103,7 @@ function withRegions(plans: PlanService): PlanService {
 class Sequence {
   readonly next: () => number;
   readonly history = new EditHistory(new World());
-  readonly placed = new PlacedChunks(new RecordingBackend());
+  readonly placed = new PlacedChunks(new RecordingBackend(), new RecordingPlanScene());
   readonly drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   readonly plansBackend = new RecordingBackend();
   readonly plans = withRegions(new PlanService(this.plansBackend));

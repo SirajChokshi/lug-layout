@@ -482,6 +482,13 @@ export type {
   IBomSource,
   OwnVsBuyReport,
 } from "./bom/bom-service.ts";
+export { SHOPPING_SECTION_LABEL } from "./bom/shopping-list.ts";
+export type {
+  ShoppingGroup,
+  ShoppingLine,
+  ShoppingList,
+  ShoppingSection,
+} from "./bom/shopping-list.ts";
 export type { IOwnedParts, OwnedPartsView, TextFile } from "./bom/owned-parts-service.ts";
 export type {
   CatalogBom,

@@ -43,6 +43,7 @@ import {
   footprintOutline,
   regionHolds,
   outlineContains,
+  trackInsertions,
   placedOutline,
   placedOutlineInto,
   studlessTopBlocker,
@@ -52,7 +53,6 @@ import {
   type TrackClearance,
   type MoveFrame,
   type OutlineRing,
-  type BomCounter,
   type PartSink,
   type DrawingKit,
   type EndGap,
@@ -432,6 +432,7 @@ export interface PieceSnap {
   readonly end: number | null;
   readonly joins: number;
   readonly misses: ReadonlyArray<number>;
+  readonly replaces: ReadonlySet<number>;
 }
 
 export interface SwitchThrow {
@@ -512,6 +513,14 @@ interface Placed {
   readonly placement: Pose16;
   readonly yPlates: number;
   readonly rise: number;
+}
+
+interface FreedEnds {
+  readonly graph: TrackGraph;
+  readonly moving: ReadonlySet<number>;
+  readonly poses: ReadonlyArray<Pose16>;
+  readonly plates: ReadonlyArray<number>;
+  readonly owners: ReadonlyArray<number>;
 }
 
 function sameStuds(ax: number, az: number, bx: number, bz: number): boolean {
@@ -707,6 +716,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
   private openList: TrackEnd[] = [];
   private support: TrackSupport | null = null;
   private readonly skipped = new Map<DragField, SkippedIds>();
+  private freed: FreedEnds | null = null;
   private readonly bands: TrackBands;
   private framed: Array<Float64Array | null> = [];
   private pieceBands: ReadonlyArray<readonly [number, number]> = [];
@@ -1034,18 +1044,16 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return count;
   }
 
-  countParts(counter: BomCounter, region: PlacementRegion | null): number {
-    let counted = 0;
+  piecesIn(region: PlacementRegion | null): number[] {
+    const pieces: number[] = [];
     for (let p = 0; p < this.layout.count; p++) {
-      const placed = this.placedAt(p);
       if (region !== null) {
-        const origin = partCentre(placed);
+        const origin = partCentre(this.placedAt(p));
         if (!regionHolds(region, origin.x, origin.z)) continue;
       }
-      this.countPiece(counter, p);
-      counted++;
+      pieces.push(p);
     }
-    return counted;
+    return pieces;
   }
 
   countPiece(counter: PartSink, placement: number): void {
@@ -1476,8 +1484,39 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         const owner = field.pieceOwner(placed);
         if (!joined.includes(owner)) joined.push(owner);
       }
+      if (moving.size === 0) continue;
+      const freed = this.freedEnds(moving);
+      for (let index = 0; index < freed.owners.length; index++) {
+        const open = freed.poses[index];
+        if (!open || freed.plates[index] !== plates || !posesJoin16(open, end)) continue;
+        const owner = field.pieceOwner(freed.owners[index]);
+        if (!joined.includes(owner)) joined.push(owner);
+      }
     }
     return joined;
+  }
+
+  private freedEnds(moving: ReadonlySet<number>): FreedEnds {
+    const graph = this.graph;
+    const cached = this.freed;
+    if (cached?.graph === graph && cached.moving === moving) return cached;
+    const poses: Pose16[] = [];
+    const plates: number[] = [];
+    const owners: number[] = [];
+    for (const placement of moving) {
+      const last = graph.endStart[placement + 1] ?? 0;
+      for (let end = graph.endStart[placement] ?? 0; end < last; end++) {
+        const partner = graph.endPartner[end] ?? NO_END;
+        if (partner === NO_END || graph.endFrame[partner] !== WORLD_TRACK_FRAME.id) continue;
+        const owner = graph.endPlacement[partner] ?? 0;
+        if (moving.has(owner)) continue;
+        poses.push(this.combined.connectorPose(owner, graph.endConnector[partner] ?? 0));
+        plates.push(graph.endYPlates[partner] ?? 0);
+        owners.push(owner);
+      }
+    }
+    this.freed = { graph, moving, poses, plates, owners };
+    return this.freed;
   }
 
   private skippedIds(
@@ -2291,6 +2330,8 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     const local = connectors[held];
     if (!local) throw new RangeError(`${part.piece.id} has no connector ${connector}`);
     const target = end === NO_END ? undefined : this.ends[end];
+    const insertion = target ? null : this.insertionAt(part, connector, latticeX, latticeZ);
+    if (insertion) return insertion;
     const placement = target
       ? attachPose16(local, target)
       : freePlacement(part.def, held, latticePose(latticeX, latticeZ, heading));
@@ -2327,7 +2368,53 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       end: target ? end : null,
       joins,
       misses: this.stableMisses(misses),
+      replaces: NO_PLACEMENTS,
     };
+  }
+
+  private insertionAt(part: KitPart, choice: number, xLdu: number, zLdu: number): PieceSnap | null {
+    const through = this.laidPieceAt(xLdu, zLdu, this.heightPlates);
+    if (through === null) return null;
+    const ranked = trackInsertions(
+      this.graph,
+      this.combined,
+      this.layout.count,
+      through,
+      part.catalogIndex,
+    )
+      .map((insertion) => {
+        const { placement, yPlates } = insertion;
+        const centre = partCentre({ part, placement, yPlates, rise: 0 });
+        return { insertion, distance: planeHypot(centre.x - xLdu, centre.z - zLdu) };
+      })
+      .toSorted((a, b) => a.distance - b.distance);
+    if (ranked.length === 0) return null;
+    const chosen = ranked[normalizeConnector(choice, ranked.length)]?.insertion;
+    if (!chosen) return null;
+    const { placement, yPlates, joins, replaces } = chosen;
+    return { placement, yPlates, end: null, joins, misses: NO_MISSES, replaces };
+  }
+
+  private laidPieceAt(xLdu: number, zLdu: number, yPlates: number): number | null {
+    const boxes = this.pieceBoxes;
+    let best: number | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let p = 0; p < this.layout.count; p++) {
+      if (this.layout.yPlates(p) !== yPlates) continue;
+      const at = p * PIECE_BOX_FLOATS;
+      if (xLdu < (boxes[at] ?? 0) || xLdu > (boxes[at + 3] ?? 0)) continue;
+      if (zLdu < (boxes[at + 2] ?? 0) || zLdu > (boxes[at + 5] ?? 0)) continue;
+      const placed = this.placedAt(p);
+      if (!outlineContains(placedOutline(placed.part.outline, placed.placement), xLdu, zLdu))
+        continue;
+      const centre = partCentre(placed);
+      const distance = planeHypot(centre.x - xLdu, centre.z - zLdu);
+      if (distance < bestDistance) {
+        best = p;
+        bestDistance = distance;
+      }
+    }
+    return best;
   }
 
   private stableMisses(misses: number[]): ReadonlyArray<number> {
@@ -2384,8 +2471,15 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return ghost;
   }
 
-  pieceChange(catalogIndex: number, placement: Pose16, yPlates: number): TrackChange {
-    return this.appended([{ part: this.pieceByIndex(catalogIndex), placement, yPlates, rise: 0 }]);
+  pieceChange(
+    catalogIndex: number,
+    placement: Pose16,
+    yPlates: number,
+    replaces: ReadonlySet<number> = NO_PLACEMENTS,
+  ): TrackChange {
+    const lift = [...replaces].map((p) => this.laidPiece(p));
+    const index = this.layout.count - lift.length;
+    return { lift, lay: [{ index, piece: catalogIndex, pose: placement, yPlates, rise: 0 }] };
   }
 
   switchAt(xLdu: number, zLdu: number): number | null {

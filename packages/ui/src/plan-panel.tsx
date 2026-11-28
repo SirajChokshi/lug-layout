@@ -733,16 +733,17 @@ function isCheckedRule(rule: string): rule is CheckedRule {
 
 const CHECKED_RULES: ReadonlyArray<CheckedRule> = Object.keys(PLAN_CHECKS).filter(isCheckedRule);
 
-const NO_ISSUES: IssueTally = { errors: 0, warnings: 0 };
+const NO_ISSUES: ReadonlyArray<PlanIssue> = [];
 
-function talliesByRule(issues: ReadonlyArray<PlanIssue>): ReadonlyMap<PlanRuleId, IssueTally> {
-  const byRule = new Map<PlanRuleId, IssueTally>();
-  for (const issue of issues) {
-    const { errors, warnings } = byRule.get(issue.rule) ?? NO_ISSUES;
-    const warning = issue.severity === "warning" ? 1 : 0;
-    byRule.set(issue.rule, { errors: errors + 1 - warning, warnings: warnings + warning });
-  }
-  return byRule;
+type IssuesByRule = ReadonlyMap<PlanRuleId, ReadonlyArray<PlanIssue>>;
+
+function failingFirst(byRule: IssuesByRule): ReadonlyArray<CheckedRule> {
+  const rank = (rule: CheckedRule): number => {
+    const { errors, warnings } = tallyOf(byRule.get(rule) ?? NO_ISSUES);
+    if (errors > 0) return 0;
+    return warnings > 0 ? 1 : 2;
+  };
+  return CHECKED_RULES.toSorted((a, b) => rank(a) - rank(b));
 }
 
 function verdictText(plans: IPlanService, planId: string, tally: IssueTally): string {
@@ -751,12 +752,57 @@ function verdictText(plans: IPlanService, planId: string, tally: IssueTally): st
   return tallyText(tally);
 }
 
-function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly planId: string }) {
+function IssueRows({
+  issues,
+  onShow,
+}: {
+  readonly issues: ReadonlyArray<PlanIssue>;
+  readonly onShow: (issue: PlanIssue) => void;
+}) {
+  if (issues.length === 0) return null;
+  return (
+    <ul className="plan-issues">
+      {issues.map((issue, i) => (
+        <li key={i} data-rule={issue.rule} data-severity={issue.severity}>
+          {issue.placements.length === 0 ? (
+            <span className="plan-issue">{issue.message}</span>
+          ) : (
+            <button
+              type="button"
+              className="plan-issue"
+              title="Select its parts and frame them"
+              onClick={() => onShow(issue)}
+            >
+              {issue.message}
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PlanChecks({
+  camera,
+  editor,
+  plans,
+  planId,
+}: {
+  readonly camera: IEditorCamera;
+  readonly editor: IEditor;
+  readonly plans: IPlanService;
+  readonly planId: string;
+}) {
   const issues = plans.issues(planId);
   const tally = tallyOf(issues);
   const unmeasured = plans.unmeasuredCount(planId);
   const customParts = plans.customParts(planId);
-  const byRule = talliesByRule(issues);
+  const byRule: IssuesByRule = Map.groupBy(issues, (issue) => issue.rule);
+  const show = (issue: PlanIssue): void => {
+    editor.selectPlacements(issue.placements);
+    const selection = editor.snapshot().selection;
+    if (selection) camera.focus(selection.box);
+  };
   return (
     <section className="plan-section" aria-label="Plan issues">
       <h3>
@@ -769,9 +815,11 @@ function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly 
           {verdictText(plans, planId, tally)}
         </span>
       </h3>
+      <IssueRows issues={byRule.get("unchecked") ?? NO_ISSUES} onShow={show} />
       <ul className="plan-checks">
-        {CHECKED_RULES.map((rule) => {
-          const counts = byRule.get(rule) ?? NO_ISSUES;
+        {failingFirst(byRule).map((rule) => {
+          const ruleIssues = byRule.get(rule) ?? NO_ISSUES;
+          const counts = tallyOf(ruleIssues);
           return (
             <li
               key={rule}
@@ -780,6 +828,7 @@ function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly 
               data-check-warnings={counts.warnings}
             >
               <span className={tallyClass(counts)}>{tallyText(counts)}</span> {PLAN_CHECKS[rule]}
+              <IssueRows issues={ruleIssues} onShow={show} />
             </li>
           );
         })}
@@ -797,13 +846,6 @@ function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly 
           yet: their connector records or part mappings are loading or didn't load.
         </p>
       )}
-      <ul className="plan-issues">
-        {issues.map((issue, i) => (
-          <li key={i} data-rule={issue.rule} data-severity={issue.severity}>
-            {issue.message}
-          </li>
-        ))}
-      </ul>
       <details className="plan-unchecked">
         <summary>Not checked yet ({UNCHECKED_PLAN_RULES.length})</summary>
         <ul>
@@ -913,7 +955,7 @@ function ActivePlan({
         <ObstaclesEditor plan={plan} plans={plans} />
       </PlanEdits>
       <PrintSheets editor={editor} sheets={sheets} sheetSets={sheetSets} plan={plan} />
-      <PlanChecks plans={plans} planId={plan.id} />
+      <PlanChecks camera={camera} editor={editor} plans={plans} planId={plan.id} />
     </>
   );
 }

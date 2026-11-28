@@ -6,6 +6,7 @@ import { ColorTable } from "../scene/viewer-scene.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
+import { RecordingPlanScene } from "./plan-scene.test-support.ts";
 
 const TILE_LDU = 640;
 const HALF_TILE_LDU = TILE_LDU / 2;
@@ -161,7 +162,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
     const current = [...placeables];
     const placeableOf = (refId: number) => current[refId] as Placeable;
     const recorder = new ChunkRecorder();
-    const chunks = new PlacedChunks(recorder);
+    const chunks = new PlacedChunks(recorder, new RecordingPlanScene());
     const live: KillableHandle[] = [];
     let slot = 0;
     for (let step = 0; step < STEPS; step++) {
@@ -242,7 +243,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
         );
       }
       const freshRecorder = new ChunkRecorder();
-      const fresh = new PlacedChunks(freshRecorder);
+      const fresh = new PlacedChunks(freshRecorder, new RecordingPlanScene());
       fresh.addAll(
         live.map((handle) => ({
           placement: { handle },
@@ -268,7 +269,7 @@ it("finds the highest part top over a point, the parts meeting a plan rectangle 
     await fixtureModelPlaceable("switch-then-reversed-curve"),
     await fixtureModelPlaceable(ROAD_PLATES),
   ];
-  const chunks = new PlacedChunks(new ChunkRecorder());
+  const chunks = new PlacedChunks(new ChunkRecorder(), new RecordingPlanScene());
   const handles = placeables.flatMap((_, refId) =>
     [0, 1, 2, 3].map((rot) =>
       placementHandle(refId * 4 + rot, refId, 700 * rot - 1020, 900 * refId + 340, rot, rot),

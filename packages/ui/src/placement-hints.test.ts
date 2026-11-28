@@ -63,6 +63,7 @@ const REFUSED: PlacementHover = {
   joints: 0,
   lifted: false,
   restsOn: [],
+  lifts: [],
   turnBlocksSnap: false,
   turnMates: [],
   turnJoints: 0,

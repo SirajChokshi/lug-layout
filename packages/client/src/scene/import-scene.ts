@@ -258,7 +258,14 @@ export class ImportScene implements IImportScene {
       const module = this.modules[refId];
       return module ? importUncounted(module.result, count) : [];
     });
-    return { name: IMPORTED_WORLD_NAME, lod: this.lod, placements, counter, uncounted };
+    return {
+      name: IMPORTED_WORLD_NAME,
+      lod: this.lod,
+      placements,
+      counter,
+      uncounted,
+      shopping: null,
+    };
   }
 
   private show(bundle: PartBundle, latest: ImportResult): SceneSummary {

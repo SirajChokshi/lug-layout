@@ -151,6 +151,7 @@ import {
 import { InThreadSim } from "../sim/in-thread-sim.test-support.ts";
 import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/domain";
 import type { BomScope } from "../bom/bom-service.ts";
+import type { ShoppingGroup } from "../bom/shopping-list.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { chainedPoses, instancesAt } from "../connect/track-instances.test-support.ts";
@@ -2207,6 +2208,85 @@ it.each([
   },
   120_000,
 );
+
+function shoppingLines(groups: ReadonlyArray<ShoppingGroup> | undefined) {
+  return groups?.map(({ section, lines }) => [
+    section,
+    lines.map(({ label, quantity, partsEach }) => [label, quantity, partsEach]),
+  ]);
+}
+
+function shoppedParts(groups: ReadonlyArray<ShoppingGroup> | undefined): number {
+  const lines = groups?.flatMap((group) => group.lines) ?? [];
+  return lines.reduce((sum, line) => sum + line.quantity * line.partsEach, 0);
+}
+
+it("lists a layout for a shopper by what each placement is, from its parts and where it came from: track by piece, baseplates and road plates by part and colour however they were placed, a set as one set, the user's own model as theirs and a single part as a loose part, and shows the set as its parts on request, counting every part once either way", async () => {
+  const set = `omr:${PLACEABLE_SET}`;
+  const { editor, backend, container } = await startImportingEditor(undefined, [PLACEABLE_SET]);
+  const place = placer(editor, backend);
+  const ownBaseplate = await importUserFile(
+    editor,
+    "my-baseplate.ldr",
+    userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]),
+  );
+  const cottage = await importUserFile(
+    editor,
+    "my-cottage.ldr",
+    new TextEncoder().encode(MY_COTTAGE),
+  );
+  const brick = await importUserFile(
+    editor,
+    "my-brick.ldr",
+    userRoadFile("my-brick.ldr", ["1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat"]),
+  );
+  await place(BASEPLATE, 0, 0);
+  await place(ownBaseplate, 960, 320);
+  await place(ROAD_STRAIGHT, 0, -1280);
+  await place(set, 3_200, 0);
+  await place(cottage, -1280, 1280);
+  await place(brick, -1600, -1600);
+  editor.chooseItem(null);
+  trackDrawer(editor, backend)([-480, -2560], [480, -2560]);
+  editor.chooseItem(null);
+  const setParts = editor.snapshot().catalog.find((item) => item.id === set)?.parts;
+
+  const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, { kind: "world" });
+
+  const laidRun = ["74746 Train Track 9V Straight, Dark Bluish Grey", 3, 1];
+  const baseplates = ["baseplates", [["3811 Baseplate 32 x 32, Green", 2, 1]]];
+  const road = [
+    "road",
+    [
+      [
+        "44336p04 Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern, Dark Bluish Grey",
+        1,
+        1,
+      ],
+    ],
+  ];
+  const models = ["models", [["my-cottage.ldr", 1, 11]]];
+  expect(editor.snapshot().placements).toBe(6);
+  expect(shoppingLines(bom.shopping?.asSets)).toEqual([
+    ["track", [laidRun]],
+    baseplates,
+    road,
+    ["sets", [["7936-1 Level Crossing (2010)", 1, setParts]]],
+    models,
+    ["parts", [["3001 Brick 2 x 4, Red", 1, 1]]],
+  ]);
+  expect(shoppingLines(bom.shopping?.asParts)?.slice(0, -1)).toEqual([
+    ["track", [["53401 Train Track 6 Studs Wide Straight, Dark Bluish Grey", 4, 1], laidRun]],
+    baseplates,
+    road,
+    models,
+  ]);
+  expect(bom.shopping?.asParts.at(-1)?.section).toBe("parts");
+  expect({
+    asSets: shoppedParts(bom.shopping?.asSets),
+    asParts: shoppedParts(bom.shopping?.asParts),
+  }).toEqual({ asSets: bom.parts, asParts: bom.parts });
+}, 120_000);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
   const { editor, manifest } = await startEditor();
@@ -4572,6 +4652,10 @@ it("keeps an imported train's bake and train model through its stud check, and a
   if (!checked) throw new Error("the import left the catalog");
 
   expect(checked).not.toBe(pending);
+  expect({ pending: pending.glyph, checked: checked.glyph }).toEqual({
+    pending: null,
+    checked: glyph,
+  });
   expect(whileChecking.train).not.toBeNull();
   expect(whileChecking.bake?.glyph).toBeUndefined();
   expect({ bake: catalog.baked(checked), train: catalog.playModel(checked) }).toEqual({
@@ -5059,6 +5143,12 @@ const OVERLAP_REFUSED = {
     ),
   },
 };
+const LIFTS_THE_3811 = {
+  outcome: { placements: 1, refusedClicks: 0, reason: null },
+  ghostRefusal: null,
+  ghostTone: "fits",
+  hint: { tone: "place", detail: "Magnetic · 0° · Click: lift the 1 plate under it" },
+};
 const PLACED_BESIDE = {
   outcome: { placements: 2, refusedClicks: 0, reason: null },
   ghostRefusal: null,
@@ -5091,12 +5181,12 @@ it.each([
     name: "a MILS module over a 3811",
     held: PLAIN_MODULE,
     at: [320, 320],
-    expected: OVERLAP_REFUSED,
+    expected: LIFTS_THE_3811,
   },
   { name: "a 3811 flush beside the first", held: BASEPLATE, at: [640, 0], expected: PLACED_BESIDE },
   { name: "a set on the 3811", held: SET, at: [0, 0], expected: SEATED_ON_STUDS },
 ] as const)(
-  "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits, and the ghost and tool hint say so before the click",
+  "with a bare 3811 placed, $name is refused where it would overlap the 3811, naming the part it hits, unless it rises above its own plates in the 3811's place and so lifts the 3811, and the ghost and tool hint say which before the click",
   async ({ held, at, expected }) => {
     const { editor, backend, catalog, frame } = await startEditor([
       PLAIN_MODULE_MODEL,
@@ -5273,44 +5363,174 @@ it("claims nothing while an assist search is unsettled, though precise's provisi
   }
 }, 240_000);
 
+async function heldOverA3811(model: string, userModels: ReadonlyArray<string>) {
+  const { editor, backend, catalog } = await startEditor(
+    [model],
+    new BundleDirectoryFetcher(),
+    userModels,
+  );
+  const held = `omr:${model}`;
+  await loadCatalogItem(catalog, held);
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  return { editor, held, place };
+}
+
+it("a user's model of a 3811 beside a road baseplate, plates with nothing on them, lies in the baseplate layer: refused across a 3811 and taken flush beside it", async () => {
+  const { editor, held, place } = await heldOverA3811("baseplate-row", ["baseplate-row"]);
+  const across = await place(held, 0, 0);
+  const beside = await place(held, 640, 0);
+
+  expect({ across, placements: beside.placements, poses: posesOf(editor) }).toEqual({
+    across: OVERLAP_REFUSED.outcome,
+    placements: 2,
+    poses: [`${BASEPLATE} 0,0 y0`, `${held} 640,0 y0`],
+  });
+}, 120_000);
+
 it.each([
-  {
-    name: "a set built on its own baseplates, 10185-1",
-    model: "10185-1",
-    userModels: [],
-    besideX: 640,
-  },
+  { name: "a set built on its own baseplates, 10185-1", model: "10185-1", besideX: 640 },
   {
     name: "10190-1, its one-stud overhang and tilted hinge reaching over the 3811 from beside it,",
     model: "10190-1",
-    userModels: [],
     besideX: -640,
   },
-  {
-    name: "a user's model of a 3811 beside a road baseplate",
-    model: "baseplate-row",
-    userModels: ["baseplate-row"],
-    besideX: 640,
-  },
 ] as const)(
-  "$name lies in the baseplate layer: refused across a 3811 and taken flush beside it",
-  async ({ model, userModels, besideX }) => {
-    const { editor, backend, catalog } = await startEditor(
-      [model],
-      new BundleDirectoryFetcher(),
-      userModels,
-    );
-    const held = `omr:${model}`;
-    await loadCatalogItem(catalog, held);
-    const place = placer(editor, backend);
-    await place(BASEPLATE, 0, 0);
+  "$name lies in the baseplate layer: across a bare 3811 it lifts the 3811 in one undo step, and it is taken flush beside it",
+  async ({ model, besideX }) => {
+    const { editor, held, place } = await heldOverA3811(model, []);
     const across = await place(held, 0, 0);
+    const acrossPoses = posesOf(editor);
+    editor.undo(0);
+    const undone = posesOf(editor);
     const beside = await place(held, besideX, 0);
 
-    expect({ across, placements: beside.placements, poses: posesOf(editor) }).toEqual({
-      across: OVERLAP_REFUSED.outcome,
+    expect({
+      across,
+      acrossPoses,
+      undone,
+      placements: beside.placements,
+      poses: posesOf(editor),
+    }).toEqual({
+      across: LIFTS_THE_3811.outcome,
+      acrossPoses: [`${held} 0,0 y0`],
+      undone: [`${BASEPLATE} 0,0 y0`],
       placements: 2,
       poses: [`${BASEPLATE} 0,0 y0`, `${held} ${besideX},0 y0`],
+    });
+  },
+  120_000,
+);
+
+const MY_MODULE_FILE = "my-module.ldr";
+
+function myModuleOnItsOwnBaseplate(): Uint8Array {
+  return new TextEncoder().encode(
+    [
+      "0 My module on its own baseplate",
+      `0 Name: ${MY_MODULE_FILE}`,
+      "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3867.dat",
+      "1 15 -40 -24 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 15 40 -24 60 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 4 40 -48 60 1 0 0 0 1 0 0 0 1 3001.dat",
+      "",
+    ].join("\n"),
+  );
+}
+
+const TABLE_QUARTERS = [
+  [-320, -320],
+  [320, -320],
+  [-320, 320],
+  [320, 320],
+] as const;
+
+const PLATE_HIT = `${OVERLAP} Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32`;
+
+async function myModuleOverFourPlates() {
+  const started = await startEditor(
+    [USER_BRICK],
+    new BundleDirectoryFetcher(),
+    [USER_BRICK],
+    (bound) =>
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER))),
+  );
+  const { editor, backend, catalog, frame } = started;
+  const module = await importUserFile(editor, MY_MODULE_FILE, myModuleOnItsOwnBaseplate());
+  await loadCatalogItem(catalog, HELD_BRICK);
+  const place = placer(editor, backend);
+  for (const [x, z] of TABLE_QUARTERS) await place(BASEPLATE, x, z);
+  const hintAtCentre = async () => {
+    await chosen(editor, module);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+    await settledHover(editor, frame);
+    return toolHints(editor.snapshot()).detail;
+  };
+  return { ...started, module, place, hintAtCentre };
+}
+
+type ModuleTable = Awaited<ReturnType<typeof myModuleOverFourPlates>>;
+
+it("my own module on its own baseplate, an .ldr of official parts, lifts the 4 bare plates it would sit in as one undo step, and a plate held over it is refused", async () => {
+  const { editor, module, place, hintAtCentre } = await myModuleOverFourPlates();
+  const table = posesOf(editor);
+  const offered = await hintAtCentre();
+  const lifted = await place(module, 0, 0);
+  const settled = editor.snapshot().ghostSettled;
+  const placed = posesOf(editor);
+  const plateOverIt = await place(BASEPLATE, 0, 0);
+  editor.undo(0);
+
+  expect({ offered, lifted, settled, placed, plateOverIt, undone: posesOf(editor) }).toEqual({
+    offered: "Magnetic · 0° · Click: lift the 4 plates under it",
+    lifted: { placements: 1, refusedClicks: 0, reason: null },
+    settled: true,
+    placed: [`${module} 0,0 y0`],
+    plateOverIt: {
+      placements: 1,
+      refusedClicks: 1,
+      reason: expect.stringContaining(`${OVERLAP} Baseplate 16 x 16's bounds in ${MY_MODULE_FILE}`),
+    },
+    undone: table,
+  });
+}, 120_000);
+
+it.each([
+  {
+    what: "a brick bridging to a fifth plate, which would still hold it",
+    stand: async ({ place }: ModuleTable) => {
+      await place(BASEPLATE, 960, 320);
+      await place(HELD_BRICK, 640, 320);
+    },
+  },
+  {
+    what: "a 9V straight",
+    stand: async ({ editor, backend }: ModuleTable) => {
+      editor.chooseItem(TRACK_ITEM_ID);
+      dragTrack(editor, backend, [320, 480], [640, 480]);
+    },
+  },
+])(
+  "my own module isn't offered the plates under it while $what stands on one of them, and is refused naming the plate it hits",
+  async ({ stand }) => {
+    const table = await myModuleOverFourPlates();
+    await stand(table);
+    const { editor, module, place, hintAtCentre } = table;
+    const before = { ...layoutState(editor), undoDepth: editor.snapshot().history.undoDepth };
+    const hint = await hintAtCentre();
+    const refused = await place(module, 0, 0);
+
+    expect({
+      hint,
+      refusal: refused.reason,
+      after: { ...layoutState(editor), undoDepth: editor.snapshot().history.undoDepth },
+    }).toEqual({
+      hint: expect.stringContaining(PLATE_HIT),
+      refusal: expect.stringContaining(PLATE_HIT),
+      after: before,
     });
   },
   120_000,
@@ -9559,7 +9779,9 @@ function alongQuarterTurn(
 }
 
 async function runsOffUsersSwitch() {
-  const started = await startEditor([], new BundleDirectoryFetcher(), [USER_TRACK]);
+  const started = await startEditor([LOCOMOTIVE.slice(4)], new BundleDirectoryFetcher(), [
+    USER_TRACK,
+  ]);
   const { editor, backend, catalog } = started;
   const carrier = `omr:${USER_TRACK}`;
   await loadCatalogItem(catalog, carrier);
@@ -9746,6 +9968,44 @@ it("lays a switch clicked in the library on the end drawn from a user's own trac
   expect(third).toMatchObject({
     ref: first?.ref,
     heading: ((first?.heading ?? 0) + ZETA16_ORDER / 2) % ZETA16_ORDER,
+  });
+}, 120_000);
+
+it("drops a held switch into the straights laid off a user's own track model in place of two of them, still joined to the model's track, as one undo step, and never lifts the model's own track or track a train stands on", async () => {
+  const { editor, backend, catalog, at } = await runsOffUsersSwitch();
+  const laid = editor.dump().laidTrack;
+  const ends = editor.dump().trackEnds;
+  const refusedBefore = editor.snapshot().refusedClicks;
+
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(...at.west);
+  editor.pointerMove(0, 0);
+  const hud = toolHints(editor.snapshot());
+  editor.click(0, 0, 0);
+  const dropped = {
+    pieces: editor.dump().laidTrack.length,
+    ends: editor.dump().trackEnds.length,
+    undo: editor.snapshot().history.undoLabel,
+  };
+  editor.undo(0);
+  const undone = { laid: editor.dump().laidTrack, ends: editor.dump().trackEnds };
+  const onModel = holdAndClick(editor, backend, RIGHT_SWITCH, at.carrier);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(LOCOMOTIVE, 0, at.apart[1]);
+  const underTrain = holdAndClick(editor, backend, RIGHT_SWITCH, at.apart);
+
+  expect(hud.detail).toBe("goes in place of 2 pieces exactly");
+  expect(dropped).toEqual({
+    pieces: laid.length - 1,
+    ends: ends.length + 1,
+    undo: "lay 1 piece in place of 2",
+  });
+  expect(undone).toEqual({ laid, ends });
+  expect(onModel).toMatchObject({ refusedClicks: refusedBefore + 1, pieces: laid.length });
+  expect(underTrain).toEqual({
+    refusedClicks: refusedBefore + 2,
+    reason: expect.stringContaining(`would run into ${LOCOMOTIVE_LABEL}.`),
+    pieces: laid.length,
   });
 }, 120_000);
 

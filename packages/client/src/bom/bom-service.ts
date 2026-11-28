@@ -19,6 +19,7 @@ import {
   type UnknownOwnedPart,
 } from "@brr/domain";
 import { inject, injectable } from "inversify";
+import type { ShoppingList } from "./shopping-list.ts";
 
 export type BomScope =
   | { readonly kind: "world" }
@@ -49,6 +50,7 @@ export interface BomInput {
   readonly placements: number;
   readonly counter: BomCounter;
   readonly uncounted: ReadonlyArray<UncountedItem>;
+  readonly shopping: ShoppingList | null;
 }
 
 function countedColors(
@@ -109,6 +111,7 @@ export interface BillOfMaterials {
   readonly rebrickable: CatalogBom;
   readonly bricklink: CatalogBom;
   readonly files: BomFiles;
+  readonly shopping: ShoppingList | null;
 }
 
 export interface OwnVsBuyReport {
@@ -173,6 +176,7 @@ export class BomService implements IBomService {
       parts: input.counter.total(),
       ldraw,
       uncounted: input.uncounted,
+      shopping: input.shopping,
       ...catalogViews(resolveLines(ldraw, crosswalk), input.uncounted, crosswalk, disclaimer),
     };
   }

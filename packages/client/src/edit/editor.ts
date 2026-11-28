@@ -1,4 +1,4 @@
-import type { BundleLod } from "@brr/schema/bundle";
+import type { BundleColor, BundleLod } from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
@@ -13,6 +13,7 @@ import {
   EditHistory,
   NO_ROW,
   PlanDelta,
+  placementKeyText,
   RoadFit,
   World,
   addShards,
@@ -35,6 +36,7 @@ import {
   type PlanChange,
   type PlanState,
   type PlacementHandle,
+  type PlacementKey,
   type PlacementContents,
   type PlacementPose,
   type PlacementRegion,
@@ -71,6 +73,7 @@ import {
   planeHypot,
 } from "@brr/math";
 import {
+  PLAN_SCENE_BACKEND,
   PROJECTION_FLOATS,
   RAY_FLOATS,
   SCENE_BACKEND,
@@ -80,6 +83,7 @@ import {
   type GhostVerdict,
   type GraphicsApi,
   type ChunkInstances,
+  type IPlanSceneBackend,
   type LookSettings,
   type ISceneBackend,
   type WorldBox,
@@ -102,6 +106,7 @@ import {
   type BomScope,
   type IBomSource,
 } from "../bom/bom-service.ts";
+import { ShoppingListBuilder, type ShoppingList } from "../bom/shopping-list.ts";
 import type { IPlanSheetSource, PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
@@ -638,6 +643,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   click(ndcX: number, ndcY: number, eventTimeMs: number): void;
   toggleSelected(ndcX: number, ndcY: number): void;
   selectTrackPath(ndcX: number, ndcY: number, scope: TrackPathScope): boolean;
+  selectPlacements(keys: ReadonlyArray<PlacementKey>): void;
   selectDragStart(ndcX: number, ndcY: number, additive: boolean): SelectDragKind | null;
   selectDragMove(ndcX: number, ndcY: number): void;
   selectDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
@@ -747,6 +753,15 @@ function roadOverlapText(placeable: Placeable, overlapping: number): string {
 }
 
 type SeatOnRails = "allowed" | "refused";
+
+interface BomContents extends PlacementContents {
+  addPiece(placement: number): void;
+}
+
+interface ScopedBom {
+  readonly name: string;
+  readonly placements: number;
+}
 
 interface PlacementCheck {
   aim: RailAim | null;
@@ -1058,6 +1073,7 @@ class RoadSnapQuery {
 }
 const WHOLE_GROUP_COMPONENT = 0;
 const NO_PIECES: ReadonlyArray<PieceMember> = [];
+const NO_LIFTED: ReadonlyArray<PlacedModel> = [];
 const NOTHING_DRAWN = "nothing in the file is drawn";
 const WORLD_FRAME: PlacementPose = { refId: -1, colorId: -1, x: 0, z: 0, yPlates: 0, rot: 0 };
 const PASTE_REFUSED = "Can't paste here.";
@@ -1077,6 +1093,22 @@ function poseOf(model: PlacedModel): PlacementPose {
     yPlates: handle.yPlates,
     rot: handle.rot,
   };
+}
+
+function partTopsLdu(boxes: Float32Array): readonly [number, number] {
+  let lowest = Number.POSITIVE_INFINITY;
+  let highest = Number.NEGATIVE_INFINITY;
+  for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+    const top = boxes[b + 4] ?? 0;
+    lowest = Math.min(lowest, top);
+    highest = Math.max(highest, top);
+  }
+  return [lowest, highest];
+}
+
+function liesUnder(model: PlacedModel, topLdu: number): boolean {
+  const [, highest] = partTopsLdu(model.placeable.partBoxes);
+  return model.handle.yPlates * PLATE_LDU + highest <= topLdu;
 }
 
 interface LayoutPiece {
@@ -1213,8 +1245,10 @@ function editLabel(edit: EditSummary | null): string | null {
       return `road stroke (${counted(edit.placements, "plate", "plates")})`;
     case "fill":
       return `fill (${counted(edit.placements, "placement", "placements")})`;
-    case "lay-track":
-      return `lay ${counted(edit.pieces, "piece", "pieces")}`;
+    case "lay-track": {
+      const laid = `lay ${counted(edit.pieces, "piece", "pieces")}`;
+      return edit.lifted === 0 ? laid : `${laid} in place of ${edit.lifted}`;
+    }
     case "throw-switch":
       return "throw switch";
     case "plan":
@@ -1399,7 +1433,7 @@ export class Editor implements IEditor, IEditedWorld {
     trackBlock: null,
   };
   private catalogItems: ReadonlyArray<CatalogItemView> = [];
-  private bundleColorCodes: ReadonlyArray<number> | null = null;
+  private bundleColors: ReadonlyArray<BundleColor> | null = null;
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private activeRefId = -1;
@@ -1428,6 +1462,9 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly tilePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
   private readonly tileChoice = placementChoice();
   private readonly groupChoice = placementChoice();
+  private readonly liftChoice = placementChoice();
+  private readonly liftNeighbours: PlacedModel[] = [];
+  private readonly liftTrack: number[] = [];
   private readonly memberMates = new MateReport();
   private solidBoxes = new Float64Array(0);
   private solidRects = new Float64Array(0);
@@ -1591,9 +1628,10 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
     @inject(TRACK_PATH_SELECTION) private readonly trackPaths: ITrackPathSelection,
     @inject(EVENT_DETAILS) private readonly events: IEventDetails,
+    @inject(PLAN_SCENE_BACKEND) plan: IPlanSceneBackend,
   ) {
     this.history = new EditHistory(this.world, this.consists, annotations);
-    this.placed = new PlacedChunks(backend, (placeable, handle) =>
+    this.placed = new PlacedChunks(backend, plan, (placeable, handle) =>
       this.trackWorld.carriedTrackAt(placeable, handle),
     );
     this.facts = new PlanFacts(
@@ -1781,7 +1819,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.notes.start(NOTE_PLANE_Y_LDU);
       const catalog = await this.catalog.start(index);
       this.catalogItems = catalog.items;
-      this.bundleColorCodes = index.colors.map((color) => color.code);
+      this.bundleColors = index.colors;
       this.plans.setTableTopY(this.baseplateBottomY());
       this.trackWorld.start(index, this.placed);
       this.loadTrackSupport();
@@ -2940,6 +2978,10 @@ export class Editor implements IEditor, IEditedWorld {
         this.search
           .restingOn(connected.volumes, pose, null)
           .flatMap((owner) => this.placedViewOf(owner) ?? []),
+      lifts: (placeable, connected, pose) =>
+        [...(this.liftUnder(placeable, connected, pose)?.keys() ?? [])].flatMap(
+          (owner) => this.placedViewOf(owner) ?? [],
+        ),
       neighbourhood: () => ({
         ldu: this.assistLdu,
         cells: cellsWithin(this.assistLdu),
@@ -2957,13 +2999,63 @@ export class Editor implements IEditor, IEditedWorld {
     return placed ? { placed, failed: choice.waitFailed } : null;
   }
 
-  private heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null {
+  private heldPoseRefusal(
+    placeable: Placeable,
+    pose: LatticePose,
+    lifted: ReadonlySet<PlacedModel> = NO_MODELS,
+  ): string | null {
     this.heldShapesWait = false;
     return (
-      this.trackPlacementRefusal(placeable, pose, NO_MODELS, NO_TRACK_SKIP) ??
-      this.roadOverlap(placeable, this.placedRoads, pose)?.reason ??
+      this.trackPlacementRefusal(placeable, pose, lifted) ??
+      this.roadOverlap(placeable, this.roadsWithout(lifted), pose)?.reason ??
       this.standingTrainCut(placeable, pose)
     );
+  }
+
+  private liftUnder(
+    placeable: Placeable,
+    { model, volumes, boxes, technic }: Connected,
+    pose: LatticePose,
+  ): ReadonlyMap<number, PlacedModel> | null {
+    const [baseTopLdu, topLdu] = partTopsLdu(placeable.partBoxes);
+    if (topLdu <= baseTopLdu) return null;
+    const lifted = new Map<number, PlacedModel>();
+    const choice = this.liftChoice;
+    for (;;) {
+      this.search.withdrawn(new Set(lifted.keys()), () =>
+        this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice),
+      );
+      if (choice.accepted || choice.waitingOn !== NOT_WAITING) break;
+      const blocker = this.searchModels.get(choice.overlap.owner);
+      if (!blocker || !liesUnder(blocker, pose.yPlates * PLATE_LDU + baseTopLdu)) return null;
+      lifted.set(choice.overlap.owner, blocker);
+    }
+    const models = new Set(lifted.values());
+    const free =
+      choice.accepted &&
+      models.size > 0 &&
+      this.groupBlock([...models], NO_PIECES, "delete") === null &&
+      ![...lifted].some(([owner, blocker]) => this.bearsLoad(owner, blocker, models)) &&
+      this.heldPoseRefusal(placeable, pose, models) === null;
+    return free ? lifted : null;
+  }
+
+  private bearsLoad(owner: number, model: PlacedModel, lifted: ReadonlySet<PlacedModel>): boolean {
+    this.placed.touching(model.box, this.liftNeighbours);
+    const carries = this.liftNeighbours.some(
+      (other) =>
+        !lifted.has(other) &&
+        this.search
+          .restingOn(
+            this.volumesOf(other.placeable),
+            poseOf(other),
+            this.searchIds.get(other.id) ?? null,
+          )
+          .includes(owner),
+    );
+    const track = this.trackWorld.drawing();
+    track?.placementsWithin((box) => model.meetsInPlan(box), this.liftTrack);
+    return carries || (track !== null && this.liftTrack.length > 0);
   }
 
   private assistReachLdu(): number {
@@ -3608,7 +3700,8 @@ export class Editor implements IEditor, IEditedWorld {
       this.queueClick(this.clickedPick(active.id, eventTimeMs));
       return;
     }
-    if (!placement.accepted) {
+    const lifted = placement.accepted ? this.liftedFor(active, placement) : null;
+    if (!lifted) {
       const counts = this.roadOverlap(active, this.placedRoads, pose)?.counts ?? NO_ROAD_CELLS;
       this.refuse(refusedAt(active.id, pose, this.assist.refusal ?? "", counts), null);
       this.update({ hover: this.hoverView() });
@@ -3616,7 +3709,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.dropping = true;
     try {
-      this.placeAt(active, pose, eventTimeMs);
+      this.placeAt(active, pose, lifted, eventTimeMs);
     } finally {
       this.dropping = false;
     }
@@ -3695,6 +3788,26 @@ export class Editor implements IEditor, IEditedWorld {
     if (picked?.kind !== "track") return false;
     this.select(this.trackPaths.members(picked.placement, scope));
     return true;
+  }
+
+  selectPlacements(keys: ReadonlyArray<PlacementKey>): void {
+    this.chooseItem(null);
+    const wanted = new Set(keys.map(placementKeyText));
+    const track = this.trackWorld.drawing();
+    this.select([
+      ...this.placed
+        .models()
+        .filter(({ handle }) => wanted.has(placementKeyText(handle)))
+        .map((model): SelectionMember => ({ kind: "model", model })),
+      ...keys
+        .filter(
+          ({ chunkKey, slot }) =>
+            track !== null &&
+            slot < track.pieceCount &&
+            track.laidPieceView(slot).chunkKey === chunkKey,
+        )
+        .map(({ slot }): SelectionMember => ({ kind: "track", placement: slot })),
+    ]);
   }
 
   private pickAt(ndcX: number, ndcY: number): SelectionMember | null {
@@ -3826,18 +3939,31 @@ export class Editor implements IEditor, IEditedWorld {
     return this.catalogItems.find((item) => item.id === id)?.label ?? id;
   }
 
-  private placeAt(placeable: Placeable, pose: LatticePose, eventTimeMs: number): void {
-    this.show(
-      this.history.place({
-        refId: this.activeRefId,
-        colorId: placeable.worldColor,
-        x: pose.x,
-        z: pose.z,
-        yPlates: pose.yPlates,
-        rot: pose.rot,
-      }),
-      eventTimeMs,
-    );
+  private liftedFor(
+    placeable: Placeable,
+    { pose, lifts }: PlacementHover,
+  ): ReadonlyArray<PlacedModel> | null {
+    if (lifts.length === 0) return NO_LIFTED;
+    const lifted = this.liftUnder(placeable, this.connectedOf(placeable), pose);
+    return lifted && [...lifted.values()];
+  }
+
+  private placeAt(
+    placeable: Placeable,
+    pose: LatticePose,
+    lifted: ReadonlyArray<PlacedModel>,
+    eventTimeMs: number,
+  ): void {
+    const to = {
+      refId: this.activeRefId,
+      colorId: placeable.worldColor,
+      x: pose.x,
+      z: pose.z,
+      yPlates: pose.yPlates,
+      rot: pose.rot,
+    };
+    const lifts = lifted.map((model) => ({ placement: model.placement, to: null }));
+    this.show(this.history.commit("place", [...lifts, { placement: null, to }]), eventTimeMs);
   }
 
   private historyView(): HistoryView {
@@ -4640,37 +4766,55 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   bomInput(scope: BomScope): BomInput {
-    const ldrawCodes = this.bundleColorCodes;
-    if (!ldrawCodes) throw new Error("the editor has not loaded");
+    const colors = this.bundleColors;
+    if (!colors) throw new Error("the editor has not loaded");
     const placeables = this.catalog.placeables();
+    const track = this.trackWorld.drawing();
     const counter = new BomCounter(
       this.catalog.parts().map((part) => part.id),
-      ldrawCodes,
+      colors.map((color) => color.code),
     );
     const placedCounts = new Map<number, number>();
-    const contents: PlacementContents = {
+    const pieceCounts = new Map<number, number>();
+    const contents: BomContents = {
       addTo: (target, refId) => {
         const placeable = placeables[refId];
         if (!placeable) throw new Error(`world holds unknown placeable ${refId}`);
         placedCounts.set(refId, (placedCounts.get(refId) ?? 0) + 1);
         this.addPlaceableParts(target, placeable);
       },
+      addPiece: (placement) => {
+        if (!track) throw new Error(`track piece ${placement} is counted with no track laid`);
+        const { piece } = track.laidPiece(placement);
+        pieceCounts.set(piece, (pieceCounts.get(piece) ?? 0) + 1);
+        track.countPiece(counter, placement);
+      },
     };
-    const uncounted = (): BomInput["uncounted"] =>
-      [...placedCounts].flatMap(([refId, count]) => {
+    const { name, placements } = this.scopedBom(scope, counter, contents);
+    return {
+      name,
+      lod: "standard",
+      placements,
+      counter,
+      uncounted: [...placedCounts].flatMap(([refId, count]) => {
         const placeable = placeables[refId];
         if (!placeable) return [];
         return notDrawnItems(placeable.id, this.catalog.notDrawn(placeable), count);
-      });
+      }),
+      shopping: this.shoppingList(colors, placedCounts, pieceCounts),
+    };
+  }
+
+  private scopedBom(scope: BomScope, counter: BomCounter, contents: BomContents): ScopedBom {
     switch (scope.kind) {
       case "world":
-        return this.sceneBom(null, counter, contents, uncounted);
+        return this.sceneBom(null, counter, contents);
       case "region":
-        return this.sceneBom(scope.region, counter, contents, uncounted);
+        return this.sceneBom(scope.region, counter, contents);
       case "selection":
-        return this.selectionBom(counter, contents, uncounted);
+        return this.selectionBom(counter, contents);
       case "plan":
-        return this.planBom(scope.planId, counter, contents, uncounted);
+        return this.planBom(scope.planId, counter, contents);
       default: {
         const unhandled: never = scope;
         throw new Error(`unhandled scope ${String(unhandled)}`);
@@ -4678,15 +4822,37 @@ export class Editor implements IEditor, IEditedWorld {
     }
   }
 
+  private shoppingList(
+    colors: ReadonlyArray<BundleColor>,
+    placed: ReadonlyMap<number, number>,
+    pieces: ReadonlyMap<number, number>,
+  ): ShoppingList {
+    const shopping = new ShoppingListBuilder(
+      this.catalog.parts(),
+      this.catalog.colors(),
+      colors,
+      this.catalogItems,
+    );
+    for (const [refId, count] of placed) shopping.addPlaced(this.placeableAt(refId), count);
+    const track = this.trackWorld.drawing();
+    for (const [piece, count] of pieces) {
+      if (!track) throw new Error(`track piece ${piece} is listed with no track laid`);
+      const { partIndex, color } = track.pieceByIndex(piece);
+      shopping.addTrack(partIndex, color, track.pieceSet.element(piece), count);
+    }
+    return shopping.list();
+  }
+
   private sceneBom(
     region: PlacementRegion | null,
     counter: BomCounter,
-    contents: PlacementContents,
-    uncounted: () => BomInput["uncounted"],
-  ): BomInput {
-    let placements =
-      countPlacements(this.world, contents, counter, region) +
-      (this.trackWorld.drawing()?.countParts(counter, region) ?? 0);
+    contents: BomContents,
+  ): ScopedBom {
+    let placements = countPlacements(this.world, contents, counter, region);
+    for (const piece of this.trackWorld.drawing()?.piecesIn(region) ?? []) {
+      contents.addPiece(piece);
+      placements++;
+    }
     for (const handle of this.consists.consists()) {
       const box = this.railYard.box(handle);
       if (region && !box) continue;
@@ -4698,27 +4864,15 @@ export class Editor implements IEditor, IEditedWorld {
       contents.addTo(counter, handle.pose.refId, handle.pose.colorId);
       placements++;
     }
-    return {
-      name: EDITOR_WORLD_NAME,
-      lod: "standard",
-      placements,
-      counter,
-      uncounted: uncounted(),
-    };
+    return { name: EDITOR_WORLD_NAME, placements };
   }
 
-  private planBom(
-    planId: string,
-    counter: BomCounter,
-    contents: PlacementContents,
-    uncounted: () => BomInput["uncounted"],
-  ): BomInput {
+  private planBom(planId: string, counter: BomCounter, contents: BomContents): ScopedBom {
     const plan = this.plans.plans().find((region) => region.id === planId);
     if (!plan) throw new Error(`no plan ${planId}`);
     const unchecked = this.plans.issues(planId).find((issue) => issue.rule === "unchecked");
     if (unchecked) throw new Error(unchecked.message);
     const byId = new Map(this.placed.models().map((model) => [model.id, model]));
-    const track = this.trackWorld.drawing();
     const rows = this.plans.placements();
     let placements = 0;
     for (let row = rows.first(); row !== NO_ROW; row = rows.next(row)) {
@@ -4733,8 +4887,7 @@ export class Editor implements IEditor, IEditedWorld {
           break;
         }
         case "track":
-          if (!track) throw new Error(`plan row ${row} names track piece ${source} with no track`);
-          track.countPiece(counter, source);
+          contents.addPiece(source);
           break;
         default: {
           const unhandled: never = segment;
@@ -4743,27 +4896,17 @@ export class Editor implements IEditor, IEditedWorld {
       }
       placements++;
     }
-    return {
-      name: `plan-${plan.name.replace(FILE_NAME_UNSAFE, "_")}`,
-      lod: "standard",
-      placements,
-      counter,
-      uncounted: uncounted(),
-    };
+    return { name: `plan-${plan.name.replace(FILE_NAME_UNSAFE, "_")}`, placements };
   }
 
-  private selectionBom(
-    counter: BomCounter,
-    contents: PlacementContents,
-    uncounted: () => BomInput["uncounted"],
-  ): BomInput {
+  private selectionBom(counter: BomCounter, contents: BomContents): ScopedBom {
     const track = this.trackWorld.drawing();
     const models = this.selection.models.filter((model) => model.handle.live);
     const trains = this.selection.trains.filter((train) => train.live);
     const placements = track ? this.selection.pieces : [];
     for (const model of models) contents.addTo(counter, model.handle.refId, model.handle.colorId);
     for (const train of trains) contents.addTo(counter, train.pose.refId, train.pose.colorId);
-    for (const placement of placements) track?.countPiece(counter, placement);
+    for (const placement of placements) contents.addPiece(placement);
     const items = [
       ...models.map((model) => model.placeable.id),
       ...trains.map((train) => this.placeableAt(train.pose.refId).id),
@@ -4776,10 +4919,7 @@ export class Editor implements IEditor, IEditedWorld {
         second === undefined
           ? `selection-${only.replace(FILE_NAME_UNSAFE, "_")}`
           : `selection-${items.length}-items`,
-      lod: "standard",
       placements: items.length,
-      counter,
-      uncounted: uncounted(),
     };
   }
 

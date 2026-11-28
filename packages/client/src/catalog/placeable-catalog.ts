@@ -32,6 +32,7 @@ import {
   type BundleLod,
   type BundleModelEntry,
   type NotDrawnSection,
+  type Vec3,
 } from "@brr/schema/bundle";
 import { importRef, type ImportedFile } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
@@ -39,7 +40,9 @@ import { MergedParts } from "../edit/merged-parts.ts";
 import { NO_MESHES, type MeshCounts, type MeshProgress } from "../edit/mesh-progress.ts";
 import { PartMeshStream } from "../edit/part-mesh-stream.ts";
 import {
+  IDENTITY_MATRIX,
   modelPlaceable,
+  partOfItem,
   partPlaceable,
   type Placeable,
   type PlacementModel,
@@ -53,6 +56,7 @@ import {
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { studPrimitiveBoxes } from "../running-gear/instance-boxes.ts";
+import { withStuds } from "../scene/stud-stream.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { customPartCredits } from "./custom-part-credits.ts";
@@ -233,6 +237,10 @@ export function colorOf(colors: ReadonlyArray<BundleColor>, code: number): Bundl
   const color = colors.find((c) => c.code === code);
   if (!color) throw new Error(`LDConfig has no colour ${code}`);
   return color;
+}
+
+function worldBox(min: Vec3, max: Vec3): WorldBox {
+  return { minX: min[0], minY: min[1], minZ: min[2], maxX: max[0], maxY: max[1], maxZ: max[2] };
 }
 
 function footprintArea(part: PartShapeAsset): number {
@@ -583,14 +591,35 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   async itemModel(itemId: string): Promise<CatalogItemModel | null> {
     const refId = this.itemRefId(itemId);
-    if (refId === null) return null;
+    if (refId === null) return this.partModel(itemId);
     const placeable = await this.load(refId).catch(() => null);
     if (!placeable) return null;
     await this.meshes?.whenLoaded(new Set(placeable.parts.partIndex));
-    const { min, max } = placeable.box;
     return {
       model: { ...placeable.parts, studs: placeable.studs },
-      box: { minX: min[0], minY: min[1], minZ: min[2], maxX: max[0], maxY: max[1], maxZ: max[2] },
+      box: worldBox(placeable.box.min, placeable.box.max),
+    };
+  }
+
+  private async partModel(itemId: string): Promise<CatalogItemModel | null> {
+    const item = partOfItem(itemId);
+    const palette = this.requirePalette();
+    const partIndex = item ? palette.indexOf(item.partId) : -1;
+    const part = palette.parts[partIndex];
+    if (!item || !part) return null;
+    await this.meshes?.whenLoaded(new Set([partIndex]));
+    const colors = this.colors();
+    const instance = {
+      originX: 0,
+      originZ: 0,
+      count: 1,
+      partIndex: Uint16Array.of(partIndex),
+      colorIndex: Uint16Array.of(colors.indexOfCode(item.ldrawColor)),
+      matrices: IDENTITY_MATRIX,
+    };
+    return {
+      model: withStuds(instance, palette.parts, colors),
+      box: worldBox(part.boundsMin, part.boundsMax),
     };
   }
 
@@ -754,7 +783,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     if (refId < 0 || credit === null) {
       throw new Error(`${pending.label} left the catalog before its studs were checked`);
     }
-    const covered = { ...model, studCover: bake.studCover };
+    const covered = withGlyph({ ...model, studCover: bake.studCover }, bake);
     const checked = this.importedPlaceable(pending.id, pending.label, covered, credit);
     this.placeablesByRefId[refId] = checked;
     this.bakes.set(checked.id, withGlyph(model, bake));

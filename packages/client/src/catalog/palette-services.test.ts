@@ -554,26 +554,44 @@ describe("palette prefetch", () => {
 });
 
 describe("palette thumbnails", () => {
-  it("draws a set's thumbnail from the set's own model once its detailed meshes are in", async () => {
-    const { container, editor } = await startEditor();
-    const renderer = new RecordingThumbnailRenderer(editor);
-    container.rebind(THUMBNAIL_RENDERER).toConstantValue(renderer);
-    const thumbnails = container.get(PALETTE_THUMBNAILS);
-    const set = editor.snapshot().catalog.find((item) => item.id === SET);
-    if (!set) throw new Error(`the catalog has no ${SET}`);
+  it.each([
+    {
+      drawn: "a set from the set's own model",
+      item: SET,
+      instances: (catalog: ReadonlyArray<CatalogItemView>) =>
+        catalog.find((item) => item.id === SET)?.parts,
+    },
+    {
+      drawn: "a part in a colour no catalog item offers from that one part",
+      item: `ldraw:${STRAIGHT_9V}@${WHITE}`,
+      instances: () => 1,
+    },
+  ])(
+    "draws $drawn once its detailed meshes are in",
+    async ({ item, instances }) => {
+      const { container, editor } = await startEditor();
+      const renderer = new RecordingThumbnailRenderer(editor);
+      container.rebind(THUMBNAIL_RENDERER).toConstantValue(renderer);
+      const thumbnails = container.get(PALETTE_THUMBNAILS);
 
-    thumbnails.request(SET);
+      thumbnails.request(item);
 
-    await vi.waitFor(() => expect(thumbnails.snapshot().get(SET)).toBe("thumbnail-1"), {
-      timeout: 60_000,
-    });
-    const meshes = renderer.drawn[0]?.detailedMeshes;
-    expect({
-      drawings: renderer.drawn.length,
-      instances: renderer.drawn[0]?.instances,
-      meshesIn: meshes !== undefined && meshes.wanted > 0 && meshes.loaded === meshes.wanted,
-    }).toEqual({ drawings: 1, instances: set.parts, meshesIn: true });
-  }, 120_000);
+      await vi.waitFor(() => expect(thumbnails.snapshot().get(item)).toBe("thumbnail-1"), {
+        timeout: 60_000,
+      });
+      const meshes = renderer.drawn[0]?.detailedMeshes;
+      expect({
+        drawings: renderer.drawn.length,
+        instances: renderer.drawn[0]?.instances,
+        meshesIn: meshes !== undefined && meshes.wanted > 0 && meshes.loaded === meshes.wanted,
+      }).toEqual({
+        drawings: 1,
+        instances: instances(editor.snapshot().catalog),
+        meshesIn: true,
+      });
+    },
+    120_000,
+  );
 });
 
 describe("palette item capabilities", () => {

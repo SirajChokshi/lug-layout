@@ -163,6 +163,7 @@ export class ModelScene implements IModelScene {
       placements,
       counter,
       uncounted: notDrawnItems(this.modelName, loaded.notDrawn, placements),
+      shopping: null,
     };
   }
 

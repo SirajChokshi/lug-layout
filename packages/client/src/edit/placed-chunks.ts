@@ -30,12 +30,14 @@ import {
   INSTANCE_MATRIX_FLOATS,
   type ChunkInstances,
   type FarModelPlacement,
+  type IPlanSceneBackend,
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
 import { CellWindowIndex } from "./cell-window-index.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { partBoxGridOf } from "./part-box-grid.ts";
+import { PlanChunks } from "./plan-chunks.ts";
 import { PlanShapes } from "./plan-shapes.ts";
 import {
   FOOTPRINT_ANTI_STUD,
@@ -474,6 +476,7 @@ class PlacedEntry implements PlacedModel {
   readonly x: number;
   readonly yLdu: number;
   readonly z: number;
+  readonly rot: number;
   readonly cos: number;
   readonly sin: number;
 
@@ -489,6 +492,7 @@ class PlacedEntry implements PlacedModel {
     this.pose = new LatticePose(handle.x, handle.z, handle.rot);
     this.x = handle.x;
     this.z = handle.z;
+    this.rot = handle.rot;
     this.yLdu = handle.yPlates * PLATE_LDU;
     this.cos = this.pose.cos;
     this.sin = this.pose.sin;
@@ -1110,10 +1114,15 @@ export class PlacedChunks {
     entry.indexColumns(this.columns);
   };
 
+  private readonly planChunks: PlanChunks;
+
   constructor(
     private readonly backend: ISceneBackend,
+    plan: IPlanSceneBackend,
     private readonly carriedTrack: CarriedTrackSource = NO_CARRIED_TRACK,
-  ) {}
+  ) {
+    this.planChunks = new PlanChunks(plan);
+  }
 
   private farModelOf(placeable: Placeable): number | null {
     return this.farModels.get(placeable) ?? placeable.farModel;
@@ -1189,6 +1198,8 @@ export class PlacedChunks {
         this.planShapes,
       );
       this.entries[index] = replaced;
+      this.planChunks.remove(entry);
+      this.planChunks.add(replaced);
       removed.push(entry);
       added.push(replaced);
     }
@@ -1332,6 +1343,7 @@ export class PlacedChunks {
     this.byColumnChunk.clear();
     this.byBoxChunk.clear();
     this.chunkStuds.clear();
+    this.planChunks.clear();
     this.entries.length = 0;
     this.changes++;
     this.live.clear();
@@ -1355,6 +1367,7 @@ export class PlacedChunks {
     this.changes++;
     if (this.farModelOf(placeable) !== null) this.showFarModel(entry);
     this.index(entry);
+    this.planChunks.add(entry);
     return entry;
   }
 
@@ -1396,6 +1409,7 @@ export class PlacedChunks {
     this.entries.splice(index, 1);
     this.changes++;
     this.live.delete(entry);
+    this.planChunks.remove(entry);
     this.backend.setFarModel(entry.id, null);
     const { chunks } = entry;
     for (let row = 0; row < chunks.length; row++) {
@@ -1428,6 +1442,7 @@ export class PlacedChunks {
       instances += built.count;
       studs += built.studs.count;
     }
+    this.planChunks.flush();
     return { chunks, instances, studs };
   }
 

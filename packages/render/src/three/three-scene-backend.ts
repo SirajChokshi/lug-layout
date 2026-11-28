@@ -42,6 +42,7 @@ import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
   CAMERA_FOV_DEGREES,
   COLOR_CHANNELS,
+  MARKER_COLORS,
   PROJECTED_IN_VIEW,
   PROJECTED_NDC_X,
   PROJECTED_NDC_Y,
@@ -108,6 +109,7 @@ import {
   type InstancePage,
 } from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
+import { PlanSceneBackend } from "./plan-scene-backend.ts";
 import { KeyOrderedChildren, opaqueSort, transparentSort } from "./tie-order.ts";
 import { GHOST_EDGE_SLOT, chunkEdgeSlot, vehicleEdgeSlot, writeEdgeId } from "./edge-ids.ts";
 import {
@@ -201,11 +203,6 @@ const SELECTION_COLOR = 0xff8c00;
 const SELECTION_RENDER_ORDER = 1;
 const ISSUE_RENDER_ORDER = 2;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
-const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
-  joined: 0x1fbf4a,
-  open: 0xffb000,
-  mismatch: 0xe0202a,
-};
 const TRACK_END_COLORS: Readonly<Record<TrackEndKind, number>> = {
   open: 0xffb000,
   gap: 0xe0202a,
@@ -842,6 +839,14 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
   private failure: string | undefined;
+  readonly plan = new PlanSceneBackend({
+    ldrawColor: (code) => this.ldrawColor(code),
+    linearColors: () => this.linearColors,
+    studBases: () => this.studBases,
+    changed: () => {
+      this.changed = true;
+    },
+  });
 
   async init(config: SceneBackendConfig): Promise<BackendInfo> {
     const renderer = new WebGPURenderer({
@@ -889,6 +894,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.trackEndGroup.matrixAutoUpdate = false;
     this.scene.add(this.trackEndGroup);
     this.scene.add(this.guides.lines, this.noteShapes.fills, this.noteShapes.lines);
+    this.scene.add(this.plan.root);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -1051,6 +1057,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.farModelGeometries = (palette.farModels ?? []).map((mesh) =>
       fixedColorGeometries(mesh, this.linearColor, this.alphaOf),
     );
+    this.plan.setStudPrimitives(palette.detailed.studPrimitives);
     this.tiered = palette.far !== undefined;
     this.partBounds = new Float32Array(palette.detailed.parts.length * BOUNDS_FLOATS);
     palette.detailed.parts.forEach((part, p) => this.setPartBounds(p, part));
@@ -1211,7 +1218,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setChunk(key: number, chunk: ChunkInstances): void {
     this.changed = true;
-    this.placeChunk(key, this.pageFor(chunk));
+    const page = this.pageFor(chunk);
+    this.placeChunk(key, page);
+    this.plan.setPartPage(key, page);
   }
 
   private placeGroup(group: Group, originX: number, originZ: number): void {
@@ -1341,6 +1350,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const record = this.chunks.get(key);
     if (record) this.releaseHolds(record);
     this.removeChunk(key);
+    this.plan.setPartPage(key, null);
   }
 
   setNeededMeshListener(listener: NeededMeshListener | null): void {
@@ -1530,6 +1540,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.markerGroup.add(mesh);
     }
     this.positionMarkers();
+    this.plan.setMarkers(markers);
   }
 
   private positionMarkers(): void {
@@ -1798,6 +1809,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.releaseHolds(record);
       this.removeChunk(key);
     }
+    this.plan.clearPartPages();
     for (const [vehicle, record] of this.vehicles) {
       this.releaseHolds(record.body);
       this.removeVehicle(vehicle);
@@ -2331,6 +2343,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
     this.guides.place(this.renderOriginX, this.renderOriginZ);
     this.noteShapes.place(this.renderOriginX, this.renderOriginZ);
+    this.plan.place(this.renderOriginX, this.renderOriginZ);
     if (this.rebases.length === REBASE_LOG_LIMIT) this.rebases.shift();
     this.rebaseCount++;
     this.rebases.push({
@@ -2498,10 +2511,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   private applyTiers(): void {
     const orthoStudPitchPx = this.orthoStudPitchPx();
+    const flat = this.camera === this.orthographic;
     for (let i = 0; i < this.chunkList.length; i++) {
       const record = this.chunkList[i];
       if (!record) continue;
       record.studPitchPx = this.studPitchPx(record, orthoStudPitchPx);
+      if (flat) continue;
       const tier = this.tierOf(record.studPitchPx);
       if (tier === record.tier) continue;
       this.changed = true;
@@ -2576,6 +2591,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.fitShadowRange();
     this.readTierStats(out);
     this.showFarModels();
+    const flat = this.camera === this.orthographic;
+    this.chunkHolders.show(!flat);
+    this.farModelHolders.show(!flat);
+    this.markerGroup.visible = !flat;
+    this.plan.root.visible = flat;
+    if (flat) this.plan.prepare(this.orthoStudPitchPx());
     renderer.info.reset();
     const lookPipeline = this.camera === this.perspective ? this.pipeline : undefined;
     this.noteShapes.showFills(lookPipeline === undefined);
