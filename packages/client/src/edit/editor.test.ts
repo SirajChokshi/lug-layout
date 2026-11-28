@@ -5204,7 +5204,7 @@ it("draws and resizes a table on the 8-stud grid, checks a user's model against 
       placements: 1,
       tables: [table],
       issues: [],
-      labels: ["table: 48 studs · 38.4 cm", "table: 40 studs · 32 cm"],
+      labels: ["table: 1", "table: 48 studs · 38.4 cm", "table: 40 studs · 32 cm"],
     },
     resized: { placements: 1, tables: [narrowed], issues: ["fit"] },
     deletableOffCanvas: false,
@@ -5223,6 +5223,129 @@ it("draws and resizes a table on the 8-stud grid, checks a user's model against 
   expect(start).toEqual({ placements: 0, tables: [], issues: [], plans: 0 });
   expect({ ...state(), redo: editor.snapshot().history.redo }).toEqual({ ...removed, redo: null });
 }, 120_000);
+
+it("places library tables a quarter turn at a time with their corner on the 8-stud grid, numbered and counted against those owned, checks a user's model across their seam, and resizes and removes them with their type, each one undo step", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const stamp = (x: number, z: number): void => {
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  const tables = () =>
+    plans
+      .regionView(plans.activePlanId() ?? "")
+      .tables.map(({ number, typeId, surface }) => ({ number, typeId, ...surface }));
+  const issues = async () => {
+    const planId = plans.activePlanId() ?? "";
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    return plans
+      .issues(planId)
+      .map((issue) => issue.rule)
+      .filter((rule) => rule !== "bomMapping");
+  };
+  const added = plans.addTableType({
+    name: "Club board",
+    widthMm: 1280,
+    depthMm: 640,
+    heightMm: 750,
+    color: "#c8a165",
+    owned: 2,
+  });
+  if (!added.ok) throw new Error(`the table type wasn't added: ${JSON.stringify(added.issues)}`);
+  const typeId = added.value;
+
+  editor.armTableType(typeId);
+  stamp(1610, 790);
+  stamp(4800, 800);
+  editor.rotate(0);
+  stamp(800, 3200);
+  const armed = editor.snapshot();
+  const placed = {
+    tables: tables(),
+    armed: armed.armedTable,
+    mode: armed.mode,
+    title: toolHints(armed).title,
+    turns: commandEnabled("rotate", armed),
+    numbers: armed.labels
+      .filter((label) => /^\d+$/u.test(label.text))
+      .map((label) => [label.text, label.x, label.z]),
+  };
+  editor.cancelGesture();
+  const putDown = { armed: editor.snapshot().armedTable, mode: editor.snapshot().mode };
+  await place(brick, 3200, 800);
+  const acrossTheSeam = await issues();
+  editor.setTableTool(true);
+  backend.aim(5600, 800);
+  editor.pointerMove(0, 0);
+  editor.deleteSelection(0);
+  const withoutTable2 = { tables: tables(), issues: await issues() };
+  editor.armTableType(typeId);
+  stamp(4800, 800);
+  const replaced = { tables: tables(), issues: await issues() };
+  plans.updateTableType(typeId, { widthMm: 1600 });
+  const resized = {
+    tables: tables(),
+    footprint: plans
+      .issues(plans.activePlanId() ?? "")
+      .filter((issue) => issue.rule === "footprint")
+      .map((issue) => issue.message),
+  };
+  editor.undo(0);
+  const unresized = tables();
+  plans.removeTableType(typeId);
+  const untyped = tables();
+  editor.undo(0);
+
+  const board = (number: number, minX: number, minZ: number, maxX: number, maxZ: number) => ({
+    number,
+    typeId,
+    minX,
+    minZ,
+    maxX,
+    maxZ,
+  });
+  const first = board(1, 0, 0, 3200, 1600);
+  const second = board(2, 3200, 0, 6400, 1600);
+  const turned = board(3, 0, 1600, 1600, 4800);
+  const relaid = [first, turned, second];
+  expect(placed).toEqual({
+    tables: [first, second, turned],
+    armed: { typeId, turn: 1, name: "Club board", widthMm: 640, depthMm: 1280 },
+    mode: "table",
+    title: "Placing Club board",
+    turns: true,
+    numbers: [
+      ["1", 1600, 800],
+      ["2", 4800, 800],
+      ["3", 800, 3200],
+    ],
+  });
+  expect(putDown).toEqual({ armed: null, mode: "table" });
+  expect(acrossTheSeam).toEqual(["seam"]);
+  expect(withoutTable2).toEqual({ tables: [first, turned], issues: ["fit"] });
+  expect(replaced).toEqual({ tables: relaid, issues: ["seam"] });
+  expect(resized).toEqual({
+    tables: [
+      board(1, 0, 0, 4000, 1600),
+      board(3, 0, 1600, 1600, 5600),
+      board(2, 3200, 0, 7200, 1600),
+    ],
+    footprint: ['Tables "Table 1" and "Table 2" overlap.'],
+  });
+  expect(unresized).toEqual(relaid);
+  expect(untyped).toEqual(relaid.map(({ typeId: _typeId, ...table }) => table));
+  expect(tables()).toEqual(relaid);
+}, 240_000);
 
 it("checks a user's model in a two-table plan on plan sync: across the seam, out of reach, loose on a roadway and without catalog ids, and counts only the plan's rows in its parts list", async () => {
   const userModel = "brick-2x4";

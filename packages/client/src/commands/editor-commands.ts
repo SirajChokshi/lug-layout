@@ -667,7 +667,9 @@ export function commandEnabled(
   if (play?.status === "running" && !runsDuringPlay(id)) return false;
   switch (id) {
     case "cancel":
-      return snapshot.gesture !== null || snapshot.fillDraft !== null;
+      return (
+        snapshot.gesture !== null || snapshot.fillDraft !== null || snapshot.armedTable !== null
+      );
     case "toggle-placement-mode":
       return placementModeSwitchEnabled(snapshot, play);
     case "rotate":
@@ -676,6 +678,8 @@ export function commandEnabled(
         !snapshot.readOnly &&
         (snapshot.mode === "place" ||
           snapshot.mode === "road" ||
+          (snapshot.mode === "table" &&
+            (snapshot.armedTable !== null || snapshot.hoveredTable !== null)) ||
           snapshot.selection?.movable === true ||
           (snapshot.gesture !== null && snapshot.gesture.kind !== "box") ||
           snapshot.track?.held != null)

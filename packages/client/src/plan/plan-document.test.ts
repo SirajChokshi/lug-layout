@@ -36,6 +36,7 @@ const SHOW_FLOOR = {
     tables: [
       {
         id: "table-2",
+        number: 1,
         name: "Table 1",
         rect: { x: 0, z: 0, width: 1524, depth: 762 },
         heightMm: 750,
@@ -57,7 +58,11 @@ describe("plan document", () => {
   it("puts a world's first plan on a new Tables layer under the others with the lowest free id, and keeps that layer once its plans are gone", () => {
     const document: WorldDocument = { layers: [BASE_LAYER, NOTES_LAYER] };
 
-    const planned = withPlanState(document, { regions: [SHOW_FLOOR], activePlanId: null });
+    const planned = withPlanState(document, {
+      regions: [SHOW_FLOOR],
+      activePlanId: null,
+      tableTypes: [],
+    });
     const cleared = withPlanState(planned, NO_PLANS);
 
     expect({ planned, cleared }).toEqual({
@@ -85,7 +90,12 @@ describe("plan document", () => {
               roomWidthMm: 4800,
               roomDepthMm: 3000,
               tables: [
-                { name: "Table 1", rect: { x: 0, z: 0, width: 1524, depth: 762 }, heightMm: 750 },
+                {
+                  name: "Table 1",
+                  number: 1,
+                  rect: { x: 0, z: 0, width: 1524, depth: 762 },
+                  heightMm: 750,
+                },
               ],
               obstacles: [],
             },
@@ -95,6 +105,25 @@ describe("plan document", () => {
       },
       cleared: { layers: planned.layers },
     });
+  });
+
+  it("keeps a table library in a world with no plans, and leaves it out once the library is empty", () => {
+    const document: WorldDocument = { layers: [BASE_LAYER] };
+    const club = {
+      id: 3,
+      name: "Club 6ft",
+      widthMm: 1830,
+      depthMm: 760,
+      heightMm: 750,
+      color: "#c8a165",
+      owned: 4,
+    };
+
+    const kept = withPlanState(document, { ...NO_PLANS, tableTypes: [club] });
+
+    expect(kept).toEqual({ layers: [BASE_LAYER], tableTypes: [club] });
+    expect(planStateOf(kept)).toEqual({ ok: true, value: { ...NO_PLANS, tableTypes: [club] } });
+    expect(withPlanState(kept, NO_PLANS)).toEqual(document);
   });
 
   it("refuses plans that lie on more than one plan layer, which the editor would merge on its next save", () => {

@@ -6,7 +6,10 @@ import {
   buildableAsPlanned,
   cmText,
   lduFromMm,
+  lowestFreeTableNumber,
+  placedTableCounts,
   studsText,
+  tableName,
   type HeldItemView,
   type IEditor,
   type IEditorCamera,
@@ -19,6 +22,8 @@ import {
   type PlanRuleId,
   type PlanTable,
   type TableTop,
+  type TableType,
+  type TableTypeInput,
 } from "@brr/client";
 import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { downloadBlob } from "./download.ts";
@@ -185,26 +190,30 @@ function positive(mm: number): boolean {
 
 function TableFields({
   table,
+  typed,
   onChange,
 }: {
   readonly table: PlanTable;
+  readonly typed: boolean;
   readonly onChange: (patch: Partial<Pick<PlanTable, "rect" | "heightMm">>) => void;
 }) {
   const { rect } = table;
   return (
     <div className="table-fields">
-      <StudCmFields
-        label="Width"
-        name={`${table.id}-width`}
-        mm={rect.width}
-        onCommit={(width) => positive(width) && onChange({ rect: { ...rect, width } })}
-      />
-      <StudCmFields
-        label="Depth"
-        name={`${table.id}-depth`}
-        mm={rect.depth}
-        onCommit={(depth) => positive(depth) && onChange({ rect: { ...rect, depth } })}
-      />
+      <fieldset className="plan-edits" disabled={typed}>
+        <StudCmFields
+          label="Width"
+          name={`${table.id}-width`}
+          mm={rect.width}
+          onCommit={(width) => positive(width) && onChange({ rect: { ...rect, width } })}
+        />
+        <StudCmFields
+          label="Depth"
+          name={`${table.id}-depth`}
+          mm={rect.depth}
+          onCommit={(depth) => positive(depth) && onChange({ rect: { ...rect, depth } })}
+        />
+      </fieldset>
       <StudCmFields
         label="From left wall"
         name={`${table.id}-x`}
@@ -217,17 +226,19 @@ function TableFields({
         mm={rect.z}
         onCommit={(z) => onChange({ rect: { ...rect, z } })}
       />
-      <div className="stud-cm">
-        <span className="stud-cm-label">Height</span>
-        <ScaledField
-          label="Height"
-          unit="cm"
-          text={cmText(lduFromMm(table.heightMm))}
-          name={`${table.id}-height`}
-          mmPerUnit={MM_PER_CM}
-          onCommit={(heightMm) => positive(heightMm) && onChange({ heightMm })}
-        />
-      </div>
+      <fieldset className="plan-edits" disabled={typed}>
+        <div className="stud-cm">
+          <span className="stud-cm-label">Height</span>
+          <ScaledField
+            label="Height"
+            unit="cm"
+            text={cmText(lduFromMm(table.heightMm))}
+            name={`${table.id}-height`}
+            mmPerUnit={MM_PER_CM}
+            onCommit={(heightMm) => positive(heightMm) && onChange({ heightMm })}
+          />
+        </div>
+      </fieldset>
     </div>
   );
 }
@@ -415,7 +426,8 @@ function TablesEditor({
       <h3>Tables</h3>
       <p className="plan-meta">
         Draw a table on the canvas, or drag its edges and corners to resize it. Drawn edges land on
-        the 8-stud grid; type any size in studs or cm below.
+        the 8-stud grid; type any size in studs or cm below. Library tables keep their type&apos;s
+        size.
       </p>
       <DrawTablesButton editor={editor} drawing={drawing} label="Draw tables (B)" />
       <FillTablesButton
@@ -424,29 +436,44 @@ function TablesEditor({
         fillGridStuds={fillGridStuds}
         tables={plan.footprint.tables.length}
       />
-      {plan.footprint.tables.map((table) => (
-        <div className="plan-item" key={table.id} data-table={table.id}>
-          <div className="plan-item-head">
-            <strong>{table.name}</strong>
-            <button type="button" onClick={() => plans.removeTable(plan.id, table.id)}>
-              Remove
-            </button>
+      {plan.footprint.tables.map((table) => {
+        const type = plans.tableTypes().find((t) => t.id === table.typeId);
+        return (
+          <div className="plan-item" key={table.id} data-table={table.id}>
+            <div className="plan-item-head">
+              <strong data-table-number={table.number}>
+                {type && <span className="table-swatch" style={{ background: type.color }} />}
+                {table.number} · {table.name}
+              </strong>
+              <button
+                type="button"
+                data-action="turn-table"
+                title="Turn 90° about its back-left corner"
+                onClick={() => plans.turnTable(plan.id, table.id)}
+              >
+                Turn
+              </button>
+              <button type="button" onClick={() => plans.removeTable(plan.id, table.id)}>
+                Remove
+              </button>
+            </div>
+            <TableFields
+              table={table}
+              typed={type !== undefined}
+              onChange={(patch) => plans.updateTable(plan.id, table.id, patch)}
+            />
+            <p className="plan-meta" data-table-studs={table.id}>
+              {latticeText(tops, table.id)}
+            </p>
           </div>
-          <TableFields
-            table={table}
-            onChange={(patch) => plans.updateTable(plan.id, table.id, patch)}
-          />
-          <p className="plan-meta" data-table-studs={table.id}>
-            {latticeText(tops, table.id)}
-          </p>
-        </div>
-      ))}
+        );
+      })}
       <button
         type="button"
         data-action="add-table"
         onClick={() =>
           plans.addTable(plan.id, {
-            name: `Table ${plan.footprint.tables.length + 1}`,
+            name: tableName(lowestFreeTableNumber(plan.footprint.tables)),
             rect: DEFAULT_TABLE,
             heightMm: plan.footprint.tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
           })
@@ -454,6 +481,182 @@ function TablesEditor({
       >
         Add table
       </button>
+    </section>
+  );
+}
+
+const TABLE_TYPE_FIELDS = [
+  ["name", "Name", "text", ""],
+  ["widthMm", "Width mm", "number", ""],
+  ["depthMm", "Depth mm", "number", ""],
+  ["heightMm", "Height mm", "number", String(DEFAULT_TABLE_HEIGHT_MM)],
+  ["owned", "Owned", "number", "1"],
+  ["color", "Colour", "color", "#b58b5a"],
+] as const;
+
+function issuesText(issues: ReadonlyArray<{ readonly path: string; readonly message: string }>) {
+  return issues
+    .map((issue) => {
+      const key = issue.path.split(".").at(-1);
+      const label = TABLE_TYPE_FIELDS.find(([field]) => field === key)?.[1] ?? "The library";
+      return `${label} ${issue.message}`;
+    })
+    .join("; ");
+}
+
+function newTableType(form: HTMLFormElement): TableTypeInput {
+  const data = new FormData(form);
+  const text = (key: string): string => String(data.get(`new-table-type-${key}`) ?? "");
+  const mm = (key: string): number => (text(key).trim() === "" ? Number.NaN : Number(text(key)));
+  return {
+    name: text("name"),
+    widthMm: mm("widthMm"),
+    depthMm: mm("depthMm"),
+    heightMm: mm("heightMm"),
+    owned: mm("owned"),
+    color: text("color"),
+  };
+}
+
+function placedText(type: TableType, placed: number | null): string {
+  if (placed === null) return `${type.owned} owned`;
+  const short = placed - type.owned;
+  return short > 0
+    ? `${placed} placed, ${short} more than the ${type.owned} owned`
+    : `${placed} of ${type.owned} owned placed in this plan`;
+}
+
+function TableLibrary({
+  editor,
+  plans,
+  planId,
+  armedType,
+}: {
+  readonly editor: IEditor;
+  readonly plans: IPlanService;
+  readonly planId: string | null;
+  readonly armedType: number | null;
+}) {
+  const [problem, setProblem] = useState<string | null>(null);
+  const report = (issues: Parameters<typeof issuesText>[0]): void =>
+    setProblem(issues.length === 0 ? null : issuesText(issues));
+  const region = plans.plans().find((plan) => plan.id === planId);
+  const counts = region ? placedTableCounts(region) : null;
+  return (
+    <section className="plan-section" aria-label="Table library">
+      <h3>Table library</h3>
+      <p className="plan-meta">
+        The tables your club owns. A placed table keeps its type&apos;s size and height, lands with
+        its back-left corner on the 8-stud grid and turns in quarter turns (R).
+      </p>
+      {plans.tableTypes().map((type) => {
+        const placed = counts ? (counts.get(type.id) ?? 0) : null;
+        const armed = armedType === type.id;
+        const field = (key: string): string => `table-type-${type.id}-${key}`;
+        const update = (patch: Partial<TableTypeInput>): void =>
+          report(plans.updateTableType(type.id, patch));
+        return (
+          <div className="plan-item" key={type.id} data-table-type={type.id}>
+            <div className="plan-item-head">
+              <input
+                key={type.color}
+                type="color"
+                name={field("color")}
+                aria-label="Table type colour"
+                defaultValue={type.color}
+                onBlur={(event) =>
+                  event.target.value !== type.color && update({ color: event.target.value })
+                }
+              />
+              <input
+                key={type.name}
+                className="table-type-name"
+                name={field("name")}
+                aria-label="Table type name"
+                defaultValue={type.name}
+                onBlur={(event) =>
+                  event.target.value !== type.name && update({ name: event.target.value })
+                }
+              />
+              <button
+                type="button"
+                data-action="place-table-type"
+                aria-pressed={armed}
+                onClick={() => editor.armTableType(armed ? null : type.id)}
+              >
+                {armed ? "Placing (Esc)" : "Place"}
+              </button>
+            </div>
+            <div className="plan-grid">
+              <MmField
+                name={field("widthMm")}
+                label="Width mm"
+                value={type.widthMm}
+                onCommit={(widthMm) => update({ widthMm })}
+              />
+              <MmField
+                name={field("depthMm")}
+                label="Depth mm"
+                value={type.depthMm}
+                onCommit={(depthMm) => update({ depthMm })}
+              />
+              <MmField
+                name={field("heightMm")}
+                label="Height mm"
+                value={type.heightMm}
+                onCommit={(heightMm) => update({ heightMm })}
+              />
+              <MmField
+                name={field("owned")}
+                label="Owned"
+                value={type.owned}
+                onCommit={(owned) => update({ owned })}
+              />
+            </div>
+            <div className="plan-item-head">
+              <span
+                className={placed !== null && placed > type.owned ? "plan-warnings" : "plan-meta"}
+                data-placed={placed ?? 0}
+              >
+                {placedText(type, placed)}
+              </span>
+              <button
+                type="button"
+                title="Its placed tables stay, at their size, as plain tables"
+                onClick={() => plans.removeTableType(type.id)}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      <form
+        className="table-type-new"
+        aria-label="New table type"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const added = plans.addTableType(newTableType(form));
+          report(added.ok ? [] : added.issues);
+          if (added.ok) form.reset();
+        }}
+      >
+        {TABLE_TYPE_FIELDS.map(([key, label, type, initial]) => (
+          <label className="mm-field" key={key}>
+            <span>{label}</span>
+            <input type={type} name={`new-table-type-${key}`} defaultValue={initial} />
+          </label>
+        ))}
+        <button type="submit" data-action="add-table-type">
+          Add table type
+        </button>
+      </form>
+      {problem && (
+        <p className="plan-errors" role="alert">
+          {problem}
+        </p>
+      )}
     </section>
   );
 }
@@ -640,6 +843,7 @@ function ActivePlan({
   sheetSets,
   plan,
   readOnly,
+  armedType,
 }: {
   readonly camera: IEditorCamera;
   readonly editor: IEditor;
@@ -651,6 +855,7 @@ function ActivePlan({
   readonly sheetSets: ISheetSets;
   readonly plan: PlanRegion;
   readonly readOnly: boolean;
+  readonly armedType: number | null;
 }) {
   return (
     <>
@@ -695,6 +900,7 @@ function ActivePlan({
         </button>
       </div>
       <PlanEdits readOnly={readOnly}>
+        <TableLibrary editor={editor} plans={plans} planId={plan.id} armedType={armedType} />
         <TablesEditor
           editor={editor}
           drawing={drawing}
@@ -785,6 +991,7 @@ export function PlanPanel({
   sheetSets,
   ready,
   readOnly,
+  armedType,
 }: {
   readonly camera: IEditorCamera;
   readonly editor: IEditor;
@@ -796,6 +1003,7 @@ export function PlanPanel({
   readonly sheetSets: ISheetSets;
   readonly ready: boolean;
   readonly readOnly: boolean;
+  readonly armedType: number | null;
 }) {
   usePlanVersion(plans);
   const regions = plans.plans();
@@ -844,6 +1052,7 @@ export function PlanPanel({
           sheetSets={sheetSets}
           plan={active}
           readOnly={readOnly}
+          armedType={armedType}
         />
       ) : (
         <>
@@ -853,6 +1062,7 @@ export function PlanPanel({
           </p>
           <PlanEdits readOnly={readOnly}>
             <DrawTablesButton editor={editor} drawing={drawing} label="Draw a table (B)" />
+            <TableLibrary editor={editor} plans={plans} planId={null} armedType={armedType} />
           </PlanEdits>
         </>
       )}

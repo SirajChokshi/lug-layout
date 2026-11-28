@@ -10,7 +10,7 @@ import {
 } from "@brr/schema/world";
 
 export const PLAN_LAYER_NAME = "Tables";
-export const NO_PLANS: PlanState = { regions: [], activePlanId: null };
+export const NO_PLANS: PlanState = { regions: [], activePlanId: null, tableTypes: [] };
 
 const SAVED_PLAN_ID = "saved-plan";
 const PLAN_LAYERS_UNKEPT =
@@ -33,6 +33,15 @@ export function planRecord(region: PlanRegion): PlanRecordV1 {
   };
 }
 
+function planRegionRecord(region: PlanRegion, layer: number): PlanRegionRecordV2 {
+  const record = planRecord(region);
+  const tables = region.footprint.tables.map(({ id: _id, typeId, ...table }) => ({
+    ...table,
+    ...(typeId === undefined ? {} : { type: typeId }),
+  }));
+  return { ...record, footprint: { ...record.footprint, tables }, layer };
+}
+
 function savedRegion(record: PlanRegionRecordV2, index: number): PlanRegion {
   const id = `${SAVED_PLAN_ID}-${index}`;
   const { footprint } = record;
@@ -44,11 +53,10 @@ function savedRegion(record: PlanRegionRecordV2, index: number): PlanRegion {
     footprint: {
       roomWidthMm: footprint.roomWidthMm,
       roomDepthMm: footprint.roomDepthMm,
-      tables: footprint.tables.map(({ name, rect, heightMm }, table) => ({
-        id: `${id}-table-${table}`,
-        name,
-        rect,
-        heightMm,
+      tables: footprint.tables.map(({ type, ...table }, i) => ({
+        id: `${id}-table-${i}`,
+        ...table,
+        ...(type === undefined ? {} : { typeId: type }),
       })),
       obstacles: footprint.obstacles.map(({ name, rect }, obstacle) => ({
         id: `${id}-obstacle-${obstacle}`,
@@ -74,7 +82,14 @@ export function planStateOf(document: WorldDocument): Decoded<PlanState> {
   if (issues.length > 0) return { ok: false, issues };
   const regions = plans.map(savedRegion);
   const active = document.activePlan === undefined ? undefined : regions[document.activePlan];
-  return { ok: true, value: { regions, activePlanId: active?.id ?? null } };
+  return {
+    ok: true,
+    value: {
+      regions,
+      activePlanId: active?.id ?? null,
+      tableTypes: document.tableTypes ?? [],
+    },
+  };
 }
 
 function isPlanLayer(layer: LayerRecordV2): boolean {
@@ -102,15 +117,17 @@ function withPlanLayer(layers: ReadonlyArray<LayerRecordV2>): LayerRecordV2[] {
 }
 
 export function withPlanState(document: WorldDocument, state: PlanState): WorldDocument {
-  const { plans: stored, activePlan: _storedActive, ...kept } = document;
-  if (state.regions.length === 0) return kept;
+  const { plans: stored, activePlan: _storedActive, tableTypes: _storedTypes, ...kept } = document;
+  const typed = state.tableTypes.length === 0 ? {} : { tableTypes: [...state.tableTypes] };
+  if (state.regions.length === 0) return { ...kept, ...typed };
   const layers = withPlanLayer(document.layers);
   const layer = stored?.[0]?.layer ?? layers.find(isPlanLayer)?.id ?? BASE_LAYER_ID;
   const activePlan = state.regions.findIndex((region) => region.id === state.activePlanId);
   return {
     ...kept,
     layers,
-    plans: state.regions.map((region) => ({ ...planRecord(region), layer })),
+    plans: state.regions.map((region) => planRegionRecord(region, layer)),
     ...(activePlan < 0 ? {} : { activePlan }),
+    ...typed,
   };
 }

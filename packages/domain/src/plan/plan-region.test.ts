@@ -17,7 +17,13 @@ const region: PlanRegion = {
     roomWidthMm: 2000,
     roomDepthMm: 1500,
     tables: [
-      { id: "t", name: "T", rect: { x: 128, z: 64, width: 1024, depth: 512 }, heightMm: 750 },
+      {
+        id: "t",
+        number: 1,
+        name: "T",
+        rect: { x: 128, z: 64, width: 1024, depth: 512 },
+        heightMm: 750,
+      },
     ],
     obstacles: [{ id: "o", name: "O", rect: { x: 1500, z: 1000, width: 200, depth: 200 } }],
   },

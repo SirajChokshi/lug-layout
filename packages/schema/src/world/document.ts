@@ -1,11 +1,13 @@
 import * as v from "valibot";
 import { Count, SafeInteger, nonBlankText, strictMessage } from "./fields.ts";
-import { PlanRecordV1 } from "./plan-region.ts";
+import { PlanFootprintV1, PlanRecordV1, PlanTableV1 } from "./plan-region.ts";
 
 export const BASE_LAYER_ID = 0;
 export const LAYER_ID_MAX = 0xffff;
 export const CONTRIBUTOR_ID_MAX = 0xffff;
 export const GROUP_ID_MAX = 0xffff_ffff;
+export const TABLE_TYPE_ID_MAX = 0xffff;
+export const TABLE_NUMBER_MAX = 0xffff;
 export const OPACITY_PERCENT_MAX = 100;
 export const LABEL_MAX_LENGTH = 200;
 export const LONG_TEXT_MAX_LENGTH = 4000;
@@ -30,6 +32,21 @@ function idUpTo(max: number, what: string) {
 export const LayerId = idUpTo(LAYER_ID_MAX, "a layer");
 export const ContributorId = idUpTo(CONTRIBUTOR_ID_MAX, "a contributor");
 export const GroupId = idUpTo(GROUP_ID_MAX, "a group");
+export const TableTypeId = idUpTo(TABLE_TYPE_ID_MAX, "a table type");
+
+const TableNumber = v.config(
+  v.pipe(
+    SafeInteger,
+    v.minValue(1, `must be a table number 1-${TABLE_NUMBER_MAX}`),
+    v.maxValue(TABLE_NUMBER_MAX, `must be a table number 1-${TABLE_NUMBER_MAX}`),
+  ),
+  { abortPipeEarly: true },
+);
+
+const WholeMm = v.config(
+  v.pipe(SafeInteger, v.minValue(1, "must be a whole number of mm, at least 1")),
+  { abortPipeEarly: true },
+);
 
 export const Label = nonBlankText(LABEL_MAX_LENGTH);
 export const LongText = nonBlankText(LONG_TEXT_MAX_LENGTH);
@@ -205,8 +222,59 @@ export const EventRecordV2 = v.pipe(
 );
 export type EventRecordV2 = v.InferOutput<typeof EventRecordV2>;
 
+export const TableTypeRecordV2 = v.strictObject(
+  {
+    id: TableTypeId,
+    name: Label,
+    widthMm: WholeMm,
+    depthMm: WholeMm,
+    heightMm: WholeMm,
+    color: Rgb,
+    owned: Count,
+  },
+  strictMessage,
+);
+export type TableTypeRecordV2 = v.InferOutput<typeof TableTypeRecordV2>;
+
+export const TableTypeTableV2 = v.pipe(
+  v.array(TableTypeRecordV2),
+  v.minLength(1, "is empty: leave it out instead"),
+  v.check((types) => ascendingIds(types), "must list table type ids in strictly ascending order"),
+);
+
+export const PlanTableV2 = v.strictObject(
+  { ...PlanTableV1.entries, number: TableNumber, type: v.exactOptional(TableTypeId) },
+  strictMessage,
+);
+export type PlanTableV2 = v.InferOutput<typeof PlanTableV2>;
+
+export function tableFitsType(
+  table: Pick<PlanTableV2, "rect" | "heightMm">,
+  type: Pick<TableTypeRecordV2, "widthMm" | "depthMm" | "heightMm">,
+): boolean {
+  const { width, depth } = table.rect;
+  const along = width === type.widthMm && depth === type.depthMm;
+  const across = width === type.depthMm && depth === type.widthMm;
+  return table.heightMm === type.heightMm && (along || across);
+}
+
+function uniqueNumbers(tables: ReadonlyArray<PlanTableV2>): boolean {
+  return new Set(tables.map((table) => table.number)).size === tables.length;
+}
+
+export const PlanFootprintV2 = v.strictObject(
+  {
+    ...PlanFootprintV1.entries,
+    tables: v.pipe(
+      v.array(PlanTableV2),
+      v.check((tables) => uniqueNumbers(tables), "must not repeat a table number"),
+    ),
+  },
+  strictMessage,
+);
+
 export const PlanRegionRecordV2 = v.strictObject(
-  { ...PlanRecordV1.entries, layer: LayerId },
+  { ...PlanRecordV1.entries, footprint: PlanFootprintV2, layer: LayerId },
   strictMessage,
 );
 export type PlanRegionRecordV2 = v.InferOutput<typeof PlanRegionRecordV2>;
@@ -222,6 +290,7 @@ export const WorldDocumentEntries = {
   contributors: v.exactOptional(ContributorTableV2),
   plans: v.exactOptional(PlanListV2),
   activePlan: v.exactOptional(Count),
+  tableTypes: v.exactOptional(TableTypeTableV2),
   event: v.exactOptional(EventRecordV2),
 };
 
@@ -237,6 +306,7 @@ export function worldDocument(source: WorldDocument): WorldDocument {
     ...(source.contributors ? { contributors: source.contributors } : {}),
     ...(source.plans ? { plans: source.plans } : {}),
     ...(source.activePlan === undefined ? {} : { activePlan: source.activePlan }),
+    ...(source.tableTypes ? { tableTypes: source.tableTypes } : {}),
     ...(source.event ? { event: source.event } : {}),
   };
 }
@@ -278,4 +348,14 @@ export function plansOnPlanLayers(document: Pick<WorldDocument, "layers" | "plan
 
 export function activePlanListed(document: Pick<WorldDocument, "plans" | "activePlan">): boolean {
   return document.activePlan === undefined || document.activePlan < (document.plans?.length ?? 0);
+}
+
+export function typedTablesFit(document: Pick<WorldDocument, "plans" | "tableTypes">): boolean {
+  const types = new Map((document.tableTypes ?? []).map((type) => [type.id, type]));
+  return (document.plans ?? []).every((plan) =>
+    plan.footprint.tables.every((table) => {
+      const type = table.type === undefined ? undefined : types.get(table.type);
+      return table.type === undefined || (type !== undefined && tableFitsType(table, type));
+    }),
+  );
 }

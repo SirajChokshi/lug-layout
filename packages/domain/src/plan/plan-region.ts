@@ -1,4 +1,5 @@
 import { CHUNK_LDU, MM_PER_STUD, STUD_LDU, lduFromMm, mmFromLdu } from "@brr/math";
+import type { TableTypeRecordV2 } from "@brr/schema/world";
 
 export interface MmRect {
   readonly x: number;
@@ -9,10 +10,14 @@ export interface MmRect {
 
 export interface PlanTable {
   readonly id: string;
+  readonly number: number;
   readonly name: string;
   readonly rect: MmRect;
   readonly heightMm: number;
+  readonly typeId?: number;
 }
+
+export type TableType = TableTypeRecordV2;
 
 export interface PlanObstacle {
   readonly id: string;
@@ -40,6 +45,7 @@ export interface PlanRegion {
 export interface PlanState {
   readonly regions: ReadonlyArray<PlanRegion>;
   readonly activePlanId: string | null;
+  readonly tableTypes: ReadonlyArray<TableType>;
 }
 
 export interface LduRect {

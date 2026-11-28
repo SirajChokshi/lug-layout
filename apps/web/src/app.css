@@ -596,6 +596,34 @@ footer {
   color: #556;
 }
 
+.table-swatch {
+  display: inline-block;
+  width: var(--space-3);
+  height: var(--space-3);
+  margin-right: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+}
+
+.table-type-name {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+}
+
+.table-type-new {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1) var(--space-2);
+  align-items: end;
+}
+
+.table-type-new input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+}
+
 .plan-ok {
   color: #1a7f37;
 }

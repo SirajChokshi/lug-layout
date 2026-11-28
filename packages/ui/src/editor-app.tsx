@@ -295,6 +295,7 @@ export function EditorApp({
           sheetSets={sheetSets}
           ready={snapshot.status === "ready"}
           readOnly={snapshot.readOnly}
+          armedType={snapshot.armedTable?.typeId ?? null}
         />
         {snapshot.status === "ready" && (
           <BomPanel

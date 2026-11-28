@@ -174,9 +174,13 @@ export const PROJECTED_NDC_Y = 1;
 export const PROJECTED_IN_VIEW = 2;
 export const PROJECTION_FLOATS = 3;
 
+export interface PlanTableOverlay extends WorldBox {
+  readonly srgb: number | null;
+}
+
 export interface PlanOverlay {
   readonly room: WorldBox;
-  readonly tables: ReadonlyArray<WorldBox>;
+  readonly tables: ReadonlyArray<PlanTableOverlay>;
   readonly obstacles: ReadonlyArray<WorldBox>;
   readonly active: boolean;
 }

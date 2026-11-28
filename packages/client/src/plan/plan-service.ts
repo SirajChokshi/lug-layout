@@ -9,11 +9,17 @@ import {
   BOX_STRIDE,
   NO_ROW,
   PlanEvaluation,
+  lowestFreeTableNumber,
   mmRectFromWorld,
+  mmRectInWorld,
   MODEL_SEGMENT,
   regionAround,
+  retypedRegion,
+  tableName,
   TRACK_SEGMENT,
+  turnedTable,
   uncheckedPlan,
+  withTypeKept,
   WRITE_UPDATE,
   type LduRect,
   type PlacementKey,
@@ -28,8 +34,11 @@ import {
   type PlanTable,
   type PlateHeights,
   type TableTop,
+  type TableType,
 } from "@brr/domain";
 import { chunkOf, lduFromMm } from "@brr/math";
+import { decode, type Decoded, type Issue } from "@brr/schema/decode";
+import { TABLE_TYPE_ID_MAX, TableTypeRecordV2 } from "@brr/schema/world";
 import { SCENE_BACKEND, type ISceneBackend, type PlanOverlay, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
 
@@ -90,7 +99,8 @@ export type PlanPatch = Partial<
 > &
   Partial<Pick<PlanRegion["footprint"], "roomWidthMm" | "roomDepthMm">>;
 
-export type TableInput = Omit<PlanTable, "id">;
+export type TableInput = Omit<PlanTable, "id" | "number" | "typeId">;
+export type TableTypeInput = Omit<TableType, "id">;
 export type ObstacleInput = Omit<PlanObstacle, "id">;
 
 export interface PlanInput extends Omit<PlanRegion, "id" | "footprint"> {
@@ -139,11 +149,16 @@ export interface IPlanService {
   updatePlan(planId: string, patch: PlanPatch): void;
   removePlan(planId: string): void;
   activatePlan(planId: string | null): void;
+  tableTypes(): ReadonlyArray<TableType>;
+  addTableType(input: TableTypeInput): Decoded<number>;
+  updateTableType(typeId: number, patch: Partial<TableTypeInput>): ReadonlyArray<Issue>;
+  removeTableType(typeId: number): void;
   addTable(planId: string, table: TableInput): string;
   updateTable(planId: string, tableId: string, patch: Partial<TableInput>): void;
   removeTable(planId: string, tableId: string): void;
-  drawTable(rect: LduRect): DrawnTable;
+  drawTable(rect: LduRect, typeId?: number): DrawnTable;
   placeTable(planId: string, tableId: string, rect: LduRect): void;
+  turnTable(planId: string, tableId: string): void;
   addObstacle(planId: string, obstacle: ObstacleInput): string;
   updateObstacle(planId: string, obstacleId: string, patch: Partial<ObstacleInput>): void;
   removeObstacle(planId: string, obstacleId: string): void;
@@ -163,11 +178,20 @@ interface UncheckedIssues {
   readonly issues: ReadonlyArray<PlanIssue>;
 }
 
+const HEX_RADIX = 16;
+const HEX_COLOR_DIGITS_FROM = 1;
+
+function tableSrgb(top: TableTop, types: ReadonlyArray<TableType>): number | null {
+  const type = top.typeId === undefined ? undefined : types.find((t) => t.id === top.typeId);
+  return type ? Number.parseInt(type.color.slice(HEX_COLOR_DIGITS_FROM), HEX_RADIX) : null;
+}
+
 function planOverlays(
   plans: ReadonlyArray<PlanRegion>,
   views: ReadonlyArray<PlanView>,
   tableTopY: number,
   activePlanId: string | null,
+  types: ReadonlyArray<TableType>,
 ): PlanOverlay[] {
   return plans.map((plan, i) => {
     const view = views[i];
@@ -180,6 +204,7 @@ function planOverlays(
       maxX: top.surface.maxX,
       maxY: tableTopY,
       maxZ: top.surface.maxZ,
+      srgb: tableSrgb(top, types),
     }));
     const obstacles = (view?.obstacles ?? []).map((rect) => ({
       ...rect,
@@ -216,28 +241,52 @@ function onlyName(patch: object): boolean {
   return true;
 }
 
-function withDrawnTable(plan: PlanRegion, tableId: string, rect: LduRect): PlanRegion {
+function withDrawnTable(
+  plan: PlanRegion,
+  tableId: string,
+  rect: LduRect,
+  type: TableType | undefined,
+): PlanRegion {
   const grown = regionAround(plan, rect);
   const { tables } = grown.footprint;
+  const number = lowestFreeTableNumber(tables);
   const table: PlanTable = {
     id: tableId,
-    name: `Table ${tables.length + 1}`,
+    number,
+    name: tableName(number),
     rect: mmRectFromWorld(grown, rect),
-    heightMm: tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
+    heightMm: type?.heightMm ?? tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
+    ...(type ? { typeId: type.id } : {}),
   };
-  return { ...grown, footprint: { ...grown.footprint, tables: [...tables, table] } };
+  const drawn = withTypeKept(table, type ? [type] : []);
+  return { ...grown, footprint: { ...grown.footprint, tables: [...tables, drawn] } };
 }
 
-function withPlacedTable(plan: PlanRegion, tableId: string, rect: LduRect): PlanRegion {
+function withPlacedTable(
+  plan: PlanRegion,
+  tableId: string,
+  rect: LduRect,
+  types: ReadonlyArray<TableType>,
+): PlanRegion {
   const grown = regionAround(plan, rect);
   const placed = mmRectFromWorld(grown, rect);
   return {
     ...grown,
     footprint: {
       ...grown.footprint,
-      tables: grown.footprint.tables.map((t) => (t.id === tableId ? { ...t, rect: placed } : t)),
+      tables: grown.footprint.tables.map((t) =>
+        t.id === tableId ? withTypeKept({ ...t, rect: placed }, types) : t,
+      ),
     },
   };
+}
+
+function withTurnedTable(plan: PlanRegion, tableId: string): PlanRegion {
+  const tables = plan.footprint.tables.map((t) => (t.id === tableId ? turnedTable(t) : t));
+  const turned = tables.find((t) => t.id === tableId);
+  if (!turned) return plan;
+  const next = { ...plan, footprint: { ...plan.footprint, tables } };
+  return regionAround(next, mmRectInWorld(next, turned.rect));
 }
 
 function sameRegionIds(a: ReadonlyArray<PlanRegion>, b: ReadonlyArray<PlanRegion>): boolean {
@@ -259,6 +308,7 @@ export class PlanService implements IPlanService {
   private nextId = 1;
   private regions: ReadonlyArray<PlanRegion> = [];
   private active: string | null = null;
+  private types: ReadonlyArray<TableType> = [];
   private topY = 0;
   private changes = 0;
   private readonly view: PlanPlacementsView;
@@ -549,13 +599,21 @@ export class PlanService implements IPlanService {
   }
 
   private planState(): PlanState {
-    return { regions: this.regions, activePlanId: this.active };
+    return { regions: this.regions, activePlanId: this.active, tableTypes: this.types };
+  }
+
+  private sameState(state: PlanState): boolean {
+    return (
+      state.regions === this.regions &&
+      state.activePlanId === this.active &&
+      state.tableTypes === this.types
+    );
   }
 
   private edit(run: () => void): void {
     const before = this.planState();
     run();
-    if (before.regions === this.regions && before.activePlanId === this.active) return;
+    if (this.sameState(before)) return;
     const change = { before, after: this.planState() };
     for (const listener of this.editListeners) listener(change);
   }
@@ -566,7 +624,8 @@ export class PlanService implements IPlanService {
   }
 
   restore(state: PlanState): void {
-    if (state.regions === this.regions && state.activePlanId === this.active) return;
+    if (this.sameState(state)) return;
+    this.types = state.tableTypes;
     this.evaluation.resetChanges();
     const target = state.regions;
     if (sameRegionIds(this.regions, target)) {
@@ -594,7 +653,11 @@ export class PlanService implements IPlanService {
       footprint: {
         roomWidthMm: footprint.roomWidthMm,
         roomDepthMm: footprint.roomDepthMm,
-        tables: footprint.tables.map((table) => ({ id: this.newId("table"), ...table })),
+        tables: footprint.tables.map((table, i) => ({
+          id: this.newId("table"),
+          number: i + 1,
+          ...table,
+        })),
         obstacles: footprint.obstacles.map((obstacle) => ({
           id: this.newId("obstacle"),
           ...obstacle,
@@ -605,7 +668,11 @@ export class PlanService implements IPlanService {
     };
     return {
       before: this.planState(),
-      after: { regions: [...this.regions, region], activePlanId: region.id },
+      after: {
+        regions: [...this.regions, region],
+        activePlanId: region.id,
+        tableTypes: this.types,
+      },
     };
   }
 
@@ -655,14 +722,56 @@ export class PlanService implements IPlanService {
     this.afterChange(true);
   }
 
+  tableTypes(): ReadonlyArray<TableType> {
+    return this.types;
+  }
+
+  addTableType(input: TableTypeInput): Decoded<number> {
+    const last = this.types.at(-1)?.id ?? -1;
+    if (last === TABLE_TYPE_ID_MAX) {
+      return { ok: false, issues: [{ path: "tableTypes", message: "is full" }] };
+    }
+    const added = decode(TableTypeRecordV2, { ...input, id: last + 1 }, "table type");
+    if (!added.ok) return added;
+    this.setTableTypes([...this.types, added.value]);
+    return { ok: true, value: added.value.id };
+  }
+
+  updateTableType(typeId: number, patch: Partial<TableTypeInput>): ReadonlyArray<Issue> {
+    const type = this.types.find((t) => t.id === typeId);
+    if (!type) throw new Error(`no table type ${typeId}`);
+    const updated = decode(TableTypeRecordV2, { ...type, ...patch, id: typeId }, "table type");
+    if (!updated.ok) return updated.issues;
+    this.setTableTypes(this.types.map((t) => (t.id === typeId ? updated.value : t)));
+    return [];
+  }
+
+  removeTableType(typeId: number): void {
+    this.setTableTypes(this.types.filter((t) => t.id !== typeId));
+  }
+
+  private setTableTypes(types: ReadonlyArray<TableType>): void {
+    this.edit(() => {
+      this.evaluation.resetChanges();
+      this.regions = this.regions.map((region, i) => {
+        const retyped = retypedRegion(region, this.types, types);
+        if (retyped !== region) this.evaluation.replaceRegion(i, retyped);
+        return retyped;
+      });
+      this.types = types;
+      this.afterChange(true);
+    });
+  }
+
   addTable(planId: string, table: TableInput): string {
     const id = this.newId("table");
     this.editRegion(
       planId,
-      (plan) => ({
-        ...plan,
-        footprint: { ...plan.footprint, tables: [...plan.footprint.tables, { ...table, id }] },
-      }),
+      (plan) => {
+        const { tables } = plan.footprint;
+        const added = { ...table, id, number: lowestFreeTableNumber(tables) };
+        return { ...plan, footprint: { ...plan.footprint, tables: [...tables, added] } };
+      },
       true,
     );
     return id;
@@ -675,7 +784,9 @@ export class PlanService implements IPlanService {
         ...plan,
         footprint: {
           ...plan.footprint,
-          tables: plan.footprint.tables.map((t) => (t.id === tableId ? { ...t, ...patch } : t)),
+          tables: plan.footprint.tables.map((t) =>
+            t.id === tableId ? withTypeKept({ ...t, ...patch }, this.types) : t,
+          ),
         },
       }),
       !onlyName(patch),
@@ -696,7 +807,9 @@ export class PlanService implements IPlanService {
     );
   }
 
-  drawTable(rect: LduRect): DrawnTable {
+  drawTable(rect: LduRect, typeId?: number): DrawnTable {
+    const type = typeId === undefined ? undefined : this.types.find((t) => t.id === typeId);
+    if (typeId !== undefined && !type) throw new Error(`no table type ${typeId}`);
     const active = this.active;
     if (active === null) {
       const region = this.newRegion({
@@ -707,16 +820,20 @@ export class PlanService implements IPlanService {
         originChunkZ: chunkOf(rect.minZ),
       });
       const tableId = this.newId("table");
-      this.insertRegion(withDrawnTable(region, tableId, rect));
+      this.insertRegion(withDrawnTable(region, tableId, rect, type));
       return { planId: region.id, tableId };
     }
     const tableId = this.newId("table");
-    this.editRegion(active, (plan) => withDrawnTable(plan, tableId, rect), true);
+    this.editRegion(active, (plan) => withDrawnTable(plan, tableId, rect, type), true);
     return { planId: active, tableId };
   }
 
   placeTable(planId: string, tableId: string, rect: LduRect): void {
-    this.editRegion(planId, (plan) => withPlacedTable(plan, tableId, rect), true);
+    this.editRegion(planId, (plan) => withPlacedTable(plan, tableId, rect, this.types), true);
+  }
+
+  turnTable(planId: string, tableId: string): void {
+    this.editRegion(planId, (plan) => withTurnedTable(plan, tableId), true);
   }
 
   addObstacle(planId: string, obstacle: ObstacleInput): string {
@@ -781,7 +898,9 @@ export class PlanService implements IPlanService {
   private drawOverlays(): void {
     const views: PlanView[] = [];
     for (let i = 0; i < this.regions.length; i++) views.push(this.evaluation.context(i));
-    this.backend.setPlanOverlays(planOverlays(this.regions, views, this.topY, this.active));
+    this.backend.setPlanOverlays(
+      planOverlays(this.regions, views, this.topY, this.active, this.types),
+    );
   }
 
   private drawIssueBoxes(): void {
