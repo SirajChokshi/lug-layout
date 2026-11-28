@@ -22,6 +22,8 @@
   --ref-green-600: #2e7d32;
   --ref-red-50: #fbe9e9;
   --ref-red-600: #c42b2b;
+  --ref-violet-600: #6e4bc2;
+  --ref-orange-600: #b8540f;
   --ref-gold-500: #c89200;
   --ref-wood-500: #a8693b;
   --ref-steel-600: #4a5563;
@@ -36,6 +38,7 @@
   --surface-sunken: var(--ref-gray-50);
   --surface-hover: var(--ref-gray-100);
   --surface-pressed: var(--ref-gray-150);
+  --surface-scrim: rgb(20 20 20 / 0.32);
 
   --text-primary: var(--ref-gray-900);
   --text-secondary: var(--ref-gray-600);
@@ -63,6 +66,14 @@
   --status-danger-soft: var(--ref-red-50);
   --favorite: var(--ref-gold-500);
 
+  --tool-idle: var(--ref-gray-500);
+  --tool-select: var(--ref-blue-600);
+  --tool-place: var(--ref-green-600);
+  --tool-track: var(--ref-violet-600);
+  --tool-erase: var(--ref-orange-600);
+  --tool-play: var(--ref-amber-600);
+  --tool-warn: var(--ref-red-600);
+
   --icon-ink: var(--ref-gray-800);
   --icon-tone: var(--ref-gray-400);
   --icon-paper: var(--ref-gray-0);
@@ -81,6 +92,7 @@
   --text-small: 11px;
   --text-body: 12px;
   --text-heading: 13px;
+  --text-display: 15px;
   --leading-body: 1.4;
   --weight-medium: 500;
   --weight-strong: 600;
@@ -93,10 +105,15 @@
   --space-5: 10px;
   --space-6: 12px;
   --space-7: 16px;
+  --space-8: 24px;
 
   --radius-xs: 2px;
   --radius-sm: 3px;
   --radius-md: 3px;
+  --radius-lg: 4px;
+
+  --elevation-2: 0 0 0 1px var(--border-chrome), 0 4px 12px rgb(0 0 0 / 0.14);
+  --elevation-3: 0 0 0 1px var(--border-chrome), 0 12px 32px rgb(0 0 0 / 0.2);
 
   --control-height: 22px;
   --control-height-sm: 20px;
@@ -105,7 +122,10 @@
   --menubar-height: 28px;
   --toolstrip-height: 32px;
   --statusbar-height: 22px;
+  --layer-hud: 5;
+  --layer-chip: 6;
   --layer-menu: 10;
+  --layer-overlay: 20;
 
   --motion-fast: 80ms;
   --motion-base: 140ms;
