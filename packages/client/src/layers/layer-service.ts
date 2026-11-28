@@ -9,6 +9,8 @@ import type { Decoded, Issue } from "@brr/schema/decode";
 import { BASE_LAYER_ID, type LayerKind } from "@brr/schema/world";
 import { injectable } from "inversify";
 
+export type LayerRemovalGuard = (layer: number) => string | null;
+
 export interface ILayerService extends LayerLocks {
   subscribe(listener: () => void): () => void;
   table(): LayerTable;
@@ -21,6 +23,8 @@ export interface ILayerService extends LayerLocks {
   setVisible(id: number, visible: boolean): ReadonlyArray<Issue>;
   setLocked(id: number, locked: boolean): ReadonlyArray<Issue>;
   setOpacity(id: number, percent: number): ReadonlyArray<Issue>;
+  remove(id: number): ReadonlyArray<Issue>;
+  guardRemoval(guard: LayerRemovalGuard): () => void;
   onEdit(listener: (change: LayerChange) => void): () => void;
   restore(table: LayerTable): void;
   reset(table: LayerTable): void;
@@ -42,6 +46,7 @@ function onlyPartsLayer(table: LayerTable, id: number): Issue | null {
 export class LayerService implements ILayerService {
   private readonly listeners = new Set<() => void>();
   private readonly editListeners = new Set<(change: LayerChange) => void>();
+  private readonly removalGuards = new Set<LayerRemovalGuard>();
   private current = LayerTable.base;
   private active = BASE_LAYER_ID;
 
@@ -114,6 +119,23 @@ export class LayerService implements ILayerService {
 
   setOpacity(id: number, percent: number): ReadonlyArray<Issue> {
     return this.patch("opacity", id, { opacity: percent });
+  }
+
+  remove(id: number): ReadonlyArray<Issue> {
+    const removed = this.current.removed(id);
+    if (!removed.ok) return removed.issues;
+    for (const guard of this.removalGuards) {
+      const refusal = guard(id);
+      if (refusal !== null) return [{ path: `layer ${id}`, message: refusal }];
+    }
+    if (id === this.active) this.active = BASE_LAYER_ID;
+    this.edit("remove", id, removed.value);
+    return [];
+  }
+
+  guardRemoval(guard: LayerRemovalGuard): () => void {
+    this.removalGuards.add(guard);
+    return () => this.removalGuards.delete(guard);
   }
 
   restore(table: LayerTable): void {

@@ -116,6 +116,11 @@ function withPlanLayer(layers: ReadonlyArray<LayerRecordV2>): LayerRecordV2[] {
   return [layer, ...layers];
 }
 
+export function plansLayer(document: WorldDocument, state: PlanState): number | null {
+  if (state.regions.length === 0) return null;
+  return document.plans?.[0]?.layer ?? document.layers.find(isPlanLayer)?.id ?? null;
+}
+
 export function withPlanState(document: WorldDocument, state: PlanState): WorldDocument {
   const { plans: stored, activePlan: _storedActive, tableTypes: _storedTypes, ...kept } = document;
   const typed = state.tableTypes.length === 0 ? {} : { tableTypes: [...state.tableTypes] };

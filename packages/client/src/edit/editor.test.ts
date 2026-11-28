@@ -1707,6 +1707,126 @@ describe("layers", () => {
     });
     expect(itemsOnLayers(editor)).toEqual([`${item} on ${ground}`]);
   }, 120_000);
+
+  it("moves a user's own models and laid track to another layer as one undo step that keeps every pose, leaves that layer out of the parts list once hidden, and removes it only after its own selection empties it", async () => {
+    const repository = new MemoryRepository();
+    const { editor, backend, container } = await startImportingEditor(() => repository);
+    const layers = container.get(LAYER_SERVICE);
+    const boms = container.get(BOM_SERVICE);
+    const cottage = await importUserFile(
+      editor,
+      "my-cottage.mpd",
+      userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+    );
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    await place(cottage, 0, 0);
+    await place(cottage, 200, 0);
+    const line: Ground = [0, 80 * STUD];
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, line[1]], [24 * STUD, line[1]]);
+    const created = layers.create("Scenery", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const scenery = created.value;
+    const trackLayers = () =>
+      editor
+        .dump()
+        .laidTrack.map((piece) => piece.layer ?? BASE_LAYER_ID)
+        .toSorted((a, b) => a - b);
+    const posesAlone = () => layeredPoses(editor).map((pose) => pose.replace(/ on \d+$/u, ""));
+    const before = { poses: posesAlone(), track: trackLayers() };
+    selectAt(editor, backend, 0, 0);
+    toggleAt(editor, backend, [200, 0]);
+    toggleAt(editor, backend, line);
+    const picked = { items: selectedItems(editor), tally: editor.snapshot().selection?.tally };
+    const chosenBom = await boms.billOfMaterials(editor, { kind: "selection" });
+    const selectedLayers = () =>
+      editor
+        .snapshot()
+        .selection?.members.flatMap((member) => (member.kind === "train" ? [] : [member.layer]));
+
+    editor.moveSelectionToLayer(scenery, 0);
+    const moved = {
+      items: itemsOnLayers(editor),
+      track: trackLayers(),
+      selected: selectedLayers(),
+      undoLabel: editor.snapshot().history.undoLabel,
+    };
+    const storedSceneryRecords = async () => {
+      const [entry] = await repository.list();
+      const stored = entry ? await repository.read(entry.id) : null;
+      if (!stored?.ok) return 0;
+      return stored.value.shards.reduce(
+        (sum, shard) =>
+          sum +
+          shard.placements.filter((record) => record.layer === scenery).length +
+          shard.track.filter((record) => record.layer === scenery).length,
+        0,
+      );
+    };
+    await vi.waitFor(async () => expect(await storedSceneryRecords()).toBe(3));
+    const heldRemoval = layers.remove(scenery);
+    layers.setVisible(scenery, false);
+    const [shownOnly, everything] = await Promise.all([
+      boms.billOfMaterials(editor, { kind: "world" }, "exclude"),
+      boms.billOfMaterials(editor, { kind: "world" }),
+    ]);
+    layers.setVisible(scenery, true);
+    editor.selectLayer(scenery);
+    const layerSelection = selectedItems(editor);
+    editor.moveSelectionToLayer(BASE_LAYER_ID, 0);
+    const emptied = layers.remove(scenery);
+    const removedLabel = editor.snapshot().history.undoLabel;
+    editor.undo(0);
+    editor.undo(0);
+
+    expect({ tally: picked.tally, moved, heldRemoval }).toEqual({
+      tally: { models: 2, pieces: 1, trains: 0 },
+      moved: {
+        items: [`${cottage} on ${scenery}`, `${cottage} on ${scenery}`, `${BASEPLATE} on 0`],
+        track: [...before.track.slice(1), scenery],
+        selected: [scenery, scenery, scenery],
+        undoLabel: 'move to layer "Scenery" (3 items)',
+      },
+      heldRemoval: [
+        {
+          path: `layer ${scenery}`,
+          message:
+            "holds 2 models and 1 track piece; move them to another layer or delete them first",
+        },
+      ],
+    });
+    expect({
+      poses: posesAlone(),
+      partsLeftOut: {
+        placements: everything.placements - shownOnly.placements,
+        parts: everything.parts - shownOnly.parts,
+      },
+      hiddenLayers: [shownOnly.hiddenLayers, everything.hiddenLayers],
+      layerSelection,
+      emptied,
+      removedLabel,
+      restored: {
+        items: itemsOnLayers(editor),
+        track: trackLayers(),
+        selected: selectedLayers(),
+        table: layers.table().layer(scenery)?.name,
+      },
+    }).toEqual({
+      poses: before.poses,
+      partsLeftOut: { placements: chosenBom.placements, parts: chosenBom.parts },
+      hiddenLayers: ["exclude", "include"],
+      layerSelection: picked.items,
+      emptied: [],
+      removedLabel: 'remove layer "Scenery"',
+      restored: {
+        items: moved.items,
+        track: moved.track,
+        selected: [scenery, scenery, scenery],
+        table: "Scenery",
+      },
+    });
+  }, 240_000);
 });
 
 it("lists a user's own file in the catalog by its name when a fresh editor reopens the world that places it", async () => {
@@ -8975,6 +9095,7 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   plan: "edits plan regions only",
   note: "edits notes only",
   layer: "edits the layer table only",
+  "move-to-layer": "changes only the layer of parts already placed, at the poses they hold",
   "open-plan":
     "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
   event: "edits the event details only",

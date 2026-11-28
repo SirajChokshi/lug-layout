@@ -61,6 +61,7 @@ import {
   type PartSink,
   type DrawingKit,
   type EndGap,
+  type HiddenLayers,
   type LayerTable,
   type PlacementPose,
   type PlacementRegion,
@@ -1040,9 +1041,10 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return count;
   }
 
-  countParts(counter: BomCounter, region: PlacementRegion | null): number {
+  countParts(counter: BomCounter, region: PlacementRegion | null, hidden: HiddenLayers): number {
     let counted = 0;
     for (let p = 0; p < this.layout.count; p++) {
+      if (hidden.isHidden(this.layout.layer(p))) continue;
       const placed = this.placedAt(p);
       if (region !== null) {
         const origin = partCentre(placed);

@@ -77,6 +77,37 @@ describe("LayerService", () => {
     expect(layers.activeLayer()).toBe(BASE_LAYER_ID);
   });
 
+  it("removes a layer no guard holds as one change, putting new parts back on the base layer if it was active, and reports a guard's reason instead", () => {
+    const { layers, changes } = layerService();
+    const track = created(layers.create("Track", "parts"));
+    const yard = created(layers.create("Yard", "parts"));
+    const held = new Set([track]);
+    const release = layers.guardRemoval((layer) => (held.has(layer) ? "holds 3 models" : null));
+
+    const refused = layers.remove(track);
+    expect(layers.activeLayer()).toBe(yard);
+    expect(layers.remove(yard)).toEqual([]);
+    const afterYard = {
+      active: layers.activeLayer(),
+      ids: layers.table().layers.map(({ id }) => id),
+    };
+    release();
+    expect(layers.remove(track)).toEqual([]);
+
+    expect({ refused, afterYard }).toEqual({
+      refused: [{ path: `layer ${track}`, message: "holds 3 models" }],
+      afterYard: { active: BASE_LAYER_ID, ids: [BASE_LAYER_ID, track] },
+    });
+    expect(changes.map(({ action, layer }) => [action, layer])).toEqual([
+      ["create", track],
+      ["create", yard],
+      ["remove", yard],
+      ["remove", track],
+    ]);
+    layers.restore(changes[2]?.before ?? layers.table());
+    expect(layers.table().layers.map(({ id }) => id)).toEqual([BASE_LAYER_ID, track, yard]);
+  });
+
   it("says why nothing can be added to the active layer while it's locked or hidden", () => {
     const { layers } = layerService();
     const track = created(layers.create("Track", "parts"));

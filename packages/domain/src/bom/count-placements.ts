@@ -1,4 +1,5 @@
 import { CHUNK_LDU } from "@brr/math";
+import { NO_HIDDEN_LAYERS, type HiddenLayers } from "../layers/layer-table.ts";
 import { SLOT_LIVE, type ChunkView, type World } from "../world.ts";
 import type { BomCounter } from "./bom-counter.ts";
 
@@ -31,12 +32,14 @@ export function countPlacements(
   contents: PlacementContents,
   counter: BomCounter,
   region: PlacementRegion | null,
+  hidden: HiddenLayers = NO_HIDDEN_LAYERS,
 ): number {
   let placements = 0;
   for (const chunk of world.chunks()) {
     if (region !== null && !chunkMeetsRegion(chunk, region)) continue;
     for (let slot = 0; slot < chunk.count; slot++) {
       if (((chunk.flags[slot] ?? 0) & SLOT_LIVE) === 0) continue;
+      if (hidden.isHidden(chunk.layer[slot] ?? 0)) continue;
       if (region !== null && !regionHolds(region, chunk.x[slot] ?? 0, chunk.z[slot] ?? 0)) {
         continue;
       }

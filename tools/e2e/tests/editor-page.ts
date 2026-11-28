@@ -91,6 +91,12 @@ export interface LaidTrackPiece {
   readonly heading: number;
   readonly position: ReadonlyArray<string>;
   readonly yPlates: number;
+  readonly layer?: number;
+}
+
+export interface LayeredContents {
+  readonly placements: ReadonlyArray<string>;
+  readonly track: ReadonlyArray<number>;
 }
 
 export interface TrackChoice {
@@ -151,6 +157,7 @@ interface PlacementColumns {
   readonly z: ReadonlyArray<number>;
   readonly yPlates: ReadonlyArray<number>;
   readonly rot: ReadonlyArray<number>;
+  readonly layer: ReadonlyArray<number>;
 }
 
 export interface TrackRoute {
@@ -986,6 +993,17 @@ export class EditorPage {
         rot: column(placements.rot, i),
       }))
       .toSorted(byPosition);
+  }
+
+  async layered(): Promise<LayeredContents> {
+    const { world } = await this.editState();
+    const { placements, refs, laidTrack } = world;
+    return {
+      placements: placements.refId
+        .map((refId, i) => `${refs[refId] ?? refId} on ${column(placements.layer, i)}`)
+        .toSorted(),
+      track: laidTrack.map((piece) => piece.layer ?? 0).toSorted((a, b) => a - b),
+    };
   }
 
   async crossings(): Promise<ReadonlyArray<LevelCrossing>> {

@@ -112,4 +112,24 @@ describe("LayerTable", () => {
       { path: "layer 4", message: "can only move to a position 0-2, not -1" },
     ]);
   });
+
+  it("removes an unlocked layer and keeps the others in order, but never the base layer, a locked one or an unlisted one", () => {
+    const layers = table([PLAN, BASE_LAYER, { ...SCENERY, locked: false }, { ...PLAN, id: 12 }]);
+    const ids = (id: number) => {
+      const removed = layers.removed(id);
+      return removed.ok ? removed.value.layers.map((layer) => layer.id) : removed.issues;
+    };
+
+    expect(ids(4)).toEqual([9, BASE_LAYER_ID, 12]);
+    expect(ids(9)).toEqual([BASE_LAYER_ID, 4, 12]);
+    expect(ids(BASE_LAYER_ID)).toEqual([
+      { path: "layer 0", message: "is the base layer, which every world keeps" },
+    ]);
+    expect(table([BASE_LAYER, SCENERY]).removed(4)).toEqual({
+      ok: false,
+      issues: [{ path: "layer 4", message: "is locked; unlock it before removing it" }],
+    });
+    expect(ids(5)).toEqual([{ path: "layer 5", message: "isn't in the layer table" }]);
+    expect(layers.layers.map((layer) => layer.id)).toEqual([9, BASE_LAYER_ID, 4, 12]);
+  });
 });

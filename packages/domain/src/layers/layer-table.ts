@@ -1,6 +1,7 @@
 import { decode, type Decoded } from "@brr/schema/decode";
 import {
   BASE_LAYER,
+  BASE_LAYER_ID,
   LAYER_ID_MAX,
   LayerRecordV2,
   LayerTableV2,
@@ -16,7 +17,14 @@ export type LayerAction =
   | "hide"
   | "lock"
   | "unlock"
-  | "opacity";
+  | "opacity"
+  | "remove";
+
+export interface HiddenLayers {
+  isHidden(layer: number): boolean;
+}
+
+export const NO_HIDDEN_LAYERS: HiddenLayers = { isHidden: () => false };
 
 export type LayerPatch = Partial<Pick<LayerRecordV2, "name" | "visible" | "locked" | "opacity">>;
 
@@ -56,7 +64,7 @@ function trimmedName<T extends LayerPatch>(patch: T): T {
   return patch.name === undefined ? patch : { ...patch, name: patch.name.trim() };
 }
 
-export class LayerTable {
+export class LayerTable implements HiddenLayers {
   static readonly base: LayerTable = new LayerTable([BASE_LAYER]);
 
   private readonly byId: ReadonlyMap<number, LayerRecordV2>;
@@ -127,6 +135,15 @@ export class LayerTable {
     const order = this.layers.filter((row) => row !== layer);
     order.splice(position, 0, layer);
     return { ok: true, value: new LayerTable(order) };
+  }
+
+  removed(id: number): Decoded<LayerTable> {
+    const layer = this.byId.get(id);
+    if (!layer) return this.unlisted(id);
+    if (id === BASE_LAYER_ID)
+      return refused(layerPath(id), "is the base layer, which every world keeps");
+    if (layer.locked) return refused(layerPath(id), "is locked; unlock it before removing it");
+    return { ok: true, value: new LayerTable(this.layers.filter((row) => row !== layer)) };
   }
 
   private unlisted<T>(id: number): Decoded<T> {

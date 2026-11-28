@@ -1,11 +1,13 @@
 import {
   EDITOR,
+  LAYER_SERVICE,
   mainThreadModules,
   TRACK_ITEM_ID,
   TRAIN_PLAY,
   type EditorActionId,
   type EditorSnapshot,
   type IEditor,
+  type ILayerService,
   type PlaySnapshot,
   type ModelSelectionView,
 } from "@brr/client";
@@ -25,10 +27,15 @@ const SELECTED: ModelSelectionView = {
   item: "ldraw:3811",
   yPlates: 0,
   rot: 0,
+  layer: 0,
   box: { minX: 0, minY: 0, minZ: 0, maxX: 640, maxY: 8, maxZ: 640 },
 };
 
-function services(): { readonly editor: IEditor; readonly play: PlaySnapshot } {
+function services(): {
+  readonly editor: IEditor;
+  readonly layers: ILayerService;
+  readonly play: PlaySnapshot;
+} {
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -37,7 +44,11 @@ function services(): { readonly editor: IEditor; readonly play: PlaySnapshot } {
       startSimWorker: () => new MessageChannel().port1,
     }),
   );
-  return { editor: container.get(EDITOR), play: container.get(TRAIN_PLAY).snapshot() };
+  return {
+    editor: container.get(EDITOR),
+    layers: container.get(LAYER_SERVICE),
+    play: container.get(TRAIN_PLAY).snapshot(),
+  };
 }
 
 function editableSnapshot(editor: IEditor): EditorSnapshot {
@@ -132,7 +143,7 @@ it("runs the client's draw-track and draw-road commands from the toolbar's draw 
 
 function panelOffers() {
   return {
-    fields: ["X studs", "Z studs"].map(
+    fields: ["X studs", "Z studs", "Layer"].map(
       (label) => !screen.getByLabelText(label).hasAttribute("disabled"),
     ),
     rotations: screen
@@ -144,13 +155,14 @@ function panelOffers() {
   };
 }
 
-it("offers the selection panel's position and rotation only when the arrows could move the selection, not while a train runs, the world is read-only or a drag is in hand", () => {
-  const { editor, play } = services();
+it("offers the selection panel's position, layer and rotation only when the arrows could move the selection, not while a train runs, the world is read-only or a drag is in hand", () => {
+  const { editor, layers, play } = services();
   const selecting = { ...editableSnapshot(editor), mode: "select" as const };
   const panel = (snapshot: EditorSnapshot, status: PlaySnapshot["status"]) =>
     createElement(SelectionPanel, {
       editor,
       snapshot,
+      layers,
       play: { ...play, status },
       onEditorAction: () => {},
     });
@@ -197,28 +209,28 @@ it("offers the selection panel's position and rotation only when the arrows coul
 
   expect({ editable, running, readOnly, dragging, group, groupDragging }).toEqual({
     editable: {
-      fields: [true, true],
+      fields: [true, true, true],
       rotations: [true, true, true, true],
       actions: [true, true, true],
     },
     running: {
-      fields: [false, false],
+      fields: [false, false, false],
       rotations: [false, false, false, false],
       actions: [false, true, false],
     },
     readOnly: {
-      fields: [false, false],
+      fields: [false, false, false],
       rotations: [false, false, false, false],
       actions: [true, true, false],
     },
     dragging: {
-      fields: [false, false],
+      fields: [false, false, false],
       rotations: [false, false, false, false],
       actions: [true, true, false],
     },
-    group: { fields: [true, true], rotations: [true, true], actions: [true, true, true] },
+    group: { fields: [true, true, true], rotations: [true, true], actions: [true, true, true] },
     groupDragging: {
-      fields: [false, false],
+      fields: [false, false, false],
       rotations: [false, false],
       actions: [true, true, false],
     },

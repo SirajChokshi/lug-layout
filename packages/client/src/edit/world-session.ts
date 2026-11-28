@@ -71,7 +71,13 @@ import type {
 } from "../credits/credits-view.ts";
 import type { IBomService } from "../bom/bom-service.ts";
 import type { IEventDetails } from "../event/event-details.ts";
-import { NO_PLANS, planRecord, planStateOf, withPlanState } from "../plan/plan-document.ts";
+import {
+  NO_PLANS,
+  planRecord,
+  planStateOf,
+  plansLayer,
+  withPlanState,
+} from "../plan/plan-document.ts";
 import type { IPlanSheetService, IPlanSheetSource } from "../plan/plan-sheet-service.ts";
 import type { ILayerService } from "../layers/layer-service.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
@@ -346,8 +352,28 @@ export class WorldSession implements IWorldSession {
     @inject(PLAN_SHEET_SERVICE) private readonly sheets: IPlanSheetService,
     @inject(BOM_SERVICE) private readonly boms: IBomService,
     @inject(EVENT_DETAILS) private readonly events: Pick<IEventDetails, "event" | "restore">,
-    @inject(LAYER_SERVICE) private readonly layers: Pick<ILayerService, "table" | "reset">,
-  ) {}
+    @inject(LAYER_SERVICE)
+    private readonly layers: Pick<ILayerService, "table" | "reset" | "guardRemoval">,
+  ) {
+    layers.guardRemoval((layer) => this.documentRemovalRefusal(layer));
+  }
+
+  private documentRemovalRefusal(layer: number): string | null {
+    const current = this.current;
+    if (!current) return null;
+    const notes = this.editedWorld()
+      .contents()
+      .notes.filter((note) => note.layer === layer).length;
+    const document = { ...current.document, layers: [...this.layers.table().layers] };
+    const plans = plansLayer(document, this.plans) === layer ? this.plans.regions.length : 0;
+    const held = [
+      plans > 0 ? `${plans} ${plans === 1 ? "plan region" : "plan regions"}` : null,
+      notes > 0 ? `${notes} ${notes === 1 ? "note" : "notes"}` : null,
+    ].filter((text) => text !== null);
+    return held.length === 0
+      ? null
+      : `holds ${held.join(" and ")}, which this editor can't move to another layer yet`;
+  }
 
   view(): WorldSessionView {
     return this.state;

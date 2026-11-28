@@ -18,8 +18,11 @@ import {
   worldManifest,
   worldShards,
   type ImportedFile,
+  type LayerRecordV2,
+  type NoteRecordV2,
   type NoteShardV2,
   type PlacementRecordV2,
+  type PlanRegionRecordV2,
   type SavedViewV1,
   type WorldArchive,
   type WorldHeader,
@@ -42,6 +45,7 @@ import { eventDraft } from "../event/event-details.ts";
 import { EDITOR, EDITOR_CAMERA, EVENT_DETAILS, LAYER_SERVICE, WORLD_SESSION } from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { BomInput } from "../bom/bom-service.ts";
+import { NO_PLANS } from "../plan/plan-document.ts";
 import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import type {
   IEditedWorld,
@@ -108,6 +112,7 @@ function baseplateTarget(ref: string, color: number): PlacementTarget | null {
 class BaseplateWorld implements IEditedWorld {
   private world = new World();
   private history = new EditHistory(this.world);
+  private notes: ReadonlyArray<NoteRecordV2> = [];
 
   get placements(): number {
     return this.world.size;
@@ -119,7 +124,7 @@ class BaseplateWorld implements IEditedWorld {
   }
 
   contents(): WorldContents {
-    return { world: this.world, refs: [BASEPLATE], track: [], consists: [], notes: [] };
+    return { world: this.world, refs: [BASEPLATE], track: [], consists: [], notes: this.notes };
   }
 
   placedCredits(): ReadonlyArray<ModelCredit> {
@@ -131,12 +136,13 @@ class BaseplateWorld implements IEditedWorld {
     return handles.ok ? [] : handles.issues;
   }
 
-  async load({ shards }: StoredContents): Promise<ReadonlyArray<Issue>> {
+  async load({ shards, notes }: StoredContents): Promise<ReadonlyArray<Issue>> {
     const world = new World();
     const handles = addShards(world, shards, baseplateTarget);
     if (!handles.ok) return handles.issues;
     this.world = world;
     this.history = new EditHistory(world);
+    this.notes = notes;
     return [];
   }
 
@@ -597,6 +603,67 @@ describe("schema v2 document data", () => {
       ],
       planLayer: "Tables",
       fileError: null,
+    });
+  });
+
+  it("refuses to remove a layer the world's notes or plan regions sit on, lets the plan layer go once no plan is left, and saves the table without the layers it removes", async () => {
+    const { session, repository, layers } = await sessionOnIndexedDb();
+    const tables: LayerRecordV2 = {
+      id: 4,
+      name: "Tables",
+      kind: "plan",
+      visible: true,
+      locked: false,
+      opacity: 100,
+    };
+    const floor: PlanRegionRecordV2 = {
+      name: "Show floor",
+      originChunkX: 0,
+      originChunkZ: 0,
+      maxOverhangMm: 0,
+      maxReachMm: 700,
+      footprint: { roomWidthMm: 4800, roomDepthMm: 3000, tables: [], obstacles: [] },
+      layer: 4,
+    };
+    const shards = worldShards([PLATE], []);
+    const archive = repository.packArchive({
+      manifest: worldManifest(
+        { ...SHOW, layers: [...SHOW.layers, tables], plans: [floor, { ...floor, name: "Hall" }] },
+        shards.map(shardEntry),
+        LABELS.map(noteShardEntry),
+      ),
+      shards,
+      notes: LABELS,
+      credits: "credits",
+      imports: [],
+    });
+    expect(await session.importWorld(archive)).toBe(true);
+    const id = session.view().world?.id ?? "";
+
+    const refused = { labels: layers.remove(1), tables: layers.remove(4) };
+    expect(layers.remove(2)).toEqual([]);
+    session.plansEdited(NO_PLANS);
+    expect(layers.remove(4)).toEqual([]);
+    session.documentEdited();
+    const storedLayers = async () => {
+      const stored = await repository.read(id);
+      return stored.ok ? stored.value.manifest.layers.map((layer) => layer.id) : null;
+    };
+    await vi.waitFor(async () => expect(await storedLayers()).toEqual([1, 0]));
+
+    expect(refused).toEqual({
+      labels: [
+        {
+          path: "layer 1",
+          message: "holds 1 note, which this editor can't move to another layer yet",
+        },
+      ],
+      tables: [
+        {
+          path: "layer 4",
+          message: "holds 2 plan regions, which this editor can't move to another layer yet",
+        },
+      ],
     });
   });
 
