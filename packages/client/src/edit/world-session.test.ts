@@ -555,6 +555,51 @@ describe("schema v2 document data", () => {
     ]);
   });
 
+  it("saves plans in a world with no plan layer onto the Tables layer they add, beside a layer created this session", async () => {
+    const { session, repository, layers } = await sessionOnIndexedDb();
+    const id = session.view().world?.id ?? "";
+    const scenery = layers.create("Scenery", "parts");
+    if (!scenery.ok) throw new Error("the layer wasn't created");
+    session.documentEdited();
+    session.plansEdited({
+      regions: [
+        {
+          id: "plan-1",
+          name: "Show floor",
+          originChunkX: 0,
+          originChunkZ: 0,
+          maxOverhangMm: 0,
+          maxReachMm: 700,
+          footprint: { roomWidthMm: 4800, roomDepthMm: 3000, tables: [], obstacles: [] },
+        },
+      ],
+      activePlanId: "plan-1",
+      tableTypes: [],
+    });
+    const storedPlans = async () => {
+      const stored = await repository.read(id);
+      return stored.ok ? (stored.value.manifest.plans ?? []) : [];
+    };
+    await vi.waitFor(async () => expect(await storedPlans()).toHaveLength(1));
+    const stored = await repository.read(id);
+    if (!stored.ok) throw new Error("the planned world didn't reopen");
+
+    const { layers: saved, plans } = stored.value.manifest;
+    expect({
+      layers: saved.map(({ name, kind }) => [name, kind]),
+      planLayer: saved.find((layer) => layer.id === plans?.[0]?.layer)?.name,
+      fileError: session.view().fileError,
+    }).toEqual({
+      layers: [
+        ["Tables", "plan"],
+        ["Parts", "parts"],
+        ["Scenery", "parts"],
+      ],
+      planLayer: "Tables",
+      fileError: null,
+    });
+  });
+
   it("refuses a world whose placements carry an owner, rather than dropping it on the next save", async () => {
     const { session, repository } = await sessionOnIndexedDb();
     const before = await repository.list();
