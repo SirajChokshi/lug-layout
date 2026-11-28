@@ -185,6 +185,33 @@ footer {
   border-color: var(--border-control);
 }
 
+.tool-button {
+  anchor-name: --tool-button;
+  anchor-scope: --tool-button;
+}
+
+.tool-tip {
+  display: none;
+  position: fixed;
+  position-anchor: --tool-button;
+  top: anchor(bottom);
+  left: anchor(center);
+  z-index: var(--layer-overlay);
+  translate: -50% var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  color: var(--text-on-accent);
+  font-size: var(--text-caption);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.tool-button:hover .tool-tip,
+.tool-button:focus-visible .tool-tip {
+  display: block;
+}
+
 .editor[data-layout="compact"] .tool-label,
 .editor[data-layout="compact"] .placement-mode-state {
   display: none;
@@ -950,6 +977,43 @@ button.plan-issue:hover {
 
 .scene-label[data-kind="height"] .scene-label-pill {
   fill: rgb(38 88 140);
+}
+
+.scene-label[data-kind="note"] .scene-label-pill {
+  fill: var(--text-secondary);
+}
+
+.note-texts {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.note-text {
+  font-weight: var(--weight-strong);
+  paint-order: stroke;
+  stroke: var(--surface-panel-solid);
+  stroke-width: 12px;
+  stroke-linejoin: round;
+  stroke-opacity: 0.85;
+}
+
+.note-panel .selection-field select {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-height-sm);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel-solid);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.note-panel p[role="alert"] {
+  color: var(--status-warn);
 }
 
 .toolbar-hint {

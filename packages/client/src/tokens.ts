@@ -41,6 +41,7 @@ import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-wor
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IAnnotationService } from "./notes/annotation-service.ts";
+import type { INoteEditSession } from "./notes/note-edit-session.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
 import type { IPlanDrawing } from "./sheets/plan-drawing.ts";
@@ -147,6 +148,9 @@ export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.clien
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
 export const ANNOTATION_SERVICE: ServiceIdentifier<IAnnotationService> = Symbol.for(
   "brr.client.AnnotationService",
+);
+export const NOTE_EDIT_SESSION: ServiceIdentifier<INoteEditSession> = Symbol.for(
+  "brr.client.NoteEditSession",
 );
 export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
   "brr.client.PlanSheetService",

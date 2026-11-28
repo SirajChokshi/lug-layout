@@ -23,17 +23,27 @@ export function rulerText(ruler: Ruler): string {
   return `${lengthText(rulerLength(ruler))} (${studsText(dx)} × ${studsText(dz)})`;
 }
 
-export function rulerGuides(ruler: Ruler, y: number, kind: GuideKind, out: GuideSegment[]): void {
+export function rulerTicks(ruler: Ruler): readonly [Ruler, Ruler] | null {
   const { ax, az, bx, bz } = ruler;
   const length = rulerLength(ruler);
-  if (length === 0) return;
+  if (length === 0) return null;
   const nx = (-(bz - az) / length) * TICK_HALF_LDU;
   const nz = ((bx - ax) / length) * TICK_HALF_LDU;
-  out.push(
-    { kind, ax, ay: y, az, bx, by: y, bz },
-    { kind, ax: ax - nx, ay: y, az: az - nz, bx: ax + nx, by: y, bz: az + nz },
-    { kind, ax: bx - nx, ay: y, az: bz - nz, bx: bx + nx, by: y, bz: bz + nz },
-  );
+  return [
+    { ax: ax - nx, az: az - nz, bx: ax + nx, bz: az + nz },
+    { ax: bx - nx, az: bz - nz, bx: bx + nx, bz: bz + nz },
+  ];
+}
+
+function guideOf(kind: GuideKind, y: number, { ax, az, bx, bz }: Ruler): GuideSegment {
+  return { kind, ax, ay: y, az, bx, by: y, bz };
+}
+
+export function rulerGuides(ruler: Ruler, y: number, kind: GuideKind, out: GuideSegment[]): void {
+  const { ax, az, bx, bz } = ruler;
+  const ticks = rulerTicks(ruler);
+  if (!ticks) return;
+  out.push(guideOf(kind, y, ruler), guideOf(kind, y, ticks[0]), guideOf(kind, y, ticks[1]));
   if (ax === bx || az === bz) return;
   out.push(
     { kind: "axis", ax, ay: y, az, bx, by: y, bz: az },

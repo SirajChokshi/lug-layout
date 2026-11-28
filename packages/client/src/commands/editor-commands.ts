@@ -17,6 +17,10 @@ export type EditorActionId =
   | "draw-road"
   | "measure"
   | "draw-tables"
+  | "zone-tool"
+  | "label-tool"
+  | "ruler-tool"
+  | "close-zone"
   | "cycle-fill-grid"
   | "rotate"
   | "rotate-back"
@@ -151,6 +155,28 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "table board room plan size studs cm",
   },
   {
+    id: "zone-tool",
+    title:
+      "Zones: drag a rectangle or click corners on whole studs; drag a zone or a corner to change it",
+    group: "Tools",
+    keys: [{ key: "z" }],
+    keywords: "area region reserve paint mark note polygon outline",
+  },
+  {
+    id: "label-tool",
+    title: "Labels: click to place text on the plan, drag one to move it",
+    group: "Tools",
+    keys: [{ key: "n" }],
+    keywords: "text note name caption annotate write",
+  },
+  {
+    id: "ruler-tool",
+    title: "Rulers: drag a saved ruler whose ends snap to models and follow them",
+    group: "Tools",
+    keys: [{ key: "u", shift: true }],
+    keywords: "dimension distance measure saved attach note",
+  },
+  {
     id: "cycle-fill-grid",
     title: "Fill grid: 8, 16 or 32 studs, for dragging an area or filling the tables",
     group: "Edit",
@@ -212,6 +238,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "Enter" }],
     keywords: "append extend again repeat close loop join complete",
+  },
+  {
+    id: "close-zone",
+    title: "Close the zone being drawn",
+    group: "Edit",
+    keys: [{ key: "Enter" }],
+    keywords: "finish polygon complete corners",
   },
   {
     id: "next-track-choice",
@@ -645,6 +678,9 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "draw-road") return snapshot.mode === "road";
   if (id === "measure") return snapshot.mode === "measure";
   if (id === "draw-tables") return snapshot.mode === "table";
+  if (id === "zone-tool") return snapshot.mode === "zone";
+  if (id === "label-tool") return snapshot.mode === "text";
+  if (id === "ruler-tool") return snapshot.mode === "ruler";
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-grid") return snapshot.showGrid;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
@@ -721,7 +757,11 @@ export function commandEnabled(
   switch (id) {
     case "cancel":
       return (
-        snapshot.gesture !== null || snapshot.fillDraft !== null || snapshot.armedTable !== null
+        snapshot.gesture !== null ||
+        snapshot.fillDraft !== null ||
+        snapshot.armedTable !== null ||
+        snapshot.noteTool?.draft != null ||
+        snapshot.noteTool?.selected != null
       );
     case "toggle-placement-mode":
       return placementModeSwitchEnabled(snapshot, play);
@@ -733,6 +773,7 @@ export function commandEnabled(
           snapshot.mode === "road" ||
           (snapshot.mode === "table" &&
             (snapshot.armedTable !== null || snapshot.hoveredTable !== null)) ||
+          snapshot.noteTool?.selected?.note.kind === "text" ||
           snapshot.selection?.movable === true ||
           (snapshot.gesture !== null && snapshot.gesture.kind !== "box") ||
           snapshot.track?.held != null)
@@ -762,6 +803,9 @@ export function commandEnabled(
     case "delete":
       if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
       if (snapshot.mode === "table") return snapshot.hoveredTable !== null;
+      if (snapshot.noteTool) {
+        return snapshot.noteTool.selected !== null || snapshot.noteTool.draft === "polygon";
+      }
       return snapshot.selection !== null && snapshot.gesture === null && !snapshot.readOnly;
     case "duplicate":
       return snapshot.selection?.members.length === 1 && !snapshot.readOnly;
@@ -802,6 +846,8 @@ export function commandEnabled(
       return snapshot.roadKit !== null && !snapshot.readOnly;
     case "cycle-fill-grid":
       return snapshot.mode === "place" && !snapshot.readOnly;
+    case "close-zone":
+      return snapshot.noteTool?.draft === "polygon";
     case "raise-track":
     case "raise-track-brick":
       return snapshot.mode === "track" && !snapshot.readOnly;
@@ -826,6 +872,9 @@ export function commandEnabled(
     case "zoom-in":
     case "zoom-out":
     case "measure":
+    case "zone-tool":
+    case "label-tool":
+    case "ruler-tool":
     case "toggle-joins":
     case "toggle-grid":
     case "toggle-road-snap":
@@ -1008,6 +1057,18 @@ export function runEditorAction(
       return;
     case "draw-tables":
       editor.setTableTool(editor.snapshot().mode !== "table");
+      return;
+    case "zone-tool":
+      editor.setNoteTool(editor.snapshot().mode === "zone" ? null : "zone");
+      return;
+    case "label-tool":
+      editor.setNoteTool(editor.snapshot().mode === "text" ? null : "text");
+      return;
+    case "ruler-tool":
+      editor.setNoteTool(editor.snapshot().mode === "ruler" ? null : "ruler");
+      return;
+    case "close-zone":
+      editor.finishNote();
       return;
     case "cycle-fill-grid":
       editor.cycleFillGrid();

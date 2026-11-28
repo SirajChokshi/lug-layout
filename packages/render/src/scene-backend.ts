@@ -175,6 +175,23 @@ export interface GuideSegment {
   readonly bz: number;
 }
 
+export interface NoteArea {
+  readonly outline: Float64Array;
+  readonly rgb: number;
+}
+
+export interface NotePath {
+  readonly points: Float64Array;
+  readonly closed: boolean;
+  readonly rgb: number;
+}
+
+export interface NoteShapes {
+  readonly y: number;
+  readonly areas: ReadonlyArray<NoteArea>;
+  readonly paths: ReadonlyArray<NotePath>;
+}
+
 export const PROJECTED_NDC_X = 0;
 export const PROJECTED_NDC_Y = 1;
 export const PROJECTED_IN_VIEW = 2;
@@ -229,6 +246,7 @@ export interface ISceneBackend {
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void;
   setGuides(segments: ReadonlyArray<GuideSegment>): void;
+  setNoteShapes(shapes: NoteShapes): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
   projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void;
   setVehicle(vehicle: number, model: ChunkInstances): void;

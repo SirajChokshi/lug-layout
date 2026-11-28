@@ -211,19 +211,33 @@ function ToolButton({
   readonly labelled?: boolean;
 } & Omit<ComponentProps<"button">, "children" | "title" | "type">) {
   const keys = shortcutText(command);
+  const tipId = useId();
   return (
     <button
       type="button"
       className="tool-button"
-      title={`${label} (${keys})${hint === undefined ? "" : `. ${hint}`}`}
       aria-keyshortcuts={keys}
+      aria-describedby={tipId}
       {...button}
     >
       <Icon name={icon} />
       <span className={labelled ? "tool-label" : "visually-hidden"}>{label}</span>
+      <span id={tipId} className="tool-tip" role="tooltip" aria-hidden="true">
+        {`${label} (${keys})${hint === undefined ? "" : `. ${hint}`}`}
+      </span>
     </button>
   );
 }
+
+const NOTE_TOOL_BUTTONS: ReadonlyArray<{
+  readonly id: EditorActionId;
+  readonly label: string;
+  readonly icon: IconName;
+}> = [
+  { id: "zone-tool", label: "Zone", icon: "plan" },
+  { id: "label-tool", label: "Label", icon: "text" },
+  { id: "ruler-tool", label: "Ruler", icon: "ruler" },
+];
 
 export function PlacementToolbar({
   editor,
@@ -281,6 +295,18 @@ export function PlacementToolbar({
             disabled={!commandEnabled("measure", snapshot, play)}
             onClick={(event) => onEditorAction("measure", event.timeStamp)}
           />
+          {NOTE_TOOL_BUTTONS.map(({ id, label, icon }) => (
+            <ToolButton
+              key={id}
+              icon={icon}
+              label={label}
+              command={id}
+              data-action={id}
+              aria-pressed={commandActive(id, snapshot)}
+              disabled={!commandEnabled(id, snapshot, play)}
+              onClick={(event) => onEditorAction(id, event.timeStamp)}
+            />
+          ))}
           {snapshot.rulers > 0 && (
             <button
               type="button"
@@ -500,7 +526,7 @@ interface StudDraft {
   readonly owner: string;
 }
 
-function StudField({
+export function StudField({
   label,
   value,
   owner,

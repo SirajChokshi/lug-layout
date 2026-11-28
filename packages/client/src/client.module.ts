@@ -58,6 +58,7 @@ import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-work
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
 import { AnnotationService } from "./notes/annotation-service.ts";
+import { NoteEditSession } from "./notes/note-edit-session.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { PlanSheetService } from "./plan/plan-sheet-service.ts";
 import { PdfSheetWriter } from "./sheets/pdf-sheet-writer.ts";
@@ -85,6 +86,7 @@ import { FetchedStarterFiles } from "./starters/starter-files.ts";
 import { StarterWorlds } from "./starters/starter-worlds.ts";
 import {
   ANNOTATION_SERVICE,
+  NOTE_EDIT_SESSION,
   BOM_SERVICE,
   OWNED_PARTS,
   CATALOG_SEARCH,
@@ -194,6 +196,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
   bind(ANNOTATION_SERVICE).to(AnnotationService).inSingletonScope();
+  bind(NOTE_EDIT_SESSION).to(NoteEditSession).inSingletonScope();
   bind(PLAN_SHEET_SERVICE).to(PlanSheetService).inSingletonScope();
   bind(SHEET_TYPEFACE).to(CourierTypeface).inSingletonScope();
   bind(SHEET_TILER).to(SheetTiler).inSingletonScope();

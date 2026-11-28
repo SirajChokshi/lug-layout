@@ -37,6 +37,7 @@ describe("shortcut map", () => {
 
     expect(Object.fromEntries(shared)).toEqual({
       A: ["extend-left", "toggle-placement-mode"],
+      Enter: ["extend-preview", "close-zone"],
       Esc: ["cancel", "select-tool"],
       "←": ["nudge-left", "pan-left"],
       "→": ["nudge-right", "pan-right"],
@@ -70,6 +71,10 @@ describe("shortcut map", () => {
     ["Arrow", press("ArrowLeft"), "nudge-left"],
     ["Shift+Arrow", press("ArrowLeft", { shiftKey: true }), "orbit-left"],
     ["P", press("p"), "toggle-plan-view"],
+    ["Z alone draws zones", press("z"), "zone-tool"],
+    ["N", press("n"), "label-tool"],
+    ["Shift+U draws saved rulers", press("U", { shiftKey: true }), "ruler-tool"],
+    ["U alone still measures", press("u"), "measure"],
     ["a digit", press("7"), "pick-slot"],
   ])("maps %s", (_, input, expected) => {
     expect(commandForKey(input, false, anyEnabled)?.id ?? null).toBe(expected);
@@ -174,6 +179,9 @@ describe("play commands", () => {
       "draw-road",
       "measure",
       "draw-tables",
+      "zone-tool",
+      "label-tool",
+      "ruler-tool",
       "cycle-fill-grid",
       "rotate",
       "rotate-back",
@@ -183,6 +191,7 @@ describe("play commands", () => {
       "extend-left",
       "extend-right",
       "extend-preview",
+      "close-zone",
       "next-track-choice",
       "previous-track-choice",
       "close-track-loop",

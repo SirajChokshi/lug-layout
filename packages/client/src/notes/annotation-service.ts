@@ -45,6 +45,7 @@ export interface IAnnotationService extends PlacementFollower {
   subscribe(listener: () => void): () => void;
   version(): number;
   notes(): NoteState;
+  document(): NoteDocument;
   records(): ReadonlyArray<NoteRecordV2>;
   rulerSpan(id: string): NoteSpan | null;
   add(body: NoteBody): Decoded<string>;
@@ -77,7 +78,7 @@ export class AnnotationService implements IAnnotationService {
   private readonly deliver = (listener: () => void): void => listener();
   private entries: NoteState = [];
   private recordList: ReadonlyArray<NoteRecordV2> | null = null;
-  private document: NoteDocument = DEFAULT_WORLD_DOCUMENT;
+  private openDocument: NoteDocument = DEFAULT_WORLD_DOCUMENT;
   private world = new World();
   private attached = 0;
   private nextId = 1;
@@ -99,6 +100,10 @@ export class AnnotationService implements IAnnotationService {
 
   notes(): NoteState {
     return this.entries;
+  }
+
+  document(): NoteDocument {
+    return this.openDocument;
   }
 
   records(): ReadonlyArray<NoteRecordV2> {
@@ -178,7 +183,7 @@ export class AnnotationService implements IAnnotationService {
   load(contents: NoteContents): ReadonlyArray<Issue> {
     const issues = this.check(contents);
     if (issues.length > 0) return issues;
-    this.document = contents.document;
+    this.openDocument = contents.document;
     this.world = contents.world;
     this.entries = contents.notes.map((note, index) => ({
       id: `note-${this.nextId++}`,
@@ -198,7 +203,7 @@ export class AnnotationService implements IAnnotationService {
     }
     const decoded = decode(NoteRecordV2, noteAt(body, 0), NEW_NOTE_PATH);
     if (!decoded.ok) return decoded;
-    const index = new WorldDocumentIndex(this.document);
+    const index = new WorldDocumentIndex(this.openDocument);
     const issues = this.referenceIssues(decoded.value, NEW_NOTE_PATH, index, this.world);
     return issues.length > 0 ? { ok: false, issues } : { ok: true, value: canonicalBody(body) };
   }

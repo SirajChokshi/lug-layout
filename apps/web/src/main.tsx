@@ -1,5 +1,6 @@
 import {
   ANNOTATION_SERVICE,
+  NOTE_EDIT_SESSION,
   BOM_SERVICE,
   CREDITS,
   EDITOR,
@@ -156,6 +157,7 @@ function root(): ReactNode {
         scaleBar={container.get(SCALE_BAR)}
         plans={container.get(PLAN_SERVICE)}
         annotations={container.get(ANNOTATION_SERVICE)}
+        notes={container.get(NOTE_EDIT_SESSION)}
         sheets={container.get(PLAN_SHEET_SERVICE)}
         sheetSets={container.get(SHEET_SETS)}
         events={container.get(EVENT_DETAILS)}

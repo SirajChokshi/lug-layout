@@ -96,7 +96,7 @@ export function attachedEnds(note: NoteRecordV2): ReadonlyArray<ModelEndV2> {
   return ends;
 }
 
-function sameEnd(a: RulerEndV2, b: RulerEndV2): boolean {
+export function sameRulerEnd(a: RulerEndV2, b: RulerEndV2): boolean {
   if (a.on === "point" && b.on === "point") return a.x === b.x && a.z === b.z;
   if (a.on === "model" && b.on === "model") {
     return namesPlacement(a, b) && a.offsetX === b.offsetX && a.offsetZ === b.offsetZ;
@@ -145,7 +145,7 @@ export function followPlacements(state: NoteState, moves: ReadonlyArray<Placemen
       continue;
     }
     changed = true;
-    if (!sameEnd(from, to)) kept.push({ id: entry.id, note: { ...note, from, to } });
+    if (!sameRulerEnd(from, to)) kept.push({ id: entry.id, note: { ...note, from, to } });
   }
   return changed ? reindexed(kept) : state;
 }

@@ -260,9 +260,22 @@ import {
   type TrackSelectionView,
   type TrainSelectionView,
 } from "./selection.ts";
-import { ANNOTATION_SERVICE, EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
+import {
+  ANNOTATION_SERVICE,
+  EDITOR_CAMERA,
+  NOTE_EDIT_SESSION,
+  PLAN_SERVICE,
+  TABLE_GROUND,
+} from "../tokens.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
+import type { INoteEditSession, NoteEditView } from "../notes/note-edit-session.ts";
+import {
+  noteToolOf,
+  type NoteModelView,
+  type NotePointer,
+  type NoteToolKind,
+} from "../notes/note-tool.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { placementsBox } from "../plan/placements-box.ts";
 import {
@@ -324,7 +337,7 @@ export type {
 } from "./selection.ts";
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind;
-export type EditorMode = "place" | "select" | "track" | "road" | "measure" | "table";
+export type EditorMode = "place" | "select" | "track" | "road" | "measure" | "table" | NoteToolKind;
 
 export interface LatencySample {
   readonly step: HistoryStep;
@@ -496,7 +509,7 @@ export interface ModelImportView {
 }
 
 export interface EditorSnapshot
-  extends WorldSessionView, FrameLoopView, GroundView, TrackEditView, RoadEditView {
+  extends WorldSessionView, FrameLoopView, GroundView, TrackEditView, RoadEditView, NoteEditView {
   readonly status: EditorStatus;
   readonly error: string | null;
   readonly loadMs: number | null;
@@ -680,6 +693,8 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setTableTool(on: boolean): void;
   armTableType(typeId: number | null): void;
   checkLayout(): void;
+  setNoteTool(tool: NoteToolKind | null): void;
+  finishNote(): void;
   cycleFillGrid(): void;
   fillTables(eventTimeMs: number): void;
   clearRulers(): void;
@@ -694,6 +709,8 @@ const ASSIST_FLOOR_LDU = STUD_LDU;
 const ASSIST_BASIN_LDU = 3 * STUD_LDU;
 const LOOP_SCAN_FRAME_BUDGET_MS = 10;
 const NDC_SPAN = 2;
+const NOTE_PLANE_Y_LDU = 0;
+const NO_NOTE_MODELS: ReadonlyArray<NoteModelView> = [];
 const HALF_STUD_LDU = STUD_LDU / 2;
 const ORIGIN_INTS = 3;
 
@@ -1395,6 +1412,7 @@ export class Editor implements IEditor, IEditedWorld {
     rulerDraft: false,
     hoveredTable: null,
     armedTable: null,
+    noteTool: null,
     fillGridStuds: DEFAULT_FILL_GRID_STUDS,
     fillDraft: null,
     lastFill: null,
@@ -1488,6 +1506,7 @@ export class Editor implements IEditor, IEditedWorld {
   private hitZ = 0;
   private labelsReusable = false;
   private labelsMeasured: ReadonlyArray<LabelView> = NO_LABELS;
+  private labelsNoted: ReadonlyArray<LabelView> = NO_LABELS;
   private labelsTabled: ReadonlyArray<LabelView> = NO_LABELS;
   private labelsFilling: LabelView | null = null;
   private labelsSelection: SelectionView | null = null;
@@ -1533,6 +1552,7 @@ export class Editor implements IEditor, IEditedWorld {
   };
   private readonly roadFit = new RoadFit();
   private readonly nearModels: PlacedModel[] = [];
+  private readonly noteNeighbours: PlacedModel[] = [];
   private readonly restingModels: PlacedModel[] = [];
   private readonly tileModels: PlacedModel[] = [];
   private readonly restingTop = new Float64Array(1);
@@ -1594,6 +1614,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
     @inject(ANNOTATION_SERVICE) private readonly annotations: IAnnotationService,
+    @inject(NOTE_EDIT_SESSION) private readonly notes: INoteEditSession,
     @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
     @inject(EDITOR_FRAME_LOOP) private readonly frames: IEditorFrameLoop,
@@ -1649,6 +1670,11 @@ export class Editor implements IEditor, IEditedWorld {
     plans.onEdit((change) => this.planEdited(change));
     annotations.onEdit((change) => this.notesEdited(change));
     events.onEdit((change) => this.eventEdited(change));
+    notes.subscribe(() => this.noteToolChanged());
+  }
+
+  private noteToolChanged(): void {
+    this.update({ ...this.notes.view(), labels: this.labelsOf(this.state) });
   }
 
   private sessionChanged(): void {
@@ -1699,9 +1725,11 @@ export class Editor implements IEditor, IEditedWorld {
     const drawn = state.mode === "track" ? track : null;
     const heights = drawn ? drawn.heightLabels() : NO_LABELS;
     const preview = drawn ? drawn.previewLabels() : NO_LABELS;
+    const noted = this.notes.labels();
     if (
       this.labelsReusable &&
       ghostAt === null &&
+      noted === this.labelsNoted &&
       measured === this.labelsMeasured &&
       tabled === this.labelsTabled &&
       filling === this.labelsFilling &&
@@ -1720,8 +1748,9 @@ export class Editor implements IEditor, IEditedWorld {
       );
     }
     if (selection) labels.push(boxLabel("selection", "selection", selection.box));
-    labels.push(...preview, ...heights);
+    labels.push(...preview, ...heights, ...noted);
     this.labelsReusable = ghostAt === null;
+    this.labelsNoted = noted;
     this.labelsMeasured = measured;
     this.labelsTabled = tabled;
     this.labelsFilling = filling;
@@ -1790,6 +1819,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.measure = new MeasureTool(-index.tablePlane.depthBelowTopLdu);
       this.tables = new TableTool(this.plans, -index.tablePlane.depthBelowTopLdu);
       this.fillTool = new FillTool(-index.tablePlane.depthBelowTopLdu);
+      this.notes.start(NOTE_PLANE_Y_LDU);
       const catalog = await this.catalog.start(index);
       this.catalogItems = catalog.items;
       this.bundleColors = index.colors;
@@ -2309,6 +2339,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.cancelFill();
     this.waitingFill = null;
     this.fillTool?.end();
+    if (noteToolOf(this.state.mode) !== null) return this.noteDragStart(ndcX, ndcY);
     if (this.state.mode === "measure") return this.rulerDragStart(ndcX, ndcY);
     if (this.state.mode === "table") return this.tableDragStart(ndcX, ndcY);
     if (this.state.mode === "road") return this.roadDragStart(ndcX, ndcY);
@@ -2341,6 +2372,11 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   dragMove(ndcX: number, ndcY: number): void {
+    if (noteToolOf(this.state.mode) !== null) {
+      const pointer = this.notePointer(ndcX, ndcY);
+      if (pointer) this.notes.drag(pointer);
+      return;
+    }
     const fill = this.fillTool;
     if (fill?.drafting) {
       if (this.groundHit(ndcX, ndcY) && fill.drag(this.hitX, this.hitZ)) this.previewFill(fill);
@@ -2371,6 +2407,10 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (noteToolOf(this.state.mode) !== null) {
+      this.notes.release(this.notePointer(ndcX, ndcY));
+      return;
+    }
     const fill = this.fillTool;
     if (fill?.drafting) {
       this.fillDragEnd(fill, ndcX, ndcY, eventTimeMs);
@@ -2610,6 +2650,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   chooseItem(id: string | null): void {
+    if (noteToolOf(this.state.mode) !== null) this.setNoteTool(null);
     if (this.state.mode === "measure") this.setMeasuring(false);
     if (this.state.mode === "table") this.setTableTool(false);
     this.cancelFill();
@@ -3506,6 +3547,9 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
+    if (noteToolOf(this.state.mode) !== null) {
+      this.notes.hover(this.hovering ? this.notePointer(ndcX, ndcY) : null);
+    }
     const kept = this.keptSnapHolds();
     if (!kept) this.keptRoadSnap = null;
     this.forgetPendingTurnsAway();
@@ -3563,6 +3607,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerLeave(): void {
     this.hovering = false;
+    if (noteToolOf(this.state.mode) !== null) this.notes.hover(null);
     this.keptRoadSnap = null;
     this.assist.leave();
     this.update({ hover: null });
@@ -3679,7 +3724,9 @@ export class Editor implements IEditor, IEditedWorld {
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
     const mode = this.state.mode;
-    if (mode === "road" || mode === "measure" || mode === "table") return;
+    if (mode === "road" || mode === "measure" || mode === "table" || noteToolOf(mode) !== null) {
+      return;
+    }
     if (this.state.mode === "track") {
       if (!this.tracks.holding() || this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -4291,6 +4338,96 @@ export class Editor implements IEditor, IEditedWorld {
     this.showGuides();
   }
 
+  setNoteTool(tool: NoteToolKind | null): void {
+    const current = noteToolOf(this.state.mode);
+    if (tool === current) return;
+    if (tool === null) {
+      this.notes.setTool(null);
+      this.update({ mode: "select" });
+      return;
+    }
+    if (this.state.status !== "ready") return;
+    if (current === null) {
+      this.chooseItem(null);
+      this.select([]);
+    }
+    this.notes.setTool(tool);
+    this.update({ mode: tool, activeItem: null });
+    if (this.hovering) this.notes.hover(this.notePointer(this.pointerNdcX, this.pointerNdcY));
+  }
+
+  finishNote(): void {
+    if (noteToolOf(this.state.mode) !== null) this.notes.finish();
+  }
+
+  private noteDragStart(ndcX: number, ndcY: number): boolean {
+    const pointer = this.notePointer(ndcX, ndcY);
+    if (!pointer) return false;
+    this.notes.press(pointer);
+    return true;
+  }
+
+  private notePointer(ndcX: number, ndcY: number): NotePointer | null {
+    if (!this.groundHit(ndcX, ndcY)) return null;
+    const reachLdu = this.handleToleranceLdu(ndcX, ndcY);
+    if (this.state.mode !== "ruler") {
+      return { x: this.hitX, z: this.hitZ, reachLdu, models: NO_NOTE_MODELS };
+    }
+    return this.rulerPointer(reachLdu);
+  }
+
+  private rulerPointer(reachLdu: number): NotePointer {
+    const { ray } = this;
+    let front: PlacedModel | null = null;
+    let frontT = Number.POSITIVE_INFINITY;
+    for (const model of this.placed.models()) {
+      const t = model.rayHit(ray);
+      if (t < frontT) {
+        frontT = t;
+        front = model;
+      }
+    }
+    const x = front ? (ray[0] ?? 0) + (ray[3] ?? 0) * frontT : this.hitX;
+    const z = front ? (ray[2] ?? 0) + (ray[5] ?? 0) * frontT : this.hitZ;
+    const near = this.noteNeighbours;
+    const count = this.placed.over(
+      {
+        minX: x - reachLdu,
+        minY: Number.NEGATIVE_INFINITY,
+        minZ: z - reachLdu,
+        maxX: x + reachLdu,
+        maxY: Number.POSITIVE_INFINITY,
+        maxZ: z + reachLdu,
+      },
+      near,
+    );
+    const models: NoteModelView[] = front ? [this.noteModel(front, true)] : [];
+    for (let m = 0; m < count; m++) {
+      const model = near[m];
+      if (model && model !== front) models.push(this.noteModel(model, false));
+    }
+    return { x, z, reachLdu, models };
+  }
+
+  private noteModel(model: PlacedModel, under: boolean): NoteModelView {
+    const { handle } = model;
+    const ref = this.catalog.refs()[handle.refId];
+    if (ref === undefined) throw new Error(`placement refId ${handle.refId} has no catalog id`);
+    return {
+      placement: {
+        ref,
+        color: handle.colorId,
+        x: handle.x,
+        z: handle.z,
+        yPlates: handle.yPlates,
+        rot: handle.rot,
+      },
+      label: model.placeable.label,
+      box: model.box,
+      under,
+    };
+  }
+
   cycleFillGrid(): void {
     this.update({ fillGridStuds: nextFillGrid(this.state.fillGridStuds) });
     this.reframeFill();
@@ -4846,6 +4983,10 @@ export class Editor implements IEditor, IEditedWorld {
       if (!this.state.readOnly && this.tables?.turn()) this.showGuides();
       return;
     }
+    if (this.state.mode === "text") {
+      this.notes.turnSelected(direction);
+      return;
+    }
     if (this.state.mode === "road") {
       this.ghostRot = quarterTurned(this.ghostRot, direction);
       this.placeRot = this.ghostRot;
@@ -4933,6 +5074,10 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   deleteSelection(eventTimeMs: number): void {
+    if (noteToolOf(this.state.mode) !== null) {
+      this.notes.deleteSelected();
+      return;
+    }
     const measure = this.measure;
     if (this.state.mode === "measure" && measure) {
       if (measure.drafting) measure.cancel();
@@ -5087,6 +5232,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   cancelGesture(): void {
     if (this.state.mode === "table" && this.tables?.armedTable) this.armTableType(null);
+    if (noteToolOf(this.state.mode) !== null) this.notes.cancel();
     if (this.gesture) this.endGesture();
     this.cancelFill();
     this.queueClick(null);

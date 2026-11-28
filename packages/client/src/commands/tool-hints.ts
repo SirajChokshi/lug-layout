@@ -35,6 +35,8 @@ import type {
   UnjoinedEndView,
 } from "../edit/track-extension.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
+import type { NoteToolView } from "../notes/note-edit-session.ts";
+import type { NoteToolKind } from "../notes/note-tool.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
 
 export type ToolTone = "idle" | "select" | "place" | "erase" | "track" | "play" | "warn";
@@ -477,6 +479,79 @@ function measureDetail(snapshot: EditorSnapshot): string {
   return `${snapshot.rulers} ${snapshot.rulers === 1 ? "ruler" : "rulers"}, ${cursor}`;
 }
 
+const NOTE_TOOL_STARTING: HintView = {
+  tone: "place",
+  title: "Notes",
+  detail: null,
+  hints: [],
+};
+
+const NOTE_TOOL_TITLES: Readonly<Record<NoteToolKind, string>> = {
+  zone: "Drawing zones",
+  text: "Placing labels",
+  ruler: "Drawing rulers",
+};
+
+const NOTE_TOOL_COMMANDS: Readonly<Record<NoteToolKind, CommandId>> = {
+  zone: "zone-tool",
+  text: "label-tool",
+  ruler: "ruler-tool",
+};
+
+function noteHints(noteTool: NoteToolView): ToolHint[] {
+  const done = key(NOTE_TOOL_COMMANDS[noteTool.tool], "done");
+  switch (noteTool.tool) {
+    case "zone":
+      if (noteTool.draft === "polygon") {
+        return [
+          gesture("Click", "add a corner"),
+          key("close-zone", "close"),
+          key("delete", "take back a corner"),
+          key("cancel", "cancel"),
+        ];
+      }
+      return [
+        gesture("Drag", "draw a rectangle"),
+        gesture("Click", "start a polygon, or select a zone"),
+        gesture("Drag a zone", "move it, or its corner to reshape"),
+        key("delete", "delete"),
+        key("cancel", "deselect"),
+        done,
+      ];
+    case "text":
+      return [
+        gesture("Click", "place a label, or select one"),
+        gesture("Drag a label", "move it"),
+        key("rotate", "turn"),
+        key("delete", "delete"),
+        key("cancel", "deselect"),
+        done,
+      ];
+    case "ruler":
+      return [
+        gesture("Drag", "lay a ruler; ends snap to models and follow them"),
+        gesture("Click", "select a ruler"),
+        gesture("Drag an end", "move it"),
+        key("delete", "delete"),
+        key("cancel", "deselect"),
+        done,
+      ];
+    default: {
+      const unhandled: never = noteTool.tool;
+      throw new Error(`unhandled note tool ${String(unhandled)}`);
+    }
+  }
+}
+
+function noteView(noteTool: NoteToolView): HintView {
+  return {
+    tone: noteTool.refusal === null ? "place" : "warn",
+    title: NOTE_TOOL_TITLES[noteTool.tool],
+    detail: noteTool.refusal ?? noteTool.detail,
+    hints: noteHints(noteTool),
+  };
+}
+
 function verdictSpeech(feedback: PlacementFeedback, heading: string): string | null {
   if (feedback.tone === "pending") return null;
   const said = feedback.lines.filter(unturned).map(lineText).join(" · ");
@@ -682,6 +757,10 @@ function view(snapshot: EditorSnapshot): HintView {
         ],
       };
     }
+    case "zone":
+    case "text":
+    case "ruler":
+      return snapshot.noteTool ? noteView(snapshot.noteTool) : NOTE_TOOL_STARTING;
     case "select": {
       const { selection } = snapshot;
       if (snapshot.gesture) return gestureView(snapshot.gesture);

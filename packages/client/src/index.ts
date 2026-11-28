@@ -169,6 +169,26 @@ export {
   type VenueInput,
 } from "./plan/plan-service.ts";
 export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
+export {
+  DEFAULT_NOTE_STYLE,
+  TEXT_ALONG_OFFSET,
+  TEXT_PROJECTION_FLOATS,
+  TEXT_UP_OFFSET,
+  type INoteEditSession,
+  type NoteEditView,
+  type NoteTextView,
+  type NoteToolView,
+  type RulerEndView,
+  type SelectedNoteView,
+} from "./notes/note-edit-session.ts";
+export {
+  NOTE_TOOL_KINDS,
+  noteToolOf,
+  type NoteDraftKind,
+  type NoteStyle,
+  type NoteToolKind,
+} from "./notes/note-tool.ts";
+export { TEXT_LINE_HEIGHT_EM } from "./notes/text-frame.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
 export { AISLE_SIDES, OBSTACLE_KINDS, UNSTATED_OBSTACLE_KIND } from "@brr/schema/world";
 export {
@@ -247,6 +267,7 @@ export type {
 } from "@brr/domain";
 export {
   ANNOTATION_SERVICE,
+  NOTE_EDIT_SESSION,
   RUNNING_GEAR,
   BOM_SERVICE,
   OWNED_PARTS,

@@ -58,6 +58,7 @@ class RecordingBackend implements ISceneBackend {
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
   setGuides(): void {}
+  setNoteShapes(): void {}
   projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
