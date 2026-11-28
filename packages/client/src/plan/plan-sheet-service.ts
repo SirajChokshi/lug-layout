@@ -1,12 +1,12 @@
 import {
   mmRectInWorld,
   NO_ROW,
+  placementKeyText,
   regionOriginX,
   regionOriginZ,
   rectsOverlap,
   type LduRect,
   type OutlineRing,
-  type PlacementKey,
   type PlanIssue,
 } from "@brr/domain";
 import { inject, injectable } from "inversify";
@@ -59,13 +59,11 @@ export interface IPlanSheetService {
   ): Promise<SheetFile>;
 }
 
-function keyText(key: PlacementKey): string {
-  return `${key.chunkKey}:${key.slot}`;
-}
-
 function flaggedKeys(issues: ReadonlyArray<PlanIssue>): ReadonlySet<string> {
   const flagged = new Set<string>();
-  for (const issue of issues) for (const key of issue.placements) flagged.add(keyText(key));
+  for (const issue of issues) {
+    for (const key of issue.placements) flagged.add(placementKeyText(key));
+  }
   return flagged;
 }
 
@@ -197,7 +195,7 @@ export class PlanSheetService implements IPlanSheetService {
         parts: shapes.partsOf(segment, id),
         segment,
         rings: ringsOf(shapes, rows, row),
-        flagged: flagged.has(keyText(rows.keyOf(row))),
+        flagged: flagged.has(placementKeyText(rows.keyOf(row))),
       });
       if (segment === "model") roadway.push(...shapes.roadwayOf(id));
     }

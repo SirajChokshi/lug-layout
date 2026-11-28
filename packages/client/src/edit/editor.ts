@@ -13,6 +13,7 @@ import {
   EditHistory,
   NO_ROW,
   PlanDelta,
+  placementKeyText,
   RoadFit,
   World,
   addShards,
@@ -35,6 +36,7 @@ import {
   type PlanChange,
   type PlanState,
   type PlacementHandle,
+  type PlacementKey,
   type PlacementContents,
   type PlacementPose,
   type PlacementRegion,
@@ -625,6 +627,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   click(ndcX: number, ndcY: number, eventTimeMs: number): void;
   toggleSelected(ndcX: number, ndcY: number): void;
   selectTrackPath(ndcX: number, ndcY: number, scope: TrackPathScope): boolean;
+  selectPlacements(keys: ReadonlyArray<PlacementKey>): void;
   selectDragStart(ndcX: number, ndcY: number, additive: boolean): SelectDragKind | null;
   selectDragMove(ndcX: number, ndcY: number): void;
   selectDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
@@ -3648,6 +3651,26 @@ export class Editor implements IEditor, IEditedWorld {
     if (picked?.kind !== "track") return false;
     this.select(this.trackPaths.members(picked.placement, scope));
     return true;
+  }
+
+  selectPlacements(keys: ReadonlyArray<PlacementKey>): void {
+    this.chooseItem(null);
+    const wanted = new Set(keys.map(placementKeyText));
+    const track = this.trackWorld.drawing();
+    this.select([
+      ...this.placed
+        .models()
+        .filter(({ handle }) => wanted.has(placementKeyText(handle)))
+        .map((model): SelectionMember => ({ kind: "model", model })),
+      ...keys
+        .filter(
+          ({ chunkKey, slot }) =>
+            track !== null &&
+            slot < track.pieceCount &&
+            track.laidPieceView(slot).chunkKey === chunkKey,
+        )
+        .map(({ slot }): SelectionMember => ({ kind: "track", placement: slot })),
+    ]);
   }
 
   private pickAt(ndcX: number, ndcY: number): SelectionMember | null {

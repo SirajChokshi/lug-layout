@@ -70,6 +70,10 @@ export interface PlacementKey {
   readonly slot: number;
 }
 
+export function placementKeyText(key: PlacementKey): string {
+  return `${key.chunkKey}:${key.slot}`;
+}
+
 export interface PlateClearance {
   readonly train: string;
   readonly needPlates: number;
