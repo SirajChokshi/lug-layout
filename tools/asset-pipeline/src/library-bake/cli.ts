@@ -1,4 +1,4 @@
-import { LIBRARY_BAKE_BUCKETS, LibraryBakePin } from "@brr/schema/bundle";
+import { ALPHA_OPAQUE, LIBRARY_BAKE_BUCKETS, LibraryBakePin } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, rm } from "node:fs/promises";
@@ -6,8 +6,14 @@ import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUNDLE_DATA_FILES } from "../bundle-data.ts";
+import { ldconfigColors } from "../catalog/inputs.ts";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
-import { extractLibrary, httpReader, pinnedArchive } from "../library/ldraw-library.ts";
+import {
+  extractLibrary,
+  httpReader,
+  pinnedArchive,
+  readLibraryFile,
+} from "../library/ldraw-library.ts";
 import { readPrimitiveTable, studPrimitives } from "../palette.ts";
 import { bundleBaseUrl, liveBundleLibraryBakeIndexes } from "../pointer/live-bundles.ts";
 import {
@@ -30,6 +36,7 @@ const primitivesPath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const binary = join(repoRoot, "target", "release", "library-bake");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
 const bundleFallbackPath = join(repoRoot, "infra", "cloudflare", "bundle-fallback.json");
+const LDCONFIG = "LDConfig.ldr";
 
 interface PaletteOptions {
   readonly unofficialAllowlist: ReadonlyArray<string>;
@@ -55,17 +62,27 @@ function runShard(args: ReadonlyArray<string>): Promise<void> {
   });
 }
 
-async function restoreLibrary(lock: InputLock): Promise<void> {
+async function restoreLibrary(lock: InputLock): Promise<string> {
   const archive = pinnedArchive(lock);
   const directory = catalogSourceDirectory(catalogRoot, archive.name);
   await restoreFiles(archive.location, { [archive.file]: archive.sha256 }, directory);
-  const extracted = await extractLibrary(join(directory, archive.file), lock, ldrawLibraryRoot);
+  const archivePath = join(directory, archive.file);
+  const extracted = await extractLibrary(archivePath, lock, ldrawLibraryRoot);
   if (extracted.problems.length > 0) throw new Error(extracted.problems.join("; "));
+  return archivePath;
+}
+
+async function translucentColors(archivePath: string, lock: InputLock): Promise<number[]> {
+  const ldconfig = await readLibraryFile(archivePath, lock, LDCONFIG);
+  return ldconfigColors(ldconfig.toString("utf8"))
+    .filter((color) => color.alpha < ALPHA_OPAQUE)
+    .map((color) => color.code)
+    .toSorted((a, b) => a - b);
 }
 
 async function precompute(check: boolean): Promise<void> {
   const lock = await readLock();
-  await restoreLibrary(lock);
+  const clear = await translucentColors(await restoreLibrary(lock), lock);
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli", "--bin", "library-bake"]);
   await rm(buildRoot, { recursive: true, force: true });
   await mkdir(buildRoot, { recursive: true });
@@ -80,6 +97,8 @@ async function precompute(check: boolean): Promise<void> {
         palettePath,
         "--primitives",
         primitivesPath,
+        "--translucent-colors",
+        clear.join(","),
         "--out",
         buildRoot,
         "--shard",
@@ -97,6 +116,7 @@ async function precompute(check: boolean): Promise<void> {
       studPrimitives: studPrimitives(primitives),
       unofficialAllowlist: palette.unofficialAllowlist,
       primitives,
+      translucentColors: clear,
     },
   });
   await rm(buildRoot, { recursive: true, force: true });

@@ -555,6 +555,14 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             .map_err(BakeError::Glyph)
     }
 
+    pub fn part_glyph(&mut self, reference: &str) -> Result<Glyph, BakeError> {
+        let slot = self.slot(reference)?;
+        let source = &self.sources[slot];
+        GlyphBaker::new(&self.stud_meshes, &self.translucent)
+            .part(source.mesh(), source.studs())
+            .map_err(BakeError::Glyph)
+    }
+
     pub fn voxels(
         &mut self,
         drawn: &[ModelInstance],

@@ -367,24 +367,36 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   async loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord> {
-    const [index, shape] = await Promise.all([
+    const [index, shape, glyph] = await Promise.all([
       this.loadIndex(lod),
       this.json(PartShape, `${lod}/${part.shape.file}`),
+      this.glyph(lod, part.glyph),
     ]);
-    return shapeRecord(shape, studPrimitiveNamesOf(index));
+    return { ...shapeRecord(shape, studPrimitiveNamesOf(index)), ...glyph };
   }
 
   async loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
     const index = await this.loadIndex(lod);
     const entry = index.models.find((model) => model.name === name);
     if (!entry) throw new Error(`model "${name}" is not in the bundle`);
-    const file = await this.json(ModelFile, `${lod}/${entry.file}`);
+    const [file, glyph] = await Promise.all([
+      this.json(ModelFile, `${lod}/${entry.file}`),
+      this.glyph(lod, entry.glyph),
+    ]);
     const names = studPrimitiveNamesOf(index);
     return {
       entry,
-      model: partModel(file),
+      model: { ...partModel(file), ...glyph },
       parts: file.shapes.map((shape) => shapeRecord(shape, names)),
     };
+  }
+
+  private async glyph(
+    lod: BundleLod,
+    ref: { readonly file: string } | undefined,
+  ): Promise<{ readonly glyph?: Uint8Array }> {
+    if (ref === undefined) return {};
+    return { glyph: new Uint8Array(await this.bytes(`${lod}/${ref.file}`, "structural")) };
   }
 
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {

@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::authored::AUTHORED_RULE_VERSION;
-use brick_compile::bake::{FarVoxels, LatticeShape, ModelBaker};
-use brick_compile::colors::{parse_ldconfig, Colour};
+use brick_compile::bake::{BakeError, FarVoxels, LatticeShape, ModelBaker};
+use brick_compile::colors::{parse_ldconfig, translucent_codes};
 use brick_compile::compile::{
     modified_note, required_stud_roundness, stud_primitives_from_table, RollingMode, MODIFIED_NOTE,
 };
@@ -16,6 +16,7 @@ use brick_compile::connect::{
 };
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
+use brick_compile::glyph::Glyph;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::ModelLattice;
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
@@ -386,7 +387,11 @@ fn vehicle_json(vehicle: &Vehicle) -> Value {
     })
 }
 
-const OPAQUE_ALPHA: u8 = 255;
+fn glyph_file(out: &Path, file: String, glyph: Result<Glyph, BakeError>) -> Result<Value, String> {
+    let bytes = glyph.map_err(|e| format!("{file}: {e}"))?.encode();
+    fs::write(out.join(&file), bytes).map_err(|e| format!("{file}: {e}"))?;
+    Ok(json!({ "file": file }))
+}
 
 fn far_mesh(
     baker: &mut ModelBaker<FsLibrary>,
@@ -545,14 +550,6 @@ fn connector_records<L: Library, S: Library>(
     Ok(indexes)
 }
 
-fn translucent_codes(colors: &[Colour]) -> HashSet<u32> {
-    colors
-        .iter()
-        .filter(|c| c.alpha < OPAQUE_ALPHA)
-        .map(|c| c.code)
-        .collect()
-}
-
 fn run(args: &Args) -> Result<(), String> {
     let mut files = HashMap::new();
     collect(&args.ldraw, &args.ldraw, &mut files).map_err(|e| e.to_string())?;
@@ -692,6 +689,11 @@ fn run(args: &Args) -> Result<(), String> {
         if !entry["producedColors"].is_null() {
             summary["producedColors"] = entry["producedColors"].clone();
         }
+        summary["glyph"] = glyph_file(
+            &args.out,
+            format!("{}.glyph", stem(&reference)),
+            baker.part_glyph(&reference),
+        )?;
         let shape = with_lattice_receptors(&mut extractor, &mut extractions, &summary, shape)?;
         part_index.insert(reference, parts.len());
         parts.push(summary);
@@ -1005,6 +1007,11 @@ fn run(args: &Args) -> Result<(), String> {
             "vehicles": vehicles.len(),
             "sha256": entry["sha256"],
             "cover": cover_manifest,
+            "glyph": glyph_file(
+                &args.out,
+                format!("model-{}.glyph", stem(name)),
+                baker.glyph(&drawn),
+            )?,
         });
         if !not_drawn.is_empty() {
             manifest_entry["notDrawn"] = json!(not_drawn);

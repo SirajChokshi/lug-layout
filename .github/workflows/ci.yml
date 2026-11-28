@@ -248,7 +248,7 @@ jobs:
           path: .cache/catalog
           key: library-bake-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
           restore-keys: library-bake-inputs-
-      - name: Recompute every pinned part's bake record and standard GLB and check them against the pin
+      - name: Recompute every pinned part's bake record, standard GLB and plan glyph and check them against the pin
         run: pnpm --filter @brr/asset-pipeline library-bake --check
       - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
@@ -297,7 +297,7 @@ jobs:
           save-if: ${{ github.event_name != 'pull_request' }}
       - uses: ./.github/actions/pnpm-install
       - uses: ./.github/actions/ldraw-inputs
-      - name: Bake every pinned part's plan glyph and twenty models' natively, then again in the shipped WASM compiler, and compare bytes
+      - name: Bake twenty models' plan glyphs natively, then again in the shipped WASM compiler, and compare bytes
         run: pnpm glyph-parity
 
   check:

@@ -33,6 +33,8 @@ const CompiledListing = v.strictObject({
   part: v.string(),
   record: v.string(),
   glb: v.string(),
+  glyph: v.optional(v.string()),
+  glyphIssue: v.optional(v.string()),
   licenses: v.array(v.string()),
   rollingDiagnostics: v.optional(v.pipe(v.array(UnreadBandDiagnostic), v.minLength(1))),
 });
@@ -149,9 +151,13 @@ export async function assembleLibraryBake(inputs: LibraryBakeInputs): Promise<Li
       continue;
     }
     for (const license of listing.licenses) licenses.add(license);
-    const part = {
+    const part: LibraryBakePart = {
       record: await moveAddressed(build, out, listing.record),
       glb: await moveAddressed(build, out, listing.glb),
+      ...(listing.glyph === undefined
+        ? {}
+        : { glyph: await moveAddressed(build, out, listing.glyph) }),
+      ...(listing.glyphIssue === undefined ? {} : { glyphIssue: listing.glyphIssue }),
     };
     if (!(await servedRowsFit(out, part.glb, listing.rollingDiagnostics))) {
       throw new Error(
