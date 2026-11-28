@@ -1,9 +1,12 @@
 import type { Box, DrawItem, Paint, Point } from "./draw-list.ts";
 import type { SheetLayerId } from "./plan-drawing.ts";
 import type { LegendEntry } from "./sheet-blocks.ts";
+import { isMarker } from "@brr/domain";
 import { lduFromMm } from "@brr/math";
+import { AISLE_SIDES, OBSTACLE_KINDS, type AisleSide, type ObstacleKind } from "@brr/schema/world";
 import { cmText } from "../edit/size-labels.ts";
-import { PAINTS, SMALL_MM, textStyle } from "./sheet-paints.ts";
+import type { PlanSheet } from "../plan/plan-sheet.ts";
+import { AISLE_PAINTS, OBSTACLE_PAINTS, PAINTS, SMALL_MM, textStyle } from "./sheet-paints.ts";
 import type { TableHeights } from "./table-heights.ts";
 
 export type LegendExtra = "issue" | "tile" | "registration" | "seam";
@@ -46,29 +49,51 @@ export function registrationMark(center: Point, halfMm: number, role = "registra
   ];
 }
 
-const LAYER_ENTRIES: Readonly<Record<SheetLayerId, LegendEntry>> = {
+const OBSTACLE_LABELS = {
+  pillar: "Pillar: keep clear",
+  door: "Door: keep clear",
+  power: "Power point: a marker, blocks nothing",
+} as const satisfies Record<ObstacleKind, string>;
+
+const AISLE_LABELS = {
+  public: "Public aisle",
+  crew: "Crew aisle: reach is measured from here",
+} as const satisfies Record<AisleSide, string>;
+
+function obstacleEntry(kind: ObstacleKind): LegendEntry {
+  return {
+    label: OBSTACLE_LABELS[kind],
+    swatch: (box) => [
+      { kind: "rect", role: "swatch", paint: OBSTACLE_PAINTS[kind], box },
+      ...(isMarker({ kind }) ? [] : hatchLines(box)),
+    ],
+  };
+}
+
+function hatchLines(box: Box): DrawItem[] {
+  return [
+    {
+      kind: "line",
+      role: "swatch",
+      paint: PAINTS.hatch,
+      from: [box.x + box.height, box.y],
+      to: [box.x, box.y + box.height],
+    },
+    {
+      kind: "line",
+      role: "swatch",
+      paint: PAINTS.hatch,
+      from: [box.x + box.width, box.y],
+      to: [box.x + box.width - box.height, box.y + box.height],
+    },
+  ];
+}
+
+type VenueLayer = "obstacles" | "aisles";
+
+const LAYER_ENTRIES: Readonly<Record<Exclude<SheetLayerId, VenueLayer>, LegendEntry>> = {
   room: { label: "Room walls", swatch: swatchRect(PAINTS.room) },
   tables: { label: "Table top", swatch: swatchRect(PAINTS.table) },
-  obstacles: {
-    label: "Obstacle",
-    swatch: (box) => [
-      { kind: "rect", role: "swatch", paint: PAINTS.obstacle, box },
-      {
-        kind: "line",
-        role: "swatch",
-        paint: PAINTS.hatch,
-        from: [box.x + box.height, box.y],
-        to: [box.x, box.y + box.height],
-      },
-      {
-        kind: "line",
-        role: "swatch",
-        paint: PAINTS.hatch,
-        from: [box.x + box.width, box.y],
-        to: [box.x + box.width - box.height, box.y + box.height],
-      },
-    ],
-  },
   roadway: { label: "Roadway (road surface)", swatch: swatchRect(PAINTS.roadway) },
   models: { label: "Model footprint", swatch: swatchRect(PAINTS.model) },
   track: { label: "Track piece outline", swatch: swatchRect(PAINTS.track) },
@@ -153,12 +178,28 @@ export function heightEntries(heights: TableHeights): ReadonlyArray<LegendEntry>
   }));
 }
 
+function layerEntries(layer: SheetLayerId, sheet: PlanSheet): ReadonlyArray<LegendEntry> {
+  switch (layer) {
+    case "obstacles":
+      return OBSTACLE_KINDS.filter((kind) => sheet.obstacles.some((o) => o.kind === kind)).map(
+        obstacleEntry,
+      );
+    case "aisles":
+      return AISLE_SIDES.filter((side) => sheet.aisles.some((a) => a.side === side)).map(
+        (side) => ({ label: AISLE_LABELS[side], swatch: swatchRect(AISLE_PAINTS[side]) }),
+      );
+    default:
+      return [LAYER_ENTRIES[layer]];
+  }
+}
+
 export function legendEntries(
+  sheet: PlanSheet,
   layers: ReadonlyArray<SheetLayerId>,
   extras: ReadonlyArray<LegendExtra>,
 ): ReadonlyArray<LegendEntry> {
   return [
-    ...layers.map((layer) => LAYER_ENTRIES[layer]),
+    ...layers.flatMap((layer) => layerEntries(layer, sheet)),
     ...extras.map((extra) => EXTRA_ENTRIES[extra]),
   ];
 }

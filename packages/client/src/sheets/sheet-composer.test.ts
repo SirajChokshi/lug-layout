@@ -1,4 +1,10 @@
-import { mmRectInWorld, studsInside, type PlanRegion, type TableTop } from "@brr/domain";
+import {
+  mmRectInWorld,
+  studsInside,
+  type LduRect,
+  type PlanRegion,
+  type TableTop,
+} from "@brr/domain";
 import { lduFromMm, STUD_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
@@ -64,6 +70,10 @@ const REGION: PlanRegion = {
   maxReachMm: 700,
 };
 
+function at(x: number, z: number, width: number, depth: number): LduRect {
+  return mmRectInWorld(REGION, { x, z, width, depth });
+}
+
 function tableTops(region: PlanRegion): TableTop[] {
   return region.footprint.tables.map((table) => ({
     id: table.id,
@@ -94,6 +104,7 @@ function sheetWith(placements: ReadonlyArray<SheetPlacement>): PlanSheet {
     room: mmRectInWorld(REGION, { x: 0, z: 0, width: 3000, depth: 1200 }),
     tables: tableTops(REGION),
     obstacles: [],
+    aisles: [],
     roadway: [],
     ramps: [],
     placements,
@@ -498,6 +509,77 @@ describe("sheet sets", () => {
     ]);
     expect(titleLines(page)[0]).toBe("Table plan · Club show");
     expect(drawn.some(({ item }) => item.role === "model" || item.role === "number")).toBe(false);
+  });
+
+  it("draw each obstacle by its kind and each aisle by its side: only obstacles that block are hatched, a power point is a filled marker, the public aisle is dashed, every aisle is labelled with its side, and the legend lists the kinds and sides shown", () => {
+    const sheet: PlanSheet = {
+      ...sheetWith([]),
+      obstacles: [
+        { name: "Pillar A", rect: at(0, 0, 200, 200), kind: "pillar" },
+        { name: "Fire door", rect: at(2800, 1100, 200, 100), kind: "door" },
+        { name: "Socket", rect: at(300, 300, 100, 100), kind: "power" },
+      ],
+      aisles: [
+        { name: "Visitors", rect: at(200, 800, 2500, 400), side: "public" },
+        { name: "Pit", rect: at(200, 0, 2500, 200), side: "crew" },
+      ],
+    };
+    const [page] = composer.compose(
+      sheet,
+      { kind: "fit", paper: "a3", orientation: "auto" },
+      TABLE_PLAN,
+    ).pages;
+    if (!page) throw new Error("a fitted sheet has a page");
+    const drawn = walk(page.items);
+    const inLayer = (layer: string) =>
+      drawn.filter(({ roles }) => roles.includes(`layer-${layer}`)).map(({ item }) => item);
+    const areas = [...inLayer("aisles"), ...inLayer("obstacles")].flatMap((item) =>
+      item.kind === "rect"
+        ? [
+            {
+              role: item.role,
+              filled: item.paint.fill !== null,
+              dashed: item.paint.dashMm.length > 0,
+            },
+          ]
+        : [],
+    );
+
+    expect(inLayer("obstacles").map((item) => item.role)).toEqual([
+      "obstacle pillar",
+      "hatch",
+      "obstacle door",
+      "hatch",
+      "obstacle power",
+    ]);
+    expect(areas).toEqual([
+      { role: "aisle public", filled: true, dashed: true },
+      { role: "aisle crew", filled: true, dashed: false },
+      { role: "obstacle pillar", filled: false, dashed: false },
+      { role: "obstacle door", filled: false, dashed: false },
+      { role: "obstacle power", filled: true, dashed: false },
+    ]);
+    expect(textsIn(page, "layer-dimensions")).toEqual(
+      expect.arrayContaining([
+        "Pillar A",
+        "Fire door",
+        "Socket",
+        "Visitors · public",
+        "Pit · crew",
+      ]),
+    );
+    expect(legendLabels(page)).toEqual([
+      "Room walls",
+      "Public aisle",
+      "Crew aisle: reach is measured from here",
+      "Pillar: keep clear",
+      "Door: keep clear",
+      "Power point: a marker, blocks nothing",
+      "Dimension in studs and cm",
+      "Table number (see schedule)",
+      "Table, 80 cm high",
+      "Table, 90 cm high",
+    ]);
   });
 
   it("draw only the layers a sheet set names, and list only the placements those layers show, under their plan numbers", () => {

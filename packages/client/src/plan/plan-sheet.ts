@@ -1,4 +1,5 @@
 import type { LduRect, OutlineRing, TableTop } from "@brr/domain";
+import type { AisleSide, ObstacleKind } from "@brr/schema/world";
 import type { PlanRowSegment } from "./plan-service.ts";
 
 export interface SheetPlacement {
@@ -13,6 +14,13 @@ export interface SheetPlacement {
 export interface SheetObstacle {
   readonly name: string;
   readonly rect: LduRect;
+  readonly kind: ObstacleKind;
+}
+
+export interface SheetAisle {
+  readonly name: string;
+  readonly rect: LduRect;
+  readonly side: AisleSide;
 }
 
 export interface SheetPartsList {
@@ -37,6 +45,7 @@ export interface PlanSheet {
   readonly room: LduRect;
   readonly tables: ReadonlyArray<TableTop>;
   readonly obstacles: ReadonlyArray<SheetObstacle>;
+  readonly aisles: ReadonlyArray<SheetAisle>;
   readonly roadway: ReadonlyArray<LduRect>;
   readonly ramps: ReadonlyArray<ReadonlyArray<OutlineRing>>;
   readonly placements: ReadonlyArray<SheetPlacement>;

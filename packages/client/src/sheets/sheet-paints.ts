@@ -1,3 +1,4 @@
+import type { AisleSide, ObstacleKind } from "@brr/schema/world";
 import { rgb, type Paint, type Rgb, type TextAnchor, type TextStyle } from "./draw-list.ts";
 
 export const INK = rgb("#1b1f23");
@@ -8,15 +9,31 @@ function outline(stroke: Rgb, strokeMm: number, dashMm: ReadonlyArray<number> = 
   return { fill: null, fillOpacity: 1, stroke, strokeMm, dashMm };
 }
 
-function filled(fill: Rgb, stroke: Rgb | null = null, strokeMm = 0, fillOpacity = 1): Paint {
-  return { fill, fillOpacity, stroke, strokeMm, dashMm: [] };
+function filled(
+  fill: Rgb,
+  stroke: Rgb | null = null,
+  strokeMm = 0,
+  fillOpacity = 1,
+  dashMm: ReadonlyArray<number> = [],
+): Paint {
+  return { fill, fillOpacity, stroke, strokeMm, dashMm };
 }
+
+export const OBSTACLE_PAINTS = {
+  pillar: outline(rgb("#666666"), 0.4),
+  door: outline(rgb("#8a4b2a"), 0.4),
+  power: filled(INK),
+} as const satisfies Record<ObstacleKind, Paint>;
+
+export const AISLE_PAINTS = {
+  public: filled(rgb("#dce9f6"), rgb("#2e6da4"), 0.4, 1, [2, 1.2]),
+  crew: filled(rgb("#dcefdc"), rgb("#2e7d32"), 0.4),
+} as const satisfies Record<AisleSide, Paint>;
 
 export const PAINTS = {
   page: filled(PAPER),
   room: outline(rgb("#444444"), 0.5),
   table: filled(rgb("#ead9bd"), rgb("#8a6d3b"), 0.5),
-  obstacle: outline(rgb("#666666"), 0.4),
   hatch: outline(rgb("#999999"), 0.6),
   roadway: filled(rgb("#9aa3a8")),
   model: outline(rgb("#1b4f72"), 0.5),

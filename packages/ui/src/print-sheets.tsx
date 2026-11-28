@@ -56,6 +56,7 @@ const CONTENTS: ReadonlyArray<{ readonly id: SheetContent; readonly label: strin
 
 const LAYER_LABELS: Readonly<Record<SheetLayerId, string>> = {
   room: "Room",
+  aisles: "Aisles",
   tables: "Tables",
   obstacles: "Obstacles",
   roadway: "Roadway",

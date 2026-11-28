@@ -72,6 +72,7 @@ const SHEET: PlanSheet = {
   room: mmRectInWorld(REGION, { x: 0, z: 0, width: 2999, depth: 1801 }),
   tables: [tableTop()],
   obstacles: [],
+  aisles: [],
   roadway: [],
   ramps: [],
   placements: [
