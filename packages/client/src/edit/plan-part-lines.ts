@@ -6,7 +6,7 @@ import { OUTLINE_UNITS_PER_LDU, type PlanOutline, type TrackPiece } from "@brr/s
 
 const HEADING_STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_STEP_RADIANS / 2;
-const CENTRELINE_STEP_LDU = 10;
+const CENTRELINE_STEP_RADIANS = Math.PI / 64;
 
 function outlineSegments(outline: PlanOutline): Float32Array {
   const segments: number[] = [];
@@ -50,7 +50,8 @@ function centreSegments(pieces: ReadonlyArray<TrackPiece>): Float32Array {
         route.segments,
       );
       for (const segment of placed) {
-        const steps = segment.curvature === 0 ? 1 : Math.ceil(segment.length / CENTRELINE_STEP_LDU);
+        const turn = Math.abs(segment.curvature) * segment.length;
+        const steps = Math.max(1, Math.ceil(turn / CENTRELINE_STEP_RADIANS));
         for (let k = 0; k < steps; k++) {
           pushInPartFrame(segment, (segment.length * k) / steps);
           pushInPartFrame(segment, (segment.length * (k + 1)) / steps);

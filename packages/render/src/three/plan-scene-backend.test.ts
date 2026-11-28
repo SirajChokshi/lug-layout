@@ -218,7 +218,7 @@ describe("the plan scene", () => {
     });
   });
 
-  it("draws every edge marker as one instanced draw, at its box's top in its kind's colour", () => {
+  it("draws every edge marker as one instanced draw, at its box's top in its kind's colour, once studs are big enough to see", () => {
     const backend = backendWithPalette();
     const box = (minX: number) => ({ minX, minY: 0, minZ: 0, maxX: minX + 4, maxY: 3, maxZ: 20 });
     backend.setMarkers([
@@ -226,7 +226,11 @@ describe("the plan scene", () => {
       { box: box(20), kind: "open" },
       { box: box(40), kind: "mismatch" },
     ]);
-    const meshes = backend.plan.root.children.flatMap((group) => group.children);
+    const [markers] = backend.plan.root.children;
+    backend.plan.prepare(1);
+    const hiddenWhileSmall = markers?.visible;
+    backend.plan.prepare(ZOOMED_IN_PX);
+    const meshes = markers?.children ?? [];
     const geometry = (meshes[0] as Mesh | undefined)?.geometry as InstancedBufferGeometry;
     const colors = Array.from(geometry.getAttribute("markerColor").array);
     const kindColors = [0x1fbf4a, 0xffb000, 0xe0202a].flatMap((srgb) => [
@@ -234,7 +238,15 @@ describe("the plan scene", () => {
       3,
     ]);
 
-    expect({ draws: meshes.length, count: geometry.instanceCount, colors }).toEqual({
+    expect({
+      hiddenWhileSmall,
+      shown: markers?.visible,
+      draws: meshes.length,
+      count: geometry.instanceCount,
+      colors,
+    }).toEqual({
+      hiddenWhileSmall: false,
+      shown: true,
       draws: 1,
       count: 3,
       colors: Array.from(Float32Array.from(kindColors)),

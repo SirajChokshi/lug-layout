@@ -67,7 +67,11 @@ const QUAD_INDEX = [0, 1, 2, 0, 2, 3];
 const VEC4 = 4;
 const LINE_VERTEX_FLOATS = 3;
 const ALPHA_FLOOR = 1 / 255;
-const DOT_MIN_PITCH_PX = 6;
+const OUTLINE_MIN_PITCH_PX = 2;
+const DETAIL_MIN_PITCH_PX = 6;
+const NO_DETAIL = 0;
+const OUTLINES = 1;
+const FULL_DETAIL = 2;
 const DOT_RING_INNER = 0.7;
 const DOT_RING_SHADE = 0.6;
 const SPRITE_RENDER_ORDER = 0;
@@ -191,6 +195,11 @@ function markerMaterial(): MeshBasicNodeMaterial {
   return material;
 }
 
+function detailAt(studPitchPx: number): number {
+  if (studPitchPx >= DETAIL_MIN_PITCH_PX) return FULL_DETAIL;
+  return studPitchPx >= OUTLINE_MIN_PITCH_PX ? OUTLINES : NO_DETAIL;
+}
+
 function studShapeOf(primitive: StudPrimitiveAsset): StudShape {
   const { positions } = primitive.mesh;
   let top = 0;
@@ -281,13 +290,14 @@ export class PlanSceneBackend implements IPlanSceneBackend {
   private markerAnchorZ = 0;
   private renderOriginX = 0;
   private renderOriginZ = 0;
-  private dotsShown = false;
+  private detail = NO_DETAIL;
   private readonly dotColor = new Color();
 
   constructor(private readonly source: PlanSceneSource) {
     this.root.matrixAutoUpdate = false;
     this.root.visible = false;
     this.markerGroup.matrixAutoUpdate = false;
+    this.markerGroup.visible = false;
     this.root.add(this.markerGroup);
   }
 
@@ -394,14 +404,23 @@ export class PlanSceneBackend implements IPlanSceneBackend {
       if (batch) this.rebuild(batch);
     }
     this.dirty.length = 0;
-    const shown = studPitchPx >= DOT_MIN_PITCH_PX;
-    if (shown === this.dotsShown) return;
-    this.dotsShown = shown;
+    const detail = detailAt(studPitchPx);
+    if (detail === this.detail) return;
+    this.detail = detail;
+    this.markerGroup.visible = detail === FULL_DETAIL;
     for (const batch of this.batches.values()) {
       for (const child of batch.group.children) {
-        if (child instanceof Mesh && child.material === this.dots) child.visible = shown;
+        if (child instanceof Mesh || child instanceof LineSegments) {
+          child.visible = this.shows(child.material);
+        }
       }
     }
+  }
+
+  private shows(material: unknown): boolean {
+    if (material === this.dots) return this.detail === FULL_DETAIL;
+    if (material === this.outlines) return this.detail !== NO_DETAIL;
+    return true;
   }
 
   private packSprites(): void {
@@ -528,7 +547,7 @@ export class PlanSceneBackend implements IPlanSceneBackend {
       }
       const geometry = instancedQuad(count, { spriteBox: box, spritePose: pose, spriteRect: rect });
       bounds.sphereOf(geometry);
-      this.addMesh(batch, geometry, material, SPRITE_RENDER_ORDER, true);
+      this.addMesh(batch, geometry, material, SPRITE_RENDER_ORDER);
     }
   }
 
@@ -578,7 +597,7 @@ export class PlanSceneBackend implements IPlanSceneBackend {
     }
     const geometry = instancedQuad(count, { dotCentre: centre, dotColor: color });
     bounds.sphereOf(geometry);
-    this.addMesh(batch, geometry, this.dots, DOT_RENDER_ORDER, this.dotsShown);
+    this.addMesh(batch, geometry, this.dots, DOT_RENDER_ORDER);
   }
 
   private addMesh(
@@ -586,12 +605,11 @@ export class PlanSceneBackend implements IPlanSceneBackend {
     geometry: InstancedBufferGeometry,
     material: MeshBasicNodeMaterial,
     renderOrder: number,
-    visible: boolean,
   ): void {
     const mesh = new Mesh(geometry, material);
     mesh.matrixAutoUpdate = false;
     mesh.renderOrder = renderOrder;
-    mesh.visible = visible;
+    mesh.visible = this.shows(material);
     batch.group.add(mesh);
   }
 
@@ -623,6 +641,7 @@ export class PlanSceneBackend implements IPlanSceneBackend {
     const lines = new LineSegments(geometry, material);
     lines.matrixAutoUpdate = false;
     lines.renderOrder = LINE_RENDER_ORDER;
+    lines.visible = this.shows(material);
     batch.group.add(lines);
   }
 }
