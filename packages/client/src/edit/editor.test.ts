@@ -10972,6 +10972,98 @@ it("drops a held switch into the straights laid off a user's own track model in 
   });
 }, 120_000);
 
+const WIDE_CURVE = "fxbricks:FxTrackR56";
+const WIDE_CURVE_ITEM = `${TRACK_PIECE_PREFIX}${WIDE_CURVE}`;
+
+it("lays a third-party wide curve only while the world allows third-party parts: refused while off, joined exactly to the open end of a user's own 9V track file once on, kept on while one is laid, and saved with the world, which won't reopen without it", async () => {
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+    },
+  );
+  const repository = container.get(WORLD_REPOSITORY);
+  const run = await importUserFile(
+    editor,
+    "my-9v-run.ldr",
+    userRoadFile("my-9v-run.ldr", [
+      "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+      "1 16 -160 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+      "1 16 160 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+    ]),
+  );
+  await placer(editor, backend)(run, 0, 0);
+  const offered = (): boolean =>
+    editor.snapshot().catalog.some((item) => item.id === WIDE_CURVE_ITEM);
+  const off = { offered: offered(), vendors: editor.snapshot().thirdPartyVendors };
+  const heldBefore = editor.snapshot().activeItem;
+  editor.chooseItem(WIDE_CURVE_ITEM);
+  const refusedPick = {
+    active: editor.snapshot().activeItem,
+    refusal: editor.snapshot().thirdPartyRefusal,
+  };
+  editor.setAllowThirdParty(true);
+  const on = offered();
+  const eastEnd = { xLdu: ONE_STRAIGHT_LDU, zLdu: 0, heading: 0 };
+  const endsBefore = editor.dump().trackEnds;
+  const laid = holdAndClick(editor, backend, WIDE_CURVE, [ONE_STRAIGHT_LDU, 0]);
+  const commit = editor.snapshot().track?.lastCommit;
+  const endsAfter = editor.dump().trackEnds;
+  editor.setAllowThirdParty(false);
+  const turnedOff = {
+    allow: editor.snapshot().allowThirdParty,
+    refusal: editor.snapshot().thirdPartyRefusal,
+  };
+  const archive = await repository.readArchive((await editor.exportWorld()).bytes);
+  if (!archive.ok) throw new Error(issueText(archive.issues));
+  const { allowThirdParty: _flag, ...withoutFlag } = worldHeader(archive.value.manifest);
+  const reopenedWithout = await editor.importWorld(
+    repository.packArchive({
+      ...archive.value,
+      manifest: worldManifest(
+        withoutFlag,
+        archive.value.manifest.shards,
+        archive.value.manifest.noteShards,
+      ),
+    }),
+  );
+  const refusedOpen = editor.snapshot().fileError;
+  const reopened = await editor.importWorld(repository.packArchive(archive.value));
+
+  expect(off).toEqual({ offered: false, vendors: ["Fx Bricks"] });
+  expect(refusedPick).toEqual({
+    active: heldBefore,
+    refusal:
+      "Fx Bricks Curve R56 is a third-party part from Fx Bricks: turn on third-party parts in this world to lay it.",
+  });
+  expect(on).toBe(true);
+  expect(endsBefore).toContainEqual(expect.objectContaining(eastEnd));
+  expect({ laid, commit }).toMatchObject({
+    laid: { refusedClicks: 0, pieces: 1 },
+    commit: "joined",
+  });
+  expect(endsAfter).not.toContainEqual(expect.objectContaining(eastEnd));
+  expect(endsAfter).toHaveLength(endsBefore.length);
+  expect(
+    endsAfter.filter((end) => end.heading === 1 || end.heading === ZETA16_ORDER - 1),
+  ).toHaveLength(1);
+  expect(turnedOff).toEqual({
+    allow: true,
+    refusal: "1 laid track piece is third-party. Lift it before turning third-party parts off.",
+  });
+  expect(archive.value.manifest.allowThirdParty).toBe(true);
+  expect(reopenedWithout).toBe(false);
+  expect(refusedOpen).toContain("is a third-party part from Fx Bricks");
+  expect(reopened).toBe(true);
+  expect(editor.snapshot().allowThirdParty).toBe(true);
+  expect(editor.dump().laidTrack).toEqual([expect.objectContaining({ ref: WIDE_CURVE })]);
+}, 120_000);
+
 const BLUEPRINT_RUN_STRAIGHTS = 10;
 const SIDING_BESIDE_FILE_LDU = 1440;
 const OPEN_GROUND: PlanPoint = [0, 4000];

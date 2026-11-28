@@ -182,6 +182,7 @@ export const WorldHeader = v.pipe(
     "activePlan",
     "tableTypes",
     "event",
+    "allowThirdParty",
   ]),
   v.forward(v.partialCheck([["layers"], ["plans"]], plansOnPlanLayers, PLANS_OFF_PLAN_LAYERS), [
     "plans",

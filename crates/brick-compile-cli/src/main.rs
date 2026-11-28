@@ -89,6 +89,9 @@ struct Args {
     lod: Lod,
     compiler: Option<PathBuf>,
     cover_cache: Option<PathBuf>,
+    third_party: Option<PathBuf>,
+    third_party_root: Option<PathBuf>,
+    track_catalog: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -121,6 +124,9 @@ fn parse_args() -> Result<Args, String> {
         cover_cache: values.get("--cover-cache").map(PathBuf::from),
         lod,
         compiler: values.get("--compiler").map(PathBuf::from),
+        third_party: values.get("--third-party").map(PathBuf::from),
+        third_party_root: values.get("--third-party-root").map(PathBuf::from),
+        track_catalog: values.get("--track-catalog").map(PathBuf::from),
     })
 }
 
@@ -258,34 +264,69 @@ fn distinct<'a>(values: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
     seen
 }
 
+const LDRAW_NAMESPACE: &str = "ldraw";
+
+struct Compiled {
+    summary: Value,
+    shape: LatticeShape,
+    dominant_color: Option<u32>,
+}
+
+fn dominant_color(part: &CompiledPart) -> Option<u32> {
+    let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
+    for group in &part.mesh.groups {
+        *counts.entry(group.color).or_default() += group.indices.len();
+    }
+    counts
+        .into_iter()
+        .max_by_key(|&(color, count)| (count, std::cmp::Reverse(color)))
+        .map(|(color, _)| color)
+}
+
+struct PartRef<'a> {
+    namespace: &'a str,
+    reference: &'a str,
+}
+
 fn compile_entry(
     library: &FsLibrary,
-    reference: &str,
+    PartRef {
+        namespace,
+        reference,
+    }: PartRef<'_>,
     role: &Value,
     options: &CompileOptions,
     out: &Path,
     credits: &mut BTreeMap<String, Value>,
     diagnostics: &mut BTreeMap<String, Value>,
-) -> Result<(Value, LatticeShape), String> {
+) -> Result<Compiled, String> {
     let compiled = compile_part(library, reference, options).map_err(|e| e.to_string())?;
     let id = stem(reference);
-    let file = format!("{id}.glb");
+    let file = if namespace == LDRAW_NAMESPACE {
+        format!("{id}.glb")
+    } else {
+        format!("{namespace}-{id}.glb")
+    };
     fs::write(out.join(&file), compiled.to_glb()).map_err(|e| e.to_string())?;
     record_credits(credits, &compiled);
     let rows = compiled.rolling_diagnostics();
     if !rows.is_empty() {
-        diagnostics.insert(format!("ldraw:{id}"), json!(rows));
+        diagnostics.insert(format!("{namespace}:{id}"), json!(rows));
     }
     let header = &compiled.flattened_files[0].header;
     let mut summary = part_summary(&compiled);
-    summary["id"] = json!(format!("ldraw:{id}"));
+    summary["id"] = json!(format!("{namespace}:{id}"));
     summary["path"] = json!(compiled.path);
     summary["role"] = role.clone();
     summary["file"] = json!(file);
     summary["title"] = json!(header.title);
     summary["author"] = json!(header.author);
     summary["license"] = json!(header.license);
-    Ok((summary, LatticeShape::of(&compiled)))
+    Ok(Compiled {
+        summary,
+        shape: LatticeShape::of(&compiled),
+        dominant_color: dominant_color(&compiled),
+    })
 }
 
 fn acknowledged_not_drawn(entry: &Value, file: &str) -> Result<BTreeMap<String, String>, String> {
@@ -550,9 +591,88 @@ fn connector_records<L: Library, S: Library>(
     Ok(indexes)
 }
 
+struct ThirdPartyPart {
+    namespace: String,
+    source: String,
+    vendor: String,
+    name: String,
+}
+
+#[derive(Default)]
+struct ThirdParty {
+    parts: Vec<ThirdPartyPart>,
+    files: Vec<String>,
+}
+
+fn read_json(path: &Path) -> Result<Value, String> {
+    serde_json::from_slice(&fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
+        .map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn json_str<'a>(value: &'a Value, label: &str) -> Result<&'a str, String> {
+    value.as_str().ok_or(format!("{label} must be a string"))
+}
+
+fn third_party_parts(
+    args: &Args,
+    files: &mut HashMap<String, String>,
+) -> Result<ThirdParty, String> {
+    let (Some(config), Some(root), Some(catalog)) = (
+        &args.third_party,
+        &args.third_party_root,
+        &args.track_catalog,
+    ) else {
+        return Ok(ThirdParty::default());
+    };
+    let config = read_json(config)?;
+    let catalog = read_json(catalog)?;
+    let catalog_parts: Vec<&str> = catalog["pieces"]
+        .as_array()
+        .ok_or("trackCatalog.pieces must be an array")?
+        .iter()
+        .filter_map(|piece| piece["part"].as_str())
+        .collect();
+    let mut third_party = ThirdParty::default();
+    for source in config["sources"]
+        .as_array()
+        .ok_or("third-party sources must be an array")?
+    {
+        let id = json_str(&source["id"], "a third-party source id")?;
+        let namespace = json_str(&source["namespace"], "a third-party namespace")?;
+        let vendor = json_str(&source["vendor"], "a third-party vendor")?;
+        let directory = root.join(namespace);
+        let mut source_files = HashMap::new();
+        collect(&directory, &directory, &mut source_files)
+            .map_err(|e| format!("{}: {e}", directory.display()))?;
+        for (path, text) in source_files {
+            if files.contains_key(&path) {
+                return Err(format!(
+                    "{id}: {path} would shadow the LDraw file of the same name"
+                ));
+            }
+            third_party.files.push(path.clone());
+            files.insert(path, text);
+        }
+        let prefix = format!("{namespace}:");
+        for part in &catalog_parts {
+            if let Some(name) = part.strip_prefix(&prefix) {
+                third_party.parts.push(ThirdPartyPart {
+                    namespace: namespace.to_string(),
+                    source: id.to_string(),
+                    vendor: vendor.to_string(),
+                    name: name.to_string(),
+                });
+            }
+        }
+    }
+    third_party.files.sort();
+    Ok(third_party)
+}
+
 fn run(args: &Args) -> Result<(), String> {
     let mut files = HashMap::new();
     collect(&args.ldraw, &args.ldraw, &mut files).map_err(|e| e.to_string())?;
+    let third_party = third_party_parts(args, &mut files)?;
     let library = FsLibrary { files };
     let palette: Value = serde_json::from_slice(
         &fs::read(&args.palette).map_err(|e| format!("{}: {e}", args.palette.display()))?,
@@ -674,9 +794,14 @@ fn run(args: &Args) -> Result<(), String> {
     {
         let id = entry["id"].as_str().ok_or("part id must be a string")?;
         let reference = format!("{id}.dat");
-        let (mut summary, shape) = compile_entry(
+        let Compiled {
+            mut summary, shape, ..
+        } = compile_entry(
             &library,
-            &reference,
+            PartRef {
+                namespace: LDRAW_NAMESPACE,
+                reference: &reference,
+            },
             &entry["role"],
             &part_options,
             &args.out,
@@ -862,9 +987,12 @@ fn run(args: &Args) -> Result<(), String> {
             let index = match part_index.get(&instance.part) {
                 Some(&index) => index,
                 None => {
-                    let (summary, shape) = compile_entry(
+                    let Compiled { summary, shape, .. } = compile_entry(
                         &library,
-                        &instance.part,
+                        PartRef {
+                            namespace: LDRAW_NAMESPACE,
+                            reference: &instance.part,
+                        },
                         &json!("model"),
                         &part_options,
                         &args.out,
@@ -1046,6 +1174,50 @@ fn run(args: &Args) -> Result<(), String> {
         models.push(manifest_entry);
     }
 
+    let mut third_party_options = part_options.clone();
+    third_party_options
+        .unofficial_allowlist
+        .extend(third_party.files.iter().cloned());
+    let mut third_party_baker = ModelBaker::new(
+        &library,
+        stud_primitives.clone(),
+        third_party_options.unofficial_allowlist.clone(),
+        translucent_codes(&parse_ldconfig(ldconfig)),
+        table_depth,
+    )
+    .map_err(|e| e.to_string())?;
+    for part in &third_party.parts {
+        let reference = format!("{}.dat", part.name);
+        let Compiled {
+            mut summary,
+            dominant_color,
+            ..
+        } = compile_entry(
+            &library,
+            PartRef {
+                namespace: &part.namespace,
+                reference: &reference,
+            },
+            &json!("track"),
+            &third_party_options,
+            &args.out,
+            &mut credits,
+            &mut diagnostics,
+        )?;
+        summary["thirdParty"] = json!({ "source": part.source, "vendor": part.vendor });
+        if let Some(color) = dominant_color {
+            summary["displayColor"] = json!({
+                "ldraw": color,
+                "source": format!("{reference} by {}: the colour most of its faces are drawn in", part.vendor),
+            });
+        }
+        summary["glyph"] = glyph_file(
+            &args.out,
+            format!("{}-{}.glyph", part.namespace, stem(&reference)),
+            third_party_baker.part_glyph(&reference),
+        )?;
+        parts.push(summary);
+    }
     let indexes = connector_records(&mut extractor, &mut extractions, &parts, &args.out)?;
     let connectivity_source = &palette["connectivitySource"];
     let connectivity_index = json!({

@@ -61,7 +61,7 @@ Every part and model comes through a **`PartSource`** plugin. Each source declar
 | `omr` | `official` model | OMR `.mpd` sets | CC BY 2.0 | Yes, after verification |
 | `ldcad-shadow` | connectivity | `!LDCAD SNAP_*` metadata | CC BY-SA 4.0 | Yes, as a separate data package |
 | `rebrickable` | catalog | Daily CSV dumps, plus nightly API crosswalks | Any use, attribution requested | Yes, derived tables |
-| *(later)* `thirdparty-<vendor>` | `thirdParty` | Vendor track geometry and connectors | Per vendor | **No (D3)** |
+| `thirdparty-<vendor>` (today `thirdparty-fxbricks`) | `thirdParty` | A vendor's own published LDraw track files, pinned by commit and SHA-256 in `third-party-track.json` | Per vendor (Fx Bricks: CC BY-NC-SA 4.0) | Yes, only the pieces the pipeline can derive exactly, behind `allowThirdParty` (B7.3) |
 
 ### 3.2 Pipeline stages
 1. **Fetch and pin.** Download the inputs, record versions and hashes, and fail if any input changes without a version bump.
@@ -106,10 +106,10 @@ The browser import worker and the OMR ingest share the same code.
 - The trademark disclaimer appears in the footer, the about page and every export.
 
 ### 3.5 Extension points for third-party parts (D3)
-These are built now and used later:
+These are built, and B7.3 uses them for wide curves:
 - `PartSource` plugins with a `provenance` field. The BOM, the badges and the catalog filter all read it.
 - Each `TrackProfile` declares a track system, a gauge class and an **angle step N**, where N = 16 for 22.5° steps and N = 32 for 11.25° steps (§5.3).
-- A layout-level `allowThirdParty` flag that is off and hidden today. Validation refuses `thirdParty` parts unless the flag is on, and the BOM flags them.
+- A layout-level `allowThirdParty` flag, saved with the world and off by default; the library's Track section turns it on. While it is off, `thirdParty` pieces aren't offered, can't be picked, and a world, kit or plan holding them is refused; it can't be turned off while one is laid. The parts list puts them in their own third-party group, left out of the Rebrickable and BrickLink lists.
 - Catalog ids are namespaced (`ldraw:53401`, `bt:R56-curve`), so vendor packs can never collide with LDraw numbers.
 
 Adding a vendor later means writing a source adapter, the vendor's connector data, and a profile with N = 32 if any of its pieces needs 11.25° steps. No core code changes.
@@ -321,7 +321,7 @@ The MVP ships four module profiles: `free`, `lego-modular`, `mils` and `club-roa
 
 **Erasing roads.** In Erase, a drag lifts the active kit's plates under the stroke (never another family's). A junction left beside them becomes the smallest kit piece that covers its remaining arms and has fewer arms than before, exact matches first; if the kit has no such piece, or no arm is left, the junction stays and is reported. A plate laid over ground gives back exactly the ground piece that stroke swapped out (part, colour, pose), remembered per placement through later upgrades, undo and redo; a plate laid on an empty table is just lifted, so erasing never adds or recolours a part. The stroke is one undoable edit, and downgrades pass the same join check as drawing.
 
-Third-party track arrives later as an extra `TrackProfile` plus a `PartSource` (§3.5).
+Third-party track arrives as an extra `TrackProfile` plus a `PartSource` (§3.5). A vendor's curve mesh carries no end markers, so its ends are measured from its own geometry: its centre and whole-stud centreline radius from its vertex rings, its turn from its end faces, each identified with the 0.0005 LDU identification residual. Its exit is then derived exactly, as 53400's is, and the piece stays `unverified`, because the vendor's end faces sit a measured clearance inside the radial joint planes (`docs/verified-facts.md`, *Third-party track*).
 
 ## 6. Renderer
 
@@ -416,7 +416,7 @@ A triangle whose resolved colour has an LDConfig `ALPHA` below 255 neither cover
 Failing a badge never blocks placement. Users fix their bricks in their own CAD tool and re-import. Stability analysis is out of scope.
 
 ### 7.2 Layout rules (live and exact; they decide whether a layout is "Valid")
-1. **Real catalog items only.** `thirdParty` parts are refused unless `allowThirdParty` is on, which it isn't in this release.
+1. **Real catalog items only.** `thirdParty` parts are refused unless `allowThirdParty` is on; it is off by default (§3.5).
 2. **Lattice placement.** Models, plates and baseplates sit on the 20-LDU lattice with 90° rotations, at whole plate heights.
 3. **Support.** A placed model's base footprint engages at least one stud of what lies beneath it, or rests fully on a flat area at one height.
 4. **No overlap.** Placements' occupancy and keep-out volumes don't intersect, except at declared connectors.
@@ -693,6 +693,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 
 **Later.**
 23. Fan-track segment angles per radius (BrickTracks R56 to R120 and others), and whether any needs 11.25° steps (D3).
+   *Partly cleared 2026-11-28 for Fx Bricks (`docs/verified-facts.md`, Third-party track):* measured from the vendor's own LDraw, R56 and R72 turn 22.5° (one ζ₁₆ step), R88, R104 and R120 turn 11.25° and need N = 32, and R64P turns 22.62°, which is no step. BrickTracks and TrixBrix publish no LDraw geometry, only Studio and BlueBrick files, so they aren't offered.
 24. The Powered Up BLE protocol and the state of Web Bluetooth.
 25. Memory64 and multi-draw-indirect status, which matter only for a custom backend.
 26. Current wording of the LEGO Fair Play policy.
@@ -870,7 +871,7 @@ BlueBrick XML is parsed in Rust (`quick-xml` in `brick-compile`), because worker
 ### B7. Library scale
 - **B7.1 On-demand OMR sets:** every pipeline-verified OMR set is searchable through the catalog API and placeable, glyph and connectors first. A set with no model says so and offers "import your own file".
 - **B7.2 Club libraries:** shared, versioned folders of members' files and kits, in a "Club" library section.
-- **B7.3 Wide curves:** exact arithmetic for N = 32 behind `TrackProfile` (§5.3 already embeds ℤ[ζ₁₆] in ℤ[ζ₃₂]), and vendor packs as `thirdparty-<vendor>` sources built from vendor-published LDraw geometry, flagged in the parts list and behind the `allowThirdParty` toggle (§3.5). A vendor with no published geometry isn't offered.
+- **B7.3 Wide curves:** exact arithmetic for N = 32 behind `TrackProfile` (§5.3 already embeds ℤ[ζ₁₆] in ℤ[ζ₃₂]), and vendor packs as `thirdparty-<vendor>` sources built from vendor-published LDraw geometry, flagged in the parts list and behind the `allowThirdParty` toggle (§3.5). A vendor with no published geometry isn't offered. *First half shipped:* Fx Bricks' R56 and R72 (22.5°) as `thirdparty-fxbricks`; its R88, R104 and R120 wait for N = 32.
 - **B7.4 Scenery from geometry:** trees, fences and other parts with only anti-studs place from their female connectors.
 
 ### B8. Companions: 3D and test run

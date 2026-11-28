@@ -5,6 +5,7 @@ import {
   type PoseStatus,
   type TrackEnd,
   type TrackPathSegment,
+  type ThirdPartySourceId,
   type TrackCatalog,
   type TrackPiece,
   type TrackSystem,
@@ -20,6 +21,7 @@ import {
   formatExactDecimal,
   formatExactRational,
   HALF_TURN_16,
+  IDENTIFICATION_ACCEPTED_DEVIATION_LDU,
   multiplyExactRational,
   normalizeHeading16,
   rotateZeta16,
@@ -54,6 +56,7 @@ import {
   type MarkerEnd,
   type TrackEndMarker,
 } from "./track-ends.ts";
+import { measureCurve, type CurveMeasurement, type MeasuredEnd } from "./measured-curve.ts";
 import { fitRoutePath, type FittedPath, type RoutePose } from "./track-paths.ts";
 
 const STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -106,6 +109,7 @@ export interface TrackCatalogReport {
   readonly n: v.InferInput<typeof TrackCatalog>["n"];
   readonly pieces: v.InferInput<typeof TrackCatalog>["pieces"];
   readonly checks: ReadonlyArray<PieceChecks>;
+  readonly thirdParty: ReadonlyArray<ThirdPartyTrackReport>;
 }
 
 const BUNDLE_PART_PREFIX = "ldraw:";
@@ -131,6 +135,15 @@ function scale(value: Zeta16, factor: bigint): Zeta16 {
 function residualLdu(position: Zeta16, end: TrackEnd): number {
   const exact = zeta16ToStuds(position);
   return Math.max(Math.abs(exact.x - end.xStuds), Math.abs(exact.z - end.zStuds)) * LDU_PER_STUD;
+}
+
+function normalizeAngle(angle: number): number {
+  const turn = 2 * Math.PI;
+  return ((angle % turn) + turn) % turn;
+}
+
+function normalizedTurn(angle: number): number {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
 function signedTurn(heading: number): number {
@@ -449,16 +462,292 @@ export function buildTrackPiece(
   return { piece, checks };
 }
 
+export interface MeasuredCurveSource {
+  readonly id: ThirdPartySourceId;
+  readonly namespace: string;
+  readonly vendor: string;
+  readonly library: LdrawLibrary;
+  readonly parts: ReadonlyArray<string>;
+}
+
+export interface MeasuredCurveReport {
+  readonly part: string;
+  readonly centreLdu: readonly [number, number] | null;
+  readonly cleanRings: number;
+  readonly centrelineRadiusLdu: number | null;
+  readonly radiusStuds: number | null;
+  readonly turnDegrees: number | null;
+  readonly endFaceOffsetsLdu: readonly [number, number] | null;
+  readonly offered: boolean;
+  readonly reason: string;
+}
+
+export interface ThirdPartyTrackReport {
+  readonly source: string;
+  readonly curves: ReadonlyArray<MeasuredCurveReport>;
+}
+
+const ROTATION_ENTRY_RESIDUAL = IDENTIFICATION_ACCEPTED_DEVIATION_LDU;
+const DEGREES_PER_RADIAN = 180 / Math.PI;
+
+function identifiedSteps(turn: number, stepRadians: number): number | null {
+  const steps = Math.round(turn / stepRadians);
+  const exact = steps * stepRadians;
+  return Math.abs(Math.cos(turn) - Math.cos(exact)) <= ROTATION_ENTRY_RESIDUAL &&
+    Math.abs(Math.sin(turn) - Math.sin(exact)) <= ROTATION_ENTRY_RESIDUAL &&
+    steps !== 0
+    ? steps
+    : null;
+}
+
+function arcExit(radiusStuds: number, turn: number): Zeta16 {
+  const quarter = ZETA16_ORDER / 4;
+  return scale(
+    subtractZeta16(unit(quarter), unit(quarter + turn)),
+    BigInt(Math.sign(turn) * radiusStuds),
+  );
+}
+
+function radialJoint(curve: CurveMeasurement, end: MeasuredEnd, radiusLdu: number): MarkerEnd {
+  return {
+    marker: "radial joint plane",
+    x: curve.centre.x + radiusLdu * Math.cos(end.radialAngle),
+    z: curve.centre.z + radiusLdu * Math.sin(end.radialAngle),
+    outward: end.outward,
+    toleranceLdu: 0,
+  };
+}
+
+function inEntryFrame(frame: EntryFrame, point: PlanPoint): PlanPoint {
+  const dx = point.x - frame.origin.x;
+  const dz = point.z - frame.origin.z;
+  const cos = Math.cos(-frame.inward);
+  const sin = Math.sin(-frame.inward);
+  return { x: dx * cos - dz * sin, z: dx * sin + dz * cos };
+}
+
+function faceCentre(curve: CurveMeasurement, end: MeasuredEnd, radiusLdu: number): PlanPoint {
+  const joint = radialJoint(curve, end, radiusLdu);
+  const inward = end.outward + Math.PI;
+  return {
+    x: joint.x + end.faceOffsetLdu * Math.cos(inward),
+    z: joint.z + end.faceOffsetLdu * Math.sin(inward),
+  };
+}
+
+function exactPlanPointOf(point: PlanPoint): {
+  readonly x: ExactRational;
+  readonly z: ExactRational;
+} {
+  return { x: exactRationalFromFloat64(point.x), z: exactRationalFromFloat64(point.z) };
+}
+
+function measuredReport(
+  part: string,
+  curve: CurveMeasurement | null,
+  radiusStuds: number | null,
+  turn: number | null,
+  offered: boolean,
+  reason: string,
+): MeasuredCurveReport {
+  return {
+    part,
+    centreLdu: curve === null ? null : [curve.centre.x, curve.centre.z],
+    cleanRings: curve?.rings ?? 0,
+    centrelineRadiusLdu: curve?.centrelineRadiusLdu ?? null,
+    radiusStuds,
+    turnDegrees: turn === null ? null : turn * DEGREES_PER_RADIAN,
+    endFaceOffsetsLdu:
+      curve === null ? null : [curve.ends[0].faceOffsetLdu, curve.ends[1].faceOffsetLdu],
+    offered,
+    reason,
+  };
+}
+
+interface MeasuredPiece {
+  readonly piece: v.InferInput<typeof TrackPiece> | null;
+  readonly checks: PieceChecks | null;
+  readonly report: MeasuredCurveReport;
+}
+
+function skip(report: MeasuredCurveReport): MeasuredPiece {
+  return { piece: null, checks: null, report };
+}
+
+export function buildMeasuredCurve(source: MeasuredCurveSource, part: string): MeasuredPiece {
+  const curve = measureCurve(source.library, part);
+  if (curve === null) {
+    return skip(measuredReport(part, null, null, null, false, "no centre of curvature measured"));
+  }
+  const [low, high] = curve.ends;
+  const turn = normalizedTurn(high.radialAngle - low.radialAngle);
+  const steps16 = identifiedSteps(turn, STEP_RADIANS);
+  const radiusStuds = Math.round(curve.centrelineRadiusLdu / LDU_PER_STUD);
+  const radiusResidual = Math.abs(curve.centrelineRadiusLdu - radiusStuds * LDU_PER_STUD);
+  if (radiusResidual > IDENTIFICATION_ACCEPTED_DEVIATION_LDU) {
+    return skip(
+      measuredReport(
+        part,
+        curve,
+        null,
+        turn,
+        false,
+        `its centreline radius ${curve.centrelineRadiusLdu} LDU is no whole number of studs within 0.0005 LDU`,
+      ),
+    );
+  }
+  if (steps16 === null) {
+    const halfSteps = identifiedSteps(turn, STEP_RADIANS / 2);
+    const reason =
+      halfSteps === null
+        ? `it turns ${(turn * DEGREES_PER_RADIAN).toFixed(4)}°, which is no 22.5° or 11.25° step`
+        : `it turns ${halfSteps * 11.25}°, which needs N = 32 (ℤ[ζ₃₂]) track arithmetic`;
+    return skip(measuredReport(part, curve, radiusStuds, turn, false, reason));
+  }
+  const radiusLdu = radiusStuds * LDU_PER_STUD;
+  const lowJoint = radialJoint(curve, low, radiusLdu);
+  const highJoint = radialJoint(curve, high, radiusLdu);
+  const headingFrom = (from: MarkerEnd, to: MarkerEnd): number =>
+    Math.round(normalizeAngle(to.outward - entryFrame(from).inward) / STEP_RADIANS) % ZETA16_ORDER;
+  const [entry, entryEnd, exitEnd] =
+    signedTurn(headingFrom(lowJoint, highJoint)) < 0
+      ? [lowJoint, low, high]
+      : [highJoint, high, low];
+  const frame = entryFrame(entry);
+  const exitHeading = headingFrom(entry, entry === lowJoint ? highJoint : lowJoint);
+  const exitTurn = signedTurn(exitHeading);
+  const exitPosition = arcExit(radiusStuds, exitTurn);
+  const derivation = `arc: radius ${radiusStuds} studs (centreline ${curve.centrelineRadiusLdu} LDU, the radius ${curve.mirroredRingPairs} pairs of its ${curve.rings} clean vertex rings mirror about), turn ${exitTurn} step from the end faces' directions; not certified: its end faces lie ${entryEnd.faceOffsetLdu.toFixed(4)} and ${exitEnd.faceOffsetLdu.toFixed(4)} LDU inside the radial joint planes`;
+  const measuredEntry = inEntryFrame(frame, faceCentre(curve, entryEnd, radiusLdu));
+  const measuredExit = inEntryFrame(frame, faceCentre(curve, exitEnd, radiusLdu));
+  const exitStuds = zeta16ToStuds(exitPosition);
+  const reference: ExactEnd = {
+    position: ZETA16_ZERO,
+    heading: HALF_TURN_16,
+    status: "unverified",
+    derivation: "reference end: the radial joint plane at the identified centreline radius",
+    residualLdu: Math.max(Math.abs(measuredEntry.x), Math.abs(measuredEntry.z)),
+  };
+  const exit: ExactEnd = {
+    position: exitPosition,
+    heading: exitHeading,
+    status: "unverified",
+    derivation,
+    residualLdu: Math.max(
+      Math.abs(exitStuds.x * LDU_PER_STUD - measuredExit.x),
+      Math.abs(exitStuds.z * LDU_PER_STUD - measuredExit.z),
+    ),
+  };
+  const ends = [reference, exit] as const;
+  const scanAt = (end: ExactEnd, measured: MeasuredEnd): ScanEnd => {
+    const pose = poseInEntryFrame(end);
+    const across = (radius: number): PlanPoint => ({
+      x: curve.centre.x + radius * Math.cos(measured.radialAngle),
+      z: curve.centre.z + radius * Math.sin(measured.radialAngle),
+    });
+    return {
+      origin: toPartFrame(frame, pose),
+      heading: pose.heading + Math.PI + frame.inward,
+      endSleeperExtremes: [
+        exactPlanPointOf(across(curve.innermostRingLdu)),
+        exactPlanPointOf(across(curve.outermostRingLdu)),
+      ],
+    };
+  };
+  const scans = [scanAt(reference, entryEnd), scanAt(exit, exitEnd)] as const;
+  const heads = railHeadsAtEnd(flatPolygons(source.library, part), scans[0]);
+  if (heads === null) {
+    return skip(
+      measuredReport(part, curve, radiusStuds, turn, false, "no rail pair at its entry end"),
+    );
+  }
+  const sections = scans.map((scan) => railSection(heads, scan));
+  const [entrySection] = sections;
+  if (!entrySection) {
+    return skip(
+      measuredReport(part, curve, radiusStuds, turn, false, "no rail pair across its entry"),
+    );
+  }
+  const startPose = poseInEntryFrame(reference);
+  const path = fitRoutePath(
+    heads,
+    (point) => toPartFrame(frame, point),
+    { ...startPose, heading: startPose.heading + Math.PI },
+    poseInEntryFrame(exit),
+    exactRationalToFloat64(entrySection.railHalfSpacingLdu),
+    `${part} route 0→1`,
+  );
+  const id = `${source.namespace}:${part}`;
+  const piece: v.InferInput<typeof TrackPiece> = {
+    id,
+    part: id,
+    title: `${source.vendor} Curve R${radiusStuds}`,
+    kind: "curve",
+    system: source.id,
+    joinClass: "lego-train",
+    status: "unverified",
+    thirdParty: { source: source.id, vendor: source.vendor },
+    connectors: ends.map((end) => ({
+      coefficients: encodeZeta16(conjugateZeta16(end.position)),
+      heading: normalizeHeading16(-end.heading),
+      status: end.status,
+      residualLdu: end.residualLdu,
+    })),
+    routes: [
+      { from: 0, to: 1, lengthLdu: path.lengthLdu, segments: path.segments.map(mirrorSegment) },
+    ],
+    partFrame: partFrameInBundle(frame),
+  };
+  const checks: PieceChecks = {
+    id,
+    railTopY: formatExactDecimal(heads.topY),
+    connectors: ends.map((end, connector) => ({
+      connector,
+      marker: "radial joint plane",
+      derivation: end.derivation,
+      markerResidualLdu: end.residualLdu,
+      railCentreOffsetLdu: exactRationalText(sections[connector]?.railCentreOffsetLdu),
+      railHalfSpacingLdu: exactRationalText(sections[connector]?.railHalfSpacingLdu),
+    })),
+    routes: [
+      {
+        from: 0,
+        to: 1,
+        family: path.family,
+        railCoverage: path.railCoverage,
+        rejected: path.rejected,
+      },
+    ],
+  };
+  return {
+    piece,
+    checks,
+    report: measuredReport(part, curve, radiusStuds, turn, true, derivation),
+  };
+}
+
 export function buildTrackCatalog(
   library: LdrawLibrary,
   parts: ReadonlyArray<string>,
   markers: ReadonlyArray<TrackEndMarker>,
+  thirdParty: ReadonlyArray<MeasuredCurveSource> = [],
 ): TrackCatalogReport {
   const built = parts.map((part) => buildTrackPiece(library, part, markers));
+  const measured = thirdParty.map((source) => ({
+    source: source.id,
+    built: source.parts.map((part) => buildMeasuredCurve(source, part)),
+  }));
+  const offered = measured.flatMap(({ built: pieces }) =>
+    pieces.flatMap(({ piece, checks }) => (piece && checks ? [{ piece, checks }] : [])),
+  );
   return {
     frame: "bundle +Y up (z = −z_LDraw); x → Re, z → Im; connector 0 at the origin facing −x",
     n: ZETA16_ORDER,
-    pieces: built.map(({ piece }) => piece),
-    checks: built.map(({ checks }) => checks),
+    pieces: [...built, ...offered].map(({ piece }) => piece),
+    checks: [...built, ...offered].map(({ checks }) => checks),
+    thirdParty: measured.map(({ source, built: pieces }) => ({
+      source,
+      curves: pieces.map(({ report }) => report),
+    })),
   };
 }

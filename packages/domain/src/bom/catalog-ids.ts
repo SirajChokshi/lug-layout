@@ -26,6 +26,7 @@ export interface ColorCrosswalkEntry {
 export interface Crosswalk {
   readonly parts: ReadonlyMap<string, PartCrosswalkEntry>;
   readonly colors: ReadonlyMap<number, ColorCrosswalkEntry>;
+  readonly thirdParty?: ReadonlyMap<string, string>;
 }
 
 export interface CatalogLine {
@@ -45,11 +46,16 @@ export interface UnmappedLine extends ResolvedLine {
   readonly missing: MissingMapping;
 }
 
+export interface ThirdPartyLine extends ResolvedLine {
+  readonly vendor: string;
+}
+
 export interface CatalogBom {
   readonly system: CatalogSystem;
   readonly lines: ReadonlyArray<CatalogLine>;
   readonly unmapped: ReadonlyArray<UnmappedLine>;
   readonly custom: ReadonlyArray<ResolvedLine>;
+  readonly thirdParty: ReadonlyArray<ThirdPartyLine>;
 }
 
 function missingMapping(part: string | null): MissingMapping {
@@ -105,9 +111,15 @@ export function catalogOf(
   const merged = new Map<string, CatalogLine>();
   const unmapped: UnmappedLine[] = [];
   const custom: ResolvedLine[] = [];
+  const thirdParty: ThirdPartyLine[] = [];
   for (const line of resolved) {
     if (isCustomPartId(line.part)) {
       custom.push(line);
+      continue;
+    }
+    const vendor = crosswalk.thirdParty?.get(line.part);
+    if (vendor !== undefined) {
+      thirdParty.push({ ...line, vendor });
       continue;
     }
     const entry = crosswalk.parts.get(line.part);
@@ -134,5 +146,5 @@ export function catalogOf(
   const sorted = [...merged.values()].toSorted((a, b) =>
     a.part === b.part ? a.color - b.color : a.part < b.part ? -1 : 1,
   );
-  return { system, lines: sorted, unmapped, custom };
+  return { system, lines: sorted, unmapped, custom, thirdParty };
 }

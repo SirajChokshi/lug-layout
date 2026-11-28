@@ -71,8 +71,14 @@ export interface UncountedItem {
 const KEYWORD_ONLY_NOTE = "BrickLink id from an LDraw keyword only";
 const CUSTOM_PART_NOTE = "custom part from an imported file, not buyable";
 
-function lineNote(partId: string, part: PartCrosswalkEntry | undefined): string | null {
+function lineNote(
+  partId: string,
+  part: PartCrosswalkEntry | undefined,
+  vendor: string | undefined,
+): string | null {
   if (isCustomPartId(partId)) return CUSTOM_PART_NOTE;
+  if (vendor !== undefined)
+    return `third-party part from ${vendor}, not on Rebrickable or BrickLink`;
   return part?.bricklink && part.bricklinkFromKeywordOnly ? KEYWORD_ONLY_NOTE : null;
 }
 
@@ -106,7 +112,7 @@ export function plainBomCsv(
         part?.bricklink ?? null,
         color?.bricklink ?? null,
         line.expandedFrom,
-        lineNote(line.part, part),
+        lineNote(line.part, part, crosswalk.thirdParty?.get(line.part)),
       ];
     }),
     ...uncounted.map((item) => [

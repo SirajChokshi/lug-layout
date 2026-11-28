@@ -92,6 +92,8 @@ export interface CatalogItemView {
   readonly listedUnder: string | null;
   readonly customParts: number;
   readonly shelf: LibraryShelf | null;
+  readonly thirdPartyVendor?: string;
+  readonly unverified?: true;
 }
 
 export interface SkippedCatalogModel {

@@ -44,7 +44,7 @@ function trackSystems(
       (piece) =>
         piece.system === system && piece.kind === "straight" && piece.status === "certified",
     );
-    if (!straight) throw new Error(`track system ${system} has no certified straight`);
+    if (!straight) continue;
     const rails = measureRails(library, partName(straight.part), RAIL_SECTION_X);
     const railTopLdu = Number(rails.railTopAboveUndersideLdu);
     if (!Number.isInteger(railTopLdu)) {
@@ -77,9 +77,19 @@ export function levelCrossingData(
   return { systems: trackSystems(library, pieces), ramps };
 }
 
+export interface OutlineLibraries {
+  readonly library: (partId: string) => LdrawLibrary;
+  readonly file: (partId: string) => string;
+}
+
 export function planOutlines(
-  library: LdrawLibrary,
+  libraries: OutlineLibraries,
   parts: ReadonlyArray<string>,
 ): ReadonlyMap<string, BakedOutline> {
-  return new Map(parts.map((part) => [part, planOutline(polygonsOf(library, partFile(part)))]));
+  return new Map(
+    parts.map((part) => [
+      part,
+      planOutline(polygonsOf(libraries.library(part), libraries.file(part))),
+    ]),
+  );
 }

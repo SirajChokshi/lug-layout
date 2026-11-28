@@ -698,7 +698,8 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   async loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {
-    return crosswalkMaps(await this.crosswalkFile(lod));
+    const [file, manifest] = await Promise.all([this.crosswalkFile(lod), this.loadManifest(lod)]);
+    return crosswalkMaps(file, manifest.parts);
   }
 
   async loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {

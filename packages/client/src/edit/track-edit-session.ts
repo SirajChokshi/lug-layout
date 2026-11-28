@@ -1,5 +1,5 @@
 import type { PartAsset, PartShapeAsset } from "@brr/catalog";
-import type { PoseStatus, TrackSystem } from "@brr/schema/bundle";
+import type { LegoTrackSystem, PoseStatus, TrackPiece } from "@brr/schema/bundle";
 import type { LayerTable, TrackArrangement, TrackChange } from "@brr/domain";
 import { PLATE_LDU, QUARTER_TURN_16, STUD_LDU, ZETA16_ORDER, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type TrackEndMarker } from "@brr/render";
@@ -314,11 +314,22 @@ const BLUEPRINT_SIZES: Readonly<Record<TrackBlueprint, number | null>> = {
 };
 const TRACK_PIECE_GROUP = "track-pieces";
 const TRACK_PIECE_GROUP_LABEL = "Track pieces";
-const TRACK_TOOL_NAMES: Readonly<Record<TrackSystem, string>> = {
+const TRACK_TOOL_NAMES: Readonly<Record<LegoTrackSystem, string>> = {
   "lego-9v": "9V track",
   "lego-plastic": "Plastic track",
 };
 const NO_TOOLS: ReadonlyArray<TrackToolView> = [];
+
+function trackToolName({ system, thirdParty }: TrackPiece): string {
+  if (thirdParty) return `${thirdParty.vendor} track`;
+  switch (system) {
+    case "lego-9v":
+    case "lego-plastic":
+      return TRACK_TOOL_NAMES[system];
+    default:
+      throw new Error(`track system ${system} is neither LEGO nor a third-party source`);
+  }
+}
 const TRACK_TITLE_WORDS = ["Train", "Track"];
 const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const NOTHING: { readonly kind: "none" } = { kind: "none" };
@@ -1124,7 +1135,7 @@ export class TrackEditSession implements ITrackEditSession {
     return {
       id,
       label,
-      shortLabel: TRACK_TOOL_NAMES[straight.piece.system],
+      shortLabel: trackToolName(straight.piece),
       group: id,
       groupLabel: label,
       color: null,
@@ -1171,6 +1182,8 @@ export class TrackEditSession implements ITrackEditSession {
         listedUnder: trackToolId(kit.piece.system),
         customParts: 0,
         shelf: null,
+        ...(kit.piece.thirdParty ? { thirdPartyVendor: kit.piece.thirdParty.vendor } : {}),
+        ...(kit.piece.status === "unverified" ? { unverified: true as const } : {}),
       };
     });
   }

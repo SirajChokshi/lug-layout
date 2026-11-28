@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Palette, PartRole } from "@brr/schema/bundle";
+import { PartRole, type Palette } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import * as v from "valibot";
 import { LDRAW_NAMESPACE, movedTarget, type LdrawPartFacts } from "./crosswalk.ts";
@@ -217,8 +217,15 @@ export function partCategory(
 }
 
 const CompiledParts = v.looseObject({
-  parts: v.array(v.looseObject({ id: v.string() })),
+  parts: v.array(
+    v.looseObject({ id: v.string(), role: PartRole, thirdParty: v.optional(v.unknown()) }),
+  ),
 });
+
+function roleCategory(role: PartRole): PartCategory | null {
+  const category = ROLE_RULES[role]?.categories[0];
+  return category === undefined ? null : { ldrawCategory: category, keywords: [] };
+}
 
 export async function attachPartCategories(
   manifestPath: string,
@@ -231,7 +238,10 @@ export async function attachPartCategories(
   );
   const uncategorized: string[] = [];
   const parts = manifest.parts.map((part) => {
-    const category = partCategory(part.id.replace(LDRAW_NAMESPACE, ""), ldrawParts, categories);
+    const category =
+      part.thirdParty === undefined
+        ? partCategory(part.id.replace(LDRAW_NAMESPACE, ""), ldrawParts, categories)
+        : roleCategory(part.role);
     if (category === null) uncategorized.push(part.id);
     return { ...part, ...category };
   });

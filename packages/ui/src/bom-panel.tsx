@@ -268,6 +268,24 @@ export function BomPanel({
               </ul>
             </details>
           )}
+          {bom.rebrickable.thirdParty.length > 0 && (
+            <details data-kind="thirdPartyParts" open>
+              <summary>
+                Third-party parts ({integer.format(bom.rebrickable.thirdParty.length)} lines)
+              </summary>
+              <ul>
+                {bom.rebrickable.thirdParty.map((line) => (
+                  <li key={`${line.part}-${line.ldrawColor}`} data-part={line.part}>
+                    <span className="part-badge" data-badge="third-party">
+                      third-party
+                    </span>{" "}
+                    {line.quantity}× {line.part}: from {line.vendor}, not LEGO. Left out of the
+                    Rebrickable and BrickLink lists; buy it from {line.vendor}.
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           <UnmappedLines catalog={bom.rebrickable} name="Rebrickable" />
           <UnmappedLines catalog={bom.bricklink} name="BrickLink" />
           {bom.uncounted.length > 0 && (

@@ -703,6 +703,134 @@
         "zLdu": 0,
         "headingHalfSteps": 0
       }
+    },
+    {
+      "id": "fxbricks:FxTrackR56",
+      "part": "fxbricks:FxTrackR56",
+      "title": "Fx Bricks Curve R56",
+      "kind": "curve",
+      "system": "thirdparty-fxbricks",
+      "joinClass": "lego-train",
+      "status": "unverified",
+      "thirdParty": {
+        "source": "thirdparty-fxbricks",
+        "vendor": "Fx Bricks"
+      },
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "unverified",
+          "residualLdu": 0.2494016874374649
+        },
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "56",
+            "-56",
+            "0",
+            "0"
+          ],
+          "heading": 1,
+          "status": "unverified",
+          "residualLdu": 0.2327221236074024
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 439.8229715025711,
+          "segments": [
+            {
+              "kind": "arc",
+              "radiusLdu": 1119.9999999999989,
+              "sweepRadians": 0.3926990816987246
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 218.50052204752396,
+        "zLdu": 21.520507967660414,
+        "headingHalfSteps": 25
+      }
+    },
+    {
+      "id": "fxbricks:FxTrackR72",
+      "part": "fxbricks:FxTrackR72",
+      "title": "Fx Bricks Curve R72",
+      "kind": "curve",
+      "system": "thirdparty-fxbricks",
+      "joinClass": "lego-train",
+      "status": "unverified",
+      "thirdParty": {
+        "source": "thirdparty-fxbricks",
+        "vendor": "Fx Bricks"
+      },
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "unverified",
+          "residualLdu": 0.2492445581337666
+        },
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "72",
+            "-72",
+            "0",
+            "0"
+          ],
+          "heading": 1,
+          "status": "unverified",
+          "residualLdu": 0.22926840776290192
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 565.4866776461628,
+          "segments": [
+            {
+              "kind": "arc",
+              "radiusLdu": 1439.9999999999984,
+              "sweepRadians": 0.3926990816987246
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 280.93022255165755,
+        "zLdu": 27.669206899285516,
+        "headingHalfSteps": 25
+      }
     }
   ],
   "checks": [
@@ -1367,6 +1495,219 @@
             }
           ],
           "rejected": []
+        }
+      ]
+    },
+    {
+      "id": "fxbricks:FxTrackR56",
+      "railTopY": "-23.25",
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "radial joint plane",
+          "derivation": "reference end: the radial joint plane at the identified centreline radius",
+          "markerResidualLdu": 0.2494016874374649,
+          "railCentreOffsetLdu": {
+            "numerator": "-60606324889951992616332841832320882970355423961094117329420986959602017968344045654837",
+            "denominator": "331182937135891933888373631553000419356931221309938199451946106831703742677316898840000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "16561966306651911068670739528205516073836281466408304318645384623215566223902139761182283",
+            "denominator": "331182937135891933888373631553000419356931221309938199451946106831703742677316898840000"
+          }
+        },
+        {
+          "connector": 1,
+          "marker": "radial joint plane",
+          "derivation": "arc: radius 56 studs (centreline 1119.9999765911582 LDU, the radius 29 pairs of its 521 clean vertex rings mirror about), turn -1 step from the end faces' directions; not certified: its end faces lie 0.2494 and 0.2494 LDU inside the radial joint planes",
+          "markerResidualLdu": 0.2327221236074024,
+          "railCentreOffsetLdu": {
+            "numerator": "3266936637546034958071615998429211759742021131926673483112789647949398790032044683",
+            "denominator": "17817591404357441399170813890099607304067827210449261524402713334673570866843621875"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "29403989972963731325019091662833222750457624417634007285909066671053779370592805421946",
+            "denominator": "587980516343795566172636858373287041034238297944825630305289540044227838605839521875"
+          }
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "arc",
+          "railCoverage": [
+            {
+              "numerator": "16",
+              "denominator": "17"
+            },
+            {
+              "numerator": "209",
+              "denominator": "221"
+            }
+          ],
+          "rejected": []
+        }
+      ]
+    },
+    {
+      "id": "fxbricks:FxTrackR72",
+      "railTopY": "-23.25",
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "radial joint plane",
+          "derivation": "reference end: the radial joint plane at the identified centreline radius",
+          "markerResidualLdu": 0.2492445581337666,
+          "railCentreOffsetLdu": {
+            "numerator": "-3059487060322459233108223755862889872826626600805513357364261575153806708519894658953",
+            "denominator": "21491749603997669216144429560330090403723565399971098414618700112715898951537029207500"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "214939607868459430174489536545377546934369763437330964864446340633512950315892397371051",
+            "denominator": "4298349920799533843228885912066018080744713079994219682923740022543179790307405841500"
+          }
+        },
+        {
+          "connector": 1,
+          "marker": "radial joint plane",
+          "derivation": "arc: radius 72 studs (centreline 1439.99998559785 LDU, the radius 35 pairs of its 547 clean vertex rings mirror about), turn -1 step from the end faces' directions; not certified: its end faces lie 0.2492 and 0.2492 LDU inside the radial joint planes",
+          "markerResidualLdu": 0.22926840776290192,
+          "railCentreOffsetLdu": {
+            "numerator": "8145071823294466777169365730093614182690321784077422354923872110928623195994038356749",
+            "denominator": "57214205373956171745884642024625619732619152911737999596366329533046122384540676920000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "572200835623199641341935848223731965394555984489992701100756299225638261233826791114601",
+            "denominator": "11442841074791234349176928404925123946523830582347599919273265906609224476908135384000"
+          }
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "arc",
+          "railCoverage": [
+            {
+              "numerator": "271",
+              "denominator": "284"
+            },
+            {
+              "numerator": "68",
+              "denominator": "71"
+            }
+          ],
+          "rejected": []
+        }
+      ]
+    }
+  ],
+  "thirdParty": [
+    {
+      "source": "thirdparty-fxbricks",
+      "curves": [
+        {
+          "part": "FxTrackR56",
+          "centreLdu": [
+            -1119.9999774987125,
+            -2.5359321020636325e-7
+          ],
+          "cleanRings": 521,
+          "centrelineRadiusLdu": 1119.9999765911582,
+          "radiusStuds": 56,
+          "turnDegrees": 22.49987507346794,
+          "endFaceOffsetsLdu": [
+            0.24940218487853372,
+            0.249401687437512
+          ],
+          "offered": true,
+          "reason": "arc: radius 56 studs (centreline 1119.9999765911582 LDU, the radius 29 pairs of its 521 clean vertex rings mirror about), turn -1 step from the end faces' directions; not certified: its end faces lie 0.2494 and 0.2494 LDU inside the radial joint planes"
+        },
+        {
+          "part": "FxTrackR64P",
+          "centreLdu": [
+            -1279.999968239972,
+            -0.0000015344983085099582
+          ],
+          "cleanRings": 531,
+          "centrelineRadiusLdu": 1279.9999723637989,
+          "radiusStuds": 64,
+          "turnDegrees": 22.619995729731286,
+          "endFaceOffsetsLdu": [
+            0.25171572302102163,
+            0.25171271362384573
+          ],
+          "offered": false,
+          "reason": "it turns 22.6200°, which is no 22.5° or 11.25° step"
+        },
+        {
+          "part": "FxTrackR72",
+          "centreLdu": [
+            -1439.999988648837,
+            -0.0000023225507134700222
+          ],
+          "cleanRings": 547,
+          "centrelineRadiusLdu": 1439.99998559785,
+          "radiusStuds": 72,
+          "turnDegrees": 22.500042862583864,
+          "endFaceOffsetsLdu": [
+            0.24924911398136373,
+            0.2492445581337961
+          ],
+          "offered": true,
+          "reason": "arc: radius 72 studs (centreline 1439.99998559785 LDU, the radius 35 pairs of its 547 clean vertex rings mirror about), turn -1 step from the end faces' directions; not certified: its end faces lie 0.2492 and 0.2492 LDU inside the radial joint planes"
+        },
+        {
+          "part": "FxTrackR88",
+          "centreLdu": [
+            -1759.999885480904,
+            0.0000025285629091042467
+          ],
+          "cleanRings": 447,
+          "centrelineRadiusLdu": 1759.999885142122,
+          "radiusStuds": 88,
+          "turnDegrees": 11.250125387220148,
+          "endFaceOffsetsLdu": [
+            0.2503816571933726,
+            0.2503866899676268
+          ],
+          "offered": false,
+          "reason": "it turns 11.25°, which needs N = 32 (ℤ[ζ₃₂]) track arithmetic"
+        },
+        {
+          "part": "FxTrackR104",
+          "centreLdu": [
+            -2079.9997398348573,
+            -0.000005804713499744383
+          ],
+          "cleanRings": 519,
+          "centrelineRadiusLdu": 2079.999742663673,
+          "radiusStuds": 104,
+          "turnDegrees": 11.249883569004034,
+          "endFaceOffsetsLdu": [
+            0.2514400978434139,
+            0.2514285443197082
+          ],
+          "offered": false,
+          "reason": "it turns 11.25°, which needs N = 32 (ℤ[ζ₃₂]) track arithmetic"
+        },
+        {
+          "part": "FxTrackR120",
+          "centreLdu": [
+            -2400.000363008433,
+            -0.0000042921497298054515
+          ],
+          "cleanRings": 526,
+          "centrelineRadiusLdu": 2400.0003634753766,
+          "radiusStuds": 120,
+          "turnDegrees": 11.249906281373475,
+          "endFaceOffsetsLdu": [
+            0.25169663731031733,
+            0.2516880943471733
+          ],
+          "offered": false,
+          "reason": "it turns 11.25°, which needs N = 32 (ℤ[ζ₃₂]) track arithmetic"
         }
       ]
     }
