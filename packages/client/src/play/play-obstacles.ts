@@ -2,7 +2,6 @@ import {
   SOLID_BOX_FLOATS,
   SOLID_MATRIX_FLOATS,
   SOLID_TRIANGLE_FLOATS,
-  SPOT_DISTANCE,
   posedBoxBounds,
   type GuideGeometry,
   type PartSolid,
@@ -131,26 +130,18 @@ interface ModelParts {
   readonly labels: string[];
 }
 
-function nearTrack(
-  rails: RailTrack,
-  box: ArrayLike<number>,
-  at: number,
-  reach: number,
-  spot: Float64Array,
-): boolean {
+function nearTrack(rails: RailTrack, box: ArrayLike<number>, at: number, reach: number): boolean {
   const halfX = ((box[at + MAX] ?? 0) - (box[at] ?? 0)) / 2;
   const halfZ = ((box[at + MAX + 2] ?? 0) - (box[at + 2] ?? 0)) / 2;
   const centreX = (box[at] ?? 0) + halfX;
   const centreZ = (box[at + 2] ?? 0) + halfZ;
-  if (!rails.network.nearest(centreX, centreZ, spot)) return false;
-  return (spot[SPOT_DISTANCE] ?? 0) - Math.sqrt(halfX * halfX + halfZ * halfZ) < reach;
+  return rails.network.nearDisk(centreX, centreZ, Math.sqrt(halfX * halfX + halfZ * halfZ), reach);
 }
 
 function modelParts(sources: ObstacleSources, reach: number): ModelParts {
   const { rails, models, solids } = sources;
   const parts: ModelParts = { matrices: [], boxes: [], part: [], owner: [], labels: [] };
   const posed = new PosedPlaceable();
-  const spot = new Float64Array(3);
   const studReach = solids.studReach();
   for (const model of models.models()) {
     const { box } = model;
@@ -162,14 +153,14 @@ function modelParts(sources: ObstacleSources, reach: number): ModelParts {
       box.maxY + studReach,
       box.maxZ + studReach,
     ];
-    if (!nearTrack(rails, modelBox, 0, reach, spot)) continue;
+    if (!nearTrack(rails, modelBox, 0, reach)) continue;
     const { x, z, yPlates, rot } = model.handle;
     posed.place(model.placeable, x, z, yPlates * PLATE_LDU, rot, solids);
     const carried = models.carriedParts(model.placeable);
     const owner = parts.labels.length;
     let kept = false;
     for (let i = 0; i < posed.count; i++) {
-      if (carried.has(i) || !nearTrack(rails, posed.boxes, i * SOLID_BOX_FLOATS, reach, spot)) {
+      if (carried.has(i) || !nearTrack(rails, posed.boxes, i * SOLID_BOX_FLOATS, reach)) {
         continue;
       }
       for (let f = 0; f < SOLID_MATRIX_FLOATS; f++) {
