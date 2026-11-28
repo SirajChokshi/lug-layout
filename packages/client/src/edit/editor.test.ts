@@ -3550,6 +3550,138 @@ it("never road-snaps a dragged road plate into a user's brick standing at the fl
   expect(placedXs(editor)).toEqual([320, 500, 680]);
 }, 120_000);
 
+function startConnectingEditor() {
+  return startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    const loader = bound.get(PART_BUNDLE_LOADER);
+    const records = { read: (partId: string) => loader.readPartConnectors("standard", partId) };
+    bound.rebind(MODEL_IMPORTER).toConstantValue(new InThreadModelImporter(loader, records));
+  });
+}
+
+const OBSTACLES = [
+  {
+    obstacle: "stack of three 2×4 bricks",
+    lines: [0, -24, -48].map((y) => `1 4 0 ${y} 0 0 0 1 0 1 0 -1 0 0 3001.dat`),
+    at: [500, 320],
+  },
+  {
+    obstacle: "1×6×5 brick",
+    lines: ["1 4 0 0 0 0 0 1 0 1 0 -1 0 0 3754.dat"],
+    at: [510, 320],
+  },
+] as const;
+
+it.each(
+  OBSTACLES.flatMap((entry) => [
+    { ...entry, surface: "the bare table", onBaseplate: false },
+    { ...entry, surface: "a user's own baseplate", onBaseplate: true },
+  ]),
+)(
+  "road snap never moves a held plate into a non-road model, though the join would keep its joints: a user's $obstacle beside the flush pose, on $surface",
+  async ({ lines, at: [x, z], onBaseplate }) => {
+    const { editor, backend, frame } = await startConnectingEditor();
+    const place = placer(editor, backend);
+    if (onBaseplate) {
+      const baseplate = userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]);
+      await place(await importUserFile(editor, "my-baseplate.ldr", baseplate), 320, 320);
+    }
+    await place(RECESSED_ROAD_PLATE, 320, 320);
+    const obstacle = await importUserFile(
+      editor,
+      "my-obstacle.ldr",
+      userRoadFile("my-obstacle.ldr", lines),
+    );
+    await chosen(editor, RECESSED_ROAD_PLATE);
+    const withoutObstacle = await settledAt(editor, backend, frame, 680, 320);
+    await place(obstacle, x, z);
+    await chosen(editor, RECESSED_ROAD_PLATE);
+    const settled = await settledAt(editor, backend, frame, 680, 320);
+    const joints = editor.snapshot().hover?.placement?.joints ?? 0;
+    expect({ withoutObstacle, withObstacle: settled, mated: joints > 0 }).toEqual({
+      withoutObstacle: { pose: [640, 320], snap: "snapped" },
+      withObstacle: { pose: [680, 320], snap: expect.not.stringMatching(/^snapped$/u) },
+      mated: onBaseplate,
+    });
+  },
+  120_000,
+);
+
+it("road snap checks a join at the height the held plate rests at: beside a road plate on a user's raised platform, it snaps flush on the platform", async () => {
+  const { editor, backend, frame } = await startConnectingEditor();
+  const place = placer(editor, backend);
+  const legs = [-280, 280].flatMap((x) =>
+    [-280, 280].map((z) => `1 4 ${x} 0 ${z} 1 0 0 0 1 0 0 0 1 3001.dat`),
+  );
+  const platform = userRoadFile("my-platform.ldr", [
+    "1 2 0 -8 0 1 0 0 0 1 0 0 0 1 3811.dat",
+    ...legs,
+  ]);
+  await place(await importUserFile(editor, "my-platform.ldr", platform), 320, 320);
+  await place(RECESSED_ROAD_PLATE, 160, 320);
+  const { refs, placements } = editor.dump();
+  const roadPlateRow = placements.refId.findIndex((ref) => refs[ref] === RECESSED_ROAD_PLATE);
+  const platformTop = placements.yPlates[roadPlateRow];
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  const outcomes = [];
+  for (const x of [500, 520]) {
+    const settled = await settledAt(editor, backend, frame, x, 320);
+    outcomes.push({ ...settled, yPlates: editor.snapshot().hover?.placement?.pose.yPlates });
+  }
+  expect(platformTop).toBeGreaterThan(0);
+  expect(outcomes).toEqual(
+    [500, 520].map(() => ({ pose: [480, 320], snap: "snapped", yPlates: platformTop })),
+  );
+}, 120_000);
+
+it("road snap never moves a held plate beside a placement still reading its connectors, and snaps there once they load", async () => {
+  const gate = heldPartConnectivity("44336p04");
+  const { editor, backend, frame } = await startEditor([], gate);
+  await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 160);
+  roadStrokeResult(editor, backend, [320, -320], [960, -320]);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  const hovered = async () => {
+    const settled = await settledAt(editor, backend, frame, 660, 260);
+    return { ...settled, waitingOn: editor.snapshot().hover?.placement?.waitingOn ?? null };
+  };
+  const whileReading = await hovered();
+  await vi.waitFor(() => expect(gate.held).toBe(1));
+  gate.open();
+  await vi.waitFor(async () => {
+    await settledAt(editor, backend, frame, 1280, 1280);
+    expect(await hovered()).toEqual({ pose: [640, 160], snap: "snapped", waitingOn: null });
+  });
+  expect(whileReading).toEqual({ pose: [660, 260], snap: "free", waitingOn: null });
+}, 120_000);
+
+it.each([
+  {
+    surface: "a user's own baseplate",
+    onBaseplate: true,
+    settles: { pose: [660, 660], snap: "free" },
+  },
+  {
+    surface: "the bare table",
+    onBaseplate: false,
+    settles: { pose: [720, 640], snap: "snapped" },
+  },
+] as const)(
+  "road snap never moves a held user's road plate to a join mating fewer studs than where the assist settled, and does where it settled with none: on $surface",
+  async ({ onBaseplate, settles }) => {
+    const { editor, backend, frame } = await startConnectingEditor();
+    const place = placer(editor, backend);
+    if (onBaseplate) {
+      const baseplate = userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]);
+      await place(await importUserFile(editor, "my-baseplate.ldr", baseplate), 320, 320);
+    }
+    const road = userRoadFile("my-road-plate.ldr", ["1 72 0 0 0 1 0 0 0 1 0 0 0 1 69958.dat"]);
+    const roadPlate = await importUserFile(editor, "my-road-plate.ldr", road);
+    await place(roadPlate, 720, 320);
+    await chosen(editor, roadPlate);
+    expect(await settledAt(editor, backend, frame, 660, 660)).toEqual(settles);
+  },
+  120_000,
+);
+
 it.each([
   { baseplateZ: 320, landsAt: 160 },
   { baseplateZ: -20, landsAt: 140 },
