@@ -634,6 +634,8 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setTrackRampPlates(plates: number): void;
   selectTrackChoice(index: number): void;
   dropTrackEnd(): boolean;
+  previewTrackLoop(key: string | null): void;
+  closeTrackLoop(key: string | null, eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
   removeTrain(index: number, eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
@@ -664,6 +666,7 @@ const EDITOR_LOD: BundleLod = "standard";
 const ASSIST_TOLERANCE_PX = 32;
 const ASSIST_FLOOR_LDU = STUD_LDU;
 const ASSIST_BASIN_LDU = 3 * STUD_LDU;
+const LOOP_SCAN_FRAME_BUDGET_MS = 10;
 const NDC_SPAN = 2;
 const HALF_STUD_LDU = STUD_LDU / 2;
 const ORIGIN_INTS = 3;
@@ -1573,7 +1576,7 @@ export class Editor implements IEditor, IEditedWorld {
       models: () => this.placed.models(),
       carriedParts: (placeable) => this.trackWorld.carriedParts(placeable),
     });
-    frames.setFrameWork(this.assistFrame);
+    frames.setFrameWork(this.frameWork);
     catalog.subscribe(() => {
       this.update({ meshes: catalog.meshProgress() });
       if (this.solidsAwaited) void Promise.resolve().then(() => this.solidsArrived());
@@ -2501,6 +2504,21 @@ export class Editor implements IEditor, IEditedWorld {
     return true;
   }
 
+  previewTrackLoop(key: string | null): void {
+    if (this.state.mode !== "track") return;
+    const view = this.tracks.previewLoop(key);
+    if (view) this.update(view);
+  }
+
+  closeTrackLoop(key: string | null, eventTimeMs: number): void {
+    if (this.state.mode !== "track" || this.state.readOnly || this.tracks.holding()) return;
+    if (this.tracks.dragging() || this.tracks.piering()) return;
+    const lay = this.tracks.closeLoop(key);
+    if (!lay) return;
+    this.commitLay(lay, eventTimeMs);
+    this.repaintTrackPreview();
+  }
+
   private enterRoadMode(id: string): void {
     this.ghostRot = this.placeRot;
     if (this.state.mode === "track") this.tracks.drop();
@@ -2815,7 +2833,18 @@ export class Editor implements IEditor, IEditedWorld {
     this.assist.aim({ placeable, connected, mode }, this.pick, startedMs);
   }
 
-  private readonly assistFrame = (startMs: number): void => {
+  private readonly frameWork = (startMs: number): void => {
+    this.assistFrame(startMs);
+    this.loopScanFrame(startMs);
+  };
+
+  private loopScanFrame(startMs: number): void {
+    if (this.state.mode !== "track") return;
+    const view = this.tracks.scanLoops(startMs + LOOP_SCAN_FRAME_BUDGET_MS);
+    if (view) this.update(view);
+  }
+
+  private assistFrame(startMs: number): void {
     const outcome = this.assist.frame(startMs);
     switch (outcome) {
       case "quiet":
@@ -2834,7 +2863,7 @@ export class Editor implements IEditor, IEditedWorld {
         throw new Error(`unhandled assist frame ${String(unhandled)}`);
       }
     }
-  };
+  }
 
   private assistHost(): AssistHost {
     return {

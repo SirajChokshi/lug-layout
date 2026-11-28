@@ -17,6 +17,7 @@ import { getHeapSpaceStatistics } from "node:v8";
 import type { IEditorCamera } from "../src/camera/editor-camera.ts";
 import { mainThreadModules } from "../src/client.module.ts";
 import type { IEditor } from "../src/edit/editor.ts";
+import { TRACK_ITEM_ID } from "../src/edit/track-edit-session.ts";
 import { EDITOR, EDITOR_CAMERA } from "../src/tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -106,6 +107,7 @@ interface Row {
   readonly label: string;
   readonly needed: boolean;
   readonly moving: boolean;
+  readonly item: string | null;
 }
 
 interface Measured {
@@ -116,9 +118,20 @@ interface Measured {
 }
 
 const ROWS: ReadonlyArray<Row> = [
-  { label: "still camera, the backend needs a frame", needed: true, moving: false },
-  { label: "still camera, the backend needs no frame", needed: false, moving: false },
-  { label: "camera orbiting every frame, the backend needs a frame", needed: true, moving: true },
+  { label: "still camera, the backend needs a frame", needed: true, moving: false, item: null },
+  { label: "still camera, the backend needs no frame", needed: false, moving: false, item: null },
+  {
+    label: "camera orbiting every frame, the backend needs a frame",
+    needed: true,
+    moving: true,
+    item: null,
+  },
+  {
+    label: "track tool chosen and its loop scan finished, the backend needs a frame",
+    needed: true,
+    moving: false,
+    item: TRACK_ITEM_ID,
+  },
 ];
 
 let scheduled: FrameRequestCallback | null = null;
@@ -260,6 +273,8 @@ async function measureRow(
 async function measureInThisProcess(row: Row): Promise<Measured> {
   const backend = new FrameBackend();
   const { editor, camera } = await startEditor(backend);
+  if (row.item !== null) editor.chooseItem(row.item);
+  if (editor.snapshot().activeItem !== row.item) throw new Error(`${row.label}: not chosen`);
   useWholeMillisecondClock();
   return measureRow(editor, camera, backend, row);
 }

@@ -1047,6 +1047,48 @@ footer a {
   font-size: 12px;
 }
 
+.track-loops-panel {
+  font-size: var(--text-small);
+}
+
+.track-loops-panel ol {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.track-loops-panel li p {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.track-loops-panel button {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--surface-panel-solid);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.track-loops-panel button:hover,
+.track-loops-panel li[data-previewed="true"] button {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.track-loops-panel li button:disabled {
+  border-color: var(--border-control);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  cursor: default;
+}
+
 .track-height-row {
   display: flex;
   flex-wrap: wrap;
