@@ -39,7 +39,10 @@ interface LdrawColor {
 const REBRICKABLE_KEYWORD = /Rebrickable\s+([^\s,]+)/u;
 const LDCONFIG_COLOUR = /^0\s+!COLOUR\s+(\S+)\s+CODE\s+(\d+)\s/u;
 
-async function verifiedText(directory: string, entry: RebrickableExportFile): Promise<string> {
+export async function verifiedText(
+  directory: string,
+  entry: RebrickableExportFile,
+): Promise<string> {
   const bytes = await readFile(join(directory, entry.file));
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   if (sha256 !== entry.sha256) {

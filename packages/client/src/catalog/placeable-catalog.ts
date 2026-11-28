@@ -61,6 +61,7 @@ import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { customPartCredits } from "./custom-part-credits.ts";
 import { PartSolids, type IPartSolids } from "./part-solids.ts";
+import { bundleShelf, type LibraryShelf } from "./library-shelves.ts";
 import { modelLabel, withoutYear } from "./model-label.ts";
 import { RequestOrder } from "./request-order.ts";
 import { thumbnailUrls } from "./thumbnail-urls.ts";
@@ -90,6 +91,7 @@ export interface CatalogItemView {
   readonly toggleable: boolean;
   readonly listedUnder: string | null;
   readonly customParts: number;
+  readonly shelf: LibraryShelf | null;
 }
 
 export interface SkippedCatalogModel {
@@ -290,6 +292,7 @@ function catalogItem(
     toggleable: false,
     listedUnder: null,
     customParts: 0,
+    shelf: null,
   };
 }
 
@@ -336,6 +339,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
       toggleable: false,
       listedUnder: null,
       customParts: 0,
+      shelf: bundleShelf(entry),
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -756,10 +760,12 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     this.customPartsById.set(placeable.id, null);
     this.placeablesByRefId.push(placeable);
     const plain = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
-    const slot = {
-      ...plain,
-      view: { ...plain.view, customParts: parts.partIds.filter(isCustomPartId).length },
+    const view: CatalogItemView = {
+      ...plain.view,
+      customParts: parts.partIds.filter(isCustomPartId).length,
+      shelf: "yours",
     };
+    const slot = { ...plain, view };
     this.slots.push(slot);
     return { placeable, model: remapped, credit, slot };
   }

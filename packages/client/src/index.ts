@@ -488,6 +488,7 @@ export type {
   PaletteRow,
   PaletteSearchSnapshot,
   PaletteSection,
+  PaletteShelf,
 } from "./catalog/palette-search.ts";
 export type { IPaletteDrag } from "./catalog/palette-drag.ts";
 export type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
