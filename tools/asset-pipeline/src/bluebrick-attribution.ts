@@ -5,10 +5,10 @@ import * as v from "valibot";
 
 export const BLUEBRICK_FIXTURES_DIRECTORY = join("packages", "test-fixtures", "bluebrick");
 const SOURCES_FILE = "sources.json";
-const MAP_EXTENSION = ".bbm";
+const BLUEBRICK_EXTENSIONS = [".bbm", ".bbb"];
 
 const BlueBrickSources = v.strictObject({
-  maps: v.array(
+  files: v.array(
     v.strictObject({
       file: v.string(),
       sha256: v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/u)),
@@ -25,37 +25,39 @@ export async function renderBlueBrickAttribution(
   directory = BLUEBRICK_FIXTURES_DIRECTORY,
 ): Promise<string> {
   const root = join(repoRoot, directory);
-  const { maps } = v.parse(
+  const { files } = v.parse(
     BlueBrickSources,
     JSON.parse(await readFile(join(root, SOURCES_FILE), "utf8")),
   );
-  const listed = new Set(maps.map((map) => map.file));
+  const listed = new Set(files.map((entry) => entry.file));
   const unlisted = (await readdir(root)).filter(
-    (name) => name.endsWith(MAP_EXTENSION) && !listed.has(name),
+    (name) =>
+      BLUEBRICK_EXTENSIONS.some((extension) => name.endsWith(extension)) && !listed.has(name),
   );
   if (unlisted.length > 0) {
     throw new Error(`${join(directory, SOURCES_FILE)} doesn't list ${unlisted.join(", ")}`);
   }
   const rows: string[] = [];
-  for (const map of maps) {
+  for (const entry of files) {
     const sha256 = createHash("sha256")
-      .update(await readFile(join(root, map.file)))
+      .update(await readFile(join(root, entry.file)))
       .digest("hex");
-    if (sha256 !== map.sha256) {
+    if (sha256 !== entry.sha256) {
       throw new Error(
-        `${join(directory, map.file)} has SHA-256 ${sha256}, not the ${map.sha256} its source published`,
+        `${join(directory, entry.file)} has SHA-256 ${sha256}, not the ${entry.sha256} its source published`,
       );
     }
-    if (map.licenseText !== null) await readFile(join(root, map.licenseText));
-    const licenseText = map.licenseText === null ? "" : `\`${join(directory, map.licenseText)}\``;
+    if (entry.licenseText !== null) await readFile(join(root, entry.licenseText));
+    const licenseText =
+      entry.licenseText === null ? "" : `\`${join(directory, entry.licenseText)}\``;
     rows.push(
-      `| \`${join(directory, map.file)}\` | ${map.author} | ${map.license} | ${licenseText} | ${map.source} | \`${map.sha256}\` |`,
+      `| \`${join(directory, entry.file)}\` | ${entry.author} | ${entry.license} | ${licenseText} | ${entry.source} | \`${entry.sha256}\` |`,
     );
   }
   return [
-    "## BlueBrick maps",
+    "## BlueBrick maps and budgets",
     "",
-    `BlueBrick \`.bbm\` layouts read by the \`.bbm\` reader's tests, listed in \`${join(directory, SOURCES_FILE)}\`. Each published map is committed byte for byte as its source holds it at the commit linked, under the licence named, with the full licence text beside it. BlueBrick is © Alban Nanty and free software under GPL-3.0; these maps were saved with it and aren't part of it.`,
+    `BlueBrick \`.bbm\` layouts and \`.bbb\` budgets read by the BlueBrick readers' tests, listed in \`${join(directory, SOURCES_FILE)}\`. Each published file is committed byte for byte as its source holds it at the commit linked, under the licence named, with the full licence text beside it. BlueBrick is © Alban Nanty and free software under GPL-3.0; these files were saved with it and aren't part of it.`,
     "",
     "| File | Author | License | License text | Source | SHA-256 |",
     "|---|---|---|---|---|---|",

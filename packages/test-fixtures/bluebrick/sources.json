@@ -1,5 +1,13 @@
 {
-  "maps": [
+  "files": [
+    {
+      "file": "budget.bbb",
+      "sha256": "c327d593fee74d6062cbd31dd3069f55a76e61b034ee0e5e377fa0f909b6bf3d",
+      "author": "Aaron Kimbrell, saved by vanilla BlueBrick 1.9.2",
+      "license": "AGPL-3.0 (the repository's LICENSE; its fixtures README says GPL-3.0)",
+      "licenseText": "licenses/AGPL-3.0.txt",
+      "source": "https://github.com/collaborative-brick-layout-designer/web/blob/73b6e6948f204556d3571b53deafa2ac8209501c/packages/bbm/tests/fixtures/oracle/budget.bbb"
+    },
     {
       "file": "fordyce-2026.bbm",
       "sha256": "18c8bb76e4f5ed96e1d9ada7b7d36731953c661b2731e769783b7f2a44811d9d",
@@ -23,6 +31,14 @@
       "license": "MIT (Copyright (c) 2022 Shin Kuboaki)",
       "licenseText": "licenses/MIT-ev3_train.txt",
       "source": "https://github.com/kuboaki/ev3_train/blob/b935c07e07f831ea5e004dca33aaf3eb769002f5/images/parts_wrk/sample_track01.bbm"
+    },
+    {
+      "file": "synthetic-club.bbb",
+      "sha256": "0d612001a7239c5b663eecbc786a47647093191edf252d30feef18e69b1d129a",
+      "author": "Brick Railroad",
+      "license": "this repository's terms",
+      "licenseText": null,
+      "source": "written for this repository from LDraw part numbers 3811, 53401, 2865, 74746 and 3001, the BrickLink number 44342px2, the OMR set 10014-1, a table and a part no library has"
     },
     {
       "file": "synthetic-yard.bbm",

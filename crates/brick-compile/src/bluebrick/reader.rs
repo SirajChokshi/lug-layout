@@ -1,6 +1,6 @@
 use super::document::{BlueBrickMap, Color, Layer, MapProperties, ReadIssue};
-use super::element::Element;
-use super::format::{Format, NEWEST_FORMAT};
+use super::file::BlueBrickFile;
+use super::format::Format;
 use super::layers::{
     AreaLayerReader, BrickLayerReader, GridLayerReader, LayerContext, LayerReader,
     RulerLayerReader, TextLayerReader,
@@ -9,7 +9,6 @@ use super::node::{FromNode, Node};
 use super::references::ReferenceResolver;
 use super::BlueBrickError;
 
-const MAP_ELEMENT: &str = "Map";
 const EVENT_ELEMENTS: [&str; 2] = ["Event", "Show"];
 const OPAQUE_PERCENT: i32 = 100;
 
@@ -35,22 +34,9 @@ impl BlueBrickReader {
     }
 
     pub fn read(&self, bytes: &[u8]) -> Result<BlueBrickMap, BlueBrickError> {
-        let root = Element::parse(bytes).map_err(BlueBrickError::NotXml)?;
-        if root.name() != MAP_ELEMENT {
-            return Err(BlueBrickError::NotMap(format!(
-                "its root element is <{}>, not <{MAP_ELEMENT}>",
-                root.name()
-            )));
-        }
+        let root = BlueBrickFile::Map.parse(bytes)?;
         let map = Node::root(&root);
-        let version = map
-            .child("Version")
-            .ok_or_else(|| BlueBrickError::NotMap("its <Map> has no <Version>".to_string()))?;
-        let version = u32::try_from(version.as_integer()?)
-            .map_err(|_| version.malformed(format!("{:?} isn't a version", version.text())))?;
-        if version > NEWEST_FORMAT {
-            return Err(BlueBrickError::NewerVersion { version });
-        }
+        let version = BlueBrickFile::Map.version(&map)?;
         let format = Format::new(version);
         let properties = read_properties(&map, format)?;
         let mut layers = Vec::new();
