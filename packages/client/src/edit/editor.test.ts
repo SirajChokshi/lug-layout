@@ -48,6 +48,7 @@ import {
   type PartMeshUpdate,
   type PartPalette,
   type RebaseEvent,
+  type TrackEndMarker,
 } from "@brr/render";
 import {
   CandidatePoses,
@@ -430,7 +431,10 @@ class HeadlessBackend implements ISceneBackend {
   }
   setPlanOverlays(): void {}
   setMarkers(): void {}
-  setTrackEnds(): void {}
+  trackEnds: ReadonlyArray<TrackEndMarker> = [];
+  setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
+    this.trackEnds = markers;
+  }
   setGround(): void {}
   readonly vehicles = new Map<number, ReadonlyArray<number>>();
   readonly vehicleModels = new Map<number, ChunkInstances>();
@@ -8463,6 +8467,7 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   note: "edits notes only",
   "open-plan":
     "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
+  event: "edits the event details only",
 };
 
 it.each(
@@ -9250,6 +9255,115 @@ it("lays a switch clicked in the library on the end drawn from a user's own trac
     ref: first?.ref,
     heading: ((first?.heading ?? 0) + ZETA16_ORDER / 2) % ZETA16_ORDER,
   });
+}, 120_000);
+
+const PASSING_LOOP_SCENE = new URL(
+  "../../../../docs/verified-facts/scenes/passing-loop.ldr",
+  import.meta.url,
+);
+const SCENE_STRAIGHT = "74746.dat";
+const LOOP_SCAN_FRAMES = 1_000;
+
+async function userRunWithAGap(name: string): Promise<Uint8Array> {
+  const straights = (await readFile(PASSING_LOOP_SCENE, "utf8")).split(/\r?\n/u).filter((line) => {
+    const fields = line.trim().split(/\s+/u);
+    return fields[0] === "1" && fields[4] === "0" && fields[14] === SCENE_STRAIGHT;
+  });
+  const first = straights[0];
+  const last = straights.at(-1);
+  if (!first || !last || straights.length < 3) {
+    throw new Error("the passing loop has no run of straights with a middle to leave out");
+  }
+  return new TextEncoder().encode(
+    [
+      `0 ${name}, a user's own model`,
+      `0 Name: ${name}`,
+      "0 Author: lug-layout test",
+      `0 !LICENSE ${CC_BY_4}`,
+      first,
+      last,
+      "",
+    ].join("\n"),
+  );
+}
+
+async function scannedLoops(editor: IEditor, frame: () => Promise<void>) {
+  for (let frames = 0; frames < LOOP_SCAN_FRAMES; frames++) {
+    const loops = editor.snapshot().track?.loops;
+    if (loops && loops.pairs !== null && loops.checked === loops.pairs) return loops;
+    await frame();
+  }
+  throw new Error(`the loop closer is still scanning after ${LOOP_SCAN_FRAMES} frames`);
+}
+
+function trackTally(editor: IEditor) {
+  const { track, history } = editor.snapshot();
+  return {
+    pieces: track?.pieces,
+    openEnds: track?.openEnds,
+    joins: track?.joins,
+    lastCommit: track?.lastCommit,
+    undoLabel: history.undoLabel,
+  };
+}
+
+it("offers the gap in a user's own track file as a one-click close naming its pieces, previews it on its two ends, lays it as one undo step, and O closes it again after an undo", async () => {
+  const { editor, backend, container, frame } = await startImportingEditor();
+  const camera = container.get(EDITOR_CAMERA);
+  const file = "my-run-with-a-gap.ldr";
+  const item = await importUserFile(editor, file, await userRunWithAGap(file));
+  await placer(editor, backend)(item, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  const modelEnds = editor.dump().trackEnds.toSorted((a, b) => a.xLdu - b.xLdu);
+  const facing = [modelEnds[1], modelEnds[2]].map((end) => [end?.xLdu, end?.zLdu]);
+  const offered = await scannedLoops(editor, frame);
+  const [gap] = offered.closures;
+  if (!gap) throw new Error(`nothing closes the gap in ${file}: ${JSON.stringify(offered)}`);
+
+  editor.previewTrackLoop(gap.key);
+  const previewed = {
+    key: editor.snapshot().track?.loops.previewed,
+    ghost: backend.ghostInstances,
+    targets: backend.trackEnds
+      .filter((end) => end.kind === "target")
+      .map((end) => [end.xLdu, end.zLdu])
+      .toSorted((a, b) => (a[0] ?? 0) - (b[0] ?? 0)),
+  };
+  editor.previewTrackLoop(null);
+  const ghostAfterPreview = backend.ghostInstances;
+  const enabledOffered = commandEnabled("close-track-loop", editor.snapshot());
+  editor.closeTrackLoop(gap.key, 0);
+  const closed = trackTally(editor);
+  const laid = editor.dump().laidTrack;
+  const left = await scannedLoops(editor, frame);
+  const enabledClosed = commandEnabled("close-track-loop", editor.snapshot());
+  editor.undo(0);
+  const undone = { laid: editor.dump().laidTrack, ends: editor.dump().trackEnds.length };
+  const reoffered = await scannedLoops(editor, frame);
+  runEditorAction(editor, camera, "close-track-loop", 0);
+
+  expect(modelEnds).toHaveLength(4);
+  expect([gap.from, gap.to].map((end) => [end.xLdu, end.zLdu]).toSorted()).toEqual(
+    facing.toSorted(),
+  );
+  expect(gap).toMatchObject({ pieces: 2, parts: [{ part: "74746", count: 2 }] });
+  expect(previewed).toEqual({ key: gap.key, ghost: gap.pieces, targets: facing });
+  expect(ghostAfterPreview).toBe(0);
+  expect(left.closures).toEqual([]);
+  expect([enabledOffered, enabledClosed]).toEqual([true, false]);
+  expect(closed).toEqual({
+    pieces: 2,
+    openEnds: 2,
+    joins: 3,
+    lastCommit: "joined",
+    undoLabel: "lay 2 pieces",
+  });
+  expect(undone).toEqual({ laid: [], ends: 4 });
+  expect(reoffered.closures.map((closure) => closure.key)).toEqual(
+    offered.closures.map((closure) => closure.key),
+  );
+  expect(editor.dump().laidTrack).toEqual(laid);
+  expect(trackTally(editor)).toEqual(closed);
 }, 120_000);
 
 function overlapIssues(issues: ReadonlyArray<string>): number {
@@ -10717,6 +10831,73 @@ it("stops a running train before a user's own tunnel too low for it, naming the 
   );
   expect(throughTall).toMatchObject({ blockedBy: null, derailSpeedLduPerS: 0 });
   expect(Math.abs(throughTall?.xLdu ?? 0)).toBeGreaterThan(TUNNEL_ALONG_LDU);
+}, 240_000);
+
+const CANTILEVER_COLUMN_BRICKS = 3;
+const CANTILEVER_ARM_PLATES = 13;
+const CANTILEVER_ARM_STEP_LDU = 240;
+const CANTILEVER_COLUMN_FROM_TRACK_LDU =
+  CANTILEVER_ARM_PLATES * CANTILEVER_ARM_STEP_LDU - CANTILEVER_ARM_STEP_LDU / 2;
+
+function cantileverFile(name: string): Uint8Array {
+  const column = Array.from(
+    { length: CANTILEVER_COLUMN_BRICKS },
+    (_, k) => `1 7 0 ${-BRICK_LDU * (k + 1)} 0 0 0 1 0 1 0 -1 0 0 2456.dat`,
+  );
+  const armY = -BRICK_LDU * CANTILEVER_COLUMN_BRICKS - PLATE_LDU;
+  const arm = Array.from(
+    { length: CANTILEVER_ARM_PLATES },
+    (_, k) =>
+      `1 72 ${CANTILEVER_ARM_STEP_LDU / 2 + CANTILEVER_ARM_STEP_LDU * k} ${armY} 0 1 0 0 0 1 0 0 0 1 3027.dat`,
+  );
+  return userRoadFile(name, [...column, ...arm]);
+}
+
+it("stops a running train under a user's own long model reaching over the track from far beside it, naming it", async () => {
+  const sim = new InThreadSim();
+  const { editor, backend, frame, container, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(SIM_CLIENT).toConstantValue(sim);
+    },
+  );
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-64 * STUD, 0], [64 * STUD, 0]);
+  editor.chooseItem(null);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const cantilever = await importUserFile(
+    editor,
+    "my-cantilever.ldr",
+    cantileverFile("my-cantilever.ldr"),
+  );
+  for (const x of [-TUNNEL_ALONG_LDU, TUNNEL_ALONG_LDU]) {
+    await heldAlongTrack(editor, backend, frame, cantilever, x, CANTILEVER_COLUMN_FROM_TRACK_LDU);
+    editor.click(0, 0, 0);
+  }
+  await settledPlacer(editor, backend)(LOCOMOTIVE, 0, 0);
+  editor.chooseItem(null);
+  const play = container.get(TRAIN_PLAY);
+
+  await play.start();
+  play.drive(TRAIN_SPEED_LDU_PER_S);
+  sim.advance(THROUGH_TUNNEL_TICKS);
+  play.chooseDriven(0);
+  const { notice, trains, status } = play.snapshot();
+  play.stop();
+  const [train] = trains;
+
+  expect({ status, placements: editor.snapshot().placements, notice }).toEqual({
+    status: "running",
+    placements: 2,
+    notice: `${LOCOMOTIVE_LABEL} stopped: it would run into my-cantilever.ldr.`,
+  });
+  expect(train).toMatchObject({ blockedBy: "my-cantilever.ldr", speedLduPerS: 0 });
+  expect(Math.abs(train?.xLdu ?? 0) + (train?.lengthLdu ?? 0) / 2).toBeLessThan(TUNNEL_ALONG_LDU);
 }, 240_000);
 
 const LOOP_HALF_LDU = 72 * STUD;

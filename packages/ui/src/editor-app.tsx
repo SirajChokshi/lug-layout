@@ -9,7 +9,9 @@ import {
   type IBomService,
   type IEditor,
   type IEditorCamera,
+  type IEventDetails,
   type IHotbar,
+  type ILayoutSize,
   type IOwnedParts,
   type IPalette,
   type IPanelLayout,
@@ -29,6 +31,7 @@ import { BomPanel } from "./bom-panel.tsx";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import { EditorFooter, EditorHud, PlacementToolbar, SelectionPanel } from "./editor-panels.tsx";
+import { EventPanel } from "./event-panel.tsx";
 import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
@@ -38,7 +41,7 @@ import { PlanScaleBar } from "./plan-scale-bar.tsx";
 import { SceneLabels } from "./scene-labels.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
-import { TrackExtendPanel, TrackHeightPanel } from "./track-panel.tsx";
+import { TrackExtendPanel, TrackHeightPanel, TrackLoopsPanel } from "./track-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
@@ -67,6 +70,8 @@ interface EditorAppProps {
   readonly annotations: IAnnotationService;
   readonly sheets: IPlanSheetService;
   readonly sheetSets: ISheetSets;
+  readonly events: IEventDetails;
+  readonly layoutSize: ILayoutSize;
   readonly bomService: IBomService;
   readonly ownedParts: IOwnedParts;
   readonly play: ITrainPlay;
@@ -162,6 +167,8 @@ export function EditorApp({
   annotations,
   sheets,
   sheetSets,
+  events,
+  layoutSize,
   bomService,
   ownedParts,
   play,
@@ -254,6 +261,7 @@ export function EditorApp({
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <TrackHeightPanel editor={editor} snapshot={snapshot} />
         <TrackExtendPanel editor={editor} snapshot={snapshot} />
+        <TrackLoopsPanel editor={editor} snapshot={snapshot} />
         <SelectionPanel
           editor={editor}
           snapshot={snapshot}
@@ -268,6 +276,11 @@ export function EditorApp({
           runningGear={runningGear}
           ready={snapshot.status === "ready"}
           checkingStuds={snapshot.studChecks > 0}
+        />
+        <EventPanel
+          events={events}
+          size={layoutSize}
+          editable={snapshot.status === "ready" && !snapshot.readOnly}
         />
         <PlanPanel
           camera={camera}

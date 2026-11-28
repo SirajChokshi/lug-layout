@@ -35,6 +35,7 @@ import {
   worldShards,
   worldShardsV1,
   type ConsistRecordV1,
+  type EventRecordV2,
   type ImportedFile,
   type NoteRecordV2,
   type NoteShardV2,
@@ -67,12 +68,14 @@ import type {
   ImportedModelCredit,
 } from "../credits/credits-view.ts";
 import type { IBomService } from "../bom/bom-service.ts";
+import type { IEventDetails } from "../event/event-details.ts";
 import type { IPlanSheetService, IPlanSheetSource } from "../plan/plan-sheet-service.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import {
   BOM_SERVICE,
   CREDITS,
   EDITOR_CAMERA,
+  EVENT_DETAILS,
   PLAN_SHEET_SERVICE,
   TRADEMARK_DISCLAIMER,
 } from "../tokens.ts";
@@ -170,6 +173,7 @@ export interface IWorldSession extends IWorldFiles {
   placementsEdited(edit: AppliedEdit): void;
   trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void;
   notesEdited(): void;
+  documentEdited(): void;
   pollCamera(): void;
   addModelFile(file: ModelFileInput, notice: ModelImportNotice): Promise<ModelFileOutcome>;
   importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean>;
@@ -209,6 +213,10 @@ function storedContents(
     notes: worldNotes(notes),
     document: worldDocument(manifest),
   };
+}
+
+function documentTables({ event: _event, ...tables }: WorldDocument): WorldDocument {
+  return tables;
 }
 
 interface TaggedRecord {
@@ -301,6 +309,7 @@ export class WorldSession implements IWorldSession {
   private cameraDirty = false;
   private consistsDirty = false;
   private notesDirty = false;
+  private documentDirty = false;
   private readonly lastView = new ViewRecord();
   private saveScheduled = false;
   private cameraSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -320,6 +329,7 @@ export class WorldSession implements IWorldSession {
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
     @inject(PLAN_SHEET_SERVICE) private readonly sheets: IPlanSheetService,
     @inject(BOM_SERVICE) private readonly boms: IBomService,
+    @inject(EVENT_DETAILS) private readonly events: Pick<IEventDetails, "event" | "restore">,
   ) {}
 
   view(): WorldSessionView {
@@ -349,6 +359,7 @@ export class WorldSession implements IWorldSession {
 
   private header(current: OpenWorld): WorldHeader {
     const { consists } = this.editedWorld().contents();
+    const event = this.events.event();
     return {
       name: current.name,
       bundleVersion: this.bundleVersion,
@@ -356,6 +367,7 @@ export class WorldSession implements IWorldSession {
       disclaimer: this.disclaimer,
       ...(consists.length > 0 ? { consists: [...consists] } : {}),
       ...worldDocument(current.document),
+      ...(event === null ? {} : { event }),
     };
   }
 
@@ -388,8 +400,13 @@ export class WorldSession implements IWorldSession {
     this.scheduleSave();
   }
 
+  documentEdited(): void {
+    this.documentDirty = true;
+    this.scheduleSave();
+  }
+
   private unsavedContent(): boolean {
-    return this.dirty.size > 0 || this.consistsDirty || this.notesDirty;
+    return this.dirty.size > 0 || this.consistsDirty || this.notesDirty || this.documentDirty;
   }
 
   private scheduleSave(): void {
@@ -447,9 +464,11 @@ export class WorldSession implements IWorldSession {
       : { put: [], drop: [] };
     const cameraWasDirty = this.cameraDirty;
     const consistsWereDirty = this.consistsDirty;
+    const documentWasDirty = this.documentDirty;
     this.cameraDirty = false;
     this.consistsDirty = false;
     this.notesDirty = false;
+    this.documentDirty = false;
     this.setWorldView(current, { save: "saving" });
     try {
       const summary = await this.repository.save(current.id, {
@@ -480,6 +499,7 @@ export class WorldSession implements IWorldSession {
       this.cameraDirty ||= cameraWasDirty;
       this.consistsDirty ||= consistsWereDirty;
       this.notesDirty ||= notesWereDirty;
+      this.documentDirty ||= documentWasDirty;
       this.saveFailed = true;
       this.lastSaveError = errorText(error);
       this.syncUnsaved();
@@ -560,7 +580,7 @@ export class WorldSession implements IWorldSession {
       document: DEFAULT_WORLD_DOCUMENT,
     };
     await this.loadEditedWorld(current.name, NOTHING_STORED);
-    this.finishOpen(null, current, []);
+    this.finishOpen(null, current, [], null);
     this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
     this.update({ storageError: reason, worlds: [] });
   }
@@ -607,15 +627,18 @@ export class WorldSession implements IWorldSession {
     savedView: SavedViewV1 | null,
     current: OpenWorld,
     notes: ReadonlyArray<NoteShardV2>,
+    event: EventRecordV2 | null,
   ): void {
     this.camera.restoreView(savedView);
     this.camera.copyView(this.lastView);
+    this.events.restore(event);
     this.current = current;
     this.dirty.clear();
     this.savedNotes.reset(notes);
     this.cameraDirty = false;
     this.consistsDirty = false;
     this.notesDirty = false;
+    this.documentDirty = false;
     this.saveFailed = false;
     this.lastSaveError = null;
     this.update({ fileError: null });
@@ -644,7 +667,7 @@ export class WorldSession implements IWorldSession {
       document: DEFAULT_WORLD_DOCUMENT,
     };
     await this.loadEditedWorld(name, NOTHING_STORED);
-    this.finishOpen(null, current, []);
+    this.finishOpen(null, current, [], null);
     this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
   }
 
@@ -669,9 +692,9 @@ export class WorldSession implements IWorldSession {
       name: manifest.name,
       pinnedBundleVersion: manifest.bundleVersion,
       openMs: performance.now() - started,
-      document: worldDocument(manifest),
+      document: documentTables(worldDocument(manifest)),
     };
-    this.finishOpen(manifest.view, opened, notes);
+    this.finishOpen(manifest.view, opened, notes, manifest.event ?? null);
     this.setWorldView(opened, {
       placements: manifest.placements,
       track: manifest.track,
@@ -708,7 +731,10 @@ export class WorldSession implements IWorldSession {
   }
 
   private unsavedRefusal(action: string): string | null {
-    if (this.state.storageError !== null || (this.dirty.size === 0 && !this.notesDirty)) {
+    if (
+      this.state.storageError !== null ||
+      (this.dirty.size === 0 && !this.notesDirty && !this.documentDirty)
+    ) {
       return null;
     }
     const reason = this.lastSaveError === null ? "" : ` (saving failed: ${this.lastSaveError})`;

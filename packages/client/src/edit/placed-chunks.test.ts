@@ -187,6 +187,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
             track: NO_TRACK_CHANGE,
             plan: null,
             notes: null,
+            event: null,
           },
           placeableOf,
         );
@@ -234,6 +235,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
             track: NO_TRACK_CHANGE,
             plan: null,
             notes: null,
+            event: null,
           },
           placeableOf,
         );

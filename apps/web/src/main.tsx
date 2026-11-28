@@ -4,8 +4,10 @@ import {
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
+  EVENT_DETAILS,
   HOTBAR,
   IMPORT_SCENE,
+  LAYOUT_SIZE,
   mainThreadModules,
   MODEL_SCENE,
   OWNED_PARTS,
@@ -154,6 +156,8 @@ function root(): ReactNode {
         annotations={container.get(ANNOTATION_SERVICE)}
         sheets={container.get(PLAN_SHEET_SERVICE)}
         sheetSets={container.get(SHEET_SETS)}
+        events={container.get(EVENT_DETAILS)}
+        layoutSize={container.get(LAYOUT_SIZE)}
         bomService={container.get(BOM_SERVICE)}
         ownedParts={container.get(OWNED_PARTS)}
         play={container.get(TRAIN_PLAY)}

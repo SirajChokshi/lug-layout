@@ -1,7 +1,9 @@
+import { CHUNK_LDU } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { NO_SWITCH } from "../track/track-graph.ts";
 import {
   placeSegments,
+  pointOnSegment,
   segmentsEnd,
   type PlanPose,
   type SimPathSegment,
@@ -22,9 +24,11 @@ const STRAIGHT: SimPathSegment = { kind: "straight", lengthLdu: STRAIGHT_LDU };
 const LEFT: SimPathSegment = { kind: "arc", radiusLdu: RADIUS, sweepRadians: Math.PI / 8 };
 const RIGHT: SimPathSegment = { kind: "arc", radiusLdu: RADIUS, sweepRadians: -Math.PI / 8 };
 
-function chain(segments: ReadonlyArray<SimPathSegment>): SimRoute[] {
+const START: PlanPose = { x: 100, z: -40, heading: 0.3 };
+
+function chain(segments: ReadonlyArray<SimPathSegment>, from: PlanPose): SimRoute[] {
   const routes: SimRoute[] = [];
-  let at: PlanPose = { x: 100, z: -40, heading: 0.3 };
+  let at = from;
   for (const segment of segments) {
     const to = segmentsEnd(at, placeSegments(at, [segment]));
     routes.push({ from: at, to, segments: [segment] });
@@ -33,7 +37,11 @@ function chain(segments: ReadonlyArray<SimPathSegment>): SimRoute[] {
   return routes;
 }
 
-function network(segments: ReadonlyArray<SimPathSegment>, closed: boolean): RailNetwork {
+function network(
+  segments: ReadonlyArray<SimPathSegment>,
+  closed: boolean,
+  from: PlanPose = START,
+): RailNetwork {
   const count = segments.length;
   const successors: number[][] = [];
   for (let r = 0; r < count; r++) {
@@ -42,13 +50,100 @@ function network(segments: ReadonlyArray<SimPathSegment>, closed: boolean): Rail
     successors.push(next, previous);
   }
   const { track } = buildSimTrack({
-    routes: chain(segments),
+    routes: chain(segments, from),
     successors,
     switchOfEdge: successors.map(() => NO_SWITCH),
     switchCount: 0,
   });
   return new RailNetwork(track, new Uint8Array(0));
 }
+
+function switched(): RailNetwork {
+  const lead = segmentsEnd(START, placeSegments(START, [STRAIGHT]));
+  const diverging: SimPathSegment[] = [LEFT, STRAIGHT];
+  const routes: SimRoute[] = [
+    { from: START, to: lead, segments: [STRAIGHT] },
+    { from: lead, to: segmentsEnd(lead, placeSegments(lead, [STRAIGHT])), segments: [STRAIGHT] },
+    { from: lead, to: segmentsEnd(lead, placeSegments(lead, diverging)), segments: diverging },
+  ];
+  const successors = [
+    [forwardEdge(1), forwardEdge(2)],
+    [],
+    [],
+    [backwardEdge(0)],
+    [],
+    [backwardEdge(0)],
+  ];
+  const switchOfEdge = successors.map(() => NO_SWITCH);
+  switchOfEdge[forwardEdge(0)] = 0;
+  const { track } = buildSimTrack({ routes, successors, switchOfEdge, switchCount: 1 });
+  return new RailNetwork(track, new Uint8Array(1));
+}
+
+function reversedArcs(): RailNetwork {
+  const curves: SimPathSegment[] = [LEFT, RIGHT];
+  const { track } = buildSimTrack({
+    routes: [
+      { from: START, to: segmentsEnd(START, placeSegments(START, curves)), segments: curves },
+    ],
+    successors: [[], []],
+    switchOfEdge: [NO_SWITCH, NO_SWITCH],
+    switchCount: 0,
+  });
+  return new RailNetwork(track, new Uint8Array(0));
+}
+
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+function nearByScan(
+  rails: RailNetwork,
+  x: number,
+  z: number,
+  radius: number,
+  gap: number,
+): boolean {
+  const spot = new Float64Array(RAIL_SPOT_FLOATS);
+  return rails.nearest(x, z, spot) && (spot[SPOT_DISTANCE] ?? 0) - radius < gap;
+}
+
+function centrelineBounds(rails: RailNetwork): readonly [number, number, number, number] {
+  const point = new Float64Array(2);
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+  for (let edge = 0; edge < rails.edgeCount; edge += 2) {
+    for (let step = 0; step <= 16; step++) {
+      point[0] = (rails.edgeLength(edge) * step) / 16;
+      rails.point(edge, point, 0);
+      minX = Math.min(minX, point[0] ?? 0);
+      maxX = Math.max(maxX, point[0] ?? 0);
+      minZ = Math.min(minZ, point[1] ?? 0);
+      maxZ = Math.max(maxZ, point[1] ?? 0);
+    }
+  }
+  return [minX, maxX, minZ, maxZ];
+}
+
+const SAMPLE_SEED = 0x7a1d;
+const SAMPLES_PER_LAYOUT = 1500;
+const SAMPLE_MARGIN_LDU = 2 * CHUNK_LDU;
+const MAX_SAMPLE_LDU = 600;
+const TIGHT_LDU = 2 ** -20;
+const HALF_TURN_AND_A_QUARTER: SimPathSegment = {
+  kind: "arc",
+  radiusLdu: RADIUS / 2,
+  sweepRadians: 1.25 * Math.PI,
+};
+const SHORT_LDU = 40;
+const WIDE_LDU = 900;
+const NARROW_LDU = 20;
 
 const OPEN_LINE = [STRAIGHT, LEFT, LEFT, STRAIGHT, RIGHT, STRAIGHT];
 const LINE_LDU = 3 * STRAIGHT_LDU + (3 * RADIUS * Math.PI) / 8;
@@ -146,6 +241,139 @@ describe("RailNetwork", () => {
 
     expect(rails.seat(forwardEdge(2), 50, Math.ceil(LINE_LDU), spot)).toBe(false);
     expect(rails.seat(forwardEdge(2), 50, Math.floor(LINE_LDU) - 1, spot)).toBe(true);
+  });
+
+  it("comes within a gap of a disk exactly where the nearest centreline point does, all round straights, curves both ways, a switch and multi-segment routes", () => {
+    const random = seeded(SAMPLE_SEED);
+    const layouts = [network(OPEN_LINE, false), switched(), reversedArcs()];
+    const mismatches: string[] = [];
+    let near = 0;
+    let samples = 0;
+    for (const rails of layouts) {
+      const [minX, maxX, minZ, maxZ] = centrelineBounds(rails);
+      for (let k = 0; k < SAMPLES_PER_LAYOUT; k++) {
+        const x = minX - SAMPLE_MARGIN_LDU + random() * (maxX - minX + 2 * SAMPLE_MARGIN_LDU);
+        const z = minZ - SAMPLE_MARGIN_LDU + random() * (maxZ - minZ + 2 * SAMPLE_MARGIN_LDU);
+        const radius = random() * MAX_SAMPLE_LDU;
+        const gap = random() * MAX_SAMPLE_LDU;
+        const byIndex = rails.nearDisk(x, z, radius, gap);
+        if (byIndex !== nearByScan(rails, x, z, radius, gap)) {
+          mismatches.push(`${x}, ${z}, ${radius}, ${gap}`);
+        }
+        if (byIndex) near++;
+        samples++;
+      }
+    }
+
+    expect(mismatches).toEqual([]);
+    expect(near).toBeGreaterThan(samples / 10);
+    expect(samples - near).toBeGreaterThan(samples / 10);
+  });
+
+  it("comes within a gap of a disk just inside, but not just outside, an exact distance from each end of a straight or a minor arc, and from a curve past a half turn", () => {
+    const verdicts: Array<readonly [string, boolean, boolean]> = [];
+    const judge = (
+      name: string,
+      rails: RailNetwork,
+      from: readonly [number, number],
+      direction: readonly [number, number],
+      radius: number,
+      gap: number,
+    ) => {
+      for (const [side, expected] of [
+        [-TIGHT_LDU, true],
+        [TIGHT_LDU, false],
+      ] as const) {
+        const fromTip = radius + gap + side;
+        const x = from[0] + direction[0] * fromTip;
+        const z = from[1] + direction[1] * fromTip;
+        verdicts.push([
+          `${name} ${side < 0 ? "inside" : "outside"}`,
+          rails.nearDisk(x, z, radius, gap),
+          expected,
+        ]);
+      }
+    };
+    const [radius, gap] = [0, 300];
+    for (const [name, segment] of [
+      ["straight", STRAIGHT],
+      ["left curve", LEFT],
+      ["right curve", RIGHT],
+    ] as const) {
+      const rails = network([segment], false);
+      const end = segmentsEnd(START, placeSegments(START, [segment]));
+      const midX = (START.x + end.x) / 2;
+      const midZ = (START.z + end.z) / 2;
+      const half = Math.hypot(end.x - midX, end.z - midZ);
+      for (const tip of [START, end]) {
+        const direction = [(tip.x - midX) / half, (tip.z - midZ) / half] as const;
+        const beyond = `${name} beyond ${tip === START ? "its start" : "its end"}`;
+        judge(beyond, rails, [tip.x, tip.z], direction, radius, gap);
+        if (segment === STRAIGHT && tip === end) {
+          judge(`${beyond}, a wide disk`, rails, [tip.x, tip.z], direction, WIDE_LDU, NARROW_LDU);
+        }
+      }
+    }
+    const longArc = network([HALF_TURN_AND_A_QUARTER], false);
+    const [placed] = placeSegments(START, [HALF_TURN_AND_A_QUARTER]);
+    if (!placed) throw new Error("the long arc did not place");
+    const middle = pointOnSegment(placed, placed.length / 2);
+    const turning = Math.sign(placed.curvature);
+    const outward = [
+      turning * Math.sin(middle.heading),
+      -turning * Math.cos(middle.heading),
+    ] as const;
+    judge(
+      "curve past a half turn, outside its middle",
+      longArc,
+      [middle.x, middle.z],
+      outward,
+      radius,
+      gap,
+    );
+
+    expect(verdicts).toHaveLength(16);
+    expect(verdicts.filter(([, got, expected]) => got !== expected)).toEqual([]);
+  });
+
+  it("comes within a gap of a disk whose segment sits wholly in the chunk next to the query's own, from below and from above on both axes", () => {
+    const inChunk = 3 * CHUNK_LDU;
+    const shortStraight = (heading: number) =>
+      network([{ kind: "straight", lengthLdu: SHORT_LDU }], false, {
+        x: heading === 0 ? inChunk + 200 : inChunk + 320,
+        z: heading === 0 ? inChunk + 320 : inChunk + 200,
+        heading,
+      });
+    const verdicts: Array<readonly [string, boolean, boolean]> = [];
+    for (const [axis, heading] of [
+      ["x", 0],
+      ["z", Math.PI / 2],
+    ] as const) {
+      const rails = shortStraight(heading);
+      const start = inChunk + 200;
+      const across = inChunk + 320;
+      for (const [from, sign, gap] of [
+        ["below", -1, 300],
+        ["above", 1, 500],
+      ] as const) {
+        const tip = sign < 0 ? start : start + SHORT_LDU;
+        for (const [side, expected] of [
+          [-TIGHT_LDU, true],
+          [TIGHT_LDU, false],
+        ] as const) {
+          const at = tip + sign * (gap + side);
+          const [x, z] = axis === "x" ? [at, across] : [across, at];
+          verdicts.push([
+            `${axis} from ${from} ${side < 0 ? "inside" : "outside"}`,
+            rails.nearDisk(x, z, 0, gap),
+            expected,
+          ]);
+        }
+      }
+    }
+
+    expect(verdicts).toHaveLength(8);
+    expect(verdicts.filter(([, got, expected]) => got !== expected)).toEqual([]);
   });
 
   it("travels a loop backwards as well as forwards, so a consist seats across the join of a closed oval", () => {
