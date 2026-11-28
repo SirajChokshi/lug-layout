@@ -373,9 +373,12 @@ function heldPieceView(track: TrackView): HintView | null {
           : "free on the stud grid",
     hints: [
       gesture("Click", blocked ? "refused here" : "lay it"),
-      key("next-connector", "next end"),
+      ...(held.connectors > 1 ? [key("next-connector", "next end")] : []),
       key("flip-switch", "other hand"),
       key("rotate", "turn"),
+      ...(held.resizable
+        ? [key("next-track-choice", "longer"), key("previous-track-choice", "shorter")]
+        : []),
       key("select-tool", "let go, keep drawing"),
     ],
   };

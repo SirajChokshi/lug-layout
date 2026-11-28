@@ -74,7 +74,11 @@ function laid(partIds: ReadonlyArray<string>, start = pose16(STUD_POINT, 0)): Tr
   const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   for (const [partId, placement] of chain(start, partIds)) {
     drawing.applyTrack(
-      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(catalogPiece(partId)), placement, 0),
+      drawing.arrangementChange(
+        drawing.arrangementOfPiece(bundle.trackCatalog.pieces.indexOf(catalogPiece(partId))),
+        placement,
+        0,
+      ),
     );
   }
   return drawing;
@@ -400,8 +404,8 @@ describe("modelTrackEnds", () => {
     const exit = straight.connectors[1]?.pose;
     if (!exit) throw new Error("the straight has no exit");
     drawing.applyTrack(
-      drawing.pieceChange(
-        bundle.trackCatalog.pieces.indexOf(straight),
+      drawing.arrangementChange(
+        drawing.arrangementOfPiece(bundle.trackCatalog.pieces.indexOf(straight)),
         attachPose16(exit, runEnd),
         0,
       ),

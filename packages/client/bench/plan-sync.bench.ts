@@ -677,8 +677,8 @@ function layTrack(track: LoadedTrack): TrackDeltas {
   const { drawing } = track;
   drawing.applyTrack(planLaid(track, PASSING_LOOP, PASSING_LOOP_STUDS));
   const straight = track.catalog.pieces.findIndex((piece) => piece.id === OPEN_STRAIGHT);
-  const outside = drawing.pieceChange(
-    straight,
+  const outside = drawing.arrangementChange(
+    drawing.arrangementOfPiece(straight),
     pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
     0,
   );
@@ -732,8 +732,8 @@ async function keptRowsVariant(): Promise<ProbeVariant> {
   });
   for (const heading of KEPT_L_HEADINGS) {
     kept.applyTrack(
-      kept.pieceChange(
-        straight,
+      kept.arrangementChange(
+        kept.arrangementOfPiece(straight),
         pose16(
           zeta16([KEPT_L_CORNER_STUDS.x, 0n, 0n, 0n, KEPT_L_CORNER_STUDS.z, 0n, 0n, 0n]),
           heading,
@@ -743,8 +743,8 @@ async function keptRowsVariant(): Promise<ProbeVariant> {
     );
   }
   const built = build([], kept, tableRegion(ROOM_MM));
-  const outside = kept.pieceChange(
-    straight,
+  const outside = kept.arrangementChange(
+    kept.arrangementOfPiece(straight),
     pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
     0,
   );

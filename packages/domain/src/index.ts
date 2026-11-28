@@ -163,6 +163,19 @@ export {
 export { TrackPaths } from "./track/track-paths.ts";
 export { trackInsertions, type TrackInsertion } from "./track/track-insertion.ts";
 export {
+  arranged,
+  pieceArrangement,
+  type ArrangedPiece,
+  type TrackArrangement,
+} from "./track/track-arrangement.ts";
+export {
+  ovalBlueprint,
+  passingSidingBlueprint,
+  reversingLoopBlueprint,
+  turnoutOf,
+  type Turnout,
+} from "./track/track-blueprints.ts";
+export {
   NO_REVERSING_SECTIONS,
   ReversingSectionFinder,
   ReversingSections,

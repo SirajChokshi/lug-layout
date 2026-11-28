@@ -745,9 +745,13 @@ export function commandEnabled(
     case "extend-left":
     case "extend-right":
     case "extend-preview":
+      return snapshot.track?.extend != null && !snapshot.readOnly;
     case "next-track-choice":
     case "previous-track-choice":
-      return snapshot.track?.extend != null && !snapshot.readOnly;
+      return (
+        (snapshot.track?.extend != null || snapshot.track?.held?.resizable === true) &&
+        !snapshot.readOnly
+      );
     case "close-track-loop":
       return (
         snapshot.mode === "track" &&

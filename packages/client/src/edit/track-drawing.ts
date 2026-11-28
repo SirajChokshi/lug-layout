@@ -44,6 +44,16 @@ import {
   regionHolds,
   outlineContains,
   trackInsertions,
+  arranged,
+  pieceArrangement,
+  ovalBlueprint,
+  passingSidingBlueprint,
+  reversingLoopBlueprint,
+  turnoutOf,
+  CLOSURE_BUDGET,
+  type PlacedPiece,
+  type TrackArrangement,
+  type Turnout,
   placedOutline,
   placedOutlineInto,
   studlessTopBlocker,
@@ -97,6 +107,8 @@ import {
   zeta16ToStuds,
   type Pose16,
   planeHypot,
+  rotateZeta16,
+  subtractZeta16,
 } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
@@ -534,6 +546,21 @@ function latticePose(latticeX: number, latticeZ: number, heading: number): Pose1
   );
 }
 
+export const TRACK_BLUEPRINTS = ["oval", "passing-siding", "reversing-loop"] as const;
+export type TrackBlueprint = (typeof TRACK_BLUEPRINTS)[number];
+
+function centredPlacement({ pieces }: TrackArrangement, free: Pose16): Pose16 {
+  const studs = pieces.map(({ placement }) => zeta16ToStuds(placement.position));
+  const x = Math.round(
+    (Math.min(...studs.map((p) => p.x)) + Math.max(...studs.map((p) => p.x))) / 2,
+  );
+  const z = Math.round(
+    (Math.min(...studs.map((p) => p.z)) + Math.max(...studs.map((p) => p.z))) / 2,
+  );
+  const centre = zeta16([BigInt(x), 0n, 0n, 0n, BigInt(z), 0n, 0n, 0n]);
+  return pose16(subtractZeta16(free.position, rotateZeta16(centre, free.heading)), free.heading);
+}
+
 function normalizeConnector(connector: number, count: number): number {
   return ((connector % count) + count) % count;
 }
@@ -717,6 +744,8 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
   private support: TrackSupport | null = null;
   private readonly skipped = new Map<DragField, SkippedIds>();
   private freed: FreedEnds | null = null;
+  private readonly pieceArrangements = new Map<number, TrackArrangement>();
+  private readonly blueprintArrangements = new Map<string, TrackArrangement | null>();
   private readonly bands: TrackBands;
   private framed: Array<Float64Array | null> = [];
   private pieceBands: ReadonlyArray<readonly [number, number]> = [];
@@ -761,16 +790,17 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
   private bomList: ReadonlyArray<TrackBomLine> | null = null;
   private endStudFloats: Float64Array | null = null;
   private lastSnap: PieceSnap | null = null;
-  private snapCatalogIndex = -1;
+  private snapArrangementOf: TrackArrangement | null = null;
   private snapConnector = 0;
   private snapVersion = -1;
+  private snapBands = -1;
   private snapPlates = GROUND_PLATES;
   private snapEnd = NO_END;
   private snapLatticeX = 0;
   private snapLatticeZ = 0;
   private snapHeading = 0;
   private lastPieceGhost: PreviewGhost | null = null;
-  private pieceGhostIndex = -1;
+  private pieceGhostArrangement: TrackArrangement | null = null;
   private pieceGhostPlacement: Pose16 | null = null;
   private pieceGhostPlates = GROUND_PLATES;
   private pieceGhostRefused = false;
@@ -2279,8 +2309,88 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
   }
 
-  snapPiece(
-    catalogIndex: number,
+  arrangementOfPiece(catalogIndex: number): TrackArrangement {
+    const cached = this.pieceArrangements.get(catalogIndex);
+    if (cached) return cached;
+    const made = pieceArrangement(catalogIndex, this.pieceByIndex(catalogIndex).def.connectors);
+    this.pieceArrangements.set(catalogIndex, made);
+    return made;
+  }
+
+  blueprints(system: string): ReadonlyArray<TrackBlueprint> {
+    return TRACK_BLUEPRINTS.filter(
+      (blueprint) => blueprint === "oval" || this.turnouts(system, 0) !== null,
+    );
+  }
+
+  blueprint(blueprint: TrackBlueprint, size: number, hand: number): TrackArrangement | null {
+    const key = `${this.active.system}:${blueprint}:${size}:${hand}`;
+    const cached = this.blueprintArrangements.get(key);
+    if (cached !== undefined) return cached;
+    const placed = this.blueprintPieces(blueprint, size, hand);
+    const made =
+      placed.length === 0
+        ? null
+        : arranged(placed, (def) => this.placeablePiece(def.id).catalogIndex);
+    const clear = made && !this.crossesItself(made) ? made : null;
+    this.blueprintArrangements.set(key, clear);
+    return clear;
+  }
+
+  private blueprintPieces(
+    blueprint: TrackBlueprint,
+    size: number,
+    hand: number,
+  ): ReadonlyArray<PlacedPiece> {
+    const pair = this.turnouts(this.active.system, hand);
+    switch (blueprint) {
+      case "oval":
+        return ovalBlueprint(this.kit, size);
+      case "passing-siding":
+        return pair ? passingSidingBlueprint(this.kit, pair[0], pair[1], size, CLOSURE_BUDGET) : [];
+      case "reversing-loop":
+        return pair ? reversingLoopBlueprint(this.kit, pair[0], CLOSURE_BUDGET) : [];
+      default: {
+        const unhandled: never = blueprint;
+        throw new Error(`unhandled blueprint ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private turnouts(system: string, hand: number): readonly [Turnout, Turnout] | null {
+    for (const index of this.pieceSet.palette()) {
+      const own = this.pieceByIndex(index);
+      const mirror = this.pieceSet.mirrored(index);
+      if (own.piece.system !== system || mirror === null) continue;
+      const other = this.pieceByIndex(mirror);
+      const turnout = turnoutOf(own.def, own.piece.routes);
+      const mirrored = turnoutOf(other.def, other.piece.routes);
+      if (!turnout || !mirrored) continue;
+      return hand % 2 === 0 ? [turnout, mirrored] : [mirrored, turnout];
+    }
+    return null;
+  }
+
+  private crossesItself({ pieces }: TrackArrangement): boolean {
+    const placed = pieces.map(({ piece, placement }) => {
+      const { outline, def } = this.pieceByIndex(piece);
+      return {
+        outline: placedOutline(outline, placement),
+        ends: def.connectors.map((end) => composePose16(placement, end)),
+      };
+    });
+    return placed.some((a, i) =>
+      placed.some(
+        (b, j) =>
+          j > i &&
+          !a.ends.some((end) => b.ends.some((other) => posesJoin16(end, other))) &&
+          outlinesOverlap(a.outline, 0, 0, b.outline, 0, 0),
+      ),
+    );
+  }
+
+  snapArrangement(
+    arrangement: TrackArrangement,
     connector: number,
     hitX: number,
     hitZ: number,
@@ -2288,13 +2398,14 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     latticeZ: number,
     heading: number,
   ): PieceSnap {
-    const end = this.endNear(hitX, hitZ, null) ?? NO_END;
+    const end = arrangement.ends.length === 0 ? NO_END : (this.endNear(hitX, hitZ, null) ?? NO_END);
     const last = this.lastSnap;
     if (
       last !== null &&
-      catalogIndex === this.snapCatalogIndex &&
+      arrangement === this.snapArrangementOf &&
       connector === this.snapConnector &&
       this.changes === this.snapVersion &&
+      this.bandsVersion === this.snapBands &&
       this.heightPlates === this.snapPlates &&
       end === this.snapEnd &&
       latticeX === this.snapLatticeX &&
@@ -2303,11 +2414,12 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     ) {
       return last;
     }
-    const snap = this.buildSnap(catalogIndex, connector, end, latticeX, latticeZ, heading);
+    const snap = this.buildSnap(arrangement, connector, end, latticeX, latticeZ, heading);
     this.lastSnap = snap;
-    this.snapCatalogIndex = catalogIndex;
+    this.snapArrangementOf = arrangement;
     this.snapConnector = connector;
     this.snapVersion = this.changes;
+    this.snapBands = this.bandsVersion;
     this.snapPlates = this.heightPlates;
     this.snapEnd = end;
     this.snapLatticeX = latticeX;
@@ -2317,24 +2429,26 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
   }
 
   private buildSnap(
-    catalogIndex: number,
+    arrangement: TrackArrangement,
     connector: number,
     end: number,
     latticeX: number,
     latticeZ: number,
     heading: number,
   ): PieceSnap {
-    const part = this.pieceByIndex(catalogIndex);
-    const connectors = part.def.connectors;
-    const held = normalizeConnector(connector, connectors.length);
+    const connectors = arrangement.ends;
+    const held = normalizeConnector(connector, Math.max(connectors.length, 1));
     const local = connectors[held];
-    if (!local) throw new RangeError(`${part.piece.id} has no connector ${connector}`);
     const target = end === NO_END ? undefined : this.ends[end];
-    const insertion = target ? null : this.insertionAt(part, connector, latticeX, latticeZ);
+    const insertion = target ? null : this.insertionAt(arrangement, connector, latticeX, latticeZ);
     if (insertion) return insertion;
-    const placement = target
-      ? attachPose16(local, target)
-      : freePlacement(part.def, held, latticePose(latticeX, latticeZ, heading));
+    const free = latticePose(latticeX, latticeZ, heading);
+    const placement =
+      target && local
+        ? attachPose16(local, target)
+        : local
+          ? freePlacement({ id: "held", connectors }, held, free)
+          : centredPlacement(arrangement, free);
     const yPlates = end === NO_END ? this.heightPlates : this.endHeight(end);
     const studs = this.endStuds();
     let joins = 0;
@@ -2372,7 +2486,12 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     };
   }
 
-  private insertionAt(part: KitPart, choice: number, xLdu: number, zLdu: number): PieceSnap | null {
+  private insertionAt(
+    arrangement: TrackArrangement,
+    choice: number,
+    xLdu: number,
+    zLdu: number,
+  ): PieceSnap | null {
     const through = this.laidPieceAt(xLdu, zLdu, this.heightPlates);
     if (through === null) return null;
     const ranked = trackInsertions(
@@ -2380,19 +2499,40 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       this.combined,
       this.layout.count,
       through,
-      part.catalogIndex,
+      arrangement,
     )
       .map((insertion) => {
-        const { placement, yPlates } = insertion;
-        const centre = partCentre({ part, placement, yPlates, rise: 0 });
-        return { insertion, distance: planeHypot(centre.x - xLdu, centre.z - zLdu) };
+        const { placement, yPlates, replaces } = insertion;
+        const centre = this.arrangementCentre(arrangement, placement);
+        const blocked = this.arrangementBlock(arrangement, placement, yPlates, replaces) !== null;
+        return { insertion, blocked, distance: planeHypot(centre.x - xLdu, centre.z - zLdu) };
       })
-      .toSorted((a, b) => a.distance - b.distance);
+      .toSorted((a, b) => Number(a.blocked) - Number(b.blocked) || a.distance - b.distance);
     if (ranked.length === 0) return null;
     const chosen = ranked[normalizeConnector(choice, ranked.length)]?.insertion;
     if (!chosen) return null;
     const { placement, yPlates, joins, replaces } = chosen;
     return { placement, yPlates, end: null, joins, misses: NO_MISSES, replaces };
+  }
+
+  private arrangementCentre(
+    { pieces }: TrackArrangement,
+    frame: Pose16,
+  ): { readonly x: number; readonly z: number } {
+    let x = 0;
+    let z = 0;
+    for (const { piece, placement } of pieces) {
+      const part = this.pieceByIndex(piece);
+      const centre = partCentre({
+        part,
+        placement: composePose16(frame, placement),
+        yPlates: 0,
+        rise: 0,
+      });
+      x += centre.x / pieces.length;
+      z += centre.z / pieces.length;
+    }
+    return { x, z };
   }
 
   private laidPieceAt(xLdu: number, zLdu: number, yPlates: number): number | null {
@@ -2425,8 +2565,8 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     return last;
   }
 
-  pieceGhost(
-    catalogIndex: number,
+  arrangementGhost(
+    arrangement: TrackArrangement,
     placement: Pose16,
     yPlates: number,
     refused: boolean,
@@ -2434,26 +2574,32 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     const last = this.lastPieceGhost;
     if (
       last &&
-      catalogIndex === this.pieceGhostIndex &&
+      arrangement === this.pieceGhostArrangement &&
       placement === this.pieceGhostPlacement &&
       yPlates === this.pieceGhostPlates &&
       refused === this.pieceGhostRefused
     ) {
       return last;
     }
-    const part = this.pieceByIndex(catalogIndex);
+    const { pieces } = arrangement;
     const origin = zeta16ToStuds(placement.position);
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
-    const partIndex = Uint16Array.of(part.partIndex);
-    const colorIndex = Uint16Array.of(refused ? this.refusedColor : part.color);
-    const matrices = new Float32Array(INSTANCE_MATRIX_FLOATS);
-    const yLdu = part.yLdu + yPlates * PLATE_LDU;
-    writeMatrix(matrices, 0, placement, part.piece.partFrame, yLdu, originX, originZ);
+    const partIndex = new Uint16Array(pieces.length);
+    const colorIndex = new Uint16Array(pieces.length);
+    const matrices = new Float32Array(pieces.length * INSTANCE_MATRIX_FLOATS);
+    pieces.forEach(({ piece, placement: local }, slot) => {
+      const part = this.pieceByIndex(piece);
+      partIndex[slot] = part.partIndex;
+      colorIndex[slot] = refused ? this.refusedColor : part.color;
+      const yLdu = part.yLdu + yPlates * PLATE_LDU;
+      const pose = composePose16(placement, local);
+      writeMatrix(matrices, slot, pose, part.piece.partFrame, yLdu, originX, originZ);
+    });
     const base: ChunkPartInstances = {
       originX,
       originZ,
-      count: 1,
+      count: pieces.length,
       partIndex,
       colorIndex,
       matrices,
@@ -2464,22 +2610,45 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       z: originZ,
     };
     this.lastPieceGhost = ghost;
-    this.pieceGhostIndex = catalogIndex;
+    this.pieceGhostArrangement = arrangement;
     this.pieceGhostPlacement = placement;
     this.pieceGhostPlates = yPlates;
     this.pieceGhostRefused = refused;
     return ghost;
   }
 
-  pieceChange(
-    catalogIndex: number,
+  arrangementBlock(
+    { pieces }: TrackArrangement,
+    placement: Pose16,
+    yPlates: number,
+    replaces: ReadonlySet<number>,
+  ): TrackBlockView | null {
+    for (const { piece, placement: local } of pieces) {
+      const pose = composePose16(placement, local);
+      const block = this.pieceBlock(piece, pose, yPlates, 0, replaces);
+      if (block) return block;
+    }
+    return null;
+  }
+
+  arrangementChange(
+    { pieces }: TrackArrangement,
     placement: Pose16,
     yPlates: number,
     replaces: ReadonlySet<number> = NO_PLACEMENTS,
   ): TrackChange {
     const lift = [...replaces].map((p) => this.laidPiece(p));
-    const index = this.layout.count - lift.length;
-    return { lift, lay: [{ index, piece: catalogIndex, pose: placement, yPlates, rise: 0 }] };
+    const first = this.layout.count - lift.length;
+    return {
+      lift,
+      lay: pieces.map(({ piece, placement: local }, i) => ({
+        index: first + i,
+        piece,
+        pose: composePose16(placement, local),
+        yPlates,
+        rise: 0,
+      })),
+    };
   }
 
   switchAt(xLdu: number, zLdu: number): number | null {
