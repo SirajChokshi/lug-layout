@@ -6,7 +6,7 @@ import {
   type ShardSummary,
   type Sha256,
 } from "@brr/schema/layout-api";
-import { SafeInteger, WorldShardV1, canonicalJson, parseJsonText } from "@brr/schema/world";
+import { SafeInteger, WorldShardV2, canonicalJson, parseJsonText } from "@brr/schema/world";
 import * as v from "valibot";
 import type { IClock } from "./clock.ts";
 import { sha256Hex } from "./digest.ts";
@@ -46,7 +46,7 @@ export interface IWorldFiles {
   readShard(worldId: string, sha256: Sha256): Promise<R2ObjectBody | null>;
   readImport(worldId: string, sha256: Sha256): Promise<R2ObjectBody | null>;
   readSnapshot(worldId: string, sha256: Sha256): Promise<WorldSnapshot>;
-  readStoredShard(worldId: string, sha256: Sha256): Promise<WorldShardV1>;
+  readStoredShard(worldId: string, sha256: Sha256): Promise<WorldShardV2>;
   shardSummaries(
     worldId: string,
     hashes: ReadonlyArray<Sha256>,
@@ -142,8 +142,8 @@ export class WorldFiles implements IWorldFiles {
     return this.readStoredJson(snapshotKey(worldId, sha256), WorldSnapshot);
   }
 
-  readStoredShard(worldId: string, sha256: Sha256): Promise<WorldShardV1> {
-    return this.readStoredJson(shardKey(worldId, sha256), WorldShardV1);
+  readStoredShard(worldId: string, sha256: Sha256): Promise<WorldShardV2> {
+    return this.readStoredJson(shardKey(worldId, sha256), WorldShardV2);
   }
 
   async shardSummaries(
