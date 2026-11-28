@@ -4,6 +4,7 @@ import type {
   CatalogBom,
   IBomService,
   IBomSource,
+  IPaletteThumbnails,
   IPlanService,
   IOwnedParts,
   PlacementRegion,
@@ -13,6 +14,7 @@ import { useState } from "react";
 import { usePlanVersion } from "./use-plan-version.ts";
 import { OwnVsBuy } from "./own-vs-buy.tsx";
 import { PartsListDownloads } from "./parts-list-downloads.tsx";
+import { ShoppingLines } from "./shopping-list.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -23,6 +25,7 @@ interface BomPanelProps {
   readonly region: PlacementRegion | null;
   readonly selectionLabel: string | null;
   readonly plans: IPlanService | null;
+  readonly thumbnails: IPaletteThumbnails | null;
 }
 
 const REGION_FIELDS = ["minX", "minZ", "maxX", "maxZ"] as const;
@@ -137,6 +140,7 @@ export function BomPanel({
   region,
   selectionLabel,
   plans,
+  thumbnails,
 }: BomPanelProps) {
   usePlanVersion(plans);
   const plan = activePlanOf(plans);
@@ -228,6 +232,7 @@ export function BomPanel({
       {error && <p className="error">{error}</p>}
       {bom && (
         <>
+          {bom.shopping && <ShoppingLines list={bom.shopping} thumbnails={thumbnails} />}
           <dl>
             <div>
               <dt>Placements</dt>
