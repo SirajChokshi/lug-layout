@@ -366,9 +366,11 @@ function heldPieceView(track: TrackView): HintView | null {
     title: `Holding ${held.label}`,
     detail: blocked
       ? `would ${trackBlockText(blocked)}`
-      : held.snapped
-        ? "attaches to the open end exactly"
-        : "free on the stud grid",
+      : held.replaces > 0
+        ? `goes in place of ${pieces(held.replaces)} exactly`
+        : held.snapped
+          ? "attaches to the open end exactly"
+          : "free on the stud grid",
     hints: [
       gesture("Click", blocked ? "refused here" : "lay it"),
       key("next-connector", "next end"),

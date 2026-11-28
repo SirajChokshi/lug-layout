@@ -43,6 +43,11 @@ export interface AssistHost {
   heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null;
   heldPoseWaits(): boolean;
   restsOn(connected: Connected, pose: LatticePose): ReadonlyArray<PlacedModelView>;
+  lifts(
+    placeable: Placeable,
+    connected: Connected,
+    pose: LatticePose,
+  ): ReadonlyArray<PlacedModelView>;
   neighbourhood(): AssistNeighbourhood;
   showGhost(pose: LatticePose): void;
   hoverWait(choice: PlacementChoice): HoverWait | null;
@@ -61,6 +66,7 @@ const ASSIST_MIN_FRAME_SLICE_MS = 3;
 const NEXT_TURN = 1;
 const EVERY_TURN = 4;
 const NO_MATES: ReadonlyArray<HoverMateCount> = [];
+const NO_LIFTS: ReadonlyArray<PlacedModelView> = [];
 const NO_TURN_MATES: TurnMates = { turnMates: NO_MATES, turnJoints: 0 };
 
 class HoverCell {
@@ -370,18 +376,22 @@ export class AssistSession {
     const waitingOn = this.host.hoverWait(choice);
     const waiting = waitingOn !== null && !waitingOn.failed;
     const hit = choice.accepted || waitingOn ? null : this.host.refusalHit(choice.overlap);
+    const lifts =
+      hit && stage !== "provisional" ? this.host.lifts(placeable, connected, pose) : NO_LIFTS;
+    const lifting = lifts.length > 0;
     const blocked = choice.accepted ? this.host.heldPoseRefusal(placeable, pose) : null;
     const shapesWait = blocked !== null && this.host.heldPoseWaits();
     this.shownShapesWait = shapesWait;
     this.shownYPlates = pose.yPlates;
     this.shown = {
       pose,
-      accepted: choice.accepted && blocked === null,
-      hit,
+      accepted: lifting || (choice.accepted && blocked === null),
+      hit: lifting ? null : hit,
       mates,
       joints,
       lifted: pose.yPlates > RESTS_ON_TABLE_Y_PLATES,
       restsOn: this.host.restsOn(connected, pose),
+      lifts,
       turnBlocksSnap: false,
       ...NO_TURN_MATES,
       mode,
@@ -392,7 +402,7 @@ export class AssistSession {
       turnSettled: stage === "final" && !waiting && !shapesWait,
       waitingOn,
     };
-    this.shownRefusal = this.refusalOf(placeable, blocked, waitingOn, hit);
+    this.shownRefusal = lifting ? null : this.refusalOf(placeable, blocked, waitingOn, hit);
     this.host.showGhost(pose);
     this.lastPublishMs = performance.now() - startedMs;
   }

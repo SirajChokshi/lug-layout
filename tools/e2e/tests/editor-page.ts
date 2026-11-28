@@ -1050,6 +1050,16 @@ export class EditorPage {
     }));
   }
 
+  async showPlanIssue(rule: string, text: string): Promise<void> {
+    await this.page
+      .locator(`.plan-checks > li[data-check="${rule}"] .plan-issue`)
+      .filter({ hasText: text })
+      .click();
+    await this.settle();
+    await this.viewAtRest();
+    this.forgetView();
+  }
+
   async drawTable(from: LatticePoint, to: LatticePoint): Promise<void> {
     await this.escape();
     await this.press("b");

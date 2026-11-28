@@ -58,6 +58,7 @@ export interface TrackPieceView {
   readonly item: string;
   readonly label: string;
   readonly snapped: boolean;
+  readonly replaces: number;
   readonly joins: number;
   readonly misses: number;
   readonly connector: number;
@@ -698,7 +699,7 @@ export class TrackEditSession implements ITrackEditSession {
     const snap = held?.snap;
     if (!track || !held || !snap || this.placingPiers) return NOTHING;
     this.trackWorld.setObstacles();
-    const block = track.pieceBlock(held.catalogIndex, snap.placement, snap.yPlates);
+    const block = this.snapBlock(track, held, snap);
     this.lastWithheld = null;
     this.lastUnsupported = null;
     this.lastLow = null;
@@ -714,7 +715,12 @@ export class TrackEditSession implements ITrackEditSession {
     }
     const joinsBefore = track.joinedPairs();
     const firstLaid = track.pieceCount;
-    const change = track.pieceChange(held.catalogIndex, snap.placement, snap.yPlates);
+    const change = track.pieceChange(
+      held.catalogIndex,
+      snap.placement,
+      snap.yPlates,
+      snap.replaces,
+    );
     this.lastBlock = null;
     return {
       kind: "lay",
@@ -745,17 +751,23 @@ export class TrackEditSession implements ITrackEditSession {
   }
 
   switchRefusal(piece: number, x: number, z: number): TrackClickRefusal | null {
+    const train = this.trainOn(piece);
+    if (train === null) return null;
+    return {
+      item: TRACK_ITEM_ID,
+      x: Math.round(x),
+      z: Math.round(z),
+      reason: `${train} stands on this switch, so it can't be thrown under it.`,
+    };
+  }
+
+  private trainOn(piece: number): string | null {
     const standing = this.railYard.standingOn(piece);
     if (!standing) return null;
     const refId = standing.pose.refId;
     const holder = this.catalog.placeables()[refId];
     if (!holder) throw new Error(`no catalog item has ref id ${refId}`);
-    return {
-      item: TRACK_ITEM_ID,
-      x: Math.round(x),
-      z: Math.round(z),
-      reason: `${holder.label} stands on this switch, so it can't be thrown under it.`,
-    };
+    return holder.label;
   }
 
   finishLay(lay: TrackLayRequest): void {
@@ -860,13 +872,13 @@ export class TrackEditSession implements ITrackEditSession {
   turnHeld(direction: TurnDirection): void {
     const held = this.held;
     if (!held) return;
-    this.held =
-      held.snap?.end === null || !held.snap
-        ? {
-            ...held,
-            heading: (held.heading + direction * QUARTER_TURN_16 + ZETA16_ORDER) % ZETA16_ORDER,
-          }
-        : { ...held, connector: held.connector + direction };
+    const free = !held.snap || (held.snap.end === null && held.snap.replaces.size === 0);
+    this.held = free
+      ? {
+          ...held,
+          heading: (held.heading + direction * QUARTER_TURN_16 + ZETA16_ORDER) % ZETA16_ORDER,
+        }
+      : { ...held, connector: held.connector + direction };
   }
 
   nextConnector(): void {
@@ -1019,7 +1031,18 @@ export class TrackEditSession implements ITrackEditSession {
     if (snap === this.blockedSnap && track.bandsVersion === this.blockedBands) return held.blocked;
     this.blockedSnap = snap;
     this.blockedBands = track.bandsVersion;
-    return track.pieceBlock(held.catalogIndex, snap.placement, snap.yPlates);
+    return this.snapBlock(track, held, snap);
+  }
+
+  private snapBlock(track: TrackDrawing, held: HeldPiece, snap: PieceSnap): TrackBlockView | null {
+    const { placement, yPlates, replaces } = snap;
+    const block = track.pieceBlock(held.catalogIndex, placement, yPlates, 0, replaces);
+    if (block) return block;
+    for (const piece of replaces) {
+      const train = this.trainOn(piece);
+      if (train !== null) return { kind: "model", label: train, unseated: false };
+    }
+    return null;
   }
 
   private heldView(track: TrackDrawing): TrackPieceView | null {
@@ -1032,6 +1055,7 @@ export class TrackEditSession implements ITrackEditSession {
       item: kit.piece.id,
       label: track.pieceSet.label(held.catalogIndex),
       snapped: held.snap?.end !== null && held.snap !== null,
+      replaces: held.snap?.replaces.size ?? 0,
       joins: held.snap?.joins ?? 0,
       misses: held.snap?.misses.length ?? 0,
       connector: ((held.connector % count) + count) % count,
