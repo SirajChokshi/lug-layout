@@ -442,6 +442,7 @@ export class EditHistory {
       track: NO_TRACK_CHANGE,
       plan: null,
       notes: null,
+      event: null,
       layers: null,
       groups: owned,
     });
@@ -505,6 +506,7 @@ export class EditHistory {
       notes,
       event: null,
       layers: null,
+      groups: null,
     });
   }
 
