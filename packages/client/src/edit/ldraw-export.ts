@@ -54,6 +54,7 @@ export interface ILdrawExporter {
     worldName: string,
     layout: LdrawLayout,
     importedFile: ImportedFiles,
+    credits: string,
   ): Promise<ExportedWorld>;
 }
 
@@ -93,6 +94,7 @@ export class LdrawExporter implements ILdrawExporter {
     worldName: string,
     layout: LdrawLayout,
     importedFile: ImportedFiles,
+    credits: string,
   ): Promise<ExportedWorld> {
     const sources = new Map<string, ModelSource>();
     for (const { source } of layout.members) {
@@ -110,6 +112,7 @@ export class LdrawExporter implements ILdrawExporter {
         "Exported from Brick Railroad.",
         this.disclaimer,
         ...trainsNote(layout.trainsOnRails),
+        credits,
       ],
       submodels: this.partition.submodels(layout).map(({ name, members }) => ({
         name,

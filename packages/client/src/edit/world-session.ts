@@ -928,10 +928,15 @@ export class WorldSession implements IWorldSession {
       async () => {
         const current = this.current;
         if (!current) throw new Error("no world is open");
+        const edited = this.editedWorld();
+        const credits = this.credits.exportText(
+          creditsForWorld(await this.loadCredits(), edited.placedCredits()),
+        );
         exported = await this.ldraw.exportMpd(
           current.name,
-          this.editedWorld().ldrawLayout(),
+          edited.ldrawLayout(),
           (sha256) => this.importedFiles.get(sha256),
+          credits,
         );
         this.update({ fileError: null });
       },

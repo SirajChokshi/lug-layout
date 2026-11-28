@@ -13,6 +13,10 @@ import {
 } from "./ldraw-text.ts";
 
 const LAYOUT_TAG = "layout";
+const PART_SECTION = /\.dat$/iu;
+const SET_PREFIXED = /^\d+(?:-\d+)? - /u;
+const SET_PREFIX_SEPARATOR = " - ";
+const META_FIRST_WORD = /^(?:FILE|NOFILE|Name:|Author:|!\S*|\/\/)$/iu;
 const IDENTITY = Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 
 export interface LdrawOriginal {
@@ -58,6 +62,18 @@ interface EmbeddedOriginal extends ParsedOriginal {
   readonly renames: ReadonlyMap<string, string>;
 }
 
+function clashFreeName(name: string, tag: string, n: number): string {
+  if (!PART_SECTION.test(name)) return n === 1 ? `${tag}-${name}` : `${tag}-${n}-${name}`;
+  const folder = Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\")) + 1;
+  const part = name.slice(folder).replace(SET_PREFIXED, "");
+  return `${name.slice(0, folder)}${n}${SET_PREFIX_SEPARATOR}${part}`;
+}
+
+function titleText(title: string): string {
+  const flat = title.trim().split(/\s+/u).join(" ");
+  return META_FIRST_WORD.test(flat.split(" ")[0] ?? "") ? `"${flat}"` : flat;
+}
+
 class SectionNames {
   private readonly taken = new Set<string>();
 
@@ -68,7 +84,7 @@ class SectionNames {
   claim(name: string, tag: string): string {
     let claimed = name;
     for (let n = 1; this.taken.has(normalizeLdrawReference(claimed)); n++) {
-      claimed = n === 1 ? `${tag}-${name}` : `${tag}-${n}-${name}`;
+      claimed = clashFreeName(name, tag, n);
     }
     this.reserve(claimed);
     return claimed;
@@ -119,7 +135,7 @@ function partReferences(submodels: ReadonlyArray<MpdSubmodel>): ReadonlyArray<st
 }
 
 function header(name: string, title: string): string[] {
-  return [`0 FILE ${name}`, `0 ${title}`, `0 Name: ${name}`];
+  return [`0 FILE ${name}`, `0 ${titleText(title)}`, `0 Name: ${name}`];
 }
 
 function submodelLine(line: SubmodelLine, mains: ReadonlyMap<string, string>): string {

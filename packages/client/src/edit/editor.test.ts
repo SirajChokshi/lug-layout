@@ -1856,6 +1856,9 @@ it("exports the layout as one LDraw MPD that a fresh import draws part for part 
   expect(embeddedVerbatim(exportedText, new TextDecoder().decode(cottageFile))).toBe(true);
   expect(embeddedVerbatim(exportedText, new TextDecoder().decode(mySignalBox()))).toBe(true);
   expect(embeddedVerbatim(exportedText, setSource)).toBe(true);
+  expect(nonEmptyLines(exportedText)).toContain(
+    "0 // LDraw parts are copyright their authors and are redistributed under the license named in each file's !LICENSE header.",
+  );
   expect(
     unmatched(
       drawn.filter((part) => !isTrack(part)),
