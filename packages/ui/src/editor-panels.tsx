@@ -626,6 +626,16 @@ function TrainFacts({
   );
 }
 
+function quoted(names: ReadonlyArray<string>): string {
+  return names.map((name) => `"${name}"`).join(", ");
+}
+
+function groupingText({ groups, loose }: SelectionView): string | null {
+  if (groups.length === 0) return null;
+  const named = `${groups.length === 1 ? "Group" : "Groups"} ${quoted(groups)}`;
+  return loose === 0 ? named : `${named} and ${loose} more`;
+}
+
 function selectionMeta(selection: SelectionView, size: string, items: string): string {
   const { primary, members } = selection;
   if (members.length > 1) return `${size} · ${items}`;
@@ -660,6 +670,7 @@ export function SelectionPanel({
   const owner = pivotStuds
     ? `${primary.item} ${members.length} ${pivotStuds.x} ${pivotStuds.z}`
     : primary.item;
+  const grouping = groupingText(selection);
   return (
     <section className="inspector selection-panel" aria-label="Selection">
       <h2>Selection</h2>
@@ -668,6 +679,7 @@ export function SelectionPanel({
       ) : (
         <>
           <p className="selection-name">{single ? items : tallyText(tally)}</p>
+          {grouping !== null && <p className="selection-group">{grouping}</p>}
           <p className="selection-meta">{selectionMeta(selection, size, items)}</p>
         </>
       )}
@@ -737,6 +749,16 @@ export function SelectionPanel({
           Delete
         </button>
       </div>
+      {movable && (
+        <div className="selection-actions" role="group" aria-label="Grouping">
+          <button type="button" data-action="group" {...action("group")}>
+            Group <kbd>{shortcutText("group")}</kbd>
+          </button>
+          <button type="button" data-action="ungroup" {...action("ungroup")}>
+            Ungroup <kbd>{shortcutText("ungroup")}</kbd>
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -108,6 +108,7 @@ it("removes, in one edit, two placements whose columns share a chunk", async () 
       yPlates: 0,
       rot: 0,
       layer: 0,
+      group: null,
     });
     placed.apply(edit, () => placeable);
     return edit.changes[0]?.placement ?? null;

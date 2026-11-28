@@ -71,6 +71,7 @@ import {
   type PartSink,
   type DrawingKit,
   type EndGap,
+  type GroupRetag,
   type LayerTable,
   type PlacementPose,
   type PlacementRegion,
@@ -2260,6 +2261,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         yPlates: entry.yPlates,
         rise: entry.rise,
         layer: BASE_LAYER_ID,
+        group: null,
       })),
     };
   }
@@ -2275,6 +2277,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         laid.yPlates === at.yPlates &&
         laid.rise === at.rise &&
         this.layout.layer(at.index) === at.layer &&
+        this.layout.group(at.index) === at.group &&
         pose16Equals(laid.placement, at.pose);
       if (!same) throw new Error(`laid track piece ${at.index} is not the piece the edit lifts`);
       touched.add(this.chunkOfPlaced(laid));
@@ -2290,6 +2293,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         at.rise,
         WORLD_TRACK_FRAME,
         at.layer,
+        at.group,
       );
       touched.add(this.chunkOfPlaced({ part, placement: at.pose, yPlates: at.yPlates, rise: 0 }));
     }
@@ -2710,11 +2714,25 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       yPlates: placed.yPlates,
       rise: placed.rise,
       layer: this.layout.layer(placement),
+      group: this.layout.group(placement),
     };
   }
 
   pieceLayer(placement: number): number {
     return this.layout.layer(placement);
+  }
+
+  pieceGroup(placement: number): number | null {
+    return this.layout.group(placement);
+  }
+
+  regroupPieces(retags: ReadonlyArray<GroupRetag<number>>): void {
+    for (const { member, from } of retags) {
+      if (this.layout.group(member) !== from) {
+        throw new Error(`laid track piece ${member} isn't in the group the edit says`);
+      }
+    }
+    for (const { member, to } of retags) this.layout.regroup(member, to);
   }
 
   pieceOnRay(ray: Float64Array, layers: Pick<LayerTable, "isHidden">): TrackPieceHit | null {
@@ -3405,6 +3423,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     for (let index = 0; index < this.layout.count; index++) {
       const placed = this.placedAt(index);
       const layer = this.layout.layer(index);
+      const group = this.layout.group(index);
       records.push({
         index,
         ref: placed.part.piece.id,
@@ -3413,6 +3432,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         yPlates: placed.yPlates,
         ...(placed.rise === 0 ? {} : { rise: placed.rise }),
         ...(layer === BASE_LAYER_ID ? {} : { layer }),
+        ...(group === null ? {} : { group }),
       });
     }
     return records;
@@ -3463,7 +3483,10 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       const pose = pose16(decodeTrackPosition(record.position), record.heading);
       const rise = record.rise ?? 0;
       const layer = record.layer ?? BASE_LAYER_ID;
-      return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates, rise, layer }];
+      const group = record.group ?? null;
+      return [
+        { index, piece: part.catalogIndex, pose, yPlates: record.yPlates, rise, layer, group },
+      ];
     });
     return { ok: true, value: lay };
   }

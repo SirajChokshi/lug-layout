@@ -38,7 +38,12 @@ export interface SelectionTally {
   readonly trains: number;
 }
 
-export interface SelectionView {
+export interface SelectionGrouping {
+  readonly groups: ReadonlyArray<string>;
+  readonly loose: number;
+}
+
+export interface SelectionView extends SelectionGrouping {
   readonly primary: SelectionItemView;
   readonly members: ReadonlyArray<SelectionItemView>;
   readonly box: WorldBox;
@@ -55,6 +60,7 @@ export type SelectionMember =
 export interface SelectionViews {
   piece(placement: number): TrackSelectionView;
   train(train: ConsistHandle): TrainSelectionView | null;
+  grouping(members: ReadonlyArray<SelectionMember>): SelectionGrouping;
 }
 
 function modelView(model: PlacedModel): ModelSelectionView {
@@ -68,7 +74,7 @@ function modelView(model: PlacedModel): ModelSelectionView {
   };
 }
 
-function sameMember(a: SelectionMember, b: SelectionMember): boolean {
+export function sameMember(a: SelectionMember, b: SelectionMember): boolean {
   switch (a.kind) {
     case "model":
       return b.kind === "model" && a.model === b.model;
@@ -154,32 +160,6 @@ function isMovable(members: ReadonlyArray<SelectionMember>): boolean {
   return members.length > 0 && members.every((member) => member.kind !== "train");
 }
 
-function firstSighting<T>(seen: Set<T>, key: T): boolean {
-  if (seen.has(key)) return false;
-  seen.add(key);
-  return true;
-}
-
-function distinctMembers(members: ReadonlyArray<SelectionMember>): SelectionMember[] {
-  const models = new Set<PlacedModel>();
-  const pieces = new Set<number>();
-  const trains = new Set<ConsistHandle>();
-  return members.filter((member) => {
-    switch (member.kind) {
-      case "model":
-        return firstSighting(models, member.model);
-      case "track":
-        return firstSighting(pieces, member.placement);
-      case "train":
-        return firstSighting(trains, member.train);
-      default: {
-        const unhandled: never = member;
-        throw new Error(`unhandled selection member ${String(unhandled)}`);
-      }
-    }
-  });
-}
-
 function isLive(member: SelectionMember): boolean {
   if (member.kind === "model") return member.model.handle.live;
   if (member.kind === "train") return member.train.live;
@@ -219,17 +199,19 @@ export class Selection {
   }
 
   replace(members: ReadonlyArray<SelectionMember>, pivot: LatticePoint | null): void {
-    const unique = distinctMembers(members);
+    const unique = members.filter(
+      (member, index) => members.findIndex((other) => sameMember(other, member)) === index,
+    );
     const train = unique.findLast((member) => member.kind === "train");
     this.picked = train ? [train] : unique;
     this.pivot = pivot;
   }
 
-  toggle(member: SelectionMember): void {
+  toggle(member: SelectionMember, together: ReadonlyArray<SelectionMember> = [member]): void {
     this.replace(
       this.has(member)
-        ? this.picked.filter((picked) => !sameMember(picked, member))
-        : [...this.picked.filter((picked) => picked.kind !== "train"), member],
+        ? this.picked.filter((picked) => !together.some((other) => sameMember(other, picked)))
+        : [...this.picked.filter((picked) => picked.kind !== "train"), ...together],
       null,
     );
   }
@@ -288,6 +270,7 @@ export class Selection {
       members,
       box,
       tally: tallyOf(this.picked),
+      ...views.grouping(this.picked),
       movable: isMovable(this.picked),
       pivotStuds: pivot && { x: pivot.x / STUD_LDU + 0, z: pivot.z / STUD_LDU + 0 },
     };

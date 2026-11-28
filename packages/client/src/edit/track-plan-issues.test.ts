@@ -239,6 +239,7 @@ function layFrom(at: Room, start: Pose16, partIds: ReadonlyArray<string>): Track
       yPlates: 0,
       rise: 0,
       layer: 0,
+      group: null,
     })),
   };
 }

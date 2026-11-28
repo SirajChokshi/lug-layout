@@ -654,6 +654,7 @@ function planLaid(
         yPlates: 0,
         rise: 0,
         layer: 0,
+        group: null,
       };
     }),
   };
@@ -1248,6 +1249,7 @@ function openStraight(straight: number, slot: number): TrackPieceAt {
     yPlates: 0,
     rise: 0,
     layer: 0,
+    group: null,
   };
 }
 

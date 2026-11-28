@@ -3,13 +3,21 @@ import type { NoteRecordV2 } from "@brr/schema/world";
 import { describe, expect, it } from "vitest";
 import {
   EditHistory,
+  type AppliedEdit,
   type ConsistRef,
   type PlacementRef,
   type TrackPieceAt,
 } from "./edit-history.ts";
+import {
+  GroupTable,
+  groupingChange,
+  ungroupingChange,
+  type GroupMembers,
+  type GroupTagged,
+} from "./groups/group-table.ts";
 import { LayerTable } from "./layers/layer-table.ts";
 import { ConsistLayout } from "./rail/consist-layout.ts";
-import { SLOT_LIVE, World } from "./world.ts";
+import { SLOT_LIVE, World, groupAt } from "./world.ts";
 
 function livePlacements(world: World): string[] {
   const rows: string[] = [];
@@ -25,6 +33,7 @@ function livePlacements(world: World): string[] {
           view.yPlates[slot],
           view.rot[slot],
           view.layer[slot],
+          groupAt(view, slot) ?? "-",
         ].join(","),
       );
     }
@@ -77,7 +86,40 @@ function straightAt(index: number, x: bigint): TrackPieceAt {
     yPlates: 0,
     rise: 0,
     layer: 0,
+    group: null,
   };
+}
+
+function tagged(placement: PlacementRef): GroupTagged<PlacementRef> {
+  const { handle } = placement;
+  if (!handle?.live) throw new Error("the placement isn't in the world");
+  return { member: placement, layer: handle.layer, group: handle.group };
+}
+
+function placementsOf(placements: ReadonlyArray<PlacementRef>): GroupMembers<PlacementRef> {
+  return { placements: placements.map(tagged), pieces: [] };
+}
+
+function groupNamed(id: number): string {
+  return `Group ${id + 1}`;
+}
+
+class GroupedSession {
+  table = GroupTable.empty;
+
+  follow(edit: AppliedEdit | null): AppliedEdit | null {
+    if (edit?.groups) this.table = edit.groups.after;
+    return edit;
+  }
+
+  snapshot(): string {
+    return JSON.stringify(this.table.groups);
+  }
+
+  outermostOf(placement: PlacementRef): number | null {
+    const group = placement.handle?.group ?? null;
+    return group === null ? null : (this.table.outermost(group) ?? null);
+  }
 }
 
 const LATTICE_SPAN = 4096;
@@ -90,16 +132,39 @@ describe("EditHistory", () => {
       const world = new World();
       const trains = new ConsistLayout();
       const history = new EditHistory(world, trains);
+      const grouped = new GroupedSession();
+      let nested = false;
       const next = lcg(23);
       const placements: PlacementRef[] = [];
       const consists: ConsistRef[] = [];
-      const snapshot = () => [...livePlacements(world), ...liveConsists(trains)];
+      const snapshot = () => [
+        ...livePlacements(world),
+        ...liveConsists(trains),
+        grouped.snapshot(),
+      ];
       const states: string[][] = [snapshot()];
       for (let step = 0; step < 400; step++) {
-        const choice = next() % 7;
+        const choice = next() % 9;
         const target = placements[next() % Math.max(1, placements.length)];
         const train = consists[next() % Math.max(1, consists.length)];
-        if (choice === 4) {
+        const other = placements[next() % Math.max(1, placements.length)];
+        if (choice === 7 && target && other) {
+          const outermost = new Set([grouped.outermostOf(target), grouped.outermostOf(other)]);
+          const members = placements.filter((placement) =>
+            outermost.has(grouped.outermostOf(placement)),
+          );
+          const change = groupingChange(grouped.table, placementsOf(members), groupNamed);
+          if (change.ok) grouped.follow(history.regroup(change.value));
+          nested ||= grouped.table.groups.some((group) => group.parent !== undefined);
+        } else if (choice === 8 && target && grouped.outermostOf(target) !== null) {
+          const outermost = grouped.outermostOf(target);
+          const members = placements.filter(
+            (placement) => grouped.outermostOf(placement) === outermost,
+          );
+          const change = ungroupingChange(grouped.table, placementsOf(members));
+          if (!change.ok) throw new Error("a placement in a group wasn't ungrouped");
+          grouped.follow(history.regroup(change.value));
+        } else if (choice === 4) {
           const consist = history.placeConsist({
             refId: next() % 7,
             colorId: 0,
@@ -128,6 +193,7 @@ describe("EditHistory", () => {
             yPlates: next() % 3,
             rot: next() % 4,
             layer: next() % 5,
+            group: null,
           });
           const placement = edit.changes[0]?.placement;
           if (placement) placements.push(placement);
@@ -137,19 +203,21 @@ describe("EditHistory", () => {
         } else {
           history.rotate(target);
         }
-        states.push(snapshot());
+        if (history.undoDepth === states.length) states.push(snapshot());
       }
 
       expect(trains.size).toBeGreaterThan(0);
+      expect(grouped.table.groups.length).toBeGreaterThan(1);
+      expect(nested).toBe(true);
       for (let depth = states.length - 2; depth >= 0; depth--) {
-        expect(history.undo()?.step).toBe("undo");
+        expect(grouped.follow(history.undo())?.step).toBe("undo");
         expect(snapshot()).toEqual(states[depth]);
       }
       expect(world.size + trains.size).toBe(0);
       expect(history.undo()).toBeNull();
 
       for (let depth = 1; depth < states.length; depth++) {
-        expect(history.redo()?.step).toBe("redo");
+        expect(grouped.follow(history.redo())?.step).toBe("redo");
         expect(snapshot()).toEqual(states[depth]);
       }
       expect(history.redo()).toBeNull();
@@ -169,6 +237,7 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      group: null,
     });
     const placement = placed.changes[0]?.placement;
     if (!placement) throw new Error("place reported no change");
@@ -190,7 +259,7 @@ describe("EditHistory", () => {
   it("keeps a track change as one step beside placements, handing it back reversed on undo and as made on redo", () => {
     const world = new World();
     const history = new EditHistory(world);
-    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 });
+    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0, group: null });
     const run = { lift: [], lay: [straightAt(0, 0n), straightAt(1, 16n)] };
     const thrown = { lift: [straightAt(1, 16n)], lay: [{ ...straightAt(1, 16n), piece: 2 }] };
 
@@ -200,7 +269,7 @@ describe("EditHistory", () => {
     expect(history.undo()?.track).toEqual({ lift: thrown.lay, lay: thrown.lift });
     expect(history.undo()).toMatchObject({ kind: "lay-track", track: { lift: run.lay, lay: [] } });
     expect(history.nextUndo()?.kind).toBe("place");
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0,-"]);
     expect(history.nextRedo()).toEqual({ kind: "lay-track", pieces: 2, lifted: 0 });
     expect(history.redo()?.track).toBe(run);
     expect(history.redo()?.track).toBe(thrown);
@@ -218,10 +287,13 @@ describe("EditHistory", () => {
     const done = history.commit(
       "open-plan",
       [
-        { placement: null, to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 } },
         {
           placement: null,
-          to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3, layer: 0 },
+          to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0, group: null },
+        },
+        {
+          placement: null,
+          to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3, layer: 0, group: null },
         },
       ],
       run,
@@ -239,7 +311,7 @@ describe("EditHistory", () => {
     expect(history.undoDepth).toBe(0);
 
     expect(history.redo()).toMatchObject({ track: run, plan: change });
-    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0,0", "3,0,40,60,1,3,0"]);
+    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0,0,-", "3,0,40,60,1,3,0,-"]);
   });
 
   it("keeps a layer change as its own step, named by the layer, handing back the earlier table on undo", () => {
@@ -260,13 +332,85 @@ describe("EditHistory", () => {
     expect(history.redo()?.layers).toBe(change);
   });
 
+  it("keeps a group change as one step that retags its members where they stand, named by the group, handing back the earlier tags and table on undo", () => {
+    const world = new World();
+    const history = new EditHistory(world);
+    const placements = [0, 40, 80].flatMap(
+      (x) =>
+        history.place({ refId: 1, colorId: 0, x, z: 0, yPlates: 0, rot: 0, layer: 0, group: null })
+          .changes[0]?.placement ?? [],
+    );
+    const handles = placements.map((placement) => placement.handle);
+    const grouping = groupingChange(GroupTable.empty, placementsOf(placements), groupNamed);
+    if (!grouping.ok) throw new Error("the placements weren't grouped");
+    const piece = { member: 3, layer: 0, from: null, to: 0 };
+    const change = { ...grouping.value, pieces: [piece] };
+
+    const done = history.regroup(change);
+    const grouped = { tags: placements.map((p) => p.handle?.group), rows: livePlacements(world) };
+    const label = history.nextUndo();
+    const undone = history.undo();
+
+    expect({ done: done.groups, changes: done.changes, track: done.track }).toEqual({
+      done: change,
+      changes: [],
+      track: { lift: [], lay: [] },
+    });
+    expect(grouped).toEqual({
+      tags: [0, 0, 0],
+      rows: ["1,0,0,0,0,0,0,0", "1,0,40,0,0,0,0,0", "1,0,80,0,0,0,0,0"],
+    });
+    expect(label).toEqual({ kind: "group", action: "group", names: ["Group 1"], members: 4 });
+    expect(undone?.groups).toMatchObject({
+      before: change.after,
+      after: GroupTable.empty,
+      placements: placements.map((member) => ({ member, from: 0, to: null })),
+      pieces: [{ member: 3, from: 0, to: null }],
+    });
+    expect(placements.map((placement) => placement.handle)).toEqual(handles);
+    expect(livePlacements(world)).toEqual([
+      "1,0,0,0,0,0,0,-",
+      "1,0,40,0,0,0,0,-",
+      "1,0,80,0,0,0,0,-",
+    ]);
+    expect(history.redo()?.groups).toEqual(change);
+  });
+
+  it("refuses a group change that would retag a member on a locked layer, or one tagged other than it says, touching nothing", () => {
+    const world = new World();
+    const locked = new Set<number>();
+    const history = new EditHistory(world, new ConsistLayout(), {
+      isLocked: (layer) => locked.has(layer),
+    });
+    const placements = [0, 2].flatMap(
+      (layer) =>
+        history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer, group: null })
+          .changes[0]?.placement ?? [],
+    );
+    const grouping = groupingChange(GroupTable.empty, placementsOf(placements), groupNamed);
+    if (!grouping.ok) throw new Error("the placements weren't grouped");
+    const stale = {
+      ...grouping.value,
+      placements: grouping.value.placements.map((retag) => ({ ...retag, from: 9 })),
+    };
+    locked.add(2);
+    const before = livePlacements(world);
+
+    expect(() => history.regroup(grouping.value)).toThrow(/layer 2 is locked/u);
+    expect(() => history.regroup(stale)).toThrow(/isn't tagged as the edit says/u);
+    expect(livePlacements(world)).toEqual(before);
+    expect(history.undoDepth).toBe(2);
+    locked.clear();
+    expect(history.regroup(grouping.value).kind).toBe("group");
+  });
+
   it("refuses to move, turn, remove or add a placement or track piece on a locked layer, touching nothing", () => {
     const world = new World();
     const locked = new Set<number>();
     const history = new EditHistory(world, new ConsistLayout(), undefined, {
       isLocked: (layer) => locked.has(layer),
     });
-    const pose = { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 2 };
+    const pose = { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 2, group: null };
     const placement = history.place(pose).changes[0]?.placement;
     if (!placement) throw new Error("place reported no change");
     const laid = { ...straightAt(0, 0n), layer: 2 };
@@ -349,14 +493,32 @@ describe("EditHistory", () => {
   it("drops the redo branch when a new edit follows an undo", () => {
     const world = new World();
     const history = new EditHistory(world);
-    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 });
-    history.place({ refId: 2, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0, layer: 0 });
+    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0, group: null });
+    history.place({
+      refId: 2,
+      colorId: 0,
+      x: 640,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      group: null,
+    });
     history.undo();
-    history.place({ refId: 3, colorId: 0, x: 0, z: 640, yPlates: 0, rot: 0, layer: 0 });
+    history.place({
+      refId: 3,
+      colorId: 0,
+      x: 0,
+      z: 640,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      group: null,
+    });
 
     expect(history.redoDepth).toBe(0);
     expect(history.redo()).toBeNull();
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0", "3,0,0,640,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0,-", "3,0,0,640,0,0,0,-"]);
   });
 
   it("refuses an edit with an invalid pose without touching the world or the history", () => {
@@ -370,6 +532,7 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      group: null,
     }).changes[0]?.placement;
     if (!placement) throw new Error("place reported no change");
     const before = livePlacements(world);
@@ -379,18 +542,24 @@ describe("EditHistory", () => {
         { placement, to: null },
         {
           placement: null,
-          to: { refId: 2, colorId: 0, x: 0.5, z: 0, yPlates: 0, rot: 0, layer: 0 },
+          to: { refId: 2, colorId: 0, x: 0.5, z: 0, yPlates: 0, rot: 0, layer: 0, group: null },
         },
       ]),
     ).toThrow(RangeError);
     expect(() =>
       history.commit("rotate", [
-        { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4, layer: 0 } },
+        {
+          placement,
+          to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4, layer: 0, group: null },
+        },
       ]),
     ).toThrow(/quarter turn/u);
     expect(() =>
       history.commit("rotate", [
-        { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 1, layer: 65_536 } },
+        {
+          placement,
+          to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 1, layer: 65_536, group: null },
+        },
       ]),
     ).toThrow(/not a layer id/u);
     const straight = {
@@ -398,6 +567,7 @@ describe("EditHistory", () => {
       pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
       rise: 0,
       layer: 0,
+      group: null,
     };
     expect(() =>
       history.commit("remove", [{ placement, to: null }], {
@@ -441,6 +611,7 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      group: null,
     }).changes[0]?.placement;
     const foreign = new EditHistory(new World()).place({
       refId: 1,
@@ -450,6 +621,7 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      group: null,
     }).changes[0]?.placement;
     if (!placement || !foreign) throw new Error("place reported no change");
 

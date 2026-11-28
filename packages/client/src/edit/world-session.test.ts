@@ -1,5 +1,15 @@
 import { LINK_PROGRESS_SHARE } from "@brr/catalog";
-import { EditHistory, World, addShards, type AppliedEdit, type PlacementTarget } from "@brr/domain";
+import {
+  EditHistory,
+  GroupTable,
+  World,
+  addShards,
+  ungroupingChange,
+  type AppliedEdit,
+  type AppliedGroupChange,
+  type PlacementRef,
+  type PlacementTarget,
+} from "@brr/domain";
 import {
   SCENE_BACKEND,
   type BufferMemory,
@@ -109,6 +119,8 @@ function baseplateTarget(ref: string, color: number): PlacementTarget | null {
 class BaseplateWorld implements IEditedWorld {
   private world = new World();
   private history = new EditHistory(this.world);
+  private placed: PlacementRef[] = [];
+  groups = GroupTable.empty;
 
   get placements(): number {
     return this.world.size;
@@ -116,11 +128,45 @@ class BaseplateWorld implements IEditedWorld {
 
   place(column: number): AppliedEdit {
     const x = column * BASEPLATE_LDU;
-    return this.history.place({ refId: 0, colorId: 2, x, z: 0, yPlates: 0, rot: 0, layer: 0 });
+    const edit = this.history.place({
+      refId: 0,
+      colorId: 2,
+      x,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      group: null,
+    });
+    this.placed.push(...edit.changes.map((change) => change.placement));
+    return edit;
+  }
+
+  ungroup(outermost: number): AppliedGroupChange {
+    const placements = this.placed.flatMap((member) => {
+      const { handle } = member;
+      const group = handle?.live ? handle.group : null;
+      return handle && group !== null && this.groups.outermost(group) === outermost
+        ? [{ member, layer: handle.layer, group }]
+        : [];
+    });
+    const change = ungroupingChange(this.groups, { placements, pieces: [] });
+    if (!change.ok) throw new Error(`group ${outermost} wasn't ungrouped`);
+    const applied = this.history.regroup(change.value).groups;
+    if (!applied) throw new Error("the group edit carried no group change");
+    this.groups = applied.after;
+    return applied;
   }
 
   contents(): WorldContents {
-    return { world: this.world, refs: [BASEPLATE], track: [], consists: [], notes: [] };
+    return {
+      world: this.world,
+      refs: [BASEPLATE],
+      track: [],
+      consists: [],
+      notes: [],
+      groups: this.groups,
+    };
   }
 
   placedCredits(): ReadonlyArray<ModelCredit> {
@@ -132,12 +178,14 @@ class BaseplateWorld implements IEditedWorld {
     return handles.ok ? [] : handles.issues;
   }
 
-  async load({ shards }: StoredContents): Promise<ReadonlyArray<Issue>> {
+  async load({ shards, groups }: StoredContents): Promise<ReadonlyArray<Issue>> {
     const world = new World();
     const handles = addShards(world, shards, baseplateTarget);
     if (!handles.ok) return handles.issues;
     this.world = world;
     this.history = new EditHistory(world);
+    this.placed = handles.value.map((handle) => this.history.adopt(handle));
+    this.groups = groups;
     return [];
   }
 
@@ -608,6 +656,76 @@ describe("schema v2 document data", () => {
     });
   });
 
+  it("opens a world whose placements are in nested groups, keeps each one's group when its shard is rewritten, saves an ungroup and leaves the group list out once it's empty", async () => {
+    const { session, repository, edited } = await sessionOnIndexedDb();
+    const station = { id: 0, name: "Station" };
+    const platform = { id: 1, name: "Platform", parent: 0 };
+    const grouped = { ...SHOW, groups: [station, platform] };
+    const shards = worldShards(
+      [
+        { ...PLATE, group: 1 },
+        { ...PLATE, x: BASEPLATE_LDU * 2, group: 0 },
+      ],
+      [],
+    );
+    const archive = repository.packArchive({
+      manifest: worldManifest(grouped, shards.map(shardEntry), LABELS.map(noteShardEntry)),
+      shards,
+      notes: LABELS,
+      credits: "credits",
+      imports: [],
+    });
+    expect(await session.importWorld(archive)).toBe(true);
+    const id = session.view().world?.id ?? "";
+    const opened = edited.groups.groups;
+    const ungroup = (outermost: number) => session.groupsEdited(edited.ungroup(outermost));
+    const saved = async () => {
+      const stored = await repository.read(id);
+      if (!stored.ok) throw new Error("the edited world didn't reopen");
+      const tags = stored.value.shards.flatMap((shard) =>
+        shard.placements.map(({ x, group }) => [x, group]),
+      );
+      return { groups: stored.value.manifest.groups, tags };
+    };
+
+    session.placementsEdited(edited.place(1));
+    await vi.waitFor(() => expect(session.view().world?.placements).toBe(3));
+    const rewritten = await saved();
+    ungroup(0);
+    await vi.waitFor(async () => expect((await saved()).groups).toHaveLength(1));
+    const ungrouped = await saved();
+    ungroup(1);
+    await vi.waitFor(async () => expect((await saved()).groups).toBeUndefined());
+
+    expect({ opened, rewritten, ungrouped, emptied: await saved() }).toEqual({
+      opened: [station, platform],
+      rewritten: {
+        groups: [station, platform],
+        tags: [
+          [0, 1],
+          [BASEPLATE_LDU, undefined],
+          [BASEPLATE_LDU * 2, 0],
+        ],
+      },
+      ungrouped: {
+        groups: [{ id: 1, name: "Platform" }],
+        tags: [
+          [0, 1],
+          [BASEPLATE_LDU, undefined],
+          [BASEPLATE_LDU * 2, undefined],
+        ],
+      },
+      emptied: {
+        groups: undefined,
+        tags: [
+          [0, undefined],
+          [BASEPLATE_LDU, undefined],
+          [BASEPLATE_LDU * 2, undefined],
+        ],
+      },
+    });
+  });
+
   it("refuses a world whose placements carry an owner, rather than dropping it on the next save", async () => {
     const { session, repository } = await sessionOnIndexedDb();
     const before = await repository.list();
@@ -616,7 +734,7 @@ describe("schema v2 document data", () => {
       false,
     );
     expect(session.view().fileError).toBe(
-      "import failed: shard 0_0.placements.0: is in a group or owned by a contributor, which this editor can't keep yet",
+      "import failed: shard 0_0.placements.0: is owned by a contributor, which this editor can't keep yet",
     );
     expect(await repository.list()).toEqual(before);
   });

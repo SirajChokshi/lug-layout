@@ -39,7 +39,14 @@ export {
   type RoadTile,
   type RoadTileRefusal,
 } from "./road-tiles.ts";
-export { SLOT_LIVE, World, isLayerId, type ChunkView, type PlacementHandle } from "./world.ts";
+export {
+  SLOT_LIVE,
+  World,
+  groupAt,
+  isLayerId,
+  type ChunkView,
+  type PlacementHandle,
+} from "./world.ts";
 export {
   EditHistory,
   NO_TRACK_CHANGE,
@@ -47,12 +54,12 @@ export {
   type AppliedChange,
   type AppliedConsistChange,
   type AppliedEdit,
+  type AppliedGroupChange,
   type ConsistRef,
   type EditKind,
   type EditSummary,
   type EventChange,
   type HistoryStep,
-  type LayeredPose,
   type LayerLocks,
   type PlanChange,
   type PlacementFollower,
@@ -60,6 +67,8 @@ export {
   type PlacementRef,
   type PlacementRequest,
   type PoseChange,
+  type PlacementTags,
+  type TaggedPose,
   type TrackChange,
   type TrackPieceAt,
 } from "./edit-history.ts";
@@ -99,6 +108,15 @@ export {
   type LayerChange,
   type LayerPatch,
 } from "./layers/layer-table.ts";
+export {
+  GroupTable,
+  groupingChange,
+  ungroupingChange,
+  type GroupAction,
+  type GroupMembers,
+  type GroupRetag,
+  type GroupTagged,
+} from "./groups/group-table.ts";
 export {
   ConsistHandle,
   ConsistLayout,

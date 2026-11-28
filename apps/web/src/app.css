@@ -776,6 +776,13 @@ button.plan-issue:hover {
   overflow-wrap: anywhere;
 }
 
+.selection-panel .selection-group {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
 .selection-panel .selection-meta {
   margin: 0;
   color: var(--text-secondary);

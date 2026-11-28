@@ -1,9 +1,11 @@
 import {
   DirtyShards,
   SavedNoteShards,
+  GroupTable,
   LayerTable,
   worldPlacements,
   type AppliedEdit,
+  type AppliedGroupChange,
   type PlanRegion,
   type PlanState,
   type TrackPieceAt,
@@ -120,6 +122,7 @@ export interface WorldContents {
   readonly track: ReadonlyArray<TrackRecordV2>;
   readonly consists: ReadonlyArray<ConsistRecordV1>;
   readonly notes: ReadonlyArray<NoteRecordV2>;
+  readonly groups: GroupTable;
 }
 
 export interface StoredContents {
@@ -128,6 +131,7 @@ export interface StoredContents {
   readonly notes: ReadonlyArray<NoteRecordV2>;
   readonly document: WorldDocument;
   readonly plans: PlanState;
+  readonly groups: GroupTable;
 }
 
 export interface PlanImport {
@@ -181,6 +185,7 @@ export interface IWorldSession extends IWorldFiles {
   notesEdited(): void;
   documentEdited(): void;
   plansEdited(plans: PlanState): void;
+  groupsEdited(change: AppliedGroupChange): void;
   pollCamera(): void;
   addModelFile(file: ModelFileInput, notice: ModelImportNotice): Promise<ModelFileOutcome>;
   importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean>;
@@ -206,8 +211,16 @@ const NOTHING_STORED: StoredContents = {
   notes: [],
   document: DEFAULT_WORLD_DOCUMENT,
   plans: NO_PLANS,
+  groups: GroupTable.empty,
 };
-const UNKEPT_TAGS = "is in a group or owned by a contributor, which this editor can't keep yet";
+const UNKEPT_TAGS = "is owned by a contributor, which this editor can't keep yet";
+
+function groupTable(document: WorldDocument): GroupTable {
+  const table = GroupTable.of(document.groups, "groups");
+  if (!table.ok)
+    throw new Error(`a decoded world's groups are refused: ${issueText(table.issues)}`);
+  return table.value;
+}
 
 function storedContents(
   manifest: WorldManifestV2,
@@ -224,6 +237,7 @@ function storedContents(
       notes: worldNotes(notes),
       document: worldDocument(manifest),
       plans: plans.value,
+      groups: groupTable(manifest),
     },
   };
 }
@@ -244,13 +258,8 @@ function openable(
   return stored.value;
 }
 
-interface TaggedRecord {
-  readonly owner?: number;
-  readonly group?: number;
-}
-
-function tagged(record: TaggedRecord): boolean {
-  return record.owner !== undefined || record.group !== undefined;
+function owned(record: { readonly owner?: number }): boolean {
+  return record.owner !== undefined;
 }
 
 function layerTable(document: WorldDocument): LayerTable {
@@ -265,10 +274,10 @@ function unkeptTagIssues(shards: ReadonlyArray<WorldShardV2>): Issue[] {
     const path = `shard ${shardName(shard.superChunk)}`;
     return [
       ...shard.placements.flatMap((placement, i) =>
-        tagged(placement) ? [{ path: `${path}.placements.${i}`, message: UNKEPT_TAGS }] : [],
+        owned(placement) ? [{ path: `${path}.placements.${i}`, message: UNKEPT_TAGS }] : [],
       ),
       ...shard.track.flatMap((piece, i) =>
-        tagged(piece) ? [{ path: `${path}.track.${i}`, message: UNKEPT_TAGS }] : [],
+        owned(piece) ? [{ path: `${path}.track.${i}`, message: UNKEPT_TAGS }] : [],
       ),
     ];
   });
@@ -375,19 +384,18 @@ export class WorldSession implements IWorldSession {
   }
 
   private header(current: OpenWorld): WorldHeader {
-    const { consists } = this.editedWorld().contents();
+    const { consists, groups } = this.editedWorld().contents();
     const event = this.events.event();
+    const { groups: _opened, ...document } = worldDocument(current.document);
     return {
       name: current.name,
       bundleVersion: this.bundleVersion,
       view: this.camera.savedView(),
       disclaimer: this.disclaimer,
       ...(consists.length > 0 ? { consists: [...consists] } : {}),
-      ...withPlanState(
-        { ...current.document, layers: [...this.layers.table().layers] },
-        this.plans,
-      ),
+      ...withPlanState({ ...document, layers: [...this.layers.table().layers] }, this.plans),
       ...(event === null ? {} : { event }),
+      ...(groups.groups.length > 0 ? { groups: [...groups.groups] } : {}),
     };
   }
 
@@ -430,6 +438,17 @@ export class WorldSession implements IWorldSession {
     this.plans = plans;
     if (this.state.readOnly) return;
     this.plansDirty = true;
+    this.scheduleSave();
+  }
+
+  groupsEdited(change: AppliedGroupChange): void {
+    for (const { member } of change.placements) {
+      const handle = member.handle;
+      if (handle?.live) this.dirty.touch(handle.x, handle.z);
+    }
+    const track = this.editedWorld().contents().track;
+    this.dirty.touchTrack(change.pieces.flatMap(({ member }) => track[member] ?? []));
+    this.documentDirty = true;
     this.scheduleSave();
   }
 

@@ -239,7 +239,7 @@ describe("a settled fill", () => {
     ]);
     expect(fill.view()).toEqual({ wanted: 3, refused: 1, alreadyThere: 1, overLimit: false });
     expect(fill.requests(7, 15, 1, 4).map((request) => request.to)).toEqual([
-      { refId: 7, colorId: 15, x: 320, z: 320, yPlates: 3, rot: 1, layer: 4 },
+      { refId: 7, colorId: 15, x: 320, z: 320, yPlates: 3, rot: 1, layer: 4, group: null },
     ]);
   });
 });

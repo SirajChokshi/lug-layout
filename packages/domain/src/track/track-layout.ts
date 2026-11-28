@@ -7,6 +7,7 @@ import {
   type Pose16,
 } from "@brr/math";
 import { BASE_LAYER_ID, LAYER_ID_MAX } from "@brr/schema/world";
+import { isGroupTag } from "../world.ts";
 import { WORLD_TRACK_FRAME, type TrackFrame } from "./end-gaps.ts";
 
 export interface TrackRoute {
@@ -32,9 +33,14 @@ export const INT8_MIN = -(2 ** 7);
 export const INT8_MAX = 2 ** 7 - 1;
 const RAMP_CONNECTORS = 2;
 const RAMP_HIGH_END = 1;
+const GROUPED = 1;
 
 function isIntegerIn(value: number, min: number, max: number): boolean {
   return Number.isInteger(value) && value >= min && value <= max;
+}
+
+function checkGroupTag(group: number | null): void {
+  if (!isGroupTag(group)) throw new RangeError(`track group ${String(group)} is not a group id`);
 }
 
 function checkPiece(spec: TrackPieceSpec, index: number): void {
@@ -64,6 +70,8 @@ export class TrackLayout {
   private positionOf = new BigInt64Array(INITIAL_CAPACITY * ZETA16_COEFFICIENT_COUNT);
   private frameOf = new Uint32Array(INITIAL_CAPACITY);
   private layerOf = new Uint16Array(INITIAL_CAPACITY);
+  private groupedOf = new Uint8Array(INITIAL_CAPACITY);
+  private groupOf = new Uint32Array(INITIAL_CAPACITY);
   private readonly frames = new Map<number, TrackFrame>([
     [WORLD_TRACK_FRAME.id, WORLD_TRACK_FRAME],
   ]);
@@ -94,6 +102,7 @@ export class TrackLayout {
     risePlates = 0,
     frame: TrackFrame = WORLD_TRACK_FRAME,
     layer = BASE_LAYER_ID,
+    group: number | null = null,
   ): number {
     if (!isIntegerIn(at, 0, this.size)) {
       throw new RangeError(`track placement ${at} is outside 0-${this.size}`);
@@ -118,6 +127,7 @@ export class TrackLayout {
     if (!isIntegerIn(layer, 0, LAYER_ID_MAX)) {
       throw new RangeError(`track layer ${layer} is not a layer id`);
     }
+    checkGroupTag(group);
     for (const coefficient of placement.position) {
       if (BigInt.asIntN(INT64_BITS, coefficient) !== coefficient) {
         throw new RangeError(`track position coefficient ${coefficient} does not fit int64 studs`);
@@ -140,6 +150,7 @@ export class TrackLayout {
     this.yPlatesOf[at] = yPlates;
     this.riseOf[at] = risePlates;
     this.layerOf[at] = layer;
+    this.writeGroup(at, group);
     this.positionOf.set(placement.position, at * ZETA16_COEFFICIENT_COUNT);
     return at;
   }
@@ -161,6 +172,8 @@ export class TrackLayout {
     this.yPlatesOf.copyWithin(to, from, this.size);
     this.riseOf.copyWithin(to, from, this.size);
     this.layerOf.copyWithin(to, from, this.size);
+    this.groupedOf.copyWithin(to, from, this.size);
+    this.groupOf.copyWithin(to, from, this.size);
     this.positionOf.copyWithin(
       to * ZETA16_COEFFICIENT_COUNT,
       from * ZETA16_COEFFICIENT_COUNT,
@@ -204,6 +217,22 @@ export class TrackLayout {
   layer(placement: number): number {
     this.checkPlacement(placement);
     return this.layerOf[placement] ?? BASE_LAYER_ID;
+  }
+
+  group(placement: number): number | null {
+    this.checkPlacement(placement);
+    return this.groupedOf[placement] === GROUPED ? (this.groupOf[placement] ?? 0) : null;
+  }
+
+  regroup(placement: number, group: number | null): void {
+    this.checkPlacement(placement);
+    checkGroupTag(group);
+    this.writeGroup(placement, group);
+  }
+
+  private writeGroup(placement: number, group: number | null): void {
+    this.groupedOf[placement] = group === null ? 0 : GROUPED;
+    this.groupOf[placement] = group ?? 0;
   }
 
   endYPlates(placement: number, connector: number): number {
@@ -259,5 +288,11 @@ export class TrackLayout {
     const layerOf = new Uint16Array(this.capacity);
     layerOf.set(this.layerOf);
     this.layerOf = layerOf;
+    const groupedOf = new Uint8Array(this.capacity);
+    groupedOf.set(this.groupedOf);
+    this.groupedOf = groupedOf;
+    const groupOf = new Uint32Array(this.capacity);
+    groupOf.set(this.groupOf);
+    this.groupOf = groupOf;
   }
 }

@@ -2061,6 +2061,253 @@ describe("layers", () => {
   }, 120_000);
 });
 
+function groupedPoses(editor: IEditor): ReadonlyArray<string> {
+  const { refs, placements } = editor.dump();
+  return placements.refId
+    .map(
+      (ref, i) =>
+        `${refs[ref]} ${placements.x[i]},${placements.z[i]} in ${placements.group[i] ?? "none"}`,
+    )
+    .toSorted();
+}
+
+function groupedSelection(editor: IEditor) {
+  const { selection, selectionRefusal } = editor.snapshot();
+  return {
+    selected: selectedItems(editor),
+    groups: selection?.groups ?? [],
+    loose: selection?.loose ?? 0,
+    refusal: selectionRefusal,
+  };
+}
+
+function inFirstGroup(groups: ReadonlyArray<number | null>) {
+  return {
+    inGroup: groups.filter((group) => group === 0).length,
+    loose: groups.filter((group) => group === null).length,
+  };
+}
+
+function laidGroups(editor: IEditor): ReadonlyArray<number | null> {
+  return editor.dump().laidTrack.map((piece) => piece.group ?? null);
+}
+
+describe("groups", () => {
+  it("groups a user's own models so a click on any one selects its outermost group, nests a group in a new one, ungroups one level at a time, keeps each as one undo step, moves a group whole, pastes copies ungrouped and reopens with every group kept", async () => {
+    const repository = new MemoryRepository();
+    const { editor, backend } = await startImportingEditor(() => repository);
+    const cottage = await importUserFile(
+      editor,
+      "my-cottage.mpd",
+      userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+    );
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    await place(cottage, 0, 0);
+    await place(cottage, 200, 0);
+    const onBaseplate: Ground = [-240, 240];
+    const label = () => editor.snapshot().history.undoLabel;
+
+    selectAt(editor, backend, 0, 0);
+    toggleAt(editor, backend, [200, 0]);
+    editor.groupSelection(0);
+    const grouped = { label: label(), ...groupedSelection(editor) };
+    selectAt(editor, backend, ...onBaseplate);
+    const baseplateAlone = groupedSelection(editor);
+    selectAt(editor, backend, 200, 0);
+    const cottageClick = groupedSelection(editor);
+    toggleAt(editor, backend, onBaseplate);
+    editor.groupSelection(0);
+    const nested = { label: label(), ...groupedSelection(editor) };
+    selectAt(editor, backend, 0, 0);
+    const outermostClick = groupedSelection(editor);
+    editor.ungroupSelection(0);
+    const ungrouped = { label: label(), ...groupedSelection(editor) };
+    selectAt(editor, backend, ...onBaseplate);
+    const baseplateAgain = groupedSelection(editor);
+    selectAt(editor, backend, 0, 0);
+    editor.moveSelectionBy(0, 2 * STUD, 0);
+    const moved = groupedPoses(editor);
+    editor.copySelection();
+    editor.pasteClipboard();
+    backend.aim(100, -200);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    const pasted = groupedPoses(editor);
+    const undone = [label()];
+    for (let step = 0; step < 4; step++) {
+      editor.undo(0);
+      undone.push(label());
+    }
+    const firstGroupOnly = { poses: groupedPoses(editor), groups: editor.dump().groups };
+    for (let step = 0; step < 4; step++) editor.redo(0);
+    const redone = groupedPoses(editor);
+    const groups = editor.dump().groups;
+    const stored = async () => {
+      const [entry] = await repository.list();
+      const read = entry ? await repository.read(entry.id) : null;
+      return read?.ok ? read.value.manifest.groups : null;
+    };
+    await vi.waitFor(async () => {
+      expect(repository.storedPlacements()).toBe(5);
+      expect(await stored()).toEqual(groups);
+    });
+    const reopened = await startImportingEditor(() => repository);
+    selectAt(reopened.editor, reopened.backend, 200, 40);
+
+    const twoCottages = [cottage, cottage];
+    const all = [cottage, cottage, BASEPLATE];
+    const group1 = { groups: ["Group 1"], loose: 0, refusal: null };
+    expect({
+      grouped,
+      baseplateAlone,
+      cottageClick,
+      nested,
+      outermostClick,
+      ungrouped,
+      baseplateAgain,
+    }).toEqual({
+      grouped: { label: 'group "Group 1"', selected: twoCottages, ...group1 },
+      baseplateAlone: { selected: [BASEPLATE], groups: [], loose: 1, refusal: null },
+      cottageClick: { selected: twoCottages, ...group1 },
+      nested: {
+        label: 'group "Group 2"',
+        selected: all,
+        groups: ["Group 2"],
+        loose: 0,
+        refusal: null,
+      },
+      outermostClick: { selected: all, groups: ["Group 2"], loose: 0, refusal: null },
+      ungrouped: {
+        label: 'ungroup "Group 2"',
+        selected: all,
+        groups: ["Group 1"],
+        loose: 1,
+        refusal: null,
+      },
+      baseplateAgain: { selected: [BASEPLATE], groups: [], loose: 1, refusal: null },
+    });
+    expect({ moved, pasted, undone, firstGroupOnly, redone }).toEqual({
+      moved: [
+        `${BASEPLATE} 0,0 in none`,
+        `${cottage} 0,40 in 0`,
+        `${cottage} 200,40 in 0`,
+      ].toSorted(),
+      pasted: [
+        `${BASEPLATE} 0,0 in none`,
+        `${cottage} 0,-200 in none`,
+        `${cottage} 0,40 in 0`,
+        `${cottage} 200,-200 in none`,
+        `${cottage} 200,40 in 0`,
+      ].toSorted(),
+      undone: ["place", "move", 'ungroup "Group 2"', 'group "Group 2"', 'group "Group 1"'],
+      firstGroupOnly: {
+        poses: [
+          `${BASEPLATE} 0,0 in none`,
+          `${cottage} 0,0 in 0`,
+          `${cottage} 200,0 in 0`,
+        ].toSorted(),
+        groups: [{ id: 0, name: "Group 1" }],
+      },
+      redone: pasted,
+    });
+    expect({
+      poses: groupedPoses(reopened.editor),
+      groups: reopened.editor.dump().groups,
+      clicked: groupedSelection(reopened.editor),
+    }).toEqual({ poses: redone, groups, clicked: { selected: twoCottages, ...group1 } });
+  }, 240_000);
+
+  it("groups laid track with a user's own baseplate, refuses a click on any member while one is on a locked or hidden layer, naming the group, leaves the group out of a box selection, and deleting the group then undoing gives every member its group back", async () => {
+    const { editor, backend, container } = await startImportingEditor();
+    const layers = container.get(LAYER_SERVICE);
+    const created = layers.create("Scenery", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const scenery = created.value;
+    const baseplate = await importUserFile(
+      editor,
+      "my-baseplate.ldr",
+      userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]),
+    );
+    const onBaseplate: Ground = [0, 1280];
+    await placer(editor, backend)(baseplate, ...onBaseplate);
+    expect(layers.setActiveLayer(BASE_LAYER_ID)).toEqual([]);
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, 0], [24 * STUD, 0]);
+    const laid = laidGroups(editor);
+
+    selectAt(editor, backend, 0, 0);
+    const piece = selectedItems(editor);
+    toggleAt(editor, backend, onBaseplate);
+    editor.groupSelection(0);
+    const groupedTrack = laidGroups(editor);
+    selectAt(editor, backend, ...onBaseplate);
+    const together = groupedSelection(editor);
+    layers.setLocked(scenery, true);
+    selectAt(editor, backend, 0, 0);
+    const lockedClick = groupedSelection(editor);
+    boxSelect(editor, backend, [-800, -400], [800, 1800]);
+    const lockedBox = groupedSelection(editor);
+    layers.setLocked(scenery, false);
+    layers.setVisible(scenery, false);
+    selectAt(editor, backend, 0, 0);
+    const hiddenClick = groupedSelection(editor);
+    layers.setVisible(scenery, true);
+    selectAt(editor, backend, 0, 0);
+    editor.deleteSelection(0);
+    const deleted = { poses: groupedPoses(editor), track: laidGroups(editor) };
+    editor.undo(0);
+    const restored = { poses: groupedPoses(editor), track: laidGroups(editor) };
+    selectAt(editor, backend, 0, 0);
+
+    const otherPieces = laid.slice(1).map(() => piece[0] ?? "");
+    expect({
+      pieces: laid.length > 1,
+      laid: inFirstGroup(laid),
+      grouped: inFirstGroup(groupedTrack),
+      together,
+    }).toEqual({
+      pieces: true,
+      laid: { inGroup: 0, loose: laid.length },
+      grouped: { inGroup: 1, loose: laid.length - 1 },
+      together: {
+        selected: [baseplate, ...piece].toSorted(),
+        groups: ["Group 1"],
+        loose: 0,
+        refusal: null,
+      },
+    });
+    expect({ lockedClick, lockedBox, hiddenClick }).toEqual({
+      lockedClick: {
+        selected: [],
+        groups: [],
+        loose: 0,
+        refusal:
+          'That\'s in group "Group 1", which has parts on locked layer "Scenery", so it can\'t be selected.',
+      },
+      lockedBox: {
+        selected: otherPieces,
+        groups: [],
+        loose: otherPieces.length,
+        refusal:
+          "1 part on locked layers left out. 1 part in groups with parts on locked or hidden layers left out.",
+      },
+      hiddenClick: {
+        selected: [],
+        groups: [],
+        loose: 0,
+        refusal:
+          'That\'s in group "Group 1", which has parts on hidden layer "Scenery", so it can\'t be selected.',
+      },
+    });
+    expect({ deleted, restored, reselected: groupedSelection(editor) }).toEqual({
+      deleted: { poses: [], track: laid.slice(1) },
+      restored: { poses: [`${baseplate} 0,1280 in 0`], track: groupedTrack },
+      reselected: together,
+    });
+  }, 240_000);
+});
+
 it("lists a user's own file in the catalog by its name when a fresh editor reopens the world that places it", async () => {
   const repository = new MemoryRepository();
   const saving = await startImportingEditor(() => repository);
@@ -9704,6 +9951,7 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   plan: "edits plan regions only",
   note: "edits notes only",
   layer: "edits the layer table only",
+  group: "retags members where they stand, placing nothing",
   "open-plan":
     "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
   event: "edits the event details only",

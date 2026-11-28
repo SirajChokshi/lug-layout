@@ -51,6 +51,8 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
       members: [SELECTED],
       box: SELECTED.box,
       tally: { models: 1, pieces: 0, trains: 0 },
+      groups: [],
+      loose: 1,
       movable: true,
       pivotStuds: { x: 0, z: 0 },
     },
@@ -140,13 +142,13 @@ function panelOffers() {
     rotations: screen
       .getAllByRole("button", { name: /^(?:\d+°$|Turn)/u })
       .map((button) => !button.hasAttribute("disabled")),
-    actions: [/^Copy/u, /^Frame/u, /^Delete/u].map(
+    actions: [/^Copy/u, /^Frame/u, /^Delete/u, /^Group/u, /^Ungroup/u].map(
       (name) => !screen.getByRole("button", { name }).hasAttribute("disabled"),
     ),
   };
 }
 
-it("offers the selection panel's position and rotation only when the arrows could move the selection, not while a train runs, the world is read-only or a drag is in hand", () => {
+it("offers the selection panel's position, rotation and grouping only when the arrows could move the selection, not while a train runs, the world is read-only or a drag is in hand, and Group only for two or more parts or groups, Ungroup only for a group", () => {
   const { editor, play } = services();
   const selecting = { ...editableSnapshot(editor), mode: "select" as const };
   const panel = (snapshot: EditorSnapshot, status: PlaySnapshot["status"]) =>
@@ -180,12 +182,21 @@ it("offers the selection panel's position and rotation only when the arrows coul
       members: [SELECTED, SELECTED],
       box: SELECTED.box,
       tally: { models: 2, pieces: 0, trains: 0 },
+      groups: [],
+      loose: 2,
       movable: true,
       pivotStuds: { x: 0, z: 0 },
     },
   };
   rerender(panel(grouped, "idle"));
   const group = panelOffers();
+  rerender(
+    panel(
+      { ...grouped, selection: { ...grouped.selection, groups: ["Group 1"], loose: 0 } },
+      "idle",
+    ),
+  );
+  const oneGroup = panelOffers();
   rerender(
     panel(
       {
@@ -197,32 +208,41 @@ it("offers the selection panel's position and rotation only when the arrows coul
   );
   const groupDragging = panelOffers();
 
-  expect({ editable, running, readOnly, dragging, group, groupDragging }).toEqual({
+  expect({ editable, running, readOnly, dragging, group, oneGroup, groupDragging }).toEqual({
     editable: {
       fields: [true, true],
       rotations: [true, true, true, true],
-      actions: [true, true, true],
+      actions: [true, true, true, false, false],
     },
     running: {
       fields: [false, false],
       rotations: [false, false, false, false],
-      actions: [false, true, false],
+      actions: [false, true, false, false, false],
     },
     readOnly: {
       fields: [false, false],
       rotations: [false, false, false, false],
-      actions: [true, true, false],
+      actions: [true, true, false, false, false],
     },
     dragging: {
       fields: [false, false],
       rotations: [false, false, false, false],
-      actions: [true, true, false],
+      actions: [true, true, false, false, false],
     },
-    group: { fields: [true, true], rotations: [true, true], actions: [true, true, true] },
+    group: {
+      fields: [true, true],
+      rotations: [true, true],
+      actions: [true, true, true, true, false],
+    },
+    oneGroup: {
+      fields: [true, true],
+      rotations: [true, true],
+      actions: [true, true, true, false, true],
+    },
     groupDragging: {
       fields: [false, false],
       rotations: [false, false],
-      actions: [true, true, false],
+      actions: [true, true, false, false, false],
     },
   });
 });
