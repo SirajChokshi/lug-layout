@@ -1141,6 +1141,7 @@ function fallbackRegion(tables: number): PlanRegion {
       roomDepthMm: ROOM_MM,
       tables: Array.from({ length: tables }, (_, k) => ({
         id: `t${k}`,
+        number: k + 1,
         name: `Table ${k + 1}`,
         rect: { x: 200 * k, z: 0, width: 100, depth: 100 },
         heightMm: TABLE_HEIGHT_MM,

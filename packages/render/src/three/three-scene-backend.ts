@@ -1631,6 +1631,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
   }
 
+  private tableMaterial(srgb: number): MeshStandardNodeMaterial {
+    const material = new MeshStandardNodeMaterial({ roughness: 0.8 });
+    material.colorNode = this.ground.griddedTop(srgb);
+    return material;
+  }
+
   private planGroup(overlay: PlanOverlay): Anchored {
     const { room } = overlay;
     const x = room.minX;
@@ -1681,9 +1687,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
         ROOM_OUTLINE_COLOR,
       ),
     );
-    const tableMaterial = new MeshStandardNodeMaterial({ roughness: 0.8 });
-    tableMaterial.colorNode = this.ground.griddedTop(TABLE_COLOR);
-    for (const table of overlay.tables) group.add(boxMesh(table, x, z, tableMaterial));
+    const tableMaterials = new Map<number, MeshStandardNodeMaterial>();
+    for (const table of overlay.tables) {
+      const srgb = table.srgb ?? TABLE_COLOR;
+      const material = tableMaterials.get(srgb) ?? this.tableMaterial(srgb);
+      tableMaterials.set(srgb, material);
+      group.add(boxMesh(table, x, z, material));
+    }
     const obstacleMaterial = new MeshStandardNodeMaterial({
       color: OBSTACLE_COLOR,
       transparent: true,

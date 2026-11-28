@@ -9,6 +9,7 @@ import {
   WorldDocumentEntries,
   activePlanListed,
   plansOnPlanLayers,
+  typedTablesFit,
   worldDocument,
   type WorldDocumentIndex,
 } from "./document.ts";
@@ -125,6 +126,8 @@ const WorldManifestFieldsV2 = v.strictObject(
 
 const PLANS_OFF_PLAN_LAYERS = "must each lie on a plan layer the manifest lists";
 const ACTIVE_PLAN_UNLISTED = "must be the index of a listed plan";
+const TABLE_TYPE_MISFIT =
+  "must give each typed table a table type the manifest lists, with its width and depth in either orientation and its height";
 
 export const WorldManifestV2 = v.pipe(
   WorldManifestFieldsV2,
@@ -159,6 +162,9 @@ export const WorldManifestV2 = v.pipe(
   v.forward(v.partialCheck([["plans"], ["activePlan"]], activePlanListed, ACTIVE_PLAN_UNLISTED), [
     "activePlan",
   ]),
+  v.forward(v.partialCheck([["plans"], ["tableTypes"]], typedTablesFit, TABLE_TYPE_MISFIT), [
+    "plans",
+  ]),
 );
 export type WorldManifestV2 = v.InferOutput<typeof WorldManifestV2>;
 
@@ -174,6 +180,7 @@ export const WorldHeader = v.pipe(
     "contributors",
     "plans",
     "activePlan",
+    "tableTypes",
     "event",
   ]),
   v.forward(v.partialCheck([["layers"], ["plans"]], plansOnPlanLayers, PLANS_OFF_PLAN_LAYERS), [
@@ -181,6 +188,9 @@ export const WorldHeader = v.pipe(
   ]),
   v.forward(v.partialCheck([["plans"], ["activePlan"]], activePlanListed, ACTIVE_PLAN_UNLISTED), [
     "activePlan",
+  ]),
+  v.forward(v.partialCheck([["plans"], ["tableTypes"]], typedTablesFit, TABLE_TYPE_MISFIT), [
+    "plans",
   ]),
 );
 export type WorldHeader = v.InferOutput<typeof WorldHeader>;

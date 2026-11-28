@@ -12,6 +12,7 @@ import {
   FACT_UNMAPPED_REBRICKABLE,
   FLAG_UNMEASURED,
   LABEL_NUMBERED,
+  lowestFreeTableNumber,
   MODEL_SEGMENT,
   mmRectFromWorld,
   mmRectInWorld,
@@ -21,6 +22,7 @@ import {
   regionAround,
   regionOf,
   roomRect,
+  tableName,
   TRACK_SEGMENT,
   uncheckedPlan,
   type LduRect,
@@ -398,7 +400,13 @@ class TodaysPlanService {
     const id = this.newId("table");
     this.replacePlan(planId, (plan) => ({
       ...plan,
-      footprint: { ...plan.footprint, tables: [...plan.footprint.tables, { ...table, id }] },
+      footprint: {
+        ...plan.footprint,
+        tables: [
+          ...plan.footprint.tables,
+          { ...table, id, number: lowestFreeTableNumber(plan.footprint.tables) },
+        ],
+      },
     }));
     return id;
   }
@@ -429,9 +437,11 @@ class TodaysPlanService {
     this.replacePlan(planId, (plan) => {
       const grown = regionAround(plan, rect);
       const { tables } = grown.footprint;
+      const number = lowestFreeTableNumber(tables);
       const table = {
         id: tableId,
-        name: `Table ${tables.length + 1}`,
+        number,
+        name: tableName(number),
         rect: mmRectFromWorld(grown, rect),
         heightMm: tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
       };
@@ -587,6 +597,7 @@ class TodaysPlanService {
         maxX: top.surface.maxX,
         maxY: tableTopY,
         maxZ: top.surface.maxZ,
+        srgb: null,
       }));
       const obstacles = (check?.obstacles ?? []).map((rect) => ({
         ...rect,
@@ -1082,7 +1093,11 @@ export class Pair {
   }
 
   sutState(): PlanState {
-    return { regions: this.sut.plans(), activePlanId: this.sut.activePlanId() };
+    return {
+      regions: this.sut.plans(),
+      activePlanId: this.sut.activePlanId(),
+      tableTypes: this.sut.tableTypes(),
+    };
   }
 
   regionEdit(): void {

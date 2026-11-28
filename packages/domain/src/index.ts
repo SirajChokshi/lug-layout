@@ -194,7 +194,19 @@ export {
   type PlanState,
   type PlanTable,
   type StudRect,
+  type TableType,
 } from "./plan/plan-region.ts";
+export {
+  lowestFreeTableNumber,
+  placedTableCounts,
+  retypedRegion,
+  tableName,
+  tableTypeRect,
+  tableTypeSize,
+  turnedTable,
+  withTypeKept,
+  type TableTurn,
+} from "./plan/table-library.ts";
 export {
   BOX_MAX_X,
   BOX_MAX_Y,

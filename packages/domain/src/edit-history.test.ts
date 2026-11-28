@@ -198,8 +198,8 @@ describe("EditHistory", () => {
   it("keeps placements, track and a plan change committed together as one step, all undone and redone together", () => {
     const world = new World();
     const history = new EditHistory(world);
-    const empty = { regions: [], activePlanId: null };
-    const opened = { regions: [], activePlanId: "plan-1" };
+    const empty = { regions: [], activePlanId: null, tableTypes: [] };
+    const opened = { regions: [], activePlanId: "plan-1", tableTypes: [] };
     const change = { before: empty, after: opened };
     const run = { lift: [], lay: [straightAt(0, 0n)] };
 

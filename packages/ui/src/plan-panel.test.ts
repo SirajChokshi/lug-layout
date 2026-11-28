@@ -20,7 +20,7 @@ function field(label: string): HTMLInputElement {
   return input;
 }
 
-it("commits a typed table size on Enter or blur, keeps the typed text while the size changes underneath, and Escape puts it back", () => {
+function clientContainer(): Container {
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -29,10 +29,23 @@ it("commits a typed table size on Enter or blur, keeps the typed text while the 
       startSimWorker: () => new MessageChannel().port1,
     }),
   );
-  const plans = container.get(PLAN_SERVICE);
-  const { planId, tableId } = plans.drawTable({ minX: 0, minZ: 0, maxX: 1280, maxZ: 640 });
-  let edits = 0;
-  plans.onEdit(() => edits++);
+  return container;
+}
+
+function namedField(name: string): HTMLInputElement {
+  const input = document.querySelector(`input[name="${name}"]`);
+  if (!(input instanceof HTMLInputElement)) throw new Error(`no field ${name}`);
+  return input;
+}
+
+function addTableType(values: Readonly<Record<string, string>>): void {
+  for (const [key, value] of Object.entries(values)) {
+    fireEvent.change(namedField(`new-table-type-${key}`), { target: { value } });
+  }
+  fireEvent.submit(screen.getByRole("form", { name: "New table type" }));
+}
+
+function renderPanel(container: Container): void {
   render(
     createElement(PlanPanel, {
       camera: container.get(EDITOR_CAMERA),
@@ -40,13 +53,23 @@ it("commits a typed table size on Enter or blur, keeps the typed text while the 
       drawing: false,
       held: null,
       fillGridStuds: 8,
-      plans,
+      plans: container.get(PLAN_SERVICE),
       sheets: container.get(PLAN_SHEET_SERVICE),
       sheetSets: container.get(SHEET_SETS),
       ready: true,
       readOnly: false,
+      armedType: null,
     }),
   );
+}
+
+it("commits a typed table size on Enter or blur, keeps the typed text while the size changes underneath, and Escape puts it back", () => {
+  const container = clientContainer();
+  const plans = container.get(PLAN_SERVICE);
+  const { planId, tableId } = plans.drawTable({ minX: 0, minZ: 0, maxX: 1280, maxZ: 640 });
+  let edits = 0;
+  plans.onEdit(() => edits++);
+  renderPanel(container);
   const table = () => plans.plans()[0]?.footprint.tables[0];
   const seen = () => ({
     edits,
@@ -80,4 +103,26 @@ it("commits a typed table size on Enter or blur, keeps the typed text while the 
     { edits: 2, widthMm: 640, depthMm: 256, heightMm: 750, fields: ["80", "64", "25.6", "75"] },
     { edits: 3, widthMm: 640, depthMm: 256, heightMm: 900, fields: ["80", "64", "25.6", "90"] },
   ]);
+});
+
+it("names the field a new table type is refused for, and keeps a library table's size and height to its type while it still moves", () => {
+  const container = clientContainer();
+  const plans = container.get(PLAN_SERVICE);
+  renderPanel(container);
+
+  addTableType({ name: "Club 6ft", widthMm: "1830", depthMm: "760.5" });
+  const refused = { alert: screen.getByRole("alert").textContent, types: plans.tableTypes() };
+  addTableType({ depthMm: "760" });
+  const typeId = plans.tableTypes()[0]?.id ?? -1;
+  act(() => {
+    plans.drawTable({ minX: 0, minZ: 0, maxX: 4575, maxZ: 1900 }, typeId);
+  });
+
+  expect(refused).toEqual({ alert: "Depth mm must be an integer", types: [] });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(
+    ["Width in studs", "Depth in cm", "Height in cm", "From left wall in studs"].map(
+      (label) => field(label).closest("fieldset[disabled]") !== null,
+    ),
+  ).toEqual([true, true, true, false]);
 });

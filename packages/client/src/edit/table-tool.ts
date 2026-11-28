@@ -1,5 +1,11 @@
-import type { LduRect } from "@brr/domain";
-import { STUD_LDU } from "@brr/math";
+import {
+  tableTypeRect,
+  tableTypeSize,
+  type LduRect,
+  type TableTop,
+  type TableTurn,
+} from "@brr/domain";
+import { lduFromMm, STUD_LDU } from "@brr/math";
 import { GUIDE_GRID_STUDS, type GuideSegment } from "@brr/render";
 import type { IPlanService, PlanView } from "../plan/plan-service.ts";
 import { rulerGuides, type Ruler } from "./measure-tool.ts";
@@ -8,6 +14,12 @@ import { lengthText, type LabelView } from "./size-labels.ts";
 export const GUIDE_GRID_LDU = GUIDE_GRID_STUDS * STUD_LDU;
 const DIMENSION_OFFSET_LDU = 3 * STUD_LDU;
 const DRAFT_TABLE_ID = "draft-table";
+const STAMP_TABLE_ID = "stamp-table";
+
+export interface ArmedTable {
+  readonly typeId: number;
+  readonly turn: TableTurn;
+}
 
 interface TableEdges {
   readonly minX: boolean;
@@ -21,6 +33,7 @@ interface TableHandle {
   readonly tableId: string;
   readonly rect: LduRect;
   readonly edges: TableEdges;
+  readonly typed: boolean;
 }
 
 interface TableDrag {
@@ -42,6 +55,10 @@ function isMove(edges: TableEdges): boolean {
 
 function sameRect(a: LduRect, b: LduRect): boolean {
   return a.minX === b.minX && a.maxX === b.maxX && a.minZ === b.minZ && a.maxZ === b.maxZ;
+}
+
+function sameStamp(a: LduRect | null, b: LduRect | null): boolean {
+  return a === null || b === null ? a === b : sameRect(a, b);
 }
 
 function sameHandle(a: TableHandle | null, b: TableHandle | null): boolean {
@@ -159,11 +176,27 @@ function dimensionLabels(id: string, rect: LduRect, y: number, out: LabelView[])
   );
 }
 
+function numberLabel(top: TableTop, rect: LduRect, y: number): LabelView {
+  return {
+    id: `${top.id}-number`,
+    kind: "table",
+    text: String(top.number),
+    x: (rect.minX + rect.maxX) / 2,
+    y,
+    z: (rect.minZ + rect.maxZ) / 2,
+  };
+}
+
 export class TableTool {
   private hover: TableHandle | null = null;
   private drag: TableDrag | null = null;
   private planId: string | null = null;
   private view: PlanView | null = null;
+  private armed: ArmedTable | null = null;
+  private stamp: LduRect | null = null;
+  private stamping = false;
+  private cursorX = 0;
+  private cursorZ = 0;
 
   constructor(
     private readonly plans: IPlanService,
@@ -171,17 +204,46 @@ export class TableTool {
   ) {}
 
   get dragging(): boolean {
-    return this.drag !== null;
+    return this.drag !== null || this.stamping;
   }
 
   get hoveredTable(): string | null {
     return this.hover?.tableId ?? null;
   }
 
+  get armedTable(): ArmedTable | null {
+    return this.armed;
+  }
+
+  arm(typeId: number | null): void {
+    this.cancel();
+    this.armed = typeId === null ? null : { typeId, turn: 0 };
+    this.stamp = null;
+  }
+
+  turn(): boolean {
+    const armed = this.armed;
+    if (armed) {
+      this.armed = { ...armed, turn: armed.turn === 0 ? 1 : 0 };
+      if (this.stamp) this.stamp = this.stampAt(this.cursorX, this.cursorZ);
+      return true;
+    }
+    const hover = this.hover;
+    if (!hover || this.drag) return false;
+    this.hover = null;
+    this.plans.turnTable(hover.planId, hover.tableId);
+    return true;
+  }
+
   planChanged(): boolean {
+    const shown = this.stamp;
+    const armed = this.armed;
+    if (armed && !this.plans.tableTypes().some((type) => type.id === armed.typeId)) this.arm(null);
+    this.stamp = shown && this.stampAt(this.cursorX, this.cursorZ);
+    const restamped = armed !== this.armed || !sameStamp(shown, this.stamp);
     const planId = this.plans.activePlanId();
     const view = planId === null ? null : this.plans.regionView(planId);
-    if (planId === this.planId && view === this.view) return false;
+    if (planId === this.planId && view === this.view) return restamped;
     this.planId = planId;
     this.view = view;
     this.cancel();
@@ -189,6 +251,14 @@ export class TableTool {
   }
 
   hoverAt(x: number, z: number, tolerance: number): boolean {
+    this.cursorX = x;
+    this.cursorZ = z;
+    if (this.armed) {
+      const stamp = this.stampAt(x, z);
+      if (sameStamp(stamp, this.stamp)) return false;
+      this.stamp = stamp;
+      return true;
+    }
     if (this.drag) return false;
     const hover = this.handleAt(x, z, tolerance);
     if (sameHandle(hover, this.hover)) return false;
@@ -197,16 +267,27 @@ export class TableTool {
   }
 
   unhover(): boolean {
+    if (this.armed) {
+      if (this.stamp === null || this.stamping) return false;
+      this.stamp = null;
+      return true;
+    }
     if (this.drag || this.hover === null) return false;
     this.hover = null;
     return true;
   }
 
   begin(x: number, z: number, tolerance: number): void {
+    if (this.armed) {
+      this.stamping = true;
+      this.hoverAt(x, z, tolerance);
+      return;
+    }
     this.drag = { handle: this.handleAt(x, z, tolerance), startX: x, startZ: z, rect: null };
   }
 
   move(x: number, z: number): boolean {
+    if (this.armed) return this.hoverAt(x, z, 0);
     const drag = this.drag;
     if (!drag) return false;
     const rect = drag.handle
@@ -218,6 +299,13 @@ export class TableTool {
   }
 
   end(): void {
+    const armed = this.armed;
+    if (armed && this.stamping) {
+      this.stamping = false;
+      const stamp = this.stamp;
+      if (stamp) this.plans.drawTable(stamp, armed.typeId);
+      return;
+    }
     const drag = this.drag;
     this.drag = null;
     const rect = drag?.rect;
@@ -232,6 +320,7 @@ export class TableTool {
   cancel(): void {
     this.drag = null;
     this.hover = null;
+    this.stamping = false;
   }
 
   removeHovered(): void {
@@ -247,7 +336,7 @@ export class TableTool {
       rulerGuides(widthRuler(rect), this.y, "ruler", out);
       rulerGuides(depthRuler(rect), this.y, "ruler", out);
     }
-    const draft = this.drag?.rect ?? null;
+    const draft = this.drag?.rect ?? this.stamp;
     if (draft) outline(draft, this.y, out);
     else if (this.hover) edgeGuides(this.hover, this.y, out);
     return out;
@@ -255,8 +344,23 @@ export class TableTool {
 
   labels(): ReadonlyArray<LabelView> {
     const out: LabelView[] = [];
+    const drag = this.drag;
+    for (const top of this.tops()) {
+      const dragged = drag?.rect && drag.handle?.tableId === top.id ? drag.rect : top.surface;
+      out.push(numberLabel(top, dragged, this.y));
+    }
     for (const { id, rect } of this.shown()) dimensionLabels(id, rect, this.y, out);
     return out;
+  }
+
+  private stampAt(x: number, z: number): LduRect | null {
+    const armed = this.armed;
+    const type = this.plans.tableTypes().find((t) => t.id === armed?.typeId);
+    if (!armed || !type) return null;
+    const size = tableTypeSize(type, armed.turn);
+    const cornerX = snapToGuideGrid(x - lduFromMm(size.widthMm) / 2);
+    const cornerZ = snapToGuideGrid(z - lduFromMm(size.depthMm) / 2);
+    return tableTypeRect(type, armed.turn, cornerX, cornerZ);
   }
 
   private shown(): ReadonlyArray<{ readonly id: string; readonly rect: LduRect }> {
@@ -267,15 +371,25 @@ export class TableTool {
       rect: drag?.rect && tableId === draggedId ? drag.rect : rect,
     }));
     if (drag?.rect && draggedId === null) shown.push({ id: DRAFT_TABLE_ID, rect: drag.rect });
+    if (this.stamp) shown.push({ id: STAMP_TABLE_ID, rect: this.stamp });
     return shown;
+  }
+
+  private tops(): ReadonlyArray<TableTop> {
+    const planId = this.plans.activePlanId();
+    return planId === null ? [] : this.plans.regionView(planId).tables;
   }
 
   private tables(): ReadonlyArray<TableHandle> {
     const planId = this.plans.activePlanId();
     if (planId === null) return [];
-    return this.plans
-      .regionView(planId)
-      .tables.map((top) => ({ planId, tableId: top.id, rect: top.surface, edges: MOVE }));
+    return this.tops().map((top) => ({
+      planId,
+      tableId: top.id,
+      rect: top.surface,
+      edges: MOVE,
+      typed: top.typeId !== undefined,
+    }));
   }
 
   private handleAt(x: number, z: number, tolerance: number): TableHandle | null {
@@ -284,6 +398,7 @@ export class TableTool {
       const inX = x > rect.minX - tolerance && x < rect.maxX + tolerance;
       const inZ = z > rect.minZ - tolerance && z < rect.maxZ + tolerance;
       if (!inX || !inZ) continue;
+      if (table.typed) return table;
       const [minX, maxX] = nearEdges(x, rect.minX, rect.maxX, tolerance);
       const [minZ, maxZ] = nearEdges(z, rect.minZ, rect.maxZ, tolerance);
       const onEdge = minX || maxX || minZ || maxZ;

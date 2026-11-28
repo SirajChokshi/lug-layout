@@ -4,7 +4,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./base.css": "./src/base.css",
+    "./icons.css": "./src/icons/icons.css"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

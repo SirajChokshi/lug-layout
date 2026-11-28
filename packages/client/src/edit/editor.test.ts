@@ -1505,6 +1505,90 @@ it("imports an LDraw file's top-level submodels as separate placements held as l
   ]);
 }, 240_000);
 
+function drawTable(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): void {
+  editor.setTableTool(true);
+  backend.aim(...from);
+  editor.dragStart(0, 0);
+  backend.aim(...to);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+  editor.setTableTool(false);
+}
+
+async function checkedPlan(plans: IPlanService) {
+  const active = plans.activePlanId() ?? "";
+  await vi.waitFor(() => expect(plans.unmeasuredCount(active)).toBe(0), { timeout: 60_000 });
+  return {
+    plans: planWithoutIds(plans),
+    active: plans.plans().find((plan) => plan.id === active)?.name,
+    inside: plans.insideCount(active),
+    issues: plans
+      .issues(active)
+      .map(({ rule, severity, message }) => ({ rule, severity, message })),
+  };
+}
+
+it("reopens a world with the tables drawn in it, its plans' limits, the active plan and a user's own model checked inside its plan, without an undo step", async () => {
+  const repository = new MemoryRepository();
+  const saving = await startImportingEditor(() => repository);
+  const cottage = await importUserFile(
+    saving.editor,
+    "my-cottage.mpd",
+    userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+  );
+  const place = placer(saving.editor, saving.backend);
+  await place(BASEPLATE, 0, 0);
+  await place(cottage, 0, 0);
+  saving.editor.chooseItem(null);
+  drawTable(saving.editor, saving.backend, [-640, -640], [640, 640]);
+  const savingPlans = saving.container.get(PLAN_SERVICE);
+  const show = savingPlans.activePlanId() ?? "";
+  savingPlans.updatePlan(show, { name: "Show floor", maxReachMm: 900 });
+  const [table] = savingPlans.plans()[0]?.footprint.tables ?? [];
+  savingPlans.removeTable(show, table?.id ?? "");
+  saving.editor.undo(0);
+  savingPlans.createPlan({
+    name: "Yard",
+    roomWidthMm: 2000,
+    roomDepthMm: 1000,
+    originChunkX: 8,
+    originChunkZ: 8,
+  });
+  savingPlans.activatePlan(show);
+  const saved = await checkedPlan(savingPlans);
+  await vi.waitFor(() =>
+    expect(saving.editor.snapshot()).toMatchObject({
+      unsavedEdits: false,
+      world: { save: "saved" },
+    }),
+  );
+
+  const reopened = await startImportingEditor(() => repository);
+  const plans = reopened.container.get(PLAN_SERVICE);
+  const opened = await checkedPlan(plans);
+  const undo = reopened.editor.snapshot().history.undo;
+  const active = plans.activePlanId() ?? "";
+  const extra = plans.addTable(active, {
+    name: "Extra",
+    rect: { x: 0, z: 2000, width: 600, depth: 600 },
+    heightMm: 750,
+  });
+  plans.removeTable(active, extra);
+
+  expect(saved).toMatchObject({ active: "Show floor", inside: 2 });
+  expect(saved.plans.map((plan) => [plan.name, plan.maxReachMm, plan.tables.length])).toEqual([
+    ["Show floor", 900, 1],
+    ["Yard", 700, 0],
+  ]);
+  expect({ opened, undo }).toEqual({ opened: saved, undo: null });
+  expect(planWithoutIds(plans)).toEqual(saved.plans);
+}, 240_000);
+
 it("saves a plan's tables, placements, laid track and every user file it places, whatever its own parts' licences, and a fresh editor reopens them exactly as one undo step", async () => {
   const saving = await startImportingEditor();
   const cottageFile = userFileWithOwnPart("my-cottage.mpd", CC_BY_4);
@@ -3126,7 +3210,7 @@ class HeldElsewhereLocks implements IWorldLocks {
   }
 }
 
-it("offers none of the world's editing commands in a world another tab holds, but draws a table and undoes it, as plans aren't in the world", async () => {
+it("offers none of the world's editing commands in a world another tab holds, and shows its saved tables without drawing more", async () => {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
@@ -3148,17 +3232,29 @@ it("offers none of the world's editing commands in a world another tab holds, bu
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
   const selectBaseplate = () => {
     editor.chooseItem(null);
+    backend.aim(0, 0);
     editor.click(0, 0, 0);
     return editor.snapshot();
   };
 
+  const plans = container.get(PLAN_SERVICE);
+  const tablesAndTools = () => ({
+    tables: plans.plans().flatMap((plan) => plan.footprint.tables).length,
+    mode: editor.snapshot().mode,
+    drawTables: commandEnabled("draw-tables", editor.snapshot()),
+    undo: commandEnabled("undo", editor.snapshot()),
+  });
   await chosen(editor, BASEPLATE);
   editor.click(0, 0, 0);
   expect(editsOffered(selectBaseplate())).toEqual({ selected: true, offered: READ_ONLY_REFUSED });
-  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
+  drawTable(editor, backend, [-640, -640], [640, 640]);
+  await vi.waitFor(() =>
+    expect(editor.snapshot()).toMatchObject({ unsavedEdits: false, world: { save: "saved" } }),
+  );
   const first = editor.snapshot().world?.id;
   if (!first) throw new Error("no current world");
   expect(await editor.newWorld("Second")).toBe(true);
+  const inSecond = tablesAndTools();
 
   locks.held.add(first);
   expect(await editor.openWorld(first)).toBe(true);
@@ -3170,22 +3266,11 @@ it("offers none of the world's editing commands in a world another tab holds, bu
   editor.turnSelectedModelTo(2, 0);
   expect({ poses: posesOf(editor), turns: turnsOf(editor) }).toEqual(held);
 
-  const plans = container.get(PLAN_SERVICE);
-  const tablesAndUndo = () => ({
-    tables: plans.plans().flatMap((plan) => plan.footprint.tables).length,
-    undo: commandEnabled("undo", editor.snapshot()),
-  });
-  editor.setTableTool(true);
-  backend.aim(0, 0);
-  editor.dragStart(0, 0);
-  backend.aim(640, 640);
-  editor.dragMove(0, 0);
-  editor.dragEnd(0, 0, 0);
-  const drawn = tablesAndUndo();
+  drawTable(editor, backend, [640, 640], [1280, 1280]);
   editor.undo(0);
-  expect({ drawn, undone: tablesAndUndo() }).toEqual({
-    drawn: { tables: 1, undo: true },
-    undone: { tables: 0, undo: false },
+  expect({ inSecond, readOnly: tablesAndTools() }).toEqual({
+    inSecond: { tables: 0, mode: "select", drawTables: true, undo: false },
+    readOnly: { tables: 1, mode: "select", drawTables: false, undo: false },
   });
 }, 120_000);
 
@@ -5119,7 +5204,7 @@ it("draws and resizes a table on the 8-stud grid, checks a user's model against 
       placements: 1,
       tables: [table],
       issues: [],
-      labels: ["table: 48 studs · 38.4 cm", "table: 40 studs · 32 cm"],
+      labels: ["table: 1", "table: 48 studs · 38.4 cm", "table: 40 studs · 32 cm"],
     },
     resized: { placements: 1, tables: [narrowed], issues: ["fit"] },
     deletableOffCanvas: false,
@@ -5138,6 +5223,129 @@ it("draws and resizes a table on the 8-stud grid, checks a user's model against 
   expect(start).toEqual({ placements: 0, tables: [], issues: [], plans: 0 });
   expect({ ...state(), redo: editor.snapshot().history.redo }).toEqual({ ...removed, redo: null });
 }, 120_000);
+
+it("places library tables a quarter turn at a time with their corner on the 8-stud grid, numbered and counted against those owned, checks a user's model across their seam, and resizes and removes them with their type, each one undo step", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const stamp = (x: number, z: number): void => {
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  const tables = () =>
+    plans
+      .regionView(plans.activePlanId() ?? "")
+      .tables.map(({ number, typeId, surface }) => ({ number, typeId, ...surface }));
+  const issues = async () => {
+    const planId = plans.activePlanId() ?? "";
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    return plans
+      .issues(planId)
+      .map((issue) => issue.rule)
+      .filter((rule) => rule !== "bomMapping");
+  };
+  const added = plans.addTableType({
+    name: "Club board",
+    widthMm: 1280,
+    depthMm: 640,
+    heightMm: 750,
+    color: "#c8a165",
+    owned: 2,
+  });
+  if (!added.ok) throw new Error(`the table type wasn't added: ${JSON.stringify(added.issues)}`);
+  const typeId = added.value;
+
+  editor.armTableType(typeId);
+  stamp(1610, 790);
+  stamp(4800, 800);
+  editor.rotate(0);
+  stamp(800, 3200);
+  const armed = editor.snapshot();
+  const placed = {
+    tables: tables(),
+    armed: armed.armedTable,
+    mode: armed.mode,
+    title: toolHints(armed).title,
+    turns: commandEnabled("rotate", armed),
+    numbers: armed.labels
+      .filter((label) => /^\d+$/u.test(label.text))
+      .map((label) => [label.text, label.x, label.z]),
+  };
+  editor.cancelGesture();
+  const putDown = { armed: editor.snapshot().armedTable, mode: editor.snapshot().mode };
+  await place(brick, 3200, 800);
+  const acrossTheSeam = await issues();
+  editor.setTableTool(true);
+  backend.aim(5600, 800);
+  editor.pointerMove(0, 0);
+  editor.deleteSelection(0);
+  const withoutTable2 = { tables: tables(), issues: await issues() };
+  editor.armTableType(typeId);
+  stamp(4800, 800);
+  const replaced = { tables: tables(), issues: await issues() };
+  plans.updateTableType(typeId, { widthMm: 1600 });
+  const resized = {
+    tables: tables(),
+    footprint: plans
+      .issues(plans.activePlanId() ?? "")
+      .filter((issue) => issue.rule === "footprint")
+      .map((issue) => issue.message),
+  };
+  editor.undo(0);
+  const unresized = tables();
+  plans.removeTableType(typeId);
+  const untyped = tables();
+  editor.undo(0);
+
+  const board = (number: number, minX: number, minZ: number, maxX: number, maxZ: number) => ({
+    number,
+    typeId,
+    minX,
+    minZ,
+    maxX,
+    maxZ,
+  });
+  const first = board(1, 0, 0, 3200, 1600);
+  const second = board(2, 3200, 0, 6400, 1600);
+  const turned = board(3, 0, 1600, 1600, 4800);
+  const relaid = [first, turned, second];
+  expect(placed).toEqual({
+    tables: [first, second, turned],
+    armed: { typeId, turn: 1, name: "Club board", widthMm: 640, depthMm: 1280 },
+    mode: "table",
+    title: "Placing Club board",
+    turns: true,
+    numbers: [
+      ["1", 1600, 800],
+      ["2", 4800, 800],
+      ["3", 800, 3200],
+    ],
+  });
+  expect(putDown).toEqual({ armed: null, mode: "table" });
+  expect(acrossTheSeam).toEqual(["seam"]);
+  expect(withoutTable2).toEqual({ tables: [first, turned], issues: ["fit"] });
+  expect(replaced).toEqual({ tables: relaid, issues: ["seam"] });
+  expect(resized).toEqual({
+    tables: [
+      board(1, 0, 0, 4000, 1600),
+      board(3, 0, 1600, 1600, 5600),
+      board(2, 3200, 0, 7200, 1600),
+    ],
+    footprint: ['Tables "Table 1" and "Table 2" overlap.'],
+  });
+  expect(unresized).toEqual(relaid);
+  expect(untyped).toEqual(relaid.map(({ typeId: _typeId, ...table }) => table));
+  expect(tables()).toEqual(relaid);
+}, 240_000);
 
 it("checks a user's model in a two-table plan on plan sync: across the seam, out of reach, loose on a roadway and without catalog ids, and counts only the plan's rows in its parts list", async () => {
   const userModel = "brick-2x4";
@@ -9382,8 +9590,8 @@ it("keeps a plan's overlap and support after every edit exactly as reopening the
   const plans = container.get(PLAN_SERVICE);
   const brick = `omr:${userModel}`;
   await loadCatalogItem(catalog, brick);
-  const { planId } = plans.drawTable({ minX: 0, minZ: 0, maxX: 1920, maxZ: 1280 });
   expect(await editor.newWorld("Built")).toBe(true);
+  plans.drawTable({ minX: 0, minZ: 0, maxX: 1920, maxZ: 1280 });
   const built = editor.snapshot().world?.id ?? "";
   const place = placer(editor, backend);
   await place(BASEPLATE, 640, 640);
@@ -9404,6 +9612,7 @@ it("keeps a plan's overlap and support after every edit exactly as reopening the
   });
   let stored = 12;
   const issues = async () => {
+    const planId = plans.activePlanId() ?? "";
     await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
     return plans
       .issues(planId)

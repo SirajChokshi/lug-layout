@@ -151,7 +151,13 @@ const REGION: PlanRegion = {
     roomWidthMm: 3000,
     roomDepthMm: 1200,
     tables: [
-      { id: "t1", name: "Front", rect: { x: 200, z: 200, width: 1234, depth: 600 }, heightMm: 800 },
+      {
+        id: "t1",
+        name: "Front",
+        number: 1,
+        rect: { x: 200, z: 200, width: 1234, depth: 600 },
+        heightMm: 800,
+      },
     ],
     obstacles: [],
   },
@@ -167,6 +173,7 @@ const SHEET: PlanSheet = {
   tables: REGION.footprint.tables.map((table) => ({
     id: table.id,
     name: table.name,
+    number: table.number,
     heightMm: table.heightMm,
     surface: mmRectInWorld(REGION, table.rect),
     studs: studsInside(REGION, table.rect),

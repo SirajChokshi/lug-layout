@@ -25,7 +25,7 @@ import {
   SHEET_SETS,
   type IViewerScene,
 } from "@brr/client";
-import { AboutPage, CreditsPage, EditorApp } from "@brr/ui";
+import { AboutPage, CreditsPage, EditorApp, IconSheetPage } from "@brr/ui";
 import { Container } from "inversify";
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -139,6 +139,8 @@ function root(): ReactNode {
       return <CreditsPage credits={container.get(CREDITS)} disclaimer={TRADEMARK_DISCLAIMER} />;
     case "about":
       return <AboutPage credits={container.get(CREDITS)} disclaimer={TRADEMARK_DISCLAIMER} />;
+    case "icons":
+      return <IconSheetPage disclaimer={TRADEMARK_DISCLAIMER} />;
     case "app":
       break;
     default: {

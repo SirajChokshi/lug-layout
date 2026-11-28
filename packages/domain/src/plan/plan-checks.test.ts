@@ -7,7 +7,7 @@ import { checkPlan, type PlanIssue, type PlanPlacement } from "./plan-rules.ts";
 const BRICK_FOOTING = [-40, -20, 40, 20];
 
 function table(name: string, x: number, z: number, width: number, depth: number): PlanTable {
-  return { id: name, name, rect: { x, z, width, depth }, heightMm: 750 };
+  return { id: name, number: 1, name, rect: { x, z, width, depth }, heightMm: 750 };
 }
 
 function region(

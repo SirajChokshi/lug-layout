@@ -30,6 +30,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BomPanel } from "./bom-panel.tsx";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
+import { Icon } from "./icons/icon.tsx";
 import { EditorFooter, EditorHud, PlacementToolbar, SelectionPanel } from "./editor-panels.tsx";
 import { EventPanel } from "./event-panel.tsx";
 import { LibraryColumn } from "./library-column.tsx";
@@ -231,8 +232,10 @@ export function EditorApp({
       data-road-mismatch={snapshot.roads.mismatchedCells}
       data-world={snapshot.world?.id ?? ""}
       data-save={snapshot.world?.save ?? ""}
+      data-unsaved={snapshot.unsavedEdits ? "1" : "0"}
       data-road-pieces={snapshot.roads.placements}
       data-mode={snapshot.mode}
+      data-latency-samples={snapshot.latencies.length}
     >
       <EditorCanvas
         editor={editor}
@@ -244,20 +247,31 @@ export function EditorApp({
       <SceneLabels editor={editor} snapshot={snapshot} />
       <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
       <PlacementChip snapshot={snapshot} />
-      <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
+      <div className="chrome">
+        <header className="menubar">
+          <h1 className="brand">
+            <Icon name="track" size={20} />
+            Brick Railroad
+          </h1>
+          <span className="menubar-title">{snapshot.world?.name}</span>
+        </header>
+        <div className="toolstrip">
+          <PlacementToolbar
+            editor={editor}
+            snapshot={snapshot}
+            play={playSnapshot}
+            onEditorAction={runAction}
+            onShellCommand={toggleOverlay}
+          />
+          <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
+        </div>
+      </div>
       <LibraryColumn panels={panels}>
         <PalettePanel editor={editor} snapshot={snapshot} palette={palette} />
       </LibraryColumn>
       <PlanScaleBar scaleBar={scaleBar} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} starters={starters} />
-        <PlacementToolbar
-          editor={editor}
-          snapshot={snapshot}
-          play={playSnapshot}
-          onEditorAction={runAction}
-          onShellCommand={toggleOverlay}
-        />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <TrackHeightPanel editor={editor} snapshot={snapshot} />
         <TrackExtendPanel editor={editor} snapshot={snapshot} />
@@ -293,6 +307,7 @@ export function EditorApp({
           sheetSets={sheetSets}
           ready={snapshot.status === "ready"}
           readOnly={snapshot.readOnly}
+          armedType={snapshot.armedTable?.typeId ?? null}
         />
         {snapshot.status === "ready" && (
           <BomPanel
@@ -310,7 +325,7 @@ export function EditorApp({
       {showState && <PlanState plans={plans} />}
       {showState && <NoteState annotations={annotations} />}
       {showState && <CameraState camera={camera} />}
-      <EditorFooter disclaimer={disclaimer} />
+      <EditorFooter editor={editor} disclaimer={disclaimer} />
       {welcome.open && <WelcomeCard starters={starters} view={welcome} />}
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
       {overlay === "open-palette" && (

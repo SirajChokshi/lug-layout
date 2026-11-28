@@ -24,6 +24,7 @@ import {
   type ConsistPose,
   type ConsistRef,
   NO_TRACK_CHANGE,
+  tableTypeSize,
   type TrackPieceAt,
   type TrackPieceRef,
   type EditKind,
@@ -32,6 +33,7 @@ import {
   type HistoryStep,
   type NoteChange,
   type PlanChange,
+  type PlanState,
   type PlacementHandle,
   type PlacementContents,
   type PlacementPose,
@@ -274,7 +276,7 @@ import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
 import { MeasureTool } from "./measure-tool.ts";
-import { TableTool } from "./table-tool.ts";
+import { TableTool, type ArmedTable } from "./table-tool.ts";
 import {
   FillTool,
   DEFAULT_FILL_GRID_STUDS,
@@ -528,11 +530,18 @@ export interface EditorSnapshot
   readonly rulers: number;
   readonly rulerDraft: boolean;
   readonly hoveredTable: string | null;
+  readonly armedTable: ArmedTableView | null;
   readonly fillGridStuds: number;
   readonly fillDraft: FillView | null;
   readonly lastFill: FillResult | null;
   readonly labels: ReadonlyArray<LabelView>;
   readonly ghostSettled: boolean;
+}
+
+export interface ArmedTableView extends ArmedTable {
+  readonly name: string;
+  readonly widthMm: number;
+  readonly depthMm: number;
 }
 
 export interface EditorCredits {
@@ -659,6 +668,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   setRoadErase(erase: boolean): void;
   setMeasuring(on: boolean): void;
   setTableTool(on: boolean): void;
+  armTableType(typeId: number | null): void;
   cycleFillGrid(): void;
   fillTables(eventTimeMs: number): void;
   clearRulers(): void;
@@ -1349,6 +1359,7 @@ export class Editor implements IEditor, IEditedWorld {
     rulers: 0,
     rulerDraft: false,
     hoveredTable: null,
+    armedTable: null,
     fillGridStuds: DEFAULT_FILL_GRID_STUDS,
     fillDraft: null,
     lastFill: null,
@@ -1538,6 +1549,7 @@ export class Editor implements IEditor, IEditedWorld {
   private measure: MeasureTool | null = null;
   private tables: TableTool | null = null;
   private fillTool: FillTool | null = null;
+  private reportedPlans: PlanState;
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -1577,6 +1589,11 @@ export class Editor implements IEditor, IEditedWorld {
       RESTS_ON_TABLE_Y_PLATES,
     );
     this.state = { ...this.state, ...session.view(), ...frames.view(), ...ground.view() };
+    this.reportedPlans = {
+      regions: plans.plans(),
+      activePlanId: plans.activePlanId(),
+      tableTypes: plans.tableTypes(),
+    };
     session.subscribe(() => this.sessionChanged());
     frames.subscribe(() => this.update(this.frames.view()));
     ground.subscribe(() => this.update(this.ground.view()));
@@ -1598,12 +1615,11 @@ export class Editor implements IEditor, IEditedWorld {
 
   private sessionChanged(): void {
     this.update(this.session.view());
-    if (
-      this.state.readOnly &&
-      (this.active || this.tracks.holding() || this.gesture || this.state.mode === "road")
-    ) {
+    if (!this.state.readOnly) return;
+    if (this.active || this.tracks.holding() || this.gesture || this.state.mode === "road") {
       this.chooseItem(null);
     }
+    if (this.state.mode === "table") this.setTableTool(false);
   }
 
   subscribe(listener: () => void): () => void {
@@ -4103,17 +4119,35 @@ export class Editor implements IEditor, IEditedWorld {
   setTableTool(on: boolean): void {
     if (on === (this.state.mode === "table")) return;
     if (!on) {
-      this.tables?.cancel();
+      this.tables?.arm(null);
       this.update({ mode: "select" });
       this.showGuides();
       return;
     }
-    if (this.state.status !== "ready") return;
+    if (this.state.status !== "ready" || this.state.readOnly) return;
     this.chooseItem(null);
     this.select([]);
     this.tables?.planChanged();
     this.update({ mode: "table", activeItem: null });
     this.showGuides();
+  }
+
+  armTableType(typeId: number | null): void {
+    const tables = this.tables;
+    if (!tables) return;
+    if (typeId !== null) {
+      this.setTableTool(true);
+      if (this.state.mode !== "table") return;
+    }
+    tables.arm(typeId);
+    this.showGuides();
+  }
+
+  private armedTableView(): ArmedTableView | null {
+    const armed = this.state.mode === "table" ? (this.tables?.armedTable ?? null) : null;
+    if (!armed) return null;
+    const type = this.plans.tableTypes().find((t) => t.id === armed.typeId);
+    return type ? { ...armed, name: type.name, ...tableTypeSize(type, armed.turn) } : null;
   }
 
   clearRulers(): void {
@@ -4333,6 +4367,23 @@ export class Editor implements IEditor, IEditedWorld {
   private plansChanged(): void {
     if (this.state.mode === "table" && this.tables?.planChanged()) this.showGuides();
     if (!this.mappingRequested && this.plans.plans().length > 0) void this.mapParts();
+    this.reportPlans();
+  }
+
+  private reportPlans(): void {
+    const regions = this.plans.plans();
+    const activePlanId = this.plans.activePlanId();
+    const tableTypes = this.plans.tableTypes();
+    const reported = this.reportedPlans;
+    if (
+      regions === reported.regions &&
+      activePlanId === reported.activePlanId &&
+      tableTypes === reported.tableTypes
+    ) {
+      return;
+    }
+    this.reportedPlans = { regions, activePlanId, tableTypes };
+    this.session.plansEdited(this.reportedPlans);
   }
 
   private async mapParts(): Promise<void> {
@@ -4355,6 +4406,7 @@ export class Editor implements IEditor, IEditedWorld {
       rulers: this.measure?.count ?? 0,
       rulerDraft: this.measure?.drafting ?? false,
       hoveredTable: tables?.hoveredTable ?? null,
+      armedTable: this.armedTableView(),
       labels: this.labelsOf(this.state),
     });
   }
@@ -4640,6 +4692,10 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   rotate(eventTimeMs: number, direction: TurnDirection = 1): void {
+    if (this.state.mode === "table") {
+      if (!this.state.readOnly && this.tables?.turn()) this.showGuides();
+      return;
+    }
     if (this.state.mode === "road") {
       this.ghostRot = quarterTurned(this.ghostRot, direction);
       this.placeRot = this.ghostRot;
@@ -4880,6 +4936,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   cancelGesture(): void {
+    if (this.state.mode === "table" && this.tables?.armedTable) this.armTableType(null);
     if (this.gesture) this.endGesture();
     this.cancelFill();
     this.queueClick(null);
@@ -5486,13 +5543,13 @@ export class Editor implements IEditor, IEditedWorld {
 
   undo(eventTimeMs: number): void {
     const next = this.history.nextUndo();
-    if ((this.state.readOnly && next?.kind !== "plan") || this.throwRefused(next)) return;
+    if (this.state.readOnly || this.throwRefused(next)) return;
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
     const next = this.history.nextRedo();
-    if ((this.state.readOnly && next?.kind !== "plan") || this.throwRefused(next)) return;
+    if (this.state.readOnly || this.throwRefused(next)) return;
     this.replay(this.history.redo(), eventTimeMs);
   }
 
@@ -5952,6 +6009,8 @@ export class Editor implements IEditor, IEditedWorld {
       world: this.world,
     });
     if (noteIssues.length > 0) return noteIssues;
+    this.reportedPlans = stored.plans;
+    this.plans.restore(stored.plans);
     for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);

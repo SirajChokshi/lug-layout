@@ -10,7 +10,8 @@ import { inject, injectable } from "inversify";
 import type { IEditor } from "../edit/editor.ts";
 import { errorText } from "../edit/error-text.ts";
 import type { IWorldSession } from "../edit/world-session.ts";
-import { EDITOR, STARTER_FILES, WORLD_SESSION } from "../tokens.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
+import { EDITOR, PLAN_SERVICE, STARTER_FILES, WORLD_SESSION } from "../tokens.ts";
 import type { IStarterFiles } from "./starter-files.ts";
 
 export interface StarterWorldView {
@@ -74,6 +75,7 @@ export class StarterWorlds implements IStarterWorlds {
     @inject(EDITOR) private readonly editor: Pick<IEditor, "snapshot" | "subscribe">,
     @inject(WORLD_SESSION) private readonly session: Pick<IWorldSession, "importWorldFiles">,
     @inject(STARTER_FILES) private readonly files: IStarterFiles,
+    @inject(PLAN_SERVICE) private readonly plans: Pick<IPlanService, "plans">,
   ) {
     editor.subscribe(() => this.editorChanged());
     this.editorChanged();
@@ -118,7 +120,8 @@ export class StarterWorlds implements IStarterWorlds {
     const { status, world, readOnly, placements, track } = this.editor.snapshot();
     this.ready = status === "ready" && world !== null;
     if (this.ready && world !== null) {
-      const empty = placements === 0 && (track?.pieces ?? 0) === 0;
+      const empty =
+        placements === 0 && (track?.pieces ?? 0) === 0 && this.plans.plans().length === 0;
       if (!this.seenWorld || world.id !== this.worldId) {
         this.seenWorld = true;
         this.worldId = world.id;

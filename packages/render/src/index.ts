@@ -24,6 +24,7 @@ export type {
   PaletteLevel,
   PartPalette,
   PlanOverlay,
+  PlanTableOverlay,
   RebaseEvent,
   SceneBackendConfig,
   StudInstances,

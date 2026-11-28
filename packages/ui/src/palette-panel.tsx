@@ -31,6 +31,8 @@ import {
   type PaletteSection,
   type PaletteTab,
 } from "@brr/client";
+import type { IconName } from "./icons/glyphs.ts";
+import { Icon } from "./icons/icon.tsx";
 import { FirstChord } from "./keys.tsx";
 import { LibraryPartResults } from "./library-part-results.tsx";
 import { paletteDragProps } from "./palette-drag.ts";
@@ -113,7 +115,7 @@ function FavoriteStar({ entryKey, title }: { readonly entryKey: string; readonly
       title={on ? "Remove from favourites" : "Add to favourites"}
       onClick={() => favorites.toggle(entryKey)}
     >
-      {on ? "★" : "☆"}
+      <Icon name={on ? "favorite" : "favorite-off"} />
     </button>
   );
 }
@@ -625,14 +627,19 @@ function ResultRow({
   );
 }
 
-function tabLabel(tab: PaletteTab): string {
-  if (tab === "all") return "All";
-  if (tab === "favorites") return "★";
-  return CATEGORY_LABEL[tab];
-}
+const TAB_ICONS: Readonly<Record<PaletteTab, IconName>> = {
+  all: "all",
+  favorites: "favorite",
+  track: "track-straight",
+  baseplates: "baseplate",
+  road: "road",
+  sets: "set",
+};
 
 function tabName(tab: PaletteTab): string {
-  return tab === "favorites" ? "Favourites" : tabLabel(tab);
+  if (tab === "all") return "All";
+  if (tab === "favorites") return "Favourites";
+  return CATEGORY_LABEL[tab];
 }
 
 const SHARED_PLACEHOLDER = "Search: 3811, tan 16x16, crossroads";
@@ -707,21 +714,6 @@ function RecentStrip({
         clear
       </button>
     </div>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg
-      className="palette-search-icon"
-      viewBox="0 0 16 16"
-      width="14"
-      height="14"
-      aria-hidden="true"
-    >
-      <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M10.4 10.4 L14 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
   );
 }
 
@@ -807,7 +799,9 @@ export const PalettePanel = memo(function PalettePanel({
               <ScopeToggle search={search} scope={scope} />
             </div>
             <div className="palette-search-field">
-              <SearchIcon />
+              <span className="palette-search-icon">
+                <Icon name="find" />
+              </span>
               <input
                 type="search"
                 className="palette-search"
@@ -851,7 +845,8 @@ export const PalettePanel = memo(function PalettePanel({
                     showFromTop();
                   }}
                 >
-                  {tabLabel(option)}
+                  <Icon name={TAB_ICONS[option]} />
+                  {option === "favorites" ? null : tabName(option)}
                   <span className="palette-tab-count">{counts.get(option) ?? 0}</span>
                   {filteredTabs.has(option) && <span className="visually-hidden">, filtered</span>}
                 </button>

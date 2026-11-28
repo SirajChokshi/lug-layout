@@ -667,7 +667,9 @@ export function commandEnabled(
   if (play?.status === "running" && !runsDuringPlay(id)) return false;
   switch (id) {
     case "cancel":
-      return snapshot.gesture !== null || snapshot.fillDraft !== null;
+      return (
+        snapshot.gesture !== null || snapshot.fillDraft !== null || snapshot.armedTable !== null
+      );
     case "toggle-placement-mode":
       return placementModeSwitchEnabled(snapshot, play);
     case "rotate":
@@ -676,6 +678,8 @@ export function commandEnabled(
         !snapshot.readOnly &&
         (snapshot.mode === "place" ||
           snapshot.mode === "road" ||
+          (snapshot.mode === "table" &&
+            (snapshot.armedTable !== null || snapshot.hoveredTable !== null)) ||
           snapshot.selection?.movable === true ||
           (snapshot.gesture !== null && snapshot.gesture.kind !== "box") ||
           snapshot.track?.held != null)
@@ -728,13 +732,11 @@ export function commandEnabled(
     case "focus":
       return snapshot.selection !== null;
     case "undo":
-      return (
-        snapshot.history.undo === "plan" || (snapshot.history.undo !== null && !snapshot.readOnly)
-      );
+      return snapshot.history.undo !== null && !snapshot.readOnly;
     case "redo":
-      return (
-        snapshot.history.redo === "plan" || (snapshot.history.redo !== null && !snapshot.readOnly)
-      );
+      return snapshot.history.redo !== null && !snapshot.readOnly;
+    case "draw-tables":
+      return !snapshot.readOnly;
     case "centre":
       return snapshot.hover !== null;
     case "draw-track":
@@ -767,7 +769,6 @@ export function commandEnabled(
     case "zoom-in":
     case "zoom-out":
     case "measure":
-    case "draw-tables":
     case "toggle-joins":
     case "toggle-grid":
     case "toggle-road-snap":

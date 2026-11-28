@@ -109,8 +109,10 @@ export interface PlanIssue {
 
 export interface TableTop {
   readonly id: string;
+  readonly number: number;
   readonly name: string;
   readonly heightMm: number;
+  readonly typeId?: number;
   readonly surface: LduRect;
   readonly studs: StudRect;
 }
@@ -301,8 +303,10 @@ export function placementInRegion(region: PlanRegion, box: LduRect): boolean {
 function tableTops(region: PlanRegion): TableTop[] {
   return region.footprint.tables.map((table) => ({
     id: table.id,
+    number: table.number,
     name: table.name,
     heightMm: table.heightMm,
+    ...(table.typeId === undefined ? {} : { typeId: table.typeId }),
     surface: mmRectInWorld(region, table.rect),
     studs: studsInside(region, table.rect),
   }));

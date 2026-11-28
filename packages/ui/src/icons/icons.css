@@ -1,0 +1,122 @@
+.icon {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.icon-ink {
+  fill: var(--icon-ink);
+}
+
+.icon-tone {
+  fill: var(--icon-tone);
+}
+
+.icon-paper {
+  fill: var(--icon-paper);
+}
+
+.icon-tint {
+  fill: var(--icon-tint);
+}
+
+.icon-accent {
+  fill: var(--icon-accent);
+}
+
+.icon-wood {
+  fill: var(--icon-wood);
+}
+
+.icon-steel {
+  fill: var(--icon-steel);
+}
+
+.icon-go {
+  fill: var(--icon-go);
+}
+
+.icon-stop {
+  fill: var(--icon-stop);
+}
+
+.icon-warn {
+  fill: var(--icon-warn);
+}
+
+.icon-gold {
+  fill: var(--icon-gold);
+}
+
+.icon-halo {
+  stroke: var(--icon-paper);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+:disabled .icon,
+[aria-disabled="true"] .icon {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+.icon-sheet-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-chrome);
+  background: var(--surface-sunken);
+}
+
+.icon-sheet-strip button {
+  display: grid;
+  place-items: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.icon-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(256px, 1fr));
+  gap: 1px;
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  border: 1px solid var(--border-chrome);
+  background: var(--border-chrome);
+  list-style: none;
+}
+
+.icon-sheet-grid li {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  background: var(--surface-panel-solid);
+}
+
+.icon-sheet-grid code {
+  align-self: center;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font: var(--text-small) var(--font-mono);
+}
+
+.icon-sheet-zoom {
+  width: 64px;
+  height: 64px;
+  background-image:
+    linear-gradient(to right, var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-subtle) 1px, transparent 1px);
+  background-size: 4px 4px;
+  box-shadow: 0 0 0 1px var(--border-chrome);
+}
+
+.icon-sheet-zoom .icon {
+  width: 64px;
+  height: 64px;
+}

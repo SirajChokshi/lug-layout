@@ -492,6 +492,7 @@ function region(next: () => number): PlanRegion {
       roomDepthMm: 500 + int(4000),
       tables: Array.from({ length: int(4) }, (_, i) => ({
         id: `t${i}`,
+        number: i + 1,
         name: `t${i}`,
         rect: { x: mm(), z: mm(), width: 100 + int(2000), depth: 100 + int(2000) },
         heightMm: 750,
