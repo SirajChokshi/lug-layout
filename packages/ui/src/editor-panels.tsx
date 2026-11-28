@@ -298,7 +298,7 @@ export function PlacementToolbar({
       <p className="toolbar-hint">
         Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the
         wheel zooms at the cursor. Arrows nudge selected models and track pieces one stud, otherwise
-        pan; Shift-arrows orbit, double-click frames the selection.
+        pan; Shift-arrows orbit. Double-click selects a track run (Shift: all joined track).
       </p>
     </div>
   );

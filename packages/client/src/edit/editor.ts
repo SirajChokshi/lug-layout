@@ -111,10 +111,12 @@ import {
   TRACK_PIERS,
   SNAP_SHAPES,
   TRACK_EDIT_SESSION,
+  TRACK_PATH_SELECTION,
   TRACK_WORLD,
   WORLD_SESSION,
 } from "../tokens.ts";
 import { NOTHING_REBUILT, type ITrackWorld } from "./track-world.ts";
+import type { ITrackPathSelection, TrackPathScope } from "./track-path-selection.ts";
 import {
   TRACK_PIECE_PREFIX,
   type ITrackEditSession,
@@ -599,6 +601,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   pointerLeave(): void;
   click(ndcX: number, ndcY: number, eventTimeMs: number): void;
   toggleSelected(ndcX: number, ndcY: number): void;
+  selectTrackPath(ndcX: number, ndcY: number, scope: TrackPathScope): boolean;
   selectDragStart(ndcX: number, ndcY: number, additive: boolean): SelectDragKind | null;
   selectDragMove(ndcX: number, ndcY: number): void;
   selectDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
@@ -1487,6 +1490,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(ROAD_EDIT_SESSION) private readonly roads: IRoadEditSession,
     @inject(TALLEST_TRAIN) private readonly tallestTrains: ITallestTrain,
     @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
+    @inject(TRACK_PATH_SELECTION) private readonly trackPaths: ITrackPathSelection,
   ) {
     this.placed = new PlacedChunks(backend, (placeable, handle) =>
       this.trackWorld.carriedTrackAt(placeable, handle),
@@ -3453,6 +3457,14 @@ export class Editor implements IEditor, IEditedWorld {
     if (!picked) return;
     this.selection.toggle(picked);
     this.showSelection();
+  }
+
+  selectTrackPath(ndcX: number, ndcY: number, scope: TrackPathScope): boolean {
+    if (this.state.mode !== "select" || this.gesture) return false;
+    const picked = this.pickAt(ndcX, ndcY);
+    if (picked?.kind !== "track") return false;
+    this.select(this.trackPaths.members(picked.placement, scope));
+    return true;
   }
 
   private pickAt(ndcX: number, ndcY: number): SelectionMember | null {
