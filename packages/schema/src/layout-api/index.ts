@@ -3,7 +3,7 @@ import {
   Count,
   SafeInteger,
   SuperChunk,
-  WorldManifestV1,
+  WorldManifestV2,
   WorldName,
   shardName,
   strictMessage,
@@ -75,14 +75,14 @@ export const ImportName = v.pipe(
 export const ImportEntry = v.strictObject({ sha256: Sha256, name: ImportName }, strictMessage);
 export type ImportEntry = v.InferOutput<typeof ImportEntry>;
 
-function namesEveryManifestShard(
-  manifest: WorldManifestV1,
+function namesEveryEntry(
+  entries: ReadonlyArray<{ readonly superChunk: SuperChunk }>,
   shards: Readonly<Record<string, string>>,
 ): boolean {
   const named = Object.keys(shards);
   return (
-    named.length === manifest.shards.length &&
-    manifest.shards.every((entry) => Object.hasOwn(shards, shardName(entry.superChunk)))
+    named.length === entries.length &&
+    entries.every((entry) => Object.hasOwn(shards, shardName(entry.superChunk)))
   );
 }
 
@@ -98,8 +98,9 @@ export const WorldSnapshot = v.pipe(
     {
       format: v.literal(SNAPSHOT_FORMAT, `must be "${SNAPSHOT_FORMAT}"`),
       schemaVersion: v.literal(SNAPSHOT_SCHEMA_VERSION, `must be ${SNAPSHOT_SCHEMA_VERSION}`),
-      manifest: WorldManifestV1,
+      manifest: WorldManifestV2,
       shards: v.record(ShardName, Sha256),
+      notes: v.record(ShardName, Sha256),
       imports: v.pipe(
         v.array(ImportEntry),
         v.check(
@@ -113,10 +114,18 @@ export const WorldSnapshot = v.pipe(
   v.forward(
     v.partialCheck(
       [["manifest"], ["shards"]],
-      (snapshot) => namesEveryManifestShard(snapshot.manifest, snapshot.shards),
+      (snapshot) => namesEveryEntry(snapshot.manifest.shards, snapshot.shards),
       "must name exactly the manifest's super-chunks, each with its shard's SHA-256",
     ),
     ["shards"],
+  ),
+  v.forward(
+    v.partialCheck(
+      [["manifest"], ["notes"]],
+      (snapshot) => namesEveryEntry(snapshot.manifest.noteShards, snapshot.notes),
+      "must name exactly the manifest's note super-chunks, each with its note shard's SHA-256",
+    ),
+    ["notes"],
   ),
 );
 export type WorldSnapshot = v.InferOutput<typeof WorldSnapshot>;
@@ -248,6 +257,7 @@ export const ShardSummary = v.strictObject(
     superChunk: SuperChunk,
     placements: Count,
     track: Count,
+    notes: Count,
     trackIndices: v.array(Count),
     imports: v.array(Sha256),
   },

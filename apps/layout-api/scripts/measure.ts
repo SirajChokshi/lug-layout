@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { parseArgs } from "node:util";
-import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { decode, decodedOrThrow, type Decoded } from "@brr/schema/decode";
 import {
   MissingFilesResponse,
   SIGN_IN_FRAGMENT_KEY,
@@ -20,9 +20,11 @@ import {
 import {
   IMPORT_DIRECTORY,
   MANIFEST_FILE,
-  WorldManifestV1,
-  WorldShardV1,
+  NoteShardV2,
   canonicalJson,
+  decodeWorldManifest,
+  decodeWorldShard,
+  noteShardPath,
   parseJsonText,
   shardName,
   shardPath,
@@ -67,12 +69,21 @@ function sha256(body: string | Uint8Array): string {
   return createHash("sha256").update(body).digest("hex");
 }
 
-async function readJsonFile<const TSchema extends v.GenericSchema>(
+async function readJsonFile<T>(
   path: string,
-  schema: TSchema,
-): Promise<v.InferOutput<TSchema>> {
+  read: (value: unknown, path: string) => Decoded<T>,
+): Promise<T> {
   const json = parseJsonText(await readFile(path, "utf8"), path);
-  return decodedOrThrow(json.ok ? decode(schema, json.value, path) : json, path);
+  return decodedOrThrow(json.ok ? read(json.value, path) : json, path);
+}
+
+async function storedShard<T extends { readonly superChunk: readonly [number, number] }>(
+  path: string,
+  read: (value: unknown, path: string) => Decoded<T>,
+) {
+  const shard = await readJsonFile(path, read);
+  const text = canonicalJson(shard);
+  return { name: shardName(shard.superChunk), sha256: sha256(text), text };
 }
 
 async function importFiles(directory: string): Promise<Map<string, Uint8Array<ArrayBuffer>>> {
@@ -91,15 +102,22 @@ async function importFiles(directory: string): Promise<Map<string, Uint8Array<Ar
 }
 
 async function readLocalWorld(directory: string): Promise<LocalWorld> {
-  const manifest = await readJsonFile(join(directory, MANIFEST_FILE), WorldManifestV1);
+  const manifest = await readJsonFile(join(directory, MANIFEST_FILE), decodeWorldManifest);
   const entries = await Promise.all(
-    manifest.shards.map(async (entry) => {
-      const shard = await readJsonFile(join(directory, shardPath(entry.superChunk)), WorldShardV1);
-      const text = canonicalJson(shard);
-      return { name: shardName(entry.superChunk), sha256: sha256(text), text };
-    }),
+    manifest.shards.map((entry) =>
+      storedShard(join(directory, shardPath(entry.superChunk)), decodeWorldShard),
+    ),
   );
-  const shards = new Map(entries.map((entry) => [entry.sha256, entry.text] as const));
+  const notes = await Promise.all(
+    manifest.noteShards.map((entry) =>
+      storedShard(join(directory, noteShardPath(entry.superChunk)), (value, path) =>
+        decode(NoteShardV2, value, path),
+      ),
+    ),
+  );
+  const shards = new Map(
+    [...entries, ...notes].map((entry) => [entry.sha256, entry.text] as const),
+  );
   const named = await importFiles(directory);
   const imports = new Map([...named.values()].map((bytes) => [sha256(bytes), bytes] as const));
   const snapshot: WorldSnapshot = {
@@ -107,6 +125,7 @@ async function readLocalWorld(directory: string): Promise<LocalWorld> {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     manifest,
     shards: Object.fromEntries(entries.map((entry) => [entry.name, entry.sha256])),
+    notes: Object.fromEntries(notes.map((entry) => [entry.name, entry.sha256])),
     imports: [...named]
       .map(([name, bytes]) => ({ sha256: sha256(bytes), name }))
       .toSorted((a, b) => (a.sha256 < b.sha256 ? -1 : 1)),
@@ -260,7 +279,9 @@ async function readBack(
   let identical = canonicalJson(read.snapshot) === canonicalJson(world.snapshot);
   let bytes = 0;
   const files = [
-    ...Object.values(read.snapshot.shards).map((hash) => ["shards", hash] as const),
+    ...[...Object.values(read.snapshot.shards), ...Object.values(read.snapshot.notes)].map(
+      (hash) => ["shards", hash] as const,
+    ),
     ...read.snapshot.imports.map((entry) => ["imports", entry.sha256] as const),
   ];
   for (const [kind, hash] of files) {

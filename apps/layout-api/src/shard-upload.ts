@@ -1,6 +1,14 @@
 import { decode, type Decoded, type Issue } from "@brr/schema/decode";
 import type { ShardSummary } from "@brr/schema/layout-api";
-import { WorldShardV1, canonicalJson, parseJsonText, referencedImports } from "@brr/schema/world";
+import {
+  NOTE_SHARD_FORMAT,
+  NoteShardV2,
+  WorldShardV2,
+  canonicalJson,
+  parseJsonText,
+  referencedImports,
+} from "@brr/schema/world";
+import * as v from "valibot";
 import { sha256Hex } from "./digest.ts";
 import { strictUtf8Text } from "./utf8.ts";
 
@@ -14,14 +22,30 @@ export async function hashIssues(
   return actual === sha256 ? [] : [{ path: BODY, message: `hashes to ${actual}, not ${sha256}` }];
 }
 
-export function shardSummary(shard: WorldShardV1): ShardSummary {
+export function shardSummary(shard: WorldShardV2 | NoteShardV2): ShardSummary {
+  if (shard.format === NOTE_SHARD_FORMAT) {
+    return {
+      superChunk: shard.superChunk,
+      placements: 0,
+      track: 0,
+      notes: shard.notes.length,
+      trackIndices: [],
+      imports: [],
+    };
+  }
   return {
     superChunk: shard.superChunk,
     placements: shard.placements.length,
     track: shard.track.length,
+    notes: 0,
     trackIndices: shard.track.map((piece) => piece.index),
     imports: [...referencedImports([shard], [])].toSorted(),
   };
+}
+
+function decodeShard(json: unknown): Decoded<WorldShardV2 | NoteShardV2> {
+  const isNoteShard = v.is(v.object({ format: v.literal(NOTE_SHARD_FORMAT) }), json);
+  return isNoteShard ? decode(NoteShardV2, json, BODY) : decode(WorldShardV2, json, BODY);
 }
 
 export async function readUploadedShard(
@@ -34,7 +58,7 @@ export async function readUploadedShard(
   if (!text.ok) return text;
   const json = parseJsonText(text.value, BODY);
   if (!json.ok) return json;
-  const shard = decode(WorldShardV1, json.value, BODY);
+  const shard = decodeShard(json.value);
   if (!shard.ok) return shard;
   if (canonicalJson(shard.value) !== text.value) {
     return {

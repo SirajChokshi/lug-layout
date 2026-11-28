@@ -19,7 +19,7 @@ Every endpoint except the first two needs `Authorization: Bearer <session token>
 | `POST /v1/worlds` `{ name }` | Creates an empty world (no version yet). |
 | `GET /v1/worlds/<id>` | The world: name, times and `head`, its newest version. |
 | `DELETE /v1/worlds/<id>` | Deletes the world, its versions and its files. |
-| `PUT /v1/worlds/<id>/shards/<sha256>` | Stores one world shard. The body must be the shard's canonical JSON (`canonicalJson` from `@brr/schema/world`), hash to `<sha256>` and decode as a `WorldShardV1`. 201 when stored, 200 when the world already had it. |
+| `PUT /v1/worlds/<id>/shards/<sha256>` | Stores one world shard or note shard. The body must be the shard's canonical JSON (`canonicalJson` from `@brr/schema/world`), hash to `<sha256>` and decode as a `WorldShardV2`, or as a `NoteShardV2` when its `format` is `brr.notes`. 201 when stored, 200 when the world already had it. |
 | `PUT /v1/worlds/<id>/imports/<sha256>` | Stores one original model file, any bytes that hash to `<sha256>`. |
 | `GET /v1/worlds/<id>/shards/<sha256>`, `GET /v1/worlds/<id>/imports/<sha256>` | Reads a stored file. `ETag` is the SHA-256; `If-None-Match` answers 304. Cached as `private, immutable`. |
 | `POST /v1/worlds/<id>/versions` `{ parent, snapshot }` | Saves a new version (see *Saving*). |
@@ -30,24 +30,25 @@ A world belongs to the account that created it, and no other account can read, w
 
 ## Saving
 
-A snapshot is the world's manifest plus the SHA-256 of each shard and of each model file:
+A snapshot is the world's manifest plus the SHA-256 of each shard, note shard and model file:
 
 ```json
 {
   "format": "brr.world-snapshot",
   "schemaVersion": 1,
-  "manifest": { "format": "brr.world", "…": "the WorldManifestV1" },
+  "manifest": { "format": "brr.world", "…": "the WorldManifestV2" },
   "shards": { "0_0": "<sha256>", "-1_0": "<sha256>" },
+  "notes": { "0_0": "<sha256>" },
   "imports": [{ "sha256": "<sha256>", "name": "my-module.io" }]
 }
 ```
 
-`shards` names exactly the manifest's super-chunks, and `imports` lists each model file once in ascending SHA-256 order.
+`shards` names exactly the manifest's super-chunks, `notes` exactly its note shards' super-chunks, and `imports` lists each model file once in ascending SHA-256 order.
 
 1. `POST …/versions` with the snapshot. When some of its files aren't stored in this world yet, it answers 409 `{ missing: { shards, imports } }` and saves nothing.
 2. `PUT` each missing file, then post the same snapshot again. A save that changes one shard uploads one shard.
 3. The save is checked against what is stored, and answers 422 with every issue when:
-   - a shard holds a different super-chunk, or a different number of placements or track pieces, than the manifest says;
+   - a shard or note shard holds a different super-chunk, or a different number of placements, track pieces or notes, than the manifest says;
    - the shards' track indices don't run 0, 1, 2, … once each;
    - `imports` misses a model file that a placement or consist places as `import:<sha256>`, or lists one that nothing places;
    - `parent` isn't a version of this world.

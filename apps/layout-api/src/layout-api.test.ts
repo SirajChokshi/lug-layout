@@ -21,9 +21,13 @@ import {
   type WorldSnapshot,
 } from "@brr/schema/layout-api";
 import {
+  BASE_LAYER,
   MANIFEST_FILE,
   canonicalJson,
   importRef,
+  noteShardEntry,
+  noteShardPath,
+  noteShards,
   readWorldFiles,
   shardEntry,
   shardName,
@@ -31,6 +35,7 @@ import {
   worldManifest,
   worldShards,
   type PlacementRecordV1,
+  type TextNoteV2,
   type TrackRecordV1,
   type WorldHeader,
 } from "@brr/schema/world";
@@ -272,6 +277,19 @@ const header: WorldHeader = {
   bundleVersion: "e5124ec7210e6f35",
   view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0.78, pitch: 0.75 },
   disclaimer: "Not affiliated with the LEGO Group.",
+  layers: [BASE_LAYER, { ...BASE_LAYER, id: 1, name: "Notes", kind: "notes" }],
+};
+
+const stationSign: TextNoteV2 = {
+  kind: "text",
+  index: 0,
+  layer: 1,
+  text: "Station",
+  x: -2000,
+  z: 200,
+  rot: 0,
+  heightStuds: 2,
+  color: "#1f2937",
 };
 
 const baseplate: PlacementRecordV1 = {
@@ -310,28 +328,34 @@ function straight(index: number, firstCoefficient: string): TrackRecordV1 {
 
 const straights: ReadonlyArray<TrackRecordV1> = [straight(0, "0"), straight(1, "2")];
 
+function storedShard<S extends { readonly superChunk: readonly [number, number] }>(shard: S) {
+  const body = canonicalJson(shard);
+  return { shard, name: shardName(shard.superChunk), body, sha256: sha256(body) };
+}
+
 function worldFiles(
   placements: ReadonlyArray<PlacementRecordV1>,
   track: ReadonlyArray<TrackRecordV1>,
   imports: ReadonlyArray<{ readonly name: string; readonly sha256: string }>,
+  notes: ReadonlyArray<TextNoteV2> = [],
 ) {
-  const shards = worldShards(placements, track).map((shard) => {
-    const body = canonicalJson(shard);
-    return { shard, name: shardName(shard.superChunk), body, sha256: sha256(body) };
-  });
+  const shards = worldShards(placements, track).map(storedShard);
+  const noteFiles = noteShards(notes).map(storedShard);
   const snapshot: WorldSnapshot = {
     format: SNAPSHOT_FORMAT,
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     manifest: worldManifest(
       header,
       shards.map((file) => shardEntry(file.shard)),
+      noteFiles.map((file) => noteShardEntry(file.shard)),
     ),
     shards: Object.fromEntries(shards.map((file) => [file.name, file.sha256])),
+    notes: Object.fromEntries(noteFiles.map((file) => [file.name, file.sha256])),
     imports: imports
       .map((file) => ({ sha256: file.sha256, name: file.name }))
       .toSorted((a, b) => (a.sha256 < b.sha256 ? -1 : 1)),
   };
-  return { shards, snapshot };
+  return { shards, notes: noteFiles, snapshot };
 }
 
 async function storedKeys(world: string): Promise<string[]> {
@@ -480,7 +504,12 @@ describe("layout API worlds", () => {
   it("saves a world as content-addressed shards and original model files, and reads every version back byte for byte", async () => {
     const user = await signIn("builder@club.example");
     const world = await createWorld(user, "Club show");
-    const first = worldFiles([baseplate, signalBoxOnBaseplate, station], straights, [signalBox]);
+    const first = worldFiles(
+      [baseplate, signalBoxOnBaseplate, station],
+      straights,
+      [signalBox],
+      [stationSign],
+    );
 
     const missing = await expectJson(
       await save(user, world, null, first.snapshot),
@@ -488,11 +517,11 @@ describe("layout API worlds", () => {
       MissingFilesResponse,
     );
     expect(missing.missing).toEqual({
-      shards: first.shards.map((file) => file.sha256).toSorted(),
+      shards: [...first.shards, ...first.notes].map((file) => file.sha256).toSorted(),
       imports: [signalBox.sha256],
     });
 
-    for (const shard of first.shards) {
+    for (const shard of [...first.shards, ...first.notes]) {
       expect(
         await expectJson(await put(user, world, "shards", shard), 201, StoredFileResponse),
       ).toEqual({ sha256: shard.sha256, bytes: utf8.encode(shard.body).byteLength });
@@ -521,6 +550,7 @@ describe("layout API worlds", () => {
       [baseplate, signalBoxOnBaseplate, { ...station, x: -2020 }],
       straights,
       [signalBox],
+      [stationSign],
     );
     const changed = moved.shards.filter(
       (shard) => !first.shards.some((before) => before.sha256 === shard.sha256),
@@ -575,8 +605,14 @@ describe("layout API worlds", () => {
         expect(shard.headers.get("etag")).toBe(`"${hash}"`);
         texts.set(shardPath(entry.superChunk), await shard.text());
       }
+      for (const entry of body.snapshot.manifest.noteShards) {
+        const hash = body.snapshot.notes[shardName(entry.superChunk)] ?? "";
+        const shard = await call(`/v1/worlds/${world}/shards/${hash}`, { session: user.session });
+        texts.set(noteShardPath(entry.superChunk), await shard.text());
+      }
       const reopened = readWorldFiles(texts);
       expect(reopened.ok && reopened.value.shards).toEqual(files.shards.map((file) => file.shard));
+      expect(reopened.ok && reopened.value.notes).toEqual(files.notes.map((file) => file.shard));
     }
 
     const model = await call(`/v1/worlds/${world}/imports/${signalBox.sha256}`, {
@@ -606,7 +642,7 @@ describe("layout API worlds", () => {
     );
     const snapshots = await storedKeys(world);
     expect(snapshots.filter((key) => key.includes("/snapshots/"))).toHaveLength(2);
-    const shardBytes = [...first.shards, ...changed].reduce(
+    const shardBytes = [...first.shards, ...first.notes, ...changed].reduce(
       (sum, shard) => sum + utf8.encode(shard.body).byteLength,
       0,
     );
