@@ -76,6 +76,15 @@ function snapshotKey(worldId: string, sha256: Sha256): string {
   return `${worldPrefix(worldId)}snapshots/${sha256}.json`;
 }
 
+function usageQuery(ownerParameter: string): string {
+  const tables: ReadonlyArray<FileTable> = ["world_shards", "world_imports", "world_snapshots"];
+  const perTable = tables.map(
+    (table) =>
+      `SELECT f.bytes FROM ${table} f JOIN worlds w ON w.id = f.world_id WHERE w.owner_id = ${ownerParameter}`,
+  );
+  return `SELECT COALESCE(SUM(bytes), 0) AS bytes FROM (${perTable.join(" UNION ALL ")})`;
+}
+
 export class WorldFiles implements IWorldFiles {
   constructor(
     private readonly db: SqlDatabase,
@@ -165,15 +174,7 @@ export class WorldFiles implements IWorldFiles {
   }
 
   async usage(ownerId: string): Promise<number> {
-    const tables: ReadonlyArray<FileTable> = ["world_shards", "world_imports", "world_snapshots"];
-    const perTable = tables.map(
-      (table) =>
-        `SELECT f.bytes FROM ${table} f JOIN worlds w ON w.id = f.world_id WHERE w.owner_id = ?1`,
-    );
-    const row = await this.db
-      .prepare(`SELECT COALESCE(SUM(bytes), 0) AS bytes FROM (${perTable.join(" UNION ALL ")})`)
-      .bind(ownerId)
-      .first();
+    const row = await this.db.prepare(usageQuery("?1")).bind(ownerId).first();
     return decodedRow(UsageRow, row, "world files").bytes;
   }
 
@@ -209,20 +210,24 @@ export class WorldFiles implements IWorldFiles {
       httpMetadata: { contentType: object.contentType },
     });
     const now = this.clock.now();
+    const withinQuota = `WHERE (${usageQuery("?5")}) + ?3 <= ?6 RETURNING sha256`;
     const insert =
       object.summary === undefined
         ? this.db
             .prepare(
-              `INSERT OR IGNORE INTO ${table} (world_id, sha256, bytes, created_at) VALUES (?1, ?2, ?3, ?4)`,
+              `INSERT OR IGNORE INTO ${table} (world_id, sha256, bytes, created_at) SELECT ?1, ?2, ?3, ?4 ${withinQuota}`,
             )
-            .bind(world.id, sha256, bytes, now)
+            .bind(world.id, sha256, bytes, now, world.ownerId, STORAGE_QUOTA_BYTES)
         : this.db
             .prepare(
-              `INSERT OR IGNORE INTO ${table} (world_id, sha256, bytes, summary, created_at) VALUES (?1, ?2, ?3, ?4, ?5)`,
+              `INSERT OR IGNORE INTO ${table} (world_id, sha256, bytes, created_at, summary) SELECT ?1, ?2, ?3, ?4, ?7 ${withinQuota}`,
             )
-            .bind(world.id, sha256, bytes, object.summary, now);
-    await insert.run();
-    return { kind: "stored", created: true, bytes };
+            .bind(world.id, sha256, bytes, now, world.ownerId, STORAGE_QUOTA_BYTES, object.summary);
+    if ((await insert.first()) !== null) return { kind: "stored", created: true, bytes };
+    if (await this.isStored(table, world.id, sha256))
+      return { kind: "stored", created: false, bytes };
+    await this.bucket.delete(object.key);
+    return { kind: "over-quota", usage: await this.usage(world.ownerId) };
   }
 
   private async isStored(table: FileTable, worldId: string, sha256: Sha256): Promise<boolean> {
