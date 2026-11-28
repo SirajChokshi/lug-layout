@@ -50,6 +50,7 @@ import {
 } from "./mate-report.ts";
 import { SnapMating } from "./mating.ts";
 import { ModelConnectors, NO_INSTANCE } from "./model-connectors.ts";
+import { ProposalProgress } from "./proposal-progress.ts";
 import { IDENTIFICATION_RESIDUAL_LDU, MODEL_ROOT } from "./submodel-frames.ts";
 import { SparseConnectorFinder } from "./sparse-connector-finder.ts";
 import { TrackEndFinder } from "./track-end-finder.ts";
@@ -893,9 +894,18 @@ function proposedOnLattice(
 ): number[][] {
   const out = new CandidatePoses();
   solver.proposeMates(piece, snapWindow, out);
+  return poseRows(out);
+}
+
+function poseRows(candidates: CandidatePoses): number[][] {
   const rows: number[][] = [];
-  for (let k = 0; k < out.count; k++) {
-    rows.push([out.x[k] ?? 0, out.z[k] ?? 0, out.yPlates[k] ?? 0, out.rot[k] ?? 0]);
+  for (let k = 0; k < candidates.count; k++) {
+    rows.push([
+      candidates.x[k] ?? 0,
+      candidates.z[k] ?? 0,
+      candidates.yPlates[k] ?? 0,
+      candidates.rot[k] ?? 0,
+    ]);
   }
   return rows;
 }
@@ -934,6 +944,17 @@ function holeFacingNegX(shapeId: number, y: number, z: number): Spec {
 }
 
 const QUARTER_STUD = STUD_LDU / 4;
+const OFF_CENTRE_AND_QUARTER: ReadonlyArray<readonly [number, number, number]> = [
+  [STUD_LDU, PLATE_LDU, HALF],
+  [STUD_LDU + QUARTER_STUD, PLATE_LDU, HALF],
+];
+
+function twoPhaseReceptors(): ModelConnectors {
+  return downReceptors([
+    [HALF, 0, HALF],
+    [STUD_LDU, 0, HALF],
+  ]);
+}
 
 describe("ConnectionSolver with sparse connectors", () => {
   it("snaps a model to the pose where its edge pins enter a neighbour's holes, not a stud away", () => {
@@ -1073,7 +1094,7 @@ describe("ConnectionSolver with sparse connectors", () => {
     expect(matesAt(solver, pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0))).toBe(0);
   });
 
-  it("proposes the half-stud pose of a stud off the stud centres, as on a jumper, only at windows that line a receptor up with it, on either turn", () => {
+  it("proposes the half-stud pose of a stud off the stud centres, as on a jumper, only at windows that line a receptor up with it, on any turn", () => {
     const offCentre = sparseOnly();
     offCentre.insert(upStuds([[STUD_LDU, PLATE_LDU, HALF]]), pose(0, 0, 0), 1);
     const receptor = downReceptors([[HALF, 0, 0]]);
@@ -1081,7 +1102,16 @@ describe("ConnectionSolver with sparse connectors", () => {
       proposedOnLattice(offCentre, receptor, window(pose(0, 0, 1), 1, 0, 2)),
       proposedOnLattice(offCentre, receptor, window(pose(HALF, HALF, 1), 1, 0, 2)),
       proposedOnLattice(offCentre, receptor, window(pose(HALF, 0, 1), 1, 0, 2)),
-    ]).toEqual([[[STUD_LDU, STUD_LDU, 1, 1]], [[HALF, HALF, 1, 0]], []]);
+      proposedOnLattice(offCentre, receptor, window(pose(0, 0, 1), 1, 0, 4)),
+    ]).toEqual([
+      [[STUD_LDU, STUD_LDU, 1, 1]],
+      [[HALF, HALF, 1, 0]],
+      [],
+      [
+        [STUD_LDU, STUD_LDU, 1, 1],
+        [STUD_LDU, 0, 1, 3],
+      ],
+    ]);
   });
 
   it("proposes a pin into a hole one plate above it, and not into a hole half a plate above it", () => {
@@ -1102,9 +1132,10 @@ describe("ConnectionSolver with sparse connectors", () => {
         onAxis(AXIS_NEG_X, 0, HALF + STUD_LDU, PIN_HOLE, GENDER_FEMALE),
       ]),
     );
-    expect(proposedOnLattice(holes, pinAndHole, window(pose(0, 0, 0), 1, 1))).toEqual([
-      [0, 0, 1, 0],
-    ]);
+    expect([
+      proposedOnLattice(holes, pinAndHole, window(pose(0, 0, 0), 1, 1)),
+      proposedOnLattice(holes, pinAndHole, window(pose(0, 0, 3), 1, 2)),
+    ]).toEqual([[[0, 0, 1, 0]], [[0, 0, 1, 0]]]);
   });
 
   it("proposes a bar slid partway through a short open hole, at a window half a stud along the bar", () => {
@@ -1139,18 +1170,11 @@ describe("ConnectionSolver with sparse connectors", () => {
   });
 
   it("proposes each of a pair of receptors on two stud phases at the window that lines it up, at negative coordinates too", () => {
-    const offCentreAndQuarter: ReadonlyArray<readonly [number, number, number]> = [
-      [STUD_LDU, PLATE_LDU, HALF],
-      [STUD_LDU + QUARTER_STUD, PLATE_LDU, HALF],
-    ];
-    const receptors = downReceptors([
-      [HALF, 0, HALF],
-      [STUD_LDU, 0, HALF],
-    ]);
+    const receptors = twoPhaseReceptors();
     const twoPhases = sparseOnly();
-    twoPhases.insert(upStuds(offCentreAndQuarter), pose(0, 0, 0), 3);
+    twoPhases.insert(upStuds(OFF_CENTRE_AND_QUARTER), pose(0, 0, 0), 3);
     const farSide = sparseOnly();
-    farSide.insert(upStuds(offCentreAndQuarter), pose(-4 * STUD_LDU, -4 * STUD_LDU, 0), 4);
+    farSide.insert(upStuds(OFF_CENTRE_AND_QUARTER), pose(-4 * STUD_LDU, -4 * STUD_LDU, 0), 4);
     expect([
       proposedOnLattice(twoPhases, receptors, window(pose(HALF, 0, 1), 1, 0)),
       proposedOnLattice(twoPhases, receptors, window(pose(0, 0, 1), 1, 0)),
@@ -1202,6 +1226,25 @@ describe("ConnectionSolver with sparse connectors", () => {
       proposedOnLattice(fronts, downReceptors([[HALF, 0, 0]]), window(pose(0, 0, 1), 1, 0)),
       proposedOnLattice(sides, sideReceptor(), window(pose(0, 0, 0), 1, 2)),
     ]).toEqual([[[STUD_LDU, 0, 1, 0]], [[0, STUD_LDU, 1, 0]], [[0, 0, 2, 0]]]);
+  });
+
+  it("pauses after every slot it visits when given one slot at a time, whether or not the slot shares a held off-axis phase, and proposes the pose that lines a receptor up with a stud", () => {
+    const solver = sparseOnly();
+    solver.insert(upStuds(OFF_CENTRE_AND_QUARTER), pose(0, 0, 0), 1);
+    const receptors = twoPhaseReceptors();
+    const turns = 2;
+    const snapWindow = window(pose(HALF, 0, 1), 1, 0, turns);
+    const out = new CandidatePoses();
+    const progress = new ProposalProgress();
+    let paused = 0;
+    while (!solver.proposeMatesFrom(receptors, snapWindow, out, progress, 1)) paused++;
+    expect({ paused, poses: poseRows(out) }).toEqual({
+      paused: OFF_CENTRE_AND_QUARTER.length * turns - 1,
+      poses: [
+        [HALF, 0, 1, 0],
+        [HALF, STUD_LDU, 1, 1],
+      ],
+    });
   });
 
   it("rejects an x shift that is plate-aligned but not stud-aligned", () => {
