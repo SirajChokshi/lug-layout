@@ -1578,7 +1578,7 @@ footer a {
 
 .shopping-line {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   column-gap: var(--space-3);
   align-items: center;
   padding: var(--space-1) 0;
