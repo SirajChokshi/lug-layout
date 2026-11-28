@@ -10,6 +10,7 @@ import {
 import type { Issue } from "@brr/schema/decode";
 import type { LayerRecordV2 } from "@brr/schema/world";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Icon } from "./icons/icon.tsx";
 import { useLayers } from "./use-layers.ts";
 
 const NOTHING: LayerTally = { models: 0, pieces: 0 };
@@ -29,35 +30,6 @@ function nextLayerName(layers: ReadonlyArray<LayerRecordV2>): string {
   let n = layers.length;
   while (taken.has(`Layer ${n}`)) n++;
   return `Layer ${n}`;
-}
-
-function EyeIcon({ open }: { readonly open: boolean }) {
-  return (
-    <svg className="layer-icon" viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-      />
-      <circle cx="8" cy="8" r="2" fill="currentColor" />
-      {!open && <path d="M2.5 13.5 13.5 2.5" stroke="currentColor" strokeWidth="1.5" />}
-    </svg>
-  );
-}
-
-function LockIcon({ closed }: { readonly closed: boolean }) {
-  return (
-    <svg className="layer-icon" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor" />
-      <path
-        d={closed ? "M5.5 7V5a2.5 2.5 0 0 1 5 0v2" : "M5.5 7V5a2.5 2.5 0 0 1 5 0"}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-      />
-    </svg>
-  );
 }
 
 function RenameField({
@@ -100,9 +72,11 @@ function RenameField({
 
 function OpacityField({
   layer,
+  disabled,
   onCommit,
 }: {
   readonly layer: LayerRecordV2;
+  readonly disabled: boolean;
   readonly onCommit: (percent: number) => void;
 }) {
   const shown = String(layer.opacity);
@@ -123,6 +97,7 @@ function OpacityField({
         min={0}
         max={OPACITY_PERCENT_MAX}
         step={1}
+        disabled={disabled}
         value={typed ?? shown}
         onChange={(event) => setDraft({ layer: layer.id, text: event.currentTarget.value })}
         onBlur={commit}
@@ -142,6 +117,7 @@ interface LayerRowProps {
   readonly active: boolean;
   readonly current: boolean;
   readonly renaming: boolean;
+  readonly readOnly: boolean;
   readonly onPick: () => void;
   readonly onRename: () => void;
   readonly onRenamed: (name: string) => void;
@@ -165,6 +141,7 @@ function LayerRow({
   active,
   current,
   renaming,
+  readOnly,
   onPick,
   onRename,
   onRenamed,
@@ -172,10 +149,13 @@ function LayerRow({
   onVisible,
   onLocked,
 }: LayerRowProps) {
+  const rename = (): void => {
+    if (!readOnly) onRename();
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
     if (event.key !== "F2") return;
     event.preventDefault();
-    onRename();
+    rename();
   };
   return (
     <li
@@ -191,20 +171,22 @@ function LayerRow({
         className="layer-toggle layer-eye"
         aria-label={`Show "${layer.name}"`}
         aria-pressed={layer.visible}
+        disabled={readOnly}
         title={layer.visible ? "Shown: click to hide" : "Hidden: click to show"}
         onClick={() => onVisible(!layer.visible)}
       >
-        <EyeIcon open={layer.visible} />
+        <Icon name={layer.visible ? "visible" : "hidden"} />
       </button>
       <button
         type="button"
         className="layer-toggle layer-lock"
         aria-label={`Lock "${layer.name}"`}
         aria-pressed={layer.locked}
+        disabled={readOnly}
         title={layer.locked ? "Locked: click to unlock" : "Unlocked: click to lock"}
         onClick={() => onLocked(!layer.locked)}
       >
-        <LockIcon closed={layer.locked} />
+        <Icon name={layer.locked ? "locked" : "unlocked"} />
       </button>
       {renaming ? (
         <RenameField name={layer.name} onCommit={onRenamed} onCancel={onRenameCancelled} />
@@ -215,7 +197,7 @@ function LayerRow({
           aria-current={active ? "true" : undefined}
           title={rowTitle(layer, active)}
           onClick={onPick}
-          onDoubleClick={onRename}
+          onDoubleClick={rename}
           onKeyDown={onKeyDown}
         >
           <span className="layer-name-text">{layer.name}</span>
@@ -229,7 +211,10 @@ function LayerRow({
   );
 }
 
-function removeTitle(layer: LayerRecordV2): string {
+const READ_ONLY_TITLE = "This world is open in another tab, so its layers can't change here";
+
+function removeTitle(layer: LayerRecordV2, readOnly: boolean): string {
+  if (readOnly) return READ_ONLY_TITLE;
   if (layer.id === BASE_LAYER_ID) return "Every world keeps its base layer";
   if (layer.locked) return "Unlock this layer to remove it";
   return "Remove this layer once nothing is on it";
@@ -289,10 +274,12 @@ export function LayersPanel({
   editor,
   layers,
   contents,
+  readOnly,
 }: {
   readonly editor: IEditor;
   readonly layers: ILayerService;
   readonly contents: ReadonlyMap<number, LayerTally>;
+  readonly readOnly: boolean;
 }) {
   const { table, active } = useLayers(layers);
   const [open, setOpen] = useState(false);
@@ -355,7 +342,8 @@ export function LayersPanel({
             tally={contents.get(layer.id) ?? NOTHING}
             active={layer.id === active}
             current={layer.id === current}
-            renaming={renaming === layer.id}
+            renaming={renaming === layer.id && !readOnly}
+            readOnly={readOnly}
             onPick={() => pick(layer)}
             onRename={() => setRenaming(layer.id)}
             onRenamed={(name) => {
@@ -372,13 +360,14 @@ export function LayersPanel({
         <div className="layer-actions" role="group" aria-label={`Layer "${currentLayer.name}"`}>
           <OpacityField
             layer={currentLayer}
+            disabled={readOnly}
             onCommit={(percent) => report("Opacity", layers.setOpacity(current, percent))}
           />
           <button
             type="button"
             aria-label="Move layer up"
             title="Move up: drawn above the layer over it"
-            disabled={position >= top}
+            disabled={readOnly || position >= top}
             onClick={() => reorder(position + 1)}
           >
             ▲
@@ -387,7 +376,7 @@ export function LayersPanel({
             type="button"
             aria-label="Move layer down"
             title="Move down: drawn below the layer under it"
-            disabled={position <= 0}
+            disabled={readOnly || position <= 0}
             onClick={() => reorder(position - 1)}
           >
             ▼
@@ -402,8 +391,8 @@ export function LayersPanel({
           <button
             type="button"
             className="layer-remove"
-            title={removeTitle(currentLayer)}
-            disabled={currentLayer.id === BASE_LAYER_ID || currentLayer.locked}
+            title={removeTitle(currentLayer, readOnly)}
+            disabled={readOnly || currentLayer.id === BASE_LAYER_ID || currentLayer.locked}
             onClick={remove}
           >
             Remove
@@ -411,7 +400,13 @@ export function LayersPanel({
         </div>
       )}
       <div className="layer-footer">
-        <button type="button" data-action="new-layer" onClick={create}>
+        <button
+          type="button"
+          data-action="new-layer"
+          disabled={readOnly}
+          title={readOnly ? READ_ONLY_TITLE : "Add a parts layer on top and make it active"}
+          onClick={create}
+        >
           New layer
         </button>
         <p className="layer-note">

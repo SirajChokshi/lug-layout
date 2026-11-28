@@ -287,7 +287,12 @@ export function EditorApp({
           play={playSnapshot}
           onEditorAction={runAction}
         />
-        <LayersPanel editor={editor} layers={layers} contents={editor.layerContents()} />
+        <LayersPanel
+          editor={editor}
+          layers={layers}
+          contents={editor.layerContents()}
+          readOnly={snapshot.readOnly}
+        />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}

@@ -11,6 +11,7 @@ import {
   star,
   type Glyph,
   type Point,
+  type Segment,
 } from "./shapes.ts";
 
 const CURVE_CENTER: Point = [16, 16];
@@ -89,6 +90,22 @@ const UNDO: Glyph = [
     [6, 9.5],
   ]),
 ];
+
+const EYE: ReadonlyArray<Segment> = [
+  { op: "M", to: [0.5, 8] },
+  { op: "A", radius: 9, large: false, sweep: true, to: [15.5, 8] },
+  { op: "A", radius: 9, large: false, sweep: true, to: [0.5, 8] },
+  { op: "Z" },
+];
+
+const EYE_WHITE: ReadonlyArray<Segment> = [
+  { op: "M", to: [3, 8] },
+  { op: "A", radius: 7, large: false, sweep: true, to: [13, 8] },
+  { op: "A", radius: 7, large: false, sweep: true, to: [3, 8] },
+  { op: "Z" },
+];
+
+const PADLOCK_BODY: Glyph = [rect(2, 7, 12, 8, "ink", { radius: 1 }), rect(7, 9, 2, 4, "paper")];
 
 export const ICON_GLYPHS = {
   select: [
@@ -207,6 +224,25 @@ export const ICON_GLYPHS = {
   ],
   favorite: [star([8, 8.5], 7.5, 3.2, "gold")],
   "favorite-off": [star([8, 8.5], 7.5, 3.2, "tone"), star([8, 8.6], 4.5, 1.9, "paper")],
+  visible: [path("ink", EYE), path("paper", EYE_WHITE), circle(8, 8, 2, "ink")],
+  hidden: [
+    path("tone", EYE),
+    path("paper", EYE_WHITE),
+    circle(8, 8, 2, "tone"),
+    bar([2, 14], [14, 2], 2, "ink", { halo: true }),
+  ],
+  locked: [
+    arcBand([8, 6], 2, 4, 180, 360, "steel"),
+    rect(4, 6, 2, 1, "steel"),
+    rect(10, 6, 2, 1, "steel"),
+    ...PADLOCK_BODY,
+  ],
+  unlocked: [
+    arcBand([8, 4], 2, 4, 180, 360, "tone"),
+    rect(4, 4, 2, 3, "tone"),
+    rect(2, 7, 12, 8, "tone", { radius: 1 }),
+    rect(7, 9, 2, 4, "paper"),
+  ],
   baseplate: [
     rect(1, 1, 14, 14, "go", { radius: 1 }),
     ...[5, 11].flatMap((y) =>
