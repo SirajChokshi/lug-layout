@@ -794,8 +794,7 @@ button.plan-issue:hover {
   line-height: calc(var(--control-height-sm) - 2px);
 }
 
-.selection-segment,
-.mode-switch {
+.selection-segment {
   display: flex;
 }
 
@@ -804,35 +803,22 @@ button.plan-issue:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.selection-segment button + button,
-.mode-switch button + button {
+.selection-segment button + button {
   margin-left: -1px;
 }
 
-.selection-segment button:not(:first-child),
-.mode-switch button:not(:first-child) {
+.selection-segment button:not(:first-child) {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
 
-.selection-segment button:not(:last-child),
-.mode-switch button:not(:last-child) {
+.selection-segment button:not(:last-child) {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
 }
 
-.selection-segment button[aria-pressed="true"],
-.mode-switch button[aria-pressed="true"] {
+.selection-segment button[aria-pressed="true"] {
   position: relative;
-}
-
-.mode-switch button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 24px;
-  padding: 0 var(--space-3);
-  font-weight: var(--weight-medium);
 }
 
 .selection-actions {
@@ -889,7 +875,8 @@ button.plan-issue:hover {
   display: none;
 }
 
-.view-segment {
+.view-segment,
+.mode-switch {
   display: flex;
   gap: var(--space-1);
 }

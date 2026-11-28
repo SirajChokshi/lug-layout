@@ -34,6 +34,7 @@ export function ShellModeSwitch({
           <button
             key={each}
             type="button"
+            className="tool-button"
             data-action={command}
             aria-pressed={each === mode}
             disabled={!shellModeOffered(each, play)}
