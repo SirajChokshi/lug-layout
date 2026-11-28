@@ -37,6 +37,7 @@ export const MAIN_PLAN_LAYERS: ReadonlyArray<SheetLayerId> = SHEET_LAYER_IDS.fil
 
 export const TABLE_PLAN_LAYERS: ReadonlyArray<SheetLayerId> = [
   "room",
+  "aisles",
   "tables",
   "obstacles",
   "dimensions",

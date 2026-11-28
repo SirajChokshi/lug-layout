@@ -181,6 +181,7 @@ const SHEET: PlanSheet = {
     studs: studsInside(REGION, table.rect),
   })),
   obstacles: [],
+  aisles: [],
   roadway: [],
   ramps: [],
   placements: [

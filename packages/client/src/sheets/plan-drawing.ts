@@ -1,4 +1,4 @@
-import type { LduRect, OutlineRing } from "@brr/domain";
+import { isMarker, type LduRect, type OutlineRing } from "@brr/domain";
 import { lduFromMm, mmFromLdu } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { cmText, lengthText } from "../edit/size-labels.ts";
@@ -13,12 +13,20 @@ import {
   type Similarity,
   type TextStyle,
 } from "./draw-list.ts";
-import { PAINTS, SMALL_MM, TEXT_MM, textStyle } from "./sheet-paints.ts";
+import {
+  AISLE_PAINTS,
+  OBSTACLE_PAINTS,
+  PAINTS,
+  SMALL_MM,
+  TEXT_MM,
+  textStyle,
+} from "./sheet-paints.ts";
 import type { ISheetTypeface } from "./sheet-typeface.ts";
 import type { TableHeights } from "./table-heights.ts";
 
 export const SHEET_LAYER_IDS = [
   "room",
+  "aisles",
   "tables",
   "obstacles",
   "roadway",
@@ -34,6 +42,7 @@ export type SheetLayerId = (typeof SHEET_LAYER_IDS)[number];
 
 export const GEOMETRY_LAYERS: ReadonlySet<SheetLayerId> = new Set([
   "room",
+  "aisles",
   "tables",
   "obstacles",
   "roadway",
@@ -74,7 +83,7 @@ const DIMENSION_OFFSET_MM = 7;
 const TICK_MM = 2;
 const LABEL_LIFT_MM = 1;
 const TABLE_TEXT_INSET_MM = 2;
-const OBSTACLE_TEXT_INSET_MM = 1;
+const VENUE_TEXT_INSET_MM = 1;
 const NUMBER_RADIUS_MM = 3.5;
 const HATCH_SPACING_MM = 4;
 
@@ -167,6 +176,7 @@ export function sheetBounds(sheet: PlanSheet): LduRect {
     sheet.room,
     ...sheet.tables.map((table) => table.surface),
     ...sheet.obstacles.map((obstacle) => obstacle.rect),
+    ...sheet.aisles.map((aisle) => aisle.rect),
     ...sheet.roadway,
     ...sheet.ramps.map(ringsBounds),
     ...sheet.placements.map((placement) => ringsBounds(placement.rings)),
@@ -331,10 +341,13 @@ export class PlanDrawing implements IPlanDrawing {
 
   layersOf(sheet: PlanSheet): ReadonlyArray<SheetLayerId> {
     const placed = sheet.placements.filter((placement) => drawableRings(placement.rings));
+    const aisles = sheet.aisles.some((aisle) => isFiniteRect(aisle.rect));
+    const obstacles = sheet.obstacles.some((obstacle) => isFiniteRect(obstacle.rect));
     const present: Readonly<Record<SheetLayerId, boolean>> = {
       room: isFiniteRect(sheet.room),
+      aisles,
       tables: sheet.tables.some((table) => isFiniteRect(table.surface)),
-      obstacles: sheet.obstacles.some((obstacle) => isFiniteRect(obstacle.rect)),
+      obstacles,
       roadway: sheet.roadway.some(isFiniteRect),
       models: placed.some((placement) => placement.segment === "model"),
       track: placed.some((placement) => placement.segment === "track"),
@@ -342,7 +355,8 @@ export class PlanDrawing implements IPlanDrawing {
       dimensions:
         isFiniteRect(sheet.room) ||
         sheet.tables.some((table) => isFiniteRect(table.surface)) ||
-        sheet.obstacles.some((obstacle) => isFiniteRect(obstacle.rect)),
+        obstacles ||
+        aisles,
       numbers: placed.length > 0,
       "table-numbers": sheet.tables.some((table) => isFiniteRect(table.surface)),
     };
@@ -383,6 +397,12 @@ export class PlanDrawing implements IPlanDrawing {
         return isFiniteRect(sheet.room)
           ? [rectItem("room", PAINTS.room, frame.localBox(sheet.room))]
           : [];
+      case "aisles":
+        return sheet.aisles
+          .filter((aisle) => isFiniteRect(aisle.rect))
+          .map((aisle) =>
+            rectItem(`aisle ${aisle.side}`, AISLE_PAINTS[aisle.side], frame.localBox(aisle.rect)),
+          );
       case "tables":
         return sheet.tables
           .filter((table) => isFiniteRect(table.surface))
@@ -396,16 +416,16 @@ export class PlanDrawing implements IPlanDrawing {
       case "obstacles":
         return sheet.obstacles
           .filter((obstacle) => isFiniteRect(obstacle.rect))
-          .flatMap((obstacle): DrawItem[] => [
-            rectItem("obstacle", PAINTS.obstacle, frame.localBox(obstacle.rect)),
-            {
-              kind: "path",
-              role: "hatch",
-              paint: PAINTS.hatch,
-              rings: frame.hatch(obstacle.rect),
-              closed: false,
-            },
-          ]);
+          .flatMap((obstacle): DrawItem[] => {
+            const { kind, rect } = obstacle;
+            const area = rectItem(`obstacle ${kind}`, OBSTACLE_PAINTS[kind], frame.localBox(rect));
+            if (isMarker(obstacle)) return [area];
+            const hatch = frame.hatch(rect);
+            return [
+              area,
+              { kind: "path", role: "hatch", paint: PAINTS.hatch, rings: hatch, closed: false },
+            ];
+          });
       case "roadway":
         return mergedCells(sheet.roadway)
           .filter(isFiniteRect)
@@ -495,15 +515,19 @@ export class PlanDrawing implements IPlanDrawing {
         ),
       );
     }
-    for (const obstacle of sheet.obstacles) {
-      if (!isFiniteRect(obstacle.rect)) continue;
+    const venueLabels = [
+      ...sheet.obstacles.map(({ rect, name }) => ({ rect, label: name })),
+      ...sheet.aisles.map(({ rect, name, side }) => ({ rect, label: `${name} · ${side}` })),
+    ];
+    for (const { rect, label } of venueLabels) {
+      if (!isFiniteRect(rect)) continue;
       items.push(
         text(
           [
-            frame.x(obstacle.rect.minX) + OBSTACLE_TEXT_INSET_MM,
-            frame.z(obstacle.rect.minZ) + SMALL_MM + OBSTACLE_TEXT_INSET_MM,
+            frame.x(rect.minX) + VENUE_TEXT_INSET_MM,
+            frame.z(rect.minZ) + SMALL_MM + VENUE_TEXT_INSET_MM,
           ],
-          obstacle.name,
+          label,
           SMALL_HALO,
         ),
       );

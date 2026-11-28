@@ -24,6 +24,7 @@ it("starts every plan with a main plan tiled at true scale and a table plan fitt
       content: "placements",
       layers: [
         "room",
+        "aisles",
         "tables",
         "obstacles",
         "roadway",
@@ -40,7 +41,7 @@ it("starts every plan with a main plan tiled at true scale and a table plan fitt
       id: expect.any(String),
       name: "Table plan",
       content: "tables",
-      layers: ["room", "tables", "obstacles", "dimensions", "table-numbers"],
+      layers: ["room", "aisles", "tables", "obstacles", "dimensions", "table-numbers"],
       layout: { kind: "fit", paper: "a3", orientation: "auto" },
       format: "pdf",
     },

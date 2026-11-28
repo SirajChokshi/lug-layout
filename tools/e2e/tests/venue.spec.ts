@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { EditorPage, type LatticePoint, type PlanRect } from "./editor-page.ts";
 
 const BOOTH_FILE = "my-ticket-booth.ldr";
@@ -64,12 +64,41 @@ async function rowsOf(editor: EditorPage) {
   return (await editor.planRows()).map(({ rule, message }) => ({ rule, message }));
 }
 
+async function tablePlanSheet(
+  page: Page,
+): Promise<{ readonly file: string; readonly svg: string }> {
+  const sheets = page.getByRole("region", { name: "Print sheets" });
+  await sheets.locator('select[name="sheet-set"]').selectOption({ label: "Table plan" });
+  await sheets.locator('select[name="sheet-format"]').selectOption("svg");
+  const [file] = await Promise.all([
+    page.waitForEvent("download"),
+    sheets.getByRole("button", { name: "Download sheet" }).click(),
+  ]);
+  const name = file.suggestedFilename();
+  const svg = await readFile(await file.path(), "utf8");
+  await writeFile(test.info().outputPath(name), svg);
+  return { file: name, svg };
+}
+
+function venueOnSheet({ file, svg }: { readonly file: string; readonly svg: string }) {
+  const texts = (pattern: RegExp) => [...svg.matchAll(pattern)].map(([, text]) => text);
+  return {
+    file,
+    areas: texts(/<rect class="((?:aisle|obstacle) [a-z]+)"/gu),
+    hatches: texts(/<path class="(hatch)"/gu).length,
+    aisleLabels: texts(/<text class="label"[^>]*>([^<]* · (?:public|crew))<\/text>/gu),
+    legend: texts(
+      /<text class="legend"[^>]*>([^<]*(?:aisle|keep clear|Power point)[^<]*)<\/text>/gu,
+    ),
+  };
+}
+
 async function shot(editor: EditorPage, page: Page, name: string): Promise<void> {
   await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath(name) });
 }
 
-test("a venue's room rectangles, pillar, door, power point and public and crew aisles are drawn and saved with the plan, and a user's own model is reached from the crew aisles alone", async ({
+test("a venue's room rectangles, pillar, door, power point and public and crew aisles are drawn on the plan and on its printed table plan by kind and side, saved with the plan, and a user's own model is reached from the crew aisles alone", async ({
   page,
 }) => {
   const boothFile = test.info().outputPath(BOOTH_FILE);
@@ -102,6 +131,7 @@ test("a venue's room rectangles, pillar, door, power point and public and crew a
   await page.locator('.plan-panel [data-action="view-plan"]').click();
   await editor.press("b");
   await shot(editor, page, "venue-public-front.png");
+  const tablePlan = venueOnSheet(await tablePlanSheet(page));
 
   await page.locator('[data-venue="aisles"]').nth(1).locator("select").selectOption("crew");
   await editor.saved();
@@ -127,8 +157,21 @@ test("a venue's room rectangles, pillar, door, power point and public and crew a
       { name: "Aisle 2", rect: mmRect(640, 1536, 1920, 900), side: "public" },
     ],
   };
-  expect({ beforeVenue, publicFront, crewBothSides }).toEqual({
+  expect({ beforeVenue, publicFront, tablePlan, crewBothSides }).toEqual({
     beforeVenue: [],
+    tablePlan: {
+      file: "Plan-1.table-plan-fit-a3.svg",
+      areas: ["aisle crew", "aisle public", "obstacle pillar", "obstacle door", "obstacle power"],
+      hatches: 2,
+      aisleLabels: ["Aisle 1 · crew", "Aisle 2 · public"],
+      legend: [
+        "Public aisle",
+        "Crew aisle (reach)",
+        "Pillar (keep clear)",
+        "Door (keep clear)",
+        "Power point (marker)",
+      ],
+    },
     publicFront: {
       venue,
       rows: [{ rule: "reach", message: expect.stringMatching(/from every crew aisle\.$/u) }],

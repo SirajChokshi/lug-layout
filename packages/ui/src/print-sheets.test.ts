@@ -126,7 +126,7 @@ it("downloads the sheet chosen with its saved layers, layout and format, remembe
       selection: {
         name: "Setup crew",
         content: "tables",
-        layers: ["room", "tables", "dimensions", "table-numbers"],
+        layers: ["room", "aisles", "tables", "dimensions", "table-numbers"],
       },
       layout: { kind: "fit", paper: "a3", orientation: "auto" },
       format: "svg",

@@ -205,9 +205,15 @@ export class PlanSheetService implements IPlanSheetService {
       originZ: regionOriginZ(region),
       room: view.room,
       tables: view.tables,
-      obstacles: region.footprint.obstacles.map((obstacle) => ({
-        name: obstacle.name,
-        rect: mmRectInWorld(region, obstacle.rect),
+      obstacles: region.footprint.obstacles.map(({ name, rect, kind }) => ({
+        name,
+        rect: mmRectInWorld(region, rect),
+        kind,
+      })),
+      aisles: region.footprint.aisles.map(({ name, rect, side }) => ({
+        name,
+        rect: mmRectInWorld(region, rect),
+        side,
       })),
       roadway,
       ramps: shapes.crossingRamps.filter((ramp) => rectsOverlap(ringsBounds(ramp), view.room)),

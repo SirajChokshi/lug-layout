@@ -585,15 +585,16 @@ export class SheetComposer implements ISheetComposer {
     const all = flagged ? ["issue" as const, ...extras] : extras;
     const { heights } = job;
     if (!heights || !layers.includes("tables")) {
-      return this.blocks.legend(legendEntries(layers, all));
+      return this.blocks.legend(legendEntries(job.sheet, layers, all));
     }
     return this.blocks.legend([
       ...legendEntries(
+        job.sheet,
         layers.filter((layer) => layer !== "tables"),
         [],
       ),
       ...heightEntries(heights),
-      ...legendEntries([], all),
+      ...legendEntries(job.sheet, [], all),
     ]);
   }
 
