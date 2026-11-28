@@ -19,7 +19,7 @@ import {
 import { BUNDLE_TIMEOUT_MS, blueBrickBundle, readFixture } from "./bluebrick.test-support.ts";
 
 const TRACK_LAYER = 1;
-const NINE_VOLT_IDS = { "2865.8": "74746", "2867.8": "74747" };
+const NINE_VOLT_MOVES = { "2865.8": "74746", "2867.8": "74747" };
 const STEP_DEGREES = 22.5;
 const DRAWN_WITHIN_STUDS = 1;
 const SYNTHETIC_NOISE_STUDS = 0.25 * Math.SQRT2;
@@ -43,13 +43,22 @@ function connection(layer: number, brick: number, index: number): BlueBrickConne
   return { layer, brick, connection: index };
 }
 
-function partMapping(parts: Readonly<Record<string, string>>): ReadonlyArray<BlueBrickIdMapping> {
-  return Object.entries(parts).map(([id, part]) => ({
-    id,
-    bricks: 0,
-    groups: 0,
-    outcome: { kind: "part", part, color: 0, via: "ldraw", redirects: [] },
-  }));
+function movedPartMapping(
+  moves: Readonly<Record<string, string>>,
+  map: BlueBrickMap,
+): ReadonlyArray<BlueBrickIdMapping> {
+  return Object.entries(moves).map(([id, part]) => {
+    const [number = "", color = ""] = id.split(".");
+    const bricks = map.layers.flatMap((layer) =>
+      layer.kind === "brick" ? layer.bricks.filter((brick) => brick.part === id) : [],
+    ).length;
+    return {
+      id,
+      bricks,
+      groups: 0,
+      outcome: { kind: "part", part, color: Number(color), via: "ldraw", redirects: [number] },
+    };
+  });
 }
 
 function laid(track: BlueBrickTrack): ReadonlyMap<string, BlueBrickTrackPiece> {
@@ -162,13 +171,13 @@ it.each(["sample_track01.bbm", "queue.bbm"])(
   async (file) => {
     const { compiler, track: bundle } = await blueBrickBundle();
     const map = await readFixture(compiler, file);
-    const relaid = relayBlueBrickTrack(map, partMapping(NINE_VOLT_IDS), bundle);
+    const relaid = relayBlueBrickTrack(map, movedPartMapping(NINE_VOLT_MOVES, map), bundle);
     const drawn = new Map(
       map.layers.flatMap((layer, l) =>
         layer.kind !== "brick"
           ? []
           : layer.bricks.flatMap((brick, b) =>
-              Object.hasOwn(NINE_VOLT_IDS, brick.part)
+              Object.hasOwn(NINE_VOLT_MOVES, brick.part)
                 ? [[refKey({ layer: l, brick: b }), brick] as const]
                 : [],
             ),
