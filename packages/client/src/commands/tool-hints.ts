@@ -11,6 +11,7 @@ import type { TrackView } from "../edit/track-edit-session.ts";
 import type { TrackLowClearanceView, TrackUnsupportedView } from "../edit/track-world.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
 import {
+  itemLabel,
   lineText,
   placementFeedback,
   queuedText,
@@ -92,11 +93,6 @@ function holdAlt(text: string, held: boolean): ToolHint {
 }
 
 const MODE_NAMES = { assist: "Magnetic", precise: "Precise" } as const;
-
-function itemName(snapshot: EditorSnapshot, id: string | null): string {
-  const label = snapshot.catalog.find((item) => item.id === id)?.label ?? id ?? "";
-  return label.replaceAll("_", " ");
-}
 
 function counted(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -463,7 +459,7 @@ function loadingView(snapshot: EditorSnapshot, held: HeldItemView): HintView {
   const { queued } = held;
   return {
     tone: "place",
-    title: `Loading ${itemName(snapshot, held.item)}`,
+    title: `Loading ${itemLabel(snapshot.catalog, held.item)}`,
     detail:
       queued === null
         ? "loading connectors… a click places it once they load"
@@ -567,7 +563,7 @@ function verdictSpeech(feedback: PlacementFeedback, heading: string): string | n
 }
 
 function unhoveredSpeech(snapshot: EditorSnapshot, title: string, heading: string): string {
-  if (snapshot.ghostSettled) return `Placed ${itemName(snapshot, snapshot.activeItem)}`;
+  if (snapshot.ghostSettled) return `Placed ${itemLabel(snapshot.catalog, snapshot.activeItem)}`;
   return `${title}. ${heading}`;
 }
 
@@ -646,7 +642,7 @@ function view(snapshot: EditorSnapshot): HintView {
     case "place": {
       const held = heldItem(snapshot);
       if (held?.tables === "loading") return loadingView(snapshot, held);
-      const name = itemName(snapshot, snapshot.activeItem);
+      const name = itemLabel(snapshot.catalog, snapshot.activeItem);
       if (snapshot.fillDraft) {
         return {
           ...fillingView(snapshot.fillDraft, name),
@@ -774,7 +770,7 @@ function view(snapshot: EditorSnapshot): HintView {
       if (primary?.kind === "train") {
         return {
           tone: snapshot.selectionRefusal === null ? "select" : "warn",
-          title: itemName(snapshot, primary.item),
+          title: itemLabel(snapshot.catalog, primary.item),
           detail: snapshot.selectionRefusal ?? "on the rails",
           hints: [
             key("delete", "delete"),
@@ -804,7 +800,7 @@ function view(snapshot: EditorSnapshot): HintView {
       if (primary) {
         return {
           tone: snapshot.selectionRefusal === null ? "select" : "warn",
-          title: itemName(snapshot, primary.item),
+          title: itemLabel(snapshot.catalog, primary.item),
           detail:
             snapshot.selectionRefusal ??
             (primary.kind === "track"

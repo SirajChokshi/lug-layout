@@ -84,6 +84,10 @@ const ROAD = model("Baseplate 32 x 32 Road 6-Stud Straight", -320);
 const UNLABELLED_ROAD = { ...model("", -320), item: "custom:road-loop.mpd" };
 const WAITING = { settled: false, turnSettled: false, accepted: false, hit: null };
 const QUEUED = { queuedPlacement: { x: -320, z: 320 } };
+const LOADING_BASEPLATE = {
+  pendingItem: "ldraw:3811@2",
+  catalog: [{ id: "ldraw:3811@2", label: "Baseplate_32_x_32, Green" }],
+};
 
 function mate(
   kind: ConnectorKindView,
@@ -122,6 +126,7 @@ function hover(
     fillDraft: null,
     pendingItem: null,
     queuedPlacement: null,
+    catalog: [],
     placementMode: "assist",
     placementModeOverride: false,
     hover: {
@@ -347,11 +352,18 @@ it.each([
     ],
   },
   {
-    name: "a click queued while the held item's own connector data loads, as the queue alone",
+    name: "the held item loading, named by its catalog label, wherever the pointer is",
     placement: {},
-    view: { ...QUEUED, pendingItem: "ldraw:3811@2", hover: { refusal: null, placement: null } },
+    view: { ...LOADING_BASEPLATE, hover: null },
     tone: "waiting",
-    lines: ["Queued: placing at stud -16, 16 when ready"],
+    lines: ["Loading Baseplate 32 x 32, Green…"],
+  },
+  {
+    name: "a click queued while the held item loads, the queue first and the loading cue last",
+    placement: {},
+    view: { ...QUEUED, ...LOADING_BASEPLATE, hover: { refusal: null, placement: null } },
+    tone: "waiting",
+    lines: ["Queued: placing at stud -16, 16 when ready", "Loading Baseplate 32 x 32, Green…"],
   },
 ] as const)("states $name", (row) => {
   const { placement, tone, lines } = row;
