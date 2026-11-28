@@ -14,7 +14,6 @@ import {
 import {
   ConnectionSolver,
   LatticeStudFinder,
-  ReversingSectionFinder,
   SnapMating,
   SnapShapes,
   SparseConnectorFinder,
@@ -85,7 +84,6 @@ import {
   SNAP_SHAPES,
   SPARSE_CONNECTOR_FINDER,
   TRACK_END_FINDER,
-  REVERSING_SECTION_FINDER,
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
@@ -192,9 +190,6 @@ const clientModule = new ContainerModule(({ bind }) => {
     .inSingletonScope();
   bind(TRACK_END_FINDER)
     .toDynamicValue(() => new TrackEndFinder())
-    .inSingletonScope();
-  bind(REVERSING_SECTION_FINDER)
-    .toDynamicValue(() => new ReversingSectionFinder())
     .inSingletonScope();
   bind(CONNECTION_SOLVER)
     .toDynamicValue(

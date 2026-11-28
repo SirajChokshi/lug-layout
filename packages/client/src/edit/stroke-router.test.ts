@@ -13,7 +13,6 @@ import {
   type DrawingKit,
   type TrackMove,
   type TrackRun,
-  ReversingSectionFinder,
 } from "@brr/domain";
 import { HALF_TURN_16, normalizeHeading16, pose16, zeta16, type Pose16 } from "@brr/math";
 import { beforeAll, expect, it } from "vitest";
@@ -87,12 +86,7 @@ function fixedRun(moves: ReadonlyArray<TrackMove>, progressLdu: Float64Array): F
 
 beforeAll(async () => {
   const bundle = await fixtureBundleLoader().load("standard", (part) => part.role === "track");
-  const drawing = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const { kit } = drawing;
   const outlineById = new Map(drawing.kitParts().map((part) => [part.def.id, part.outline]));
   const outlines = new KitOutlines(kit, (piece) => {

@@ -1,7 +1,6 @@
 import type {
   ConnectionSolver,
   LatticeStudFinder,
-  ReversingSectionFinder,
   SnapMating,
   SnapShapes,
   SparseConnectorFinder,
@@ -177,9 +176,6 @@ export const SPARSE_CONNECTOR_FINDER: ServiceIdentifier<SparseConnectorFinder> =
 );
 export const TRACK_END_FINDER: ServiceIdentifier<TrackEndFinder> = Symbol.for(
   "brr.client.TrackEndFinder",
-);
-export const REVERSING_SECTION_FINDER: ServiceIdentifier<ReversingSectionFinder> = Symbol.for(
-  "brr.client.ReversingSectionFinder",
 );
 export const CONNECTION_SOLVER: ServiceIdentifier<ConnectionSolver> = Symbol.for(
   "brr.client.ConnectionSolver",

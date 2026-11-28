@@ -4,13 +4,7 @@ import {
   type IAssetFetcher,
   type PartBundle,
 } from "@brr/catalog";
-import {
-  PlanDelta,
-  emptyFacts,
-  type PlanIssue,
-  type TrackOutline,
-  ReversingSectionFinder,
-} from "@brr/domain";
+import { PlanDelta, emptyFacts, type PlanIssue, type TrackOutline } from "@brr/domain";
 import { chunkKey, mmFromLdu, pose16, zeta16, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND } from "@brr/render";
 import { Container } from "inversify";
@@ -110,12 +104,7 @@ function laidIn(
   overhangMm = 0,
 ): { readonly plans: IPlanService; readonly planId: string; readonly drawing: TrackDrawing } {
   const { plans, planId } = planOf(tables, overhangMm);
-  const drawing = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const change = {
     lift: [],
     lay: chainedPoses(bundle, start, partIds).map(([partId, pose], index) => ({
@@ -236,12 +225,7 @@ function carriedIn(
   readonly outlines: ReadonlyArray<TrackOutline>;
 } {
   const plan = planOf(tables, overhangMm);
-  const drawing = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const outlines = chainedPoses(bundle, model.start, model.track).map(([partId, pose]) =>
     drawing.outlineAt(bundle.trackCatalog.pieces.indexOf(catalogPieceOf(bundle, partId)), pose),
   );

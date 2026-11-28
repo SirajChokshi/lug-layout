@@ -47,7 +47,7 @@ import { writeFullRebuild, writeTrackChange, type PlanModelSource } from "../pla
 import type { IPlanService } from "../plan/plan-service.ts";
 import { RecordingBackend } from "../plan/plan-sync.test-support.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
-import { PLAN_SERVICE, REVERSING_SECTION_FINDER } from "../tokens.ts";
+import { PLAN_SERVICE } from "../tokens.ts";
 import { TrackDrawing, type TrackCarrier } from "./track-drawing.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -125,12 +125,7 @@ function room(widthMm = 4000): Room {
     rect: { x: 0, z: 0, width: widthMm, depth: ROOM_DEPTH_MM },
     heightMm: 750,
   });
-  const drawing = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    container.get(REVERSING_SECTION_FINDER),
-  );
+  const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   return { plans, backend, planId, tableId, drawing, delta: new PlanDelta() };
 }
 

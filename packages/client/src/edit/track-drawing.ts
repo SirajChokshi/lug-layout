@@ -20,8 +20,8 @@ import {
   TRACK_UNVERIFIED,
   TRACK_LAID_UNVERIFIED,
   NO_REVERSING_SECTIONS,
+  ReversingSectionFinder,
   type PlanDelta,
-  type ReversingSectionFinder,
   type ReversingSections,
   type TrackIssueRows,
   NEAR_MISS_RADIUS_LDU,
@@ -738,6 +738,7 @@ export class TrackDrawing implements ExtensionSite {
   private rampRows: ReadonlyArray<RampEndRow> = [];
   private rampRowsGraph: TrackGraph | null = null;
   private rampRowsSupport: TrackSupport | null = null;
+  private readonly reversing = new ReversingSectionFinder();
   private reversingGraph: TrackGraph | null = null;
   private reversingSections: ReversingSections = NO_REVERSING_SECTIONS;
   private laidStart: Pose16 | null = null;
@@ -757,7 +758,6 @@ export class TrackDrawing implements ExtensionSite {
     { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
     private readonly parts: ReadonlyArray<PartShapeAsset>,
     private readonly colors: ColorTable,
-    private readonly reversing: Pick<ReversingSectionFinder, "find">,
   ) {
     this.pieces = catalog.pieces;
     const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));

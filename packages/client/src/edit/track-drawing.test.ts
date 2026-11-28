@@ -18,7 +18,6 @@ import {
   runMoves,
   solveClosure,
   type TrackSegment,
-  ReversingSectionFinder,
 } from "@brr/domain";
 import {
   addZeta16,
@@ -368,12 +367,7 @@ beforeAll(async () => {
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  drawing = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   ovalStrokes = handDrawnOval(drawing, [180, 190]);
   footprints = Array.from({ length: drawing.pieceCount }, (_, p) => drawing.footprintAt(p));
   rendered = emptyExtent();
@@ -457,12 +451,7 @@ it("marks a drag target as joining only when the closure solver finds an exact j
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const lay = (from: readonly [number, number], to: readonly [number, number]): void => {
     layout.beginDrag(
       from[0] * STUD_LDU,
@@ -514,12 +503,7 @@ it("starts a run drawn on open ground on the studs, facing a quarter turn, at an
   const offGrid: string[] = [];
   for (let i = 0; i < DRAG_DIRECTIONS; i++) {
     const angle = ((i + 0.25) * 2 * Math.PI) / DRAG_DIRECTIONS;
-    const run = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const run = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     run.beginDrag(0, 0, 0, 0);
     run.moveDrag(Math.cos(angle) * DRAG_STUDS * STUD_LDU, Math.sin(angle) * DRAG_STUDS * STUD_LDU);
     expect(commitDrag(run).laid).toBeGreaterThan(0);
@@ -543,12 +527,7 @@ it(
     const bundle = await container
       .get(PART_BUNDLE_LOADER)
       .load("standard", (part) => part.role === "track");
-    const yard = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const yard = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const nowhere = 1e12;
     const seated = yard.pieceParts().filter((part) => part.piece.kind !== "curve");
     expect(new Set(seated.map((part) => part.piece.kind))).toEqual(
@@ -608,12 +587,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  const siding = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const siding = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const index = (id: string): number => {
     const part = siding.pieceParts().find((p) => p.piece.id === id);
     if (!part) throw new Error(`${id} is not placeable`);
@@ -666,12 +640,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   expect(siding.joinedPairs()).toBe(8);
   expect(siding.openEnds()).toHaveLength(2);
 
-  const reopened = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const reopened = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   expect(reopened.restore(siding.records()).ok).toBe(true);
   expect(reopened.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
   expect(reopened.joinedPairs()).toBe(8);
@@ -905,12 +874,7 @@ it(
   "closes a loop whose ends sit too close for a half circle without looping back over itself or the user's track",
   async () => {
     const bundle = await trackAndRoadBundle();
-    const layout = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const sides: Run = [{ kind: "straight", count: 6 }];
     let end = layRun(layout, studPose(0, 0, 0), sides);
     end = layRun(layout, end, BALLOON);
@@ -935,12 +899,7 @@ it(
 
 it("routes a closure around a road plate in its way with no extra loop", async () => {
   const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   layRun(layout, studPose(0, 0, 0), [
     { kind: "straight", count: 4 },
     { kind: "turn", sign: 1, curves: 8 },
@@ -965,12 +924,7 @@ it("routes a closure around a road plate in its way with no extra loop", async (
 
 it("suggests nothing and lays nothing when a road plate leaves no room to reach the open end", async () => {
   const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const straights: Run = [{ kind: "straight", count: 3 }];
   layRun(layout, studPose(0, 0, 0), straights);
   layRun(layout, studPose(128, 0, 0), straights);
@@ -1011,12 +965,7 @@ function extend(layout: TrackDrawing, turn: ExtensionTurn | null): boolean {
 
 it("extends an open end one previewed piece at a time and closes the loop through the join it suggests", async () => {
   const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const sides = 4;
   layRun(layout, studPose(0, 0, 0), [{ kind: "straight", count: sides }]);
   focusEnd(layout, endAt(layout, sides * 16, 0));
@@ -1060,18 +1009,8 @@ function singlesAt(layout: TrackDrawing, xStuds: number, zStuds: number) {
 
 it("offers each single piece that would run into an obstacle as blocked, and none of them as a lay", async () => {
   const bundle = await trackAndRoadBundle();
-  const clear = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
-  const walled = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const clear = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const walled = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   for (const layout of [clear, walled]) {
     layRun(layout, studPose(56, 0, 0), [{ kind: "straight", count: 2 }]);
   }
@@ -1122,12 +1061,7 @@ it.each<
   "names why the open end ahead can't be joined when it is %s, and suggests a single piece instead",
   async (_, starts, obstacle, refusal, studs) => {
     const bundle = await trackAndRoadBundle();
-    const layout = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     for (const [x, z] of starts)
       layRun(layout, studPose(x, z, 0), [{ kind: "straight", count: 3 }]);
     const rect = obstacle(bundle.parts);
@@ -1239,12 +1173,7 @@ it(
   "closes every track of a 9V switch ladder alongside the switches and curves of its neighbours",
   async () => {
     const bundle = await trackAndRoadBundle();
-    const layout = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const tracks = buildLadder(layout, LADDER_RUNGS);
     const straightStuds = Number(layout.kit.straightStuds);
     const farX = Math.max(...tracks.map((t) => studsOf(t.xLdu))) + 4 * straightStuds;
@@ -1263,21 +1192,11 @@ it(
 
 it("closes gaps in parallel straights laid at the switch's parallel spacing", async () => {
   const bundle = await trackAndRoadBundle();
-  const probe = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const probe = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const [main, siding] = buildLadder(probe, 1);
   if (!main || !siding) throw new Error("one rung gives two tracks");
   const spacing = studsOf(siding.zLdu - main.zLdu);
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const straightStuds = Number(layout.kit.straightStuds);
   const gapStart = 3 * straightStuds;
   const gapEnd = 7 * straightStuds;
@@ -1294,12 +1213,7 @@ it("closes gaps in parallel straights laid at the switch's parallel spacing", as
 
 it("closes straights flush along a road plate's edge", async () => {
   const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const straightStuds = Number(layout.kit.straightStuds);
   const plate = bundle.parts.find((part) => part.id === ROAD_BASEPLATE_32);
   if (!plate) throw new Error(`${ROAD_BASEPLATE_32} is not in the bundle`);
@@ -1342,18 +1256,12 @@ it(
   async () => {
     const bundle = await trackAndRoadBundle();
     const straightStuds = Number(
-      new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), new ReversingSectionFinder())
-        .kit.straightStuds,
+      new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)).kit.straightStuds,
     );
     const sides: Run = [{ kind: "straight", count: 4 }];
     const halfCircle: Run = [{ kind: "turn", sign: 1, curves: HALF_TURN_CURVES }];
     const base = (): TrackDrawing => {
-      const layout = new TrackDrawing(
-        bundle,
-        bundle.parts,
-        new ColorTable(bundle),
-        new ReversingSectionFinder(),
-      );
+      const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
       layRun(layout, layRun(layout, layRun(layout, studPose(0, 0, 0), sides), halfCircle), sides);
       return layout;
     };
@@ -1463,12 +1371,7 @@ async function trackOver(
   pendingSeats?: (range: readonly [number, number]) => boolean,
 ): Promise<TrackDrawing> {
   const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   layout.setBands(bandsOver(ground, layout, pendingSeats));
   return layout;
 }
@@ -1668,24 +1571,14 @@ it(
   "lays any drawable stroke along itself: no piece strays half a straight from it, and it lays no more than the stroke's length and one piece",
   async () => {
     const bundle = await trackAndRoadBundle();
-    const probe = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const probe = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const halfStraight = Number(probe.kit.straightStuds) / 2;
     const longestPiece = Math.max(...kitPieceLengthsStuds(bundle));
     const random = seeded(STROKE_SEED);
     const faults: string[] = [];
     for (let trial = 0; trial < RANDOM_STROKES; trial++) {
       const points = byHand(randomStroke(random, curveRadiusStuds(probe)), random() * 2 * Math.PI);
-      const layout = new TrackDrawing(
-        bundle,
-        bundle.parts,
-        new ColorTable(bundle),
-        new ReversingSectionFinder(),
-      );
+      const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
       const stroke = drawStroke(layout, points);
       const length = strokeLengthStuds(points);
       const laidLength = centrelineStuds(stroke.laid);
@@ -1712,19 +1605,9 @@ it(
 type TrackBundle = Awaited<ReturnType<typeof trackAndRoadBundle>>;
 
 function kitPieceLengthsStuds(bundle: TrackBundle): ReadonlyArray<number> {
-  const probe = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const probe = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   return probe.kitParts().map((part) => {
-    const alone = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const alone = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     layPiece(alone, part.catalogIndex, studPose(0, 0, 0));
     return centrelineStuds(alone.routes());
   });
@@ -1792,7 +1675,7 @@ it("stops a stroke before the first piece that would cross track, a custom build
   const observed = [];
   for (const crossing of CROSSING_CASES) {
     const colors = new ColorTable(bundle);
-    const layout = new TrackDrawing(bundle, bundle.parts, colors, new ReversingSectionFinder());
+    const layout = new TrackDrawing(bundle, bundle.parts, colors);
     const ground = await crossing.ground();
     layout.setBands(bandsOver(ground, layout));
     crossing.track(layout);
@@ -1837,12 +1720,7 @@ function shifted(pose: Pose16, x: bigint, z: bigint, heading: number): Pose16 {
 it("closes onto the open end of track a model carries, and runs no join through carried track of any system", async () => {
   const bundle = await trackAndRoadBundle();
   const carrying = (id: string) => {
-    const layout = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     layout.syncHeld(
       [
         {
@@ -2072,18 +1950,8 @@ it(
       loosePart(ROAD_BASEPLATE_32),
       loosePart(GROUND_BASEPLATE),
     ]);
-    const whole = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
-    const near = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const whole = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const near = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const support = await kitSupport(whole);
     whole.setSupport(support);
     near.setSupport(support);
@@ -2133,12 +2001,7 @@ it(
 it("finds a level crossing over any road cell at the bed, a tiled plaza's as much as a roadway's, and reports track on either unsupported unless it's seated", async () => {
   const { ground, plate, surface } = await roadPlateGround();
   const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const range = layout.verticalRange();
   const roadObstacles = trackObstacles(ground, range, NO_TRACK_PARTS);
   const side = plate.box.maxX - plate.box.minX;
@@ -2308,12 +2171,7 @@ it("joins a reseated drag to where its targeted end lies after the piece carryin
     { kind: "turn", sign: 1, curves: 1 },
   ];
   const drawn = (run: Run) => {
-    const layout = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     layRun(layout, origin, run);
     return layout;
   };
@@ -2385,12 +2243,7 @@ const ACROSS = 4;
 
 async function bareDrawing(): Promise<TrackDrawing> {
   const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   layout.setBands(bandsOver([], layout));
   return layout;
 }
@@ -2623,12 +2476,7 @@ function firstChanged<T extends Float64Array | Int32Array | Uint8Array>(
 
 it("keeps a laying field when a source refresh or a layout change recomputes identical inputs, returns the earlier field when an undo restores them, and builds a new field when any input differs or the bands are cleared", async () => {
   const bundle = await trackAndRoadBundle();
-  const range = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  ).verticalRange();
+  const range = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)).verticalRange();
   const road = await loosePart(ROAD_BASEPLATE_32);
   const baseplate = await loosePart(GROUND_BASEPLATE);
   const side = road.box.max[0] - road.box.min[0];
@@ -2789,12 +2637,7 @@ it("keeps a laying field when a source refresh or a layout change recomputes ide
 
 async function shortGap(): Promise<TrackDrawing> {
   const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(
-    bundle,
-    bundle.parts,
-    new ColorTable(bundle),
-    new ReversingSectionFinder(),
-  );
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const straights: Run = [{ kind: "straight", count: 3 }];
   layRun(layout, studPose(0, 0, 0), straights);
   layRun(layout, studPose(128, 0, 0), straights);
@@ -2916,12 +2759,7 @@ it(
   "blocks a drag's join once an obstacle lands under it mid-drag, though the join was exact before",
   async () => {
     const bundle = await trackAndRoadBundle();
-    const layout = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const sides: Run = [{ kind: "straight", count: 6 }];
     let end = layRun(layout, studPose(0, 0, 0), sides);
     end = layRun(layout, end, BALLOON);
@@ -3032,12 +2870,7 @@ it("plays the rails on the graph of exactly the layout it hands them, after ever
   const seen = { joined: 0, switches: 0, held: 0, lifted: 0, relaid: 0 };
   for (const seed of GRAPH_SEEDS) {
     const random = seeded(seed);
-    const layout = new TrackDrawing(
-      bundle,
-      bundle.parts,
-      new ColorTable(bundle),
-      new ReversingSectionFinder(),
-    );
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
     const curve = placeableIndex(layout, NINE_VOLT_CURVE);
     const switchPiece = placeableIndex(layout, RIGHT_SWITCH);
