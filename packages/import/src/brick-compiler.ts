@@ -15,6 +15,7 @@ import {
   type CompilerBlobs,
   type CompilerConnectorInputs,
   type CompilerEnvelope,
+  type CompilerGlyphInputs,
   type CompilerLibraryDelta,
   type CompilerRecordDelta,
   type CompilerRequest,
@@ -79,6 +80,7 @@ export interface CompileRequest {
   readonly model: string;
   readonly inlineChecks: ReadonlyArray<InlinePart>;
   readonly records?: boolean;
+  readonly glyphs?: CompilerGlyphInputs;
 }
 
 type RawCompile = CompilerCompile;
@@ -91,9 +93,10 @@ export type Need = Omit<Extract<RawPartOutcome, { status: "need" }>, "reference"
 
 export type PartOutcome =
   | Exclude<RawPartOutcome, { status: "compiled" }>
-  | (Omit<Extract<RawPartOutcome, { status: "compiled" }>, "glb" | "record"> & {
+  | (Omit<Extract<RawPartOutcome, { status: "compiled" }>, "glb" | "record" | "glyph"> & {
       readonly glb: Uint8Array;
       readonly record: Uint8Array | null;
+      readonly glyph: Uint8Array | null;
     });
 
 export type InlineOutcome = RawInlineOutcome;
@@ -114,6 +117,7 @@ export interface BakeInputs {
   readonly vehicles: CompilerVehicles | null;
   readonly keepParts?: boolean;
   readonly omrAuthoringIdentification?: boolean;
+  readonly glyph?: boolean;
 }
 
 export interface VisibilityBakeRequest extends BakeInputs {
@@ -141,6 +145,8 @@ export interface BakedModel {
   readonly cells: ModelCells | null;
   readonly vehicles: ReadonlyArray<PartVehicle>;
   readonly vehicleIssue: string | null;
+  readonly glyph: Uint8Array | null;
+  readonly glyphIssue: string | null;
 }
 
 export interface BakeFailure {
@@ -295,6 +301,11 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
           },
     vehicles: bakedVehicles(header, body),
     vehicleIssue: header.vehicleIssue ?? null,
+    glyph:
+      header.glyph === undefined
+        ? null
+        : body.slice(header.glyph[0], header.glyph[0] + header.glyph[1]),
+    glyphIssue: header.glyphIssue ?? null,
   };
 }
 
@@ -437,6 +448,7 @@ export class BrickCompiler {
           ...outcome,
           glb: slice(outcome.glb),
           record: outcome.record === null ? null : slice(outcome.record),
+          glyph: outcome.glyph === null ? null : slice(outcome.glyph),
         };
       }),
     };

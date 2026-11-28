@@ -313,6 +313,37 @@ The same commands run by hand: `pnpm --filter @brr/asset-pipeline library-bake p
 
 `src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
 
+## Plan glyphs
+
+A plan glyph is what the 2D plan draws for a part or a model: its top view as a coverage-and-colour raster plus an outline (`brick_compile::glyph`, `decodePlanGlyph` in `@brr/schema/bundle`). It is baked from the item's own standard-LOD triangles, so every LDraw part and every user's file gets one, and it reads no part number, role, category or profile. It is presentation only: placing, joining and checking never read it.
+
+**What it shows.** The view looks straight down the item's own −Y-up-converted +Y axis, x to the right and z down the rows.
+- **Grid:** 8 pixels a stud, so a pixel is 2.5 LDU, anchored at the item's origin; each pixel holds 4 × 4 samples, one every 0.625 LDU, centred in their cells. A quarter turn about y and any move by whole pixels map the grid onto itself, so a model placed at a quarter turn on whole studs draws the same pixels turned.
+- **Triangles:** every body triangle of the standard mesh, and every stud, drawn from its stud primitive's own standard mesh at the stud's matrix, in the stud's colour. A triangle counts only where it faces up; faces seen edge-on cover nothing, so a part made only of upright faces has an empty glyph.
+- **Exact rasterisation:** each corner is identified once to the nearest sixteenth of an LDU. Whether a sample lies in a triangle, edges included, and which triangle is highest there are then decided in exact integer arithmetic, with no tolerance; equal heights go to the lower colour code. Floats decide nothing after that one identification, so the native bake and the WASM compiler give the same bytes.
+- **Colour:** each sample takes the highest opaque face over it; a sample with no opaque face takes the highest clear one. Clear colours are those whose LDConfig `ALPHA` is below 255, as the far LOD's voxels read them; the caller passes them in. So a window shows what lies beneath it, and glass over nothing shows as glass, its alpha applied when drawn. Colour 16 stays 16 in a part's glyph, for the colour it's placed in; a model's instances resolve it as their bake does.
+- **Pixels:** a pixel's coverage is how many of its 16 samples are covered, and its colour is the one most of its covered samples show, opaque colours first, ties to the lower code.
+- **Outline:** the boundary of the covered samples, traced along sample edges, as closed loops whose covered side lies to the right when x points right and z down; diagonal neighbours are separate. Outer loops have positive shoelace area in (x, z), holes negative.
+- **Limits:** a glyph is cropped to its covered pixels, and holds at most 16,383 pixels a side and 2^24 in all, a height range of 2^24 sixteenths and 65,536 colours. Past them the bake reports the glyph as too large rather than shrinking it.
+
+**Format.** Little-endian, versioned by its magic `BRRGLYF1`, and refused if truncated, padded or inconsistent:
+
+| Field | Encoding |
+|---|---|
+| Magic | `BRRGLYF1`, 8 bytes |
+| Scale | pixels a stud, samples a pixel side, each u8 (8 and 4) |
+| Origin | the item-frame pixel of the first column and row, 2 × i32 |
+| Size | width (columns, along x) and depth (rows, along z), 2 × u32 |
+| Palette | P as u32, then P LDraw colour codes as u32, strictly ascending |
+| Pixels | R runs as u32, then per run: length − 1 as an unsigned LEB128 varint, coverage as u8, palette index as u8 when P ≤ 256, otherwise u16. Rows in order, x fastest; neighbouring runs differ; an empty pixel has index 0 |
+| Outline | L loops as u32, then per loop: its first vertex as 2 × u16 sample corners from the glyph's first sample, its vertex count V (even, at least 4) as u32, and V steps as zigzag LEB128 varints, alternating x and z and starting with x, that return to the first vertex |
+
+Each loop starts at the vertex, among those that begin a step along x, lowest in z, then x, then going east; loops are in that order of their first vertex.
+
+**Where it's baked.** `GlyphBaker` takes the compiled stud primitives (`StudMeshes`) and the clear colours; `part` bakes a compiled part, and `model` bakes instances. `ModelBaker::glyph` bakes a model's drawn instances from the parts it already holds, compiled or from bake records, which give the same glyph. The WASM compiler returns a part's glyph from `compile` when asked (`glyphs: { translucentColors }`, standard LOD only), beside its GLB, and a model's from `bake` (`glyph: true`); a glyph the bake can't make comes back as `glyphIssue`. Nothing ships glyphs yet: the pipeline's and the import's glyphs are the next steps (B2.2 and B2.3 of the modern BlueBrick plan).
+
+**Parity.** `pnpm glyph-parity` extracts the pinned library, runs `library-glyphs` (`brick-compile-cli`), which bakes natively, on every core, the glyph of every `parts/*.dat` in it, with the library bake's compile options and LDConfig's clear colours, and of 20 models: the 18 pinned OMR sets and two models built from official parts in `packages/import/test-data`, each drawing the instances whose parts compile. It writes them and a listing to `.cache/glyph-parity`. `pnpm --filter @brr/e2e glyph-parity` then makes every glyph again through `@brr/import`'s `BrickCompiler` on the shipped `brick_compile_wasm.wasm`, compares every glyph, glyph issue and failure byte for byte with the native output, decodes every glyph with `decodePlanGlyph`, and fails on any difference. CI's `glyph-parity` job runs it, and the required `check` status needs it.
+
 ## Library connector records at import
 **Where the import finds them.** `bundle` copies the pinned index in `tools/asset-pipeline/library-connectors.json` into each manifest's `compiler.libraryConnectors`, in the same shape as `compiler.libraryBake`. The pin is a bundle input: the records have to match the compiler, primitive table and section vocabulary that ship beside them.
 

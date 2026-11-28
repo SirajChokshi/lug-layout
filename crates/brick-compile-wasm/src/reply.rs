@@ -153,6 +153,10 @@ pub enum Reply {
         vehicles: Option<Vec<VehicleHeader>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         vehicle_issue: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glyph: Option<Range>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glyph_issue: Option<String>,
         phases: BakePhases,
         blobs: Blobs,
     },
@@ -301,6 +305,9 @@ pub enum PartOutcome {
         reference: String,
         glb: Range,
         record: Option<Range>,
+        glyph: Option<Range>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glyph_issue: Option<String>,
         file: String,
         header: Section,
         files: usize,
