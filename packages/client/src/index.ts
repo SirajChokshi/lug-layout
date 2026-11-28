@@ -358,6 +358,7 @@ export {
   SHELL_MODES,
   enterShellMode,
   shellModeForTool,
+  shellModeOffered,
   shownShellMode,
   type ShellMode,
 } from "./commands/shell-mode.ts";

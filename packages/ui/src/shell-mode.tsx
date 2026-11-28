@@ -1,4 +1,10 @@
-import { SHELL_MODES, commandSpec, type ShellMode } from "@brr/client";
+import {
+  SHELL_MODES,
+  commandSpec,
+  shellModeOffered,
+  type PlaySnapshot,
+  type ShellMode,
+} from "@brr/client";
 import type { ReactNode } from "react";
 import type { IconName } from "./icons/glyphs.ts";
 import { Icon } from "./icons/icon.tsx";
@@ -12,9 +18,11 @@ const MODE_FACES: Readonly<Record<ShellMode, { readonly label: string; readonly 
 
 export function ShellModeSwitch({
   mode,
+  play,
   onChoose,
 }: {
   readonly mode: ShellMode;
+  readonly play: PlaySnapshot;
   readonly onChoose: (mode: ShellMode) => void;
 }) {
   return (
@@ -28,6 +36,7 @@ export function ShellModeSwitch({
             type="button"
             data-action={command}
             aria-pressed={each === mode}
+            disabled={!shellModeOffered(each, play)}
             title={commandSpec(command).title}
             onClick={() => onChoose(each)}
           >

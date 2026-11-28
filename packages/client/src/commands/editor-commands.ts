@@ -6,7 +6,7 @@ import { placementModeSwitchEnabled, togglePlacementMode } from "../edit/placeme
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { KEY_FOR_SLOT } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
-import type { ShellMode } from "./shell-mode.ts";
+import { shellModeOffered, type ShellMode } from "./shell-mode.ts";
 
 export type NudgeId = "nudge-left" | "nudge-right" | "nudge-forward" | "nudge-back";
 
@@ -711,7 +711,10 @@ export function commandEnabled(
   snapshot: EditorSnapshot,
   play?: PlaySnapshot,
 ): boolean {
-  if (isShellCommand(id)) return true;
+  if (isShellCommand(id)) {
+    const mode = shellModeCommand(id);
+    return mode === null || shellModeOffered(mode, play);
+  }
   if (snapshot.status !== "ready") return false;
   if (isPlayCommand(id)) return playCommandEnabled(id, play);
   if (play?.status === "running" && !runsDuringPlay(id)) return false;

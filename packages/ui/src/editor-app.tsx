@@ -298,7 +298,7 @@ export function EditorApp({
           <span className="menubar-title">{snapshot.world?.name}</span>
         </header>
         <div className="toolstrip">
-          <ShellModeSwitch mode={mode} onChoose={chooseMode} />
+          <ShellModeSwitch mode={mode} play={playSnapshot} onChoose={chooseMode} />
           <PlacementToolbar
             editor={editor}
             snapshot={snapshot}

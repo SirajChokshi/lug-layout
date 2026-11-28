@@ -15,6 +15,10 @@ export function shownShellMode(chosen: ShellMode, play: PlaySnapshot): ShellMode
   return play.status === "loading" || play.status === "running" ? "play" : chosen;
 }
 
+export function shellModeOffered(mode: ShellMode, play: PlaySnapshot | undefined): boolean {
+  return mode === "play" || play?.status !== "loading";
+}
+
 export function enterShellMode(
   mode: ShellMode,
   editor: IEditor,
