@@ -554,6 +554,7 @@ function layAt(at: Room, pieces: ReadonlyArray<readonly [string, Pose16]>): Trac
       yPlates: 0,
       rise: 0,
       layer: 0,
+      group: null,
     })),
   };
 }

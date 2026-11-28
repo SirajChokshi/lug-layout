@@ -1170,7 +1170,16 @@ function layoutMembers(pieces: ReadonlyArray<LayoutPiece>, layer: number): Layou
     }
     const x = anchorX - shiftX + 0;
     const z = anchorZ - shiftZ + 0;
-    const pose = { refId, colorId: placeable.worldColor, x, z, yPlates, rot: 0, layer };
+    const pose = {
+      refId,
+      colorId: placeable.worldColor,
+      x,
+      z,
+      yPlates,
+      rot: 0,
+      layer,
+      group: null,
+    };
     members.push({ model: null, placeable, pose, component: WHOLE_GROUP_COMPONENT });
   }
   const lowest = Math.min(...members.map(({ pose }) => pose.yPlates));
