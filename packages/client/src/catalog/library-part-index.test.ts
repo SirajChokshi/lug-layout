@@ -1,6 +1,7 @@
 import { LIBRARY_PARTS_FORMAT, type BundleColor } from "@brr/schema/bundle";
 import { describe, expect, it } from "vitest";
 import { LibraryPartIndex } from "./library-part-index.ts";
+import { LibraryQuery } from "./library-query.ts";
 
 interface Part {
   readonly id: string;
@@ -87,13 +88,13 @@ const NOTHING: ReadonlySet<string> = new Set();
 
 function ids(query: string, excluded = NOTHING): ReadonlyArray<string> {
   return index()
-    .search(query, 10, excluded)
+    .search(LibraryQuery.parse(query), 10, excluded)
     .hits.map((hit) => hit.part.id);
 }
 
 function colorsOf(query: string): ReadonlyArray<number> {
   return index()
-    .search(query, 1, NOTHING)
+    .search(LibraryQuery.parse(query), 1, NOTHING)
     .hits.flatMap((hit) => hit.colors.map((color) => color.code));
 }
 
@@ -141,6 +142,18 @@ describe("library part search", () => {
   it("lists a part for a colour word alone only when its own title says it, and keeps every produced colour when no colour is named", () => {
     expect(ids("red")).toEqual(["3004prc"]);
     expect(colorsOf("brick 2 x 4")).toEqual([4, 15, 1, 71]);
+  });
+
+  it("reads quoted phrases in order and # as numbers only, and a minus before either excludes all of it, colour names included", () => {
+    expect(ids('"brick 2 x 4"')).toEqual(["3001", "3001p11"]);
+    expect(ids('"2 x 4 brick"')).toEqual([]);
+    expect(ids("#6141")).toEqual(["4073"]);
+    expect(ids("#brick")).toEqual([]);
+    expect(ids("brick 2 x 4 -#3001p11")).toEqual(["3001"]);
+    expect(ids('brick 2 x 4 -"black stripes"')).toEqual(["3001"]);
+    expect(ids('brick 2 x 4 -"stripes black"')).toEqual(["3001", "3001p11"]);
+    expect(colorsOf('brick 2 x 4 "light bluish"')).toEqual([71]);
+    expect(colorsOf('brick 2 x 4 -"bluish grey"')).toEqual([4, 15, 1]);
   });
 
   it("leaves out parts whose word a minus excludes, and parts the caller already offers", () => {

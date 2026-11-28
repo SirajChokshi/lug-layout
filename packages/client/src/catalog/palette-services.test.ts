@@ -31,6 +31,7 @@ import {
   CONNECTOR_TABLES,
   EDITOR,
   HOTBAR,
+  LIBRARY_FILTER_STORE,
   LIBRARY_PART_PLACER,
   MODEL_IMPORTER,
   PALETTE_DRAG,
@@ -41,6 +42,7 @@ import {
   PALETTE_THUMBNAILS,
   PLACEABLE_CATALOG,
 } from "../tokens.ts";
+import { LibraryFilters, type ILibraryFilterStore } from "./library-filters.ts";
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
 import { chosen } from "../edit/editor-choice.test-support.ts";
@@ -246,6 +248,48 @@ class UnreachableWorkerImporter implements IModelImporter {
   }
 }
 
+class InMemoryFilterStore implements ILibraryFilterStore {
+  private saved = LibraryFilters.DEFAULT;
+
+  load(): LibraryFilters {
+    return this.saved;
+  }
+
+  save(filters: LibraryFilters): void {
+    this.saved = filters;
+  }
+}
+
+function workerAnswering(ids: ReadonlyArray<string>): Array<string | null> {
+  const asked: Array<string | null> = [];
+  vi.stubGlobal("fetch", async (input: string) => {
+    const url = new URL(input);
+    if (url.origin !== CATALOG_WORKER || url.pathname !== `/v1/bundles/${PUBLISHED_KEY}/search`) {
+      throw new Error(`unexpected request ${input}`);
+    }
+    const query = url.searchParams.get("q");
+    asked.push(query);
+    const results = ids.map((id) => ({
+      id,
+      label: id,
+      section: id === CROSSROADS ? "road" : "baseplates",
+      kind: id === CROSSROADS ? "road-plate" : "baseplate",
+      file: null,
+    }));
+    return new Response(JSON.stringify({ manifest: PUBLISHED_KEY, query, results }));
+  });
+  return asked;
+}
+
+function withCatalogWorker(loading: Container): void {
+  loading.rebind(ASSET_FETCHER).toConstantValue(new PublishedBundleFetcher());
+  loading.bind(CATALOG_API_BASE_URL).toConstantValue(CATALOG_WORKER);
+}
+
+function shownItems(search: IPaletteSearch): ReadonlyArray<string> {
+  return search.snapshot().hits.flatMap((hit) => hit.items.map((item) => item.id));
+}
+
 function placedItems(editor: IEditor): ReadonlyArray<string> {
   const { refs, placements } = editor.dump();
   return placements.refId.map((refId) => refs[refId] ?? `unknown ref ${refId}`);
@@ -282,6 +326,81 @@ describe("palette search over the editor's catalog", () => {
     expect(search.snapshot().hits).toEqual([]);
   }, 120_000);
 
+  it("searches each tab with its own words and colour when searching per tab, counts each tab under its own search, and brings them back after a restart", async () => {
+    const store = new InMemoryFilterStore();
+    const withStore = (loading: Container): void => {
+      loading.rebind(LIBRARY_FILTER_STORE).toConstantValue(store);
+    };
+    const { container } = await startEditor(withStore);
+    const search = container.get(PALETTE_SEARCH);
+    const unfiltered = search.snapshot().counts;
+
+    search.setScope("per-tab");
+    search.setTab("baseplates");
+    search.setQuery(BASEPLATE_32);
+    search.chooseColor(WHITE);
+    search.setTab("track");
+    search.setQuery(STRAIGHT_9V);
+    const track = search.snapshot();
+    search.setTab("baseplates");
+    const baseplates = search.snapshot();
+
+    expect(track.query).toBe(STRAIGHT_9V);
+    expect(hitKeys(track)).toContain(TRACK_ITEM_ID);
+    expect(track.hits.every((hit) => hit.entry.category === "track")).toBe(true);
+    expect([...track.filteredTabs].toSorted()).toEqual(["baseplates", "track"]);
+    expect({ query: baseplates.query, color: baseplates.color }).toEqual({
+      query: BASEPLATE_32,
+      color: WHITE,
+    });
+    expect(baseplates.hits.map((hit) => [hit.entry.key, hit.chosen?.id])).toEqual([
+      ["ldraw:3811", "ldraw:3811@15"],
+    ]);
+    expect([...baseplates.counts]).toEqual([
+      ["all", unfiltered.get("all")],
+      ["favorites", 0],
+      ["track", track.counts.get("track")],
+      ["baseplates", 1],
+      ["road", unfiltered.get("road")],
+      ["sets", unfiltered.get("sets")],
+    ]);
+
+    const restarted = (await startEditor(withStore)).container.get(PALETTE_SEARCH).snapshot();
+    expect({
+      scope: restarted.scope,
+      tab: restarted.tab,
+      query: restarted.query,
+      color: restarted.color,
+      hits: hitKeys(restarted),
+    }).toEqual({
+      scope: "per-tab",
+      tab: "baseplates",
+      query: BASEPLATE_32,
+      color: WHITE,
+      hits: ["ldraw:3811"],
+    });
+  }, 120_000);
+
+  it("asks the catalog Worker only for the words a part must have, and keeps none of its hits that a minus rules out, in the library and the find palette", async () => {
+    const asked = workerAnswering([GREEN_BASEPLATE, CROSSROADS]);
+    const { container } = await startEditor(withCatalogWorker);
+    const library = container.get(PALETTE_SEARCH);
+    const find = container.get(COMMAND_PALETTE_SEARCH);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const query = `${BASEPLATE_32} -green`;
+
+    library.setQuery(query);
+    find.search(query);
+    await vi.waitFor(() => expect(library.snapshot().status).toBe("ready"));
+    await vi.waitFor(() => expect(foundItems(find, query)).toContain(CROSSROADS));
+
+    expect(asked).toEqual([BASEPLATE_32, BASEPLATE_32]);
+    expect(shownItems(library)).toContain(CROSSROADS);
+    expect(shownItems(library)).toContain("ldraw:3811@15");
+    expect(shownItems(library)).not.toContain(GREEN_BASEPLATE);
+    expect(foundItems(find, query)).not.toContain(GREEN_BASEPLATE);
+  }, 120_000);
+
   it("finds the Draw track entry by the part number of a piece it lays, and not by an unrelated part", async () => {
     const { container } = await startEditor();
     const search = container.get(PALETTE_SEARCH);
@@ -309,29 +428,8 @@ describe("find palette", () => {
   }, 120_000);
 
   it("asks the catalog Worker for its own query beside the library's, and lists the Worker's hits after its own matches once they arrive", async () => {
-    const asked: Array<string | null> = [];
-    vi.stubGlobal("fetch", async (input: string) => {
-      const url = new URL(input);
-      if (url.origin !== CATALOG_WORKER || url.pathname !== `/v1/bundles/${PUBLISHED_KEY}/search`) {
-        throw new Error(`unexpected request ${input}`);
-      }
-      const query = url.searchParams.get("q");
-      asked.push(query);
-      const results = [
-        {
-          id: GREEN_BASEPLATE,
-          label: "3811",
-          section: "baseplates",
-          kind: "baseplate",
-          file: null,
-        },
-      ];
-      return new Response(JSON.stringify({ manifest: PUBLISHED_KEY, query, results }));
-    });
-    const { container } = await startEditor((loading) => {
-      loading.rebind(ASSET_FETCHER).toConstantValue(new PublishedBundleFetcher());
-      loading.bind(CATALOG_API_BASE_URL).toConstantValue(CATALOG_WORKER);
-    });
+    const asked = workerAnswering([GREEN_BASEPLATE]);
+    const { container } = await startEditor(withCatalogWorker);
     const library = container.get(PALETTE_SEARCH);
     const find = container.get(COMMAND_PALETTE_SEARCH);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

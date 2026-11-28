@@ -7,6 +7,7 @@ import { mainThreadModules } from "../client.module.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import { CATALOG_SEARCH } from "../tokens.ts";
 import type { ICatalogSearch } from "./catalog-search.ts";
+import { LibraryQuery } from "./library-query.ts";
 import { PaletteIndex } from "./palette-index.ts";
 import { paletteResults } from "./palette-results.ts";
 import { silentPeers } from "./silent-peers.test-support.ts";
@@ -157,7 +158,7 @@ describe("palette search through the catalog Worker", () => {
     expect(served.requests).toEqual([
       `${workerBase}/v1/bundles/${manifestKey}/search?q=tan+32&limit=50`,
     ]);
-    const results = paletteResults(index, "tan 32", "all", search.view());
+    const results = paletteResults(index, LibraryQuery.parse("tan 32"), "all", search.view());
     expect(results.status).toBe("ready");
     expect(results.hits.map((hit) => [hit.entry.key, hit.items.map((item) => item.id)])).toEqual([
       ["ldraw:3811", ["ldraw:3811@19", "ldraw:3811@2"]],
@@ -166,7 +167,7 @@ describe("palette search through the catalog Worker", () => {
     expect(results.remoteOnly.map((hit) => hit.id)).toEqual(["ldraw:44336p03@72"]);
     expect(results.counts.get("all")).toBe(2);
     expect(results.counts.get("road")).toBe(1);
-    const road = paletteResults(index, "tan 32", "road", search.view());
+    const road = paletteResults(index, LibraryQuery.parse("tan 32"), "road", search.view());
     expect(road.hits.map((hit) => hit.entry.key)).toEqual(["ldraw:2358p02"]);
   });
 
@@ -179,7 +180,7 @@ describe("palette search through the catalog Worker", () => {
       serveWorker(failure);
       const search = catalogSearchWith({ manifestFile: keyedManifest, baseUrl: workerBase });
       await typeAndSettle(search, "tan");
-      const results = paletteResults(index, "tan", "all", search.view());
+      const results = paletteResults(index, LibraryQuery.parse("tan"), "all", search.view());
       expect(results.status).toBe("offline");
       expect(results.hits.map((hit) => hit.items.map((item) => item.id))).toEqual([
         ["ldraw:3811@19"],
