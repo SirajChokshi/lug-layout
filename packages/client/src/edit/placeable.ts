@@ -78,6 +78,7 @@ export interface Placeable {
   readonly road: RoadSurface | null;
   readonly flatTopSixteenths: number | null;
   readonly slabBoxes: Float32Array;
+  readonly glyph: Uint8Array | null;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -479,6 +480,7 @@ export function modelPlaceable(
     road,
     flatTopSixteenths,
     slabBoxes: belowRestPlane(local, partBoxes),
+    glyph: model.glyph ?? null,
   };
 }
 
@@ -554,5 +556,6 @@ export function partPlaceable(
     road,
     flatTopSixteenths,
     slabBoxes: belowRestPlane(local, partBoxes),
+    glyph: part.glyph ?? null,
   };
 }

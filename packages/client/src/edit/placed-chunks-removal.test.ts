@@ -13,6 +13,7 @@ import { mainThreadModules } from "../client.module.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { partPlaceable } from "./placeable.ts";
 import { PlacedChunks } from "./placed-chunks.ts";
+import { RecordingPlanScene } from "./plan-scene.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const BASEPLATE = "ldraw:3811";
@@ -96,7 +97,7 @@ it("removes, in one edit, two placements whose columns share a chunk", async () 
     bundle.tablePlane.depthBelowTopLdu,
   );
   const history = new EditHistory(new World());
-  const placed = new PlacedChunks(new NullBackend());
+  const placed = new PlacedChunks(new NullBackend(), new RecordingPlanScene());
   const placeAt = (x: number): PlacementRef | null => {
     const edit = history.place({ refId: index, colorId: color, x, z: ROW_Z, yPlates: 0, rot: 0 });
     placed.apply(edit, () => placeable);

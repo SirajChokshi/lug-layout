@@ -9,7 +9,12 @@ import {
   type TrackChange,
 } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
-import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
+import {
+  PLAN_SCENE_BACKEND,
+  SCENE_BACKEND,
+  type IPlanSceneBackend,
+  type ISceneBackend,
+} from "@brr/render";
 import type { BundleIndex, TrackCatalog } from "@brr/schema/bundle";
 import type { Issue } from "@brr/schema/decode";
 import type { TrackRecordV1 } from "@brr/schema/world";
@@ -49,6 +54,7 @@ import {
   type UnsupportedPiece,
 } from "./track-drawing.ts";
 import { ModelBands } from "./model-bands.ts";
+import { planPartLines } from "./plan-part-lines.ts";
 import type { SupportBand } from "./track-bands.ts";
 import { OBSTACLE_RECT_FLOATS, solidRectsIn, withStanding } from "./track-obstacles.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
@@ -191,6 +197,7 @@ export class TrackWorld implements ITrackWorld {
     private readonly catalog: Pick<IPlaceableCatalog, "parts" | "colors" | "requestMeshes">,
     @inject(CONNECTOR_TABLES) private readonly connectorTables: Pick<IConnectorTables, "load">,
     @inject(RAIL_YARD) private readonly railYard: Pick<IRailYard, "standingFootprints">,
+    @inject(PLAN_SCENE_BACKEND) private readonly plan: Pick<IPlanSceneBackend, "setPartLines">,
   ) {}
 
   start(bundle: TrackBundle, placed: PlacedModels): void {
@@ -199,6 +206,10 @@ export class TrackWorld implements ITrackWorld {
     this.trackCatalog = bundle.trackCatalog;
     this.placed = placed;
     this.track = this.newDrawing(bundle);
+    this.catalog.parts().forEach((part, index) => {
+      const lines = planPartLines(part, bundle.trackCatalog.pieces);
+      if (lines) this.plan.setPartLines(index, lines);
+    });
     this.crossingRamps = new CrossingRamps(
       bundle.levelCrossing,
       this.catalog.parts(),

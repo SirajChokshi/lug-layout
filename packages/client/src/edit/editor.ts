@@ -73,6 +73,7 @@ import {
   planeHypot,
 } from "@brr/math";
 import {
+  PLAN_SCENE_BACKEND,
   PROJECTION_FLOATS,
   RAY_FLOATS,
   SCENE_BACKEND,
@@ -82,6 +83,7 @@ import {
   type GhostVerdict,
   type GraphicsApi,
   type ChunkInstances,
+  type IPlanSceneBackend,
   type LookSettings,
   type ISceneBackend,
   type WorldBox,
@@ -1595,9 +1597,10 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
     @inject(TRACK_PATH_SELECTION) private readonly trackPaths: ITrackPathSelection,
     @inject(EVENT_DETAILS) private readonly events: IEventDetails,
+    @inject(PLAN_SCENE_BACKEND) plan: IPlanSceneBackend,
   ) {
     this.history = new EditHistory(this.world, this.consists, annotations);
-    this.placed = new PlacedChunks(backend, (placeable, handle) =>
+    this.placed = new PlacedChunks(backend, plan, (placeable, handle) =>
       this.trackWorld.carriedTrackAt(placeable, handle),
     );
     this.facts = new PlanFacts(
