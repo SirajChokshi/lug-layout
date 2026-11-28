@@ -140,7 +140,7 @@
   font: inherit;
   font-size: var(--text-caption);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--surface-panel-solid);
   color: var(--text-secondary);
   cursor: pointer;

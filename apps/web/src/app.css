@@ -361,6 +361,7 @@ footer {
 
 .event-field input {
   height: var(--control-height-sm);
+  padding-block: 0;
 }
 
 .event-field textarea {
@@ -1250,7 +1251,7 @@ footer a {
   height: var(--control-height-sm);
   padding: 0 var(--space-5);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--surface-panel-solid);
   color: var(--accent-ink);
   font: inherit;
