@@ -1181,7 +1181,7 @@ async function editorWithNotesLayer(extraNotes: ReadonlyArray<NoteRecordV2> = []
   await placer(editor, backend)(cottage, 0, 0);
   const archive = await repository.readArchive((await editor.exportWorld()).bytes);
   if (!archive.ok) throw new Error(issueText(archive.issues));
-  const { manifest, shards, credits, imports } = archive.value;
+  const { manifest, shards, inventories, credits, imports } = archive.value;
   const notes = noteShards(extraNotes);
   const header = { ...worldHeader(manifest), layers: [...manifest.layers, NOTES_LAYER] };
   const reopened = await editor.importWorld(
@@ -1189,6 +1189,7 @@ async function editorWithNotesLayer(extraNotes: ReadonlyArray<NoteRecordV2> = []
       manifest: worldManifest(header, manifest.shards, notes.map(noteShardEntry)),
       shards,
       notes,
+      inventories,
       credits,
       imports,
     }),
