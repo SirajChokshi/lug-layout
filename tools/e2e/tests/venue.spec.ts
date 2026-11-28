@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
-import { readZip } from "@brr/storage/zip";
 import { EditorPage, type LatticePoint, type PlanRect } from "./editor-page.ts";
 
 const BOOTH_FILE = "my-ticket-booth.ldr";
@@ -65,7 +64,9 @@ async function rowsOf(editor: EditorPage) {
   return (await editor.planRows()).map(({ rule, message }) => ({ rule, message }));
 }
 
-async function tablePlanSvg(page: Page): Promise<string> {
+async function tablePlanSheet(
+  page: Page,
+): Promise<{ readonly file: string; readonly svg: string }> {
   const sheets = page.getByRole("region", { name: "Print sheets" });
   await sheets.locator('select[name="sheet-set"]').selectOption({ label: "Table plan" });
   await sheets.locator('select[name="sheet-format"]').selectOption("svg");
@@ -73,16 +74,16 @@ async function tablePlanSvg(page: Page): Promise<string> {
     page.waitForEvent("download"),
     sheets.getByRole("button", { name: "Download sheet" }).click(),
   ]);
-  const bytes = new Uint8Array(await readFile(await file.path()));
-  await writeFile(test.info().outputPath(file.suggestedFilename()), bytes);
-  const pages = await readZip(bytes);
-  if (!pages.ok) throw new Error(`${file.suggestedFilename()} isn't a zip of sheet pages`);
-  return [...pages.value.values()].map((svg) => new TextDecoder().decode(svg)).join("\n");
+  const name = file.suggestedFilename();
+  const svg = await readFile(await file.path(), "utf8");
+  await writeFile(test.info().outputPath(name), svg);
+  return { file: name, svg };
 }
 
-function venueOnSheet(svg: string) {
+function venueOnSheet({ file, svg }: { readonly file: string; readonly svg: string }) {
   const texts = (pattern: RegExp) => [...svg.matchAll(pattern)].map(([, text]) => text);
   return {
+    file,
     areas: texts(/<rect class="((?:aisle|obstacle) [a-z]+)"/gu),
     hatches: texts(/<path class="(hatch)"/gu).length,
     aisleLabels: texts(/<text class="label"[^>]*>([^<]* · (?:public|crew))<\/text>/gu),
@@ -130,7 +131,7 @@ test("a venue's room rectangles, pillar, door, power point and public and crew a
   await page.locator('.plan-panel [data-action="view-plan"]').click();
   await editor.press("b");
   await shot(editor, page, "venue-public-front.png");
-  const tablePlan = venueOnSheet(await tablePlanSvg(page));
+  const tablePlan = venueOnSheet(await tablePlanSheet(page));
 
   await page.locator('[data-venue="aisles"]').nth(1).locator("select").selectOption("crew");
   await editor.saved();
@@ -159,15 +160,16 @@ test("a venue's room rectangles, pillar, door, power point and public and crew a
   expect({ beforeVenue, publicFront, tablePlan, crewBothSides }).toEqual({
     beforeVenue: [],
     tablePlan: {
+      file: "Plan-1.table-plan-fit-a3.svg",
       areas: ["aisle crew", "aisle public", "obstacle pillar", "obstacle door", "obstacle power"],
       hatches: 2,
       aisleLabels: ["Aisle 1 · crew", "Aisle 2 · public"],
       legend: [
         "Public aisle",
-        "Crew aisle: reach is measured from here",
-        "Pillar: keep clear",
-        "Door: keep clear",
-        "Power point: a marker, blocks nothing",
+        "Crew aisle (reach)",
+        "Pillar (keep clear)",
+        "Door (keep clear)",
+        "Power point (marker)",
       ],
     },
     publicFront: {

@@ -50,14 +50,14 @@ export function registrationMark(center: Point, halfMm: number, role = "registra
 }
 
 const OBSTACLE_LABELS = {
-  pillar: "Pillar: keep clear",
-  door: "Door: keep clear",
-  power: "Power point: a marker, blocks nothing",
+  pillar: "Pillar (keep clear)",
+  door: "Door (keep clear)",
+  power: "Power point (marker)",
 } as const satisfies Record<ObstacleKind, string>;
 
 const AISLE_LABELS = {
   public: "Public aisle",
-  crew: "Crew aisle: reach is measured from here",
+  crew: "Crew aisle (reach)",
 } as const satisfies Record<AisleSide, string>;
 
 function obstacleEntry(kind: ObstacleKind): LegendEntry {
