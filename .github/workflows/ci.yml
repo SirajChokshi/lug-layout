@@ -155,11 +155,16 @@ jobs:
         name: Build the whole library bake, since no subset is cached for this pin, fixture set and shard
         run: pnpm --filter @brr/asset-pipeline library-bake --check
       - run: pnpm --filter @brr/asset-pipeline shadow-library --check
-      - uses: actions/cache/restore@v4
+      - id: library-connector-records
+        uses: actions/cache/restore@v4
         with:
           path: tools/asset-pipeline/dist/library-connectors
           key: ${{ needs.library-connectors.outputs.records-key }}
-          fail-on-cache-miss: true
+      - if: ${{ steps.library-connector-records.outputs.cache-hit != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: library-connector-records
+          path: tools/asset-pipeline/dist/library-connectors
       - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
           LIBRARY_BAKE_REQUEST_LOG: ${{ runner.temp }}/library-bake-requests.txt
@@ -212,6 +217,12 @@ jobs:
         with:
           path: tools/asset-pipeline/dist/library-connectors
           key: ${{ steps.records-key.outputs.key }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: library-connector-records
+          path: tools/asset-pipeline/dist/library-connectors
+          if-no-files-found: error
+          retention-days: 1
       - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
