@@ -22,6 +22,7 @@ import type {
   PlacedModelView,
   SectionProfile,
 } from "./placement-hover.ts";
+import { trackBlockText, type TrackBlockView } from "./track-drag.ts";
 
 function sectionProfile(code: number): SectionProfile {
   switch (code) {
@@ -327,13 +328,19 @@ function hoverCounts(tallies: ReadonlyMap<number, MateTally>): ReadonlyArray<Hov
   }));
 }
 
+export const MOVE_CLEAR = "Move it clear or turn it.";
+
 export function refusalText(heldLabel: string, hit: HoverRefusalHit | null): string {
   if (!hit) {
-    return `${heldLabel} has nothing to rest on here: none of its connectors mate, and it isn't on the table`;
+    return `${heldLabel} has nothing to rest on here: none of its connectors mate, and it isn't on the table. Move it onto studs or onto the table.`;
   }
   const part = hit.partLabel || hit.part;
   const model = hit.placed.label || hit.placed.item;
-  return `${heldLabel} would overlap ${part}'s bounds in ${model} at cell ${hit.cellX}, ${hit.cellZ}`;
+  return `${heldLabel} would overlap ${part} in ${model} at stud ${hit.cellX}, ${hit.cellZ}. ${MOVE_CLEAR}`;
+}
+
+export function blockRefusalText(label: string, block: TrackBlockView): string {
+  return `${label} would ${trackBlockText(block)}. ${MOVE_CLEAR}`;
 }
 
 export function failedLoadText(subject: string, neighbour: string, place: string): string {

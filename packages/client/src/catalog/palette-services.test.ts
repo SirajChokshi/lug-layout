@@ -21,7 +21,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import type { IEditor } from "../edit/editor.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "../edit/track-edit-session.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, trackToolId } from "../edit/track-edit-session.ts";
 import { heldItem } from "../edit/held-item.ts";
 import type { MeshCounts } from "../edit/mesh-progress.ts";
 import { loadCatalogItem } from "./catalog-item.test-support.ts";
@@ -65,6 +65,7 @@ const BASEPLATE_32 = "3811";
 const GREEN_BASEPLATE = "ldraw:3811@2";
 const CROSSROADS = "ldraw:44343p03@72";
 const SET = "omr:7936-1";
+const UNPLACEABLE_SET = "omr:10016-1";
 const WHITE = 15;
 const MADE_IN_WHITE = [
   "ldraw:4186",
@@ -401,6 +402,41 @@ describe("palette search over the editor's catalog", () => {
     expect(foundItems(find, query)).not.toContain(GREEN_BASEPLATE);
   }, 120_000);
 
+  it("lists a set that can't be placed where a query or a favourite matches it on All, Sets and Favourites, never among the hits, and not on another tab or without a query", async () => {
+    const { container } = await startEditor();
+    const search = container.get(PALETTE_SEARCH);
+    const unplaceable = (): ReadonlyArray<string> =>
+      search.snapshot().unplaceable.map(({ item }) => item.id);
+
+    const browsing = unplaceable();
+    search.setQuery("tanker");
+    const all = unplaceable();
+    const hits = hitKeys(search.snapshot());
+    search.setTab("sets");
+    const sets = unplaceable();
+    search.setTab("road");
+    const road = unplaceable();
+    search.setTab("all");
+    search.setQuery("#10016");
+    const byNumber = unplaceable();
+    search.setQuery("");
+    search.setTab("favorites");
+    const notFavourite = unplaceable();
+    container.get(PALETTE_MEMORY).toggleFavorite(UNPLACEABLE_SET);
+    const favourite = unplaceable();
+
+    expect(hits).not.toContain(UNPLACEABLE_SET);
+    expect({ browsing, all, sets, road, byNumber, notFavourite, favourite }).toEqual({
+      browsing: [],
+      all: [UNPLACEABLE_SET],
+      sets: [UNPLACEABLE_SET],
+      road: [],
+      byNumber: [UNPLACEABLE_SET],
+      notFavourite: [],
+      favourite: [UNPLACEABLE_SET],
+    });
+  }, 120_000);
+
   it("finds the Draw track entry by the part number of a piece it lays, and not by an unrelated part", async () => {
     const { container } = await startEditor();
     const search = container.get(PALETTE_SEARCH);
@@ -635,7 +671,8 @@ describe("palette item labels", () => {
 
     expect(shortLabel(GREEN_BASEPLATE)).toBe("3811 32×32");
     expect(shortLabel(SET)).toBe("7936-1 Level Crossing");
-    expect(shortLabel(TRACK_ITEM_ID)).toBe("Track");
+    expect(shortLabel(TRACK_ITEM_ID)).toBe("9V track");
+    expect(shortLabel(trackToolId("lego-plastic"))).toBe("Plastic track");
     expect(shortLabel(`${TRACK_PIECE_PREFIX}ldraw:74746`)).toBe("Train Track 9V Straight");
     const pieces = catalog.filter((item) => item.id.startsWith(TRACK_PIECE_PREFIX));
     expect(new Set(pieces.map((item) => item.shortLabel)).size).toBe(pieces.length);

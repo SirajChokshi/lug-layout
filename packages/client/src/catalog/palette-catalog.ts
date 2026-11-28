@@ -7,6 +7,8 @@ import { PaletteIndex } from "./palette-index.ts";
 export interface PaletteCatalogSnapshot {
   readonly catalog: EditorSnapshot["catalog"];
   readonly index: PaletteIndex;
+  readonly skipped: EditorSnapshot["catalogSkipped"];
+  readonly unplaceable: PaletteIndex;
   readonly offeredParts: ReadonlySet<string>;
 }
 
@@ -38,16 +40,22 @@ function trackTerms(track: EditorSnapshot["track"]): ReadonlyArray<string> {
 }
 
 function indexCatalog(
-  { catalog, track }: EditorSnapshot,
+  { catalog, catalogSkipped, track }: EditorSnapshot,
   previous: IndexedCatalog | null,
 ): IndexedCatalog {
   const terms = trackTerms(track);
   const key = terms.join("\n");
-  if (previous?.catalog === catalog && previous.trackTerms === key) return previous;
+  const sameSkipped = previous?.skipped === catalogSkipped;
+  if (previous?.catalog === catalog && previous.trackTerms === key && sameSkipped) return previous;
   return {
     catalog,
     trackTerms: key,
     index: new PaletteIndex(catalog, [{ entryKey: TRACK_ITEM_ID, terms }]),
+    skipped: catalogSkipped,
+    unplaceable:
+      previous && sameSkipped
+        ? previous.unplaceable
+        : new PaletteIndex(catalogSkipped.map((model) => model.item)),
     offeredParts: previous?.catalog === catalog ? previous.offeredParts : offeredParts(catalog),
   };
 }

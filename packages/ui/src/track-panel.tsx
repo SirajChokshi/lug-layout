@@ -437,18 +437,22 @@ export function TrackHeightPanel({
         ))}
       </div>
       <p>
-        {`Ramps climb ${rampPlates} ${rampPlates === 1 ? "plate" : "plates"} per straight (${tenths.format(height.gradePercent)} % grade). `}
-        <strong className="unverified">Unverified:</strong>
-        {
-          " no source gives a maximum grade for LEGO trains; 1 plate per 16 studs is one club's convention. A ramp piece is supported when each end rests on a pier's studs at that end's height or joins supported level track; new ramps get piers under their raised ends."
-        }
+        {`Ramps climb ${rampPlates} ${rampPlates === 1 ? "plate" : "plates"} per straight (${tenths.format(height.gradePercent)} % grade) `}
+        <span
+          className="part-badge"
+          data-badge="unverified"
+          title="No source gives a maximum grade for LEGO trains; 1 plate per 16 studs is one club's convention."
+        >
+          unverified
+        </span>
       </p>
       <p>{clearanceText(height)}</p>
       {snapshot.track?.placingPiers && <p role="status">Building the run's piers…</p>}
       <p className="toolbar-hint">
         Page Up and Page Down change the height (Shift for a brick). New runs start at this height;
         runs from an open end ramp toward it. Raised pieces get brick piers where their anti-studs
-        meet studs.
+        meet studs, and a ramp piece is supported when each end rests on a pier at that end's height
+        or joins supported level track.
       </p>
     </section>
   );

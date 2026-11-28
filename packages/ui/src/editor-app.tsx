@@ -314,19 +314,18 @@ export function EditorApp({
             service={bomService}
             ownedParts={ownedParts}
             source={editor}
-            region={null}
             selectionLabel={selectionLabel(snapshot.selection)}
             plans={plans}
             thumbnails={palette.thumbnails}
           />
         )}
-        <EditorHud editor={editor} snapshot={snapshot} panels={panels} />
+        <EditorHud editor={editor} snapshot={snapshot} panels={panels} plans={plans} />
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
       {showState && <NoteState annotations={annotations} />}
       {showState && <CameraState camera={camera} />}
-      <EditorFooter editor={editor} disclaimer={disclaimer} />
+      <EditorFooter disclaimer={disclaimer} />
       {welcome.open && <WelcomeCard starters={starters} view={welcome} />}
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
       {overlay === "open-palette" && (

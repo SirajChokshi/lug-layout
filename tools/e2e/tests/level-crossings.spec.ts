@@ -170,12 +170,14 @@ test("a run stops short at a user's building or at track it doesn't join, and a 
   await editor.placeAt(STRAIGHT, { x: 0, z: 0 });
   expect(await editor.counter("refused")).toBe(before + 1);
   expect(await editor.hud("Last refusal")).toBe(
-    "Train Track 9V Straight would run into my-cottage.ldr.",
+    "Train Track 9V Straight would run into my-cottage.ldr. Move it clear or turn it.",
   );
   await editor.escape();
   await editor.placeAt(cottage, { x: 0, z: 400 });
   expect(await editor.counter("refused")).toBe(before + 2);
-  expect(await editor.hud("Last refusal")).toBe("my-cottage.ldr would cross the track laid there.");
+  expect(await editor.hud("Last refusal")).toBe(
+    "my-cottage.ldr would cross the track laid there. Move it clear or turn it.",
+  );
 });
 
 test("a fill of a user's own my-crossing-run.ldr across a road plate lays the tiles, reports the one on the roadway unsupported, and skips the tiles whose track would cross laid track", async ({

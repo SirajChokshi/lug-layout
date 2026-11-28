@@ -22,7 +22,7 @@ function pillarModel(): string {
   ].join("\n");
 }
 
-test("the selection panel alone loads rolling diagnostics: a placement session and an import compiled at import fetch none, and asking shows the bundle's rows or names a part compiled at import", async ({
+test("the Stats drawer alone loads the selection's rolling diagnostics: a placement session and an import compiled at import fetch none, and asking shows the bundle's rows or names a part compiled at import", async ({
   page,
 }) => {
   const requested: string[] = [];
@@ -54,7 +54,7 @@ test("the selection panel alone loads rolling diagnostics: a placement session a
   await editor.escape();
   expect(diagnosticsRequests(), "an import compiled at import").toEqual([]);
 
-  const panel = page.getByRole("region", { name: "Selection" });
+  const panel = (await editor.openStats()).getByRole("region", { name: "Selection rolling bands" });
   const showBands = async (): Promise<ReadonlyArray<string>> => {
     const before = diagnosticsRequests().length;
     await panel.getByRole("button", { name: "Show unread rolling bands" }).click();
@@ -66,7 +66,7 @@ test("the selection panel alone loads rolling diagnostics: a placement session a
   const bundleAsked = await showBands();
   expect(bundleAsked).toHaveLength(1);
   expect(bundleAsked.every((path) => BUNDLE_DIAGNOSTICS.test(path))).toBe(true);
-  await panel.screenshot({ path: test.info().outputPath("selection-panel-module.png") });
+  await panel.screenshot({ path: test.info().outputPath("rolling-bands-module.png") });
 
   expect(await editor.select(COMPILED_AIM)).toBe(imported.item);
   expect(await showBands()).toEqual([]);
@@ -76,6 +76,6 @@ test("the selection panel alone loads rolling diagnostics: a placement session a
   await expect(pillar).toContainText(NOT_KEPT);
   await expect(pillar.locator("li")).toHaveCount(0);
   await panel.screenshot({
-    path: test.info().outputPath("selection-panel-compiled-at-import.png"),
+    path: test.info().outputPath("rolling-bands-compiled-at-import.png"),
   });
 });
