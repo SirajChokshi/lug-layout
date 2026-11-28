@@ -1248,9 +1248,9 @@ export class PlacementSearch implements IPlacementSearch {
     this.zones.clear();
     if (hinted && !exemptable && this.hintBlocks(volumes, pose)) return true;
     const placed = this.placedIfOverlapping(volumes, pose);
-    return (
-      placed !== null && this.blockedDespiteZones(model, boxes, technic, pose, placed, exemptable)
-    );
+    if (placed === null) return false;
+    if (hinted && exemptable && !this.hitPairJoins(model, pose)) return true;
+    return this.blockedDespiteZones(model, boxes, technic, pose, placed, exemptable);
   }
 
   private placedIfOverlapping(volumes: CellVolumes, pose: LatticePose): VolumeBuffer | null {
@@ -1292,6 +1292,11 @@ export class PlacementSearch implements IPlacementSearch {
       return true;
     }
     return false;
+  }
+
+  private hitPairJoins(model: ModelConnectors, pose: LatticePose): boolean {
+    const hit = this.hit;
+    return this.solver.joinsPart(model, pose, hit.candidateInstance, hit.owner, hit.instance);
   }
 
   private remember(cell: number): void {

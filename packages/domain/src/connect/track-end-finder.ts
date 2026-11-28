@@ -14,7 +14,7 @@ import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.
 import { SOURCE_SHADOW, STATUS_VERIFIED } from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import { QUARTER_TURNS, checkPose } from "./lattice-frame.ts";
-import type { MateFinder } from "./mate-finder.ts";
+import type { PartnerNamingFinder } from "./mate-finder.ts";
 import type { ProposalProgress } from "./proposal-progress.ts";
 import { NO_SHAPE, type MateReport } from "./mate-report.ts";
 import { NO_INSTANCE, type ModelConnectors } from "./model-connectors.ts";
@@ -36,7 +36,7 @@ function headingOfTurn(rot: number): number {
   return normalizeHeading16(-rot * STEPS_PER_TURN);
 }
 
-export class TrackEndFinder implements MateFinder {
+export class TrackEndFinder implements PartnerNamingFinder {
   readonly namesPartners = true;
   readonly proposesEveryPose = false;
   private readonly index = new IntKeyMap(KEY_INTS);
@@ -165,6 +165,36 @@ export class TrackEndFinder implements MateFinder {
         );
       }
     }
+  }
+
+  joinsPart(
+    model: ModelConnectors,
+    pose: LatticePose,
+    instance: number,
+    partner: number,
+    partnerInstance: number,
+  ): boolean {
+    checkPose(pose);
+    if (!this.onStudGrid(pose)) return false;
+    this.turn(model);
+    for (let e = 0; e < model.trackEndCount; e++) {
+      if (model.trackInstance[e] !== instance) continue;
+      const slot = this.index.get(this.facingKey(model, e, pose));
+      if (slot === MISSING) continue;
+      for (
+        let holder = this.slotHolder[slot] ?? NO_HOLDER;
+        holder !== NO_HOLDER;
+        holder = this.holderNext[holder] ?? NO_HOLDER
+      ) {
+        if (
+          this.holderOwner[holder] === partner &&
+          this.holderInstance[holder] === partnerInstance
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private allocateHolder(): number {

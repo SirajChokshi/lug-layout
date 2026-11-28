@@ -559,9 +559,10 @@ function aimAt(k: number): void {
   window.yPlates = cursorY[at] ?? 0;
 }
 
+const plateLabel = "32×32 baseplate with 8 Technic edge connectors";
 const hovered = [
   ["2×4 brick", brick],
-  ["32×32 baseplate with 8 Technic edge connectors", plate],
+  [plateLabel, plate],
   ["16-stud track piece (2 ends)", track],
   ["32×32 plate", one(slab(32, 32, PLATE_LDU, PLATE_CAVITY, true))],
   ["64×64 plate", one(slab(64, 64, PLATE_LDU, PLATE_CAVITY, true))],
@@ -592,6 +593,24 @@ for (const [label, piece] of hovered) {
     `| evaluate: ${label} at the cursor pose | ${evaluate.p50.toFixed(4)} | ${evaluate.p95.toFixed(4)} | ${evaluate.gcs} | ${evaluate.heapGrowthBytes} |`,
   );
 }
+
+const BASEPLATE_LDU = BASEPLATE_STUDS * STUD_LDU;
+function baseplateUnder(k: number): number {
+  const at = k % HOVER_POSITIONS;
+  const bx = Math.floor((cursorX[at] ?? 0) / BASEPLATE_LDU);
+  const bz = Math.floor((cursorZ[at] ?? 0) / BASEPLATE_LDU);
+  return bz * BASEPLATES_PER_SIDE + bx;
+}
+const joins = await timed(HOVER_CALLS, WARMUP_CALLS, (k) => {
+  aimAt(k);
+  best.x = window.x;
+  best.z = window.z;
+  best.yPlates = window.yPlates;
+  checksum += solver.joinsPart(plate, best, 0, baseplateUnder(k), 0) ? 1 : 0;
+});
+rows.push(
+  `| joins part: ${plateLabel} at the cursor pose, to the baseplate under it | ${joins.p50.toFixed(4)} | ${joins.p95.toFixed(4)} | ${joins.gcs} | ${joins.heapGrowthBytes} |`,
+);
 
 const street = new ConnectionSolver([
   new LatticeStudFinder(mating),

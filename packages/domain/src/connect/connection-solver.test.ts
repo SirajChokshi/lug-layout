@@ -897,26 +897,25 @@ const NEIGHBOUR_WIDTH_LDU = 32 * STUD_LDU;
 const HOLE_HEIGHT = 14;
 const EDGE_ROWS = [50, 130, 510, 590] as const;
 
+function edgeHole(z: number): Spec {
+  return { shape: PIN_HOLE, gender: GENDER_FEMALE, origin: [0, HOLE_HEIGHT, z], axis: AXIS_NEG_X };
+}
+
+function edgePin(z: number): Spec {
+  return {
+    shape: PIN,
+    gender: GENDER_MALE,
+    origin: [NEIGHBOUR_WIDTH_LDU, HOLE_HEIGHT, z],
+    axis: AXIS_POS_X,
+  };
+}
+
 function edgeHoles(): ConnectorTable {
-  return table(
-    EDGE_ROWS.map((z) => ({
-      shape: PIN_HOLE,
-      gender: GENDER_FEMALE,
-      origin: [0, HOLE_HEIGHT, z],
-      axis: AXIS_NEG_X,
-    })),
-  );
+  return table(EDGE_ROWS.map(edgeHole));
 }
 
 function edgePins(): ConnectorTable {
-  return table(
-    EDGE_ROWS.map((z) => ({
-      shape: PIN,
-      gender: GENDER_MALE,
-      origin: [NEIGHBOUR_WIDTH_LDU, HOLE_HEIGHT, z],
-      axis: AXIS_POS_X,
-    })),
-  );
+  return table(EDGE_ROWS.map(edgePin));
 }
 
 function sparseOnly(): ConnectionSolver {
@@ -2193,6 +2192,73 @@ describe("ConnectionSolver mate partners", () => {
         ([family, connector, partner]) => [family, connector, partner],
       ),
     ).toEqual(EDGE_ROWS.map((_, k) => [1, k, 8]));
+  });
+
+  it("joins each held pin's part to the placed part whose hole the pin enters, and not to another part, another placed model, or the pose a stud back", () => {
+    const solver = sparseOnly();
+    const nearHoles = table(EDGE_ROWS.slice(0, 2).map(edgeHole));
+    const farHoles = table(EDGE_ROWS.slice(2).map(edgeHole));
+    const holes = model(
+      [nearHoles, farHoles],
+      [
+        [0, translation(0, 0, 0)],
+        [1, translation(0, 0, 0)],
+      ],
+    );
+    solver.insert(holes, pose(0, 0, 0), 21);
+    solver.insert(holes, pose(0, 40 * STUD_LDU, 0), 22);
+    const noHoleRow = 300;
+    const receptors = block(2, 1, PLATE_LDU, PLATE_RECEPTOR);
+    const pins = table([edgePin(EDGE_ROWS[2]), edgePin(noHoleRow)]);
+    const nearPin = table([edgePin(EDGE_ROWS[0])]);
+    const held = model(
+      [receptors, pins, nearPin],
+      [
+        [0, translation(0, 0, 0)],
+        [1, translation(0, 0, 0)],
+        [2, translation(0, 0, 0)],
+      ],
+    );
+    const seated = pose(-NEIGHBOUR_WIDTH_LDU, 0, 0);
+    const backedOut = pose(-NEIGHBOUR_WIDTH_LDU - STUD_LDU, 0, 0);
+    expect({
+      pinsToFarHoles: solver.joinsPart(held, seated, 1, 21, 1),
+      receptorsToFarHoles: solver.joinsPart(held, seated, 0, 21, 1),
+      pinsToNearHoles: solver.joinsPart(held, seated, 1, 21, 0),
+      nearPinToNearHoles: solver.joinsPart(held, seated, 2, 21, 0),
+      pinsToAnotherPlacedModel: solver.joinsPart(held, seated, 1, 22, 1),
+      pinsBackedOut: solver.joinsPart(held, backedOut, 1, 21, 1),
+    }).toEqual({
+      pinsToFarHoles: true,
+      receptorsToFarHoles: false,
+      pinsToNearHoles: false,
+      nearPinToNearHoles: true,
+      pinsToAnotherPlacedModel: false,
+      pinsBackedOut: false,
+    });
+  });
+
+  it("joins a held track piece to the placed piece whose end it meets, and not to another placed piece", () => {
+    const solver = new ConnectionSolver([new TrackEndFinder()]);
+    const laid = trackModel([{ ...end([10, 0, 0, 0, 0, 0, 0, 0], 0), instance: 0 }]);
+    solver.insert(laid, pose(0, 0, 0), 28);
+    solver.insert(laid, pose(0, 40 * STUD_LDU, 0), 29);
+    const held = trackModel([
+      { ...end([-30, 0, 0, 0, 0, 0, 0, 0], 0), instance: 0 },
+      { ...end(ZETA16_ZERO.map(Number), 8), instance: 1 },
+    ]);
+    const meeting = pose(10 * STUD_LDU, 0, 0);
+    expect({
+      meetingEnd: solver.joinsPart(held, meeting, 1, 28, 0),
+      otherEnd: solver.joinsPart(held, meeting, 0, 28, 0),
+      anotherPlacedPiece: solver.joinsPart(held, meeting, 1, 29, 0),
+      noSuchPlacedPart: solver.joinsPart(held, meeting, 1, 28, 1),
+    }).toEqual({
+      meetingEnd: true,
+      otherEnd: false,
+      anotherPlacedPiece: false,
+      noSuchPlacedPart: false,
+    });
   });
 });
 
