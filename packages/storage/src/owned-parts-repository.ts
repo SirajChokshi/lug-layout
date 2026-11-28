@@ -1,12 +1,12 @@
 import { decode, type Decoded } from "@brr/schema/decode";
 import { OwnedPartsFile } from "@brr/schema/owned-parts";
 import { inject, injectable } from "inversify";
-import { openDatabase, requestResult, transactionDone } from "./indexed-db.ts";
+import { inStore } from "./indexed-db.ts";
 import type { PersistentStorage } from "./persistent-storage.ts";
 import { INDEXED_DB, PERSISTENT_STORAGE } from "./tokens.ts";
 
 const OWNED_PARTS_DATABASE = "brr-owned-parts";
-const OWNED_PARTS_STORE = "files";
+const OWNED_PARTS_STORE = { name: "files" };
 const OWNED_PARTS_KEY = "owned";
 
 export interface IOwnedPartsRepository {
@@ -24,23 +24,11 @@ export class IndexedDbOwnedPartsRepository implements IOwnedPartsRepository {
     @inject(PERSISTENT_STORAGE) private readonly storage: PersistentStorage | null,
   ) {}
 
-  private async inStore<T>(
+  private inStore<T>(
     mode: IDBTransactionMode,
     use: (store: IDBObjectStore) => IDBRequest<T>,
   ): Promise<T> {
-    const db = await openDatabase(this.factory, OWNED_PARTS_DATABASE, [
-      { name: OWNED_PARTS_STORE },
-    ]);
-    try {
-      const transaction = db.transaction(OWNED_PARTS_STORE, mode);
-      const [result] = await Promise.all([
-        requestResult(use(transaction.objectStore(OWNED_PARTS_STORE))),
-        transactionDone(transaction),
-      ]);
-      return result;
-    } finally {
-      db.close();
-    }
+    return inStore(this.factory, OWNED_PARTS_DATABASE, OWNED_PARTS_STORE, mode, use);
   }
 
   async read(): Promise<Decoded<OwnedPartsFile | null>> {

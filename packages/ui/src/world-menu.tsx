@@ -1,5 +1,6 @@
 import type {
   EditorSnapshot,
+  ICloudWorlds,
   IEditor,
   IStarterWorlds,
   ModelImportView,
@@ -7,6 +8,7 @@ import type {
 } from "@brr/client";
 import type { WorldIndexEntry } from "@brr/schema/world";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { CloudAccount, useCloudView } from "./cloud-account.tsx";
 import { downloadBlob } from "./download.ts";
 import { ImportReportDetails } from "./import-report.tsx";
 import { LAYOUT_FILE_ACCEPT, MODEL_FILE_ACCEPT, importModelFiles } from "./model-files.ts";
@@ -17,6 +19,7 @@ interface WorldMenuProps {
   readonly editor: IEditor;
   readonly snapshot: EditorSnapshot;
   readonly starters: IStarterWorlds;
+  readonly cloud: ICloudWorlds | null;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -61,15 +64,19 @@ function WorldRow({
   item,
   current,
   disabled,
+  cloud,
 }: {
   readonly editor: IEditor;
   readonly item: WorldIndexEntry;
   readonly current: boolean;
   readonly disabled: boolean;
+  readonly cloud: ICloudWorlds | null;
 }) {
-  const onDelete = (): void => {
-    if (window.confirm(`Delete "${item.name}" from this browser? This can't be undone.`)) {
-      void editor.deleteWorld(item.id);
+  const onDelete = async (): Promise<void> => {
+    const keptInAccount = cloud !== null && (await cloud.keepsSyncedCopy(item.id));
+    const kept = keptInAccount ? "Your account keeps its synced copy." : "This can't be undone.";
+    if (window.confirm(`Delete "${item.name}" from this browser? ${kept}`)) {
+      await editor.deleteWorld(item.id);
     }
   };
   return (
@@ -84,7 +91,7 @@ function WorldRow({
       >
         {current ? "Current" : "Open"}
       </button>
-      <button type="button" disabled={disabled} onClick={onDelete}>
+      <button type="button" disabled={disabled} onClick={() => void onDelete()}>
         Delete
       </button>
     </li>
@@ -152,7 +159,8 @@ function useUnloadGuard(unsavedEdits: boolean): void {
   }, [unsavedEdits]);
 }
 
-export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
+export function WorldMenu({ editor, snapshot, starters, cloud }: WorldMenuProps) {
+  const cloudView = useCloudView(cloud);
   const [newName, setNewName] = useState("");
   const [open, setOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
@@ -286,6 +294,7 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
               item={item}
               current={item.id === world.id}
               disabled={!ready}
+              cloud={cloud}
             />
           ))}
         </ul>
@@ -361,6 +370,9 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
           onChange={onImportLayout}
         />
       </div>
+      {cloud !== null && cloudView !== null && (
+        <CloudAccount cloud={cloud} view={cloudView} editor={editor} snapshot={snapshot} />
+      )}
       {modelImport && <ModelImportStatus view={modelImport} />}
       {snapshot.fileError !== null && <p className="error">{snapshot.fileError}</p>}
       {snapshot.catalogError !== null && <p className="error">{snapshot.catalogError}</p>}

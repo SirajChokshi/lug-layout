@@ -1,0 +1,53 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "brr-layout-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "send_metrics": false,
+  "vars": {
+    "APP_ORIGIN": "http://localhost:5173",
+    "MAIL_FROM": "sign-in@layouts.localhost.test"
+  },
+  "d1_databases": [
+    {
+      "binding": "LAYOUT_DB",
+      "database_name": "brr-layouts"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "LAYOUT_FILES",
+      "bucket_name": "brr-layout-files"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "MAILER"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "SIGN_IN_RATE_LIMIT",
+      "namespace_id": "1003",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    {
+      "name": "ACCOUNT_RATE_LIMIT",
+      "namespace_id": "1004",
+      "simple": {
+        "limit": 1200,
+        "period": 60
+      }
+    }
+  ],
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

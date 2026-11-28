@@ -7,6 +7,7 @@ import {
   type EditorOptions,
   type IAnnotationService,
   type IBomService,
+  type ICloudWorlds,
   type IEditor,
   type IEditorCamera,
   type IHotbar,
@@ -75,6 +76,7 @@ interface EditorAppProps {
   readonly hotbar: IHotbar;
   readonly runningGear: IRunningGear;
   readonly starters: IStarterWorlds;
+  readonly cloud: ICloudWorlds | null;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -170,6 +172,7 @@ export function EditorApp({
   hotbar,
   runningGear,
   starters,
+  cloud,
   options,
   disclaimer,
   showState,
@@ -243,7 +246,7 @@ export function EditorApp({
       </LibraryColumn>
       <PlanScaleBar scaleBar={scaleBar} />
       <div className="side-panel">
-        <WorldMenu editor={editor} snapshot={snapshot} starters={starters} />
+        <WorldMenu editor={editor} snapshot={snapshot} starters={starters} cloud={cloud} />
         <PlacementToolbar
           editor={editor}
           snapshot={snapshot}

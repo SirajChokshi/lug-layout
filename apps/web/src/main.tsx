@@ -1,6 +1,7 @@
 import {
   ANNOTATION_SERVICE,
   BOM_SERVICE,
+  CLOUD_WORLDS,
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
@@ -92,11 +93,18 @@ container.load(
     ...(import.meta.env.VITE_CATALOG_API_BASE_URL
       ? { catalogApiBaseUrl: import.meta.env.VITE_CATALOG_API_BASE_URL }
       : {}),
+    ...(import.meta.env.VITE_LAYOUT_API_BASE_URL
+      ? { layoutApiBaseUrl: import.meta.env.VITE_LAYOUT_API_BASE_URL }
+      : {}),
     starterFileUrls,
     disclaimer: TRADEMARK_DISCLAIMER,
   }),
 );
 const params = readViewerParams(location.search);
+const cloud = import.meta.env.VITE_LAYOUT_API_BASE_URL ? container.get(CLOUD_WORLDS) : null;
+void cloud?.start(location.hash).then((signInLink) => {
+  if (signInLink) history.replaceState(null, "", `${location.pathname}${location.search}`);
+});
 
 interface ViewerChoice {
   readonly scene: IViewerScene;
@@ -162,6 +170,7 @@ function root(): ReactNode {
         hotbar={container.get(HOTBAR)}
         runningGear={container.get(RUNNING_GEAR)}
         starters={container.get(STARTER_WORLDS)}
+        cloud={cloud}
         options={{
           api: params.api,
           pixelRatio: window.devicePixelRatio,

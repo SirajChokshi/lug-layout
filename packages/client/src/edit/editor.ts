@@ -6049,6 +6049,10 @@ export class Editor implements IEditor, IEditedWorld {
     return this.session.deleteWorld(id);
   }
 
+  restoreVersion(version: number): Promise<boolean> {
+    return this.session.restoreVersion(version);
+  }
+
   retrySave(): Promise<void> {
     return this.session.retrySave();
   }

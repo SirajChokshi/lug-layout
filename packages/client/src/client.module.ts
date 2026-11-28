@@ -21,7 +21,7 @@ import {
 } from "@brr/domain";
 import { renderModule } from "@brr/render";
 import { openLinkProgressBroadcast, type RpcPort } from "@brr/rpc";
-import { storageModule } from "@brr/storage";
+import { LAYOUT_API_BASE_URL, storageModule } from "@brr/storage";
 import { ContainerModule, type ResolutionContext } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
 import { ScaleBar } from "./camera/scale-bar.ts";
@@ -268,6 +268,7 @@ export interface MainThreadConfig {
   readonly libraryConnectorsBaseUrl?: string;
   readonly shadowLibraryBaseUrl?: string;
   readonly catalogApiBaseUrl?: string;
+  readonly layoutApiBaseUrl?: string;
   readonly startSimWorker?: () => RpcPort;
   readonly starterFileUrls?: ReadonlyMap<string, string>;
   readonly disclaimer: string;
@@ -292,6 +293,9 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
     bind(SHADOW_LIBRARY_BASE_URL).toConstantValue(config.shadowLibraryBaseUrl ?? null);
     if (config.catalogApiBaseUrl !== undefined) {
       bind(CATALOG_API_BASE_URL).toConstantValue(config.catalogApiBaseUrl);
+    }
+    if (config.layoutApiBaseUrl !== undefined) {
+      bind(LAYOUT_API_BASE_URL).toConstantValue(config.layoutApiBaseUrl);
     }
     bind(SIM_WORKER_PORT)
       .toDynamicValue(() => {

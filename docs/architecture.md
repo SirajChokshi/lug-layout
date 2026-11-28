@@ -123,7 +123,7 @@ Adding a vendor later means writing a source adapter, the vendor's connector dat
 | Sim worker | Web Worker | TypeScript | Fixed-timestep simulation of track and road graphs, consists and routing. Headless-testable. |
 | Renderer | main thread for the MVP; OffscreenCanvas worker in P1 if the main thread misses its budget | three.js `WebGPURenderer` behind `SceneBackend` | Chunked scene, model instancing, LOD, stud handling, look |
 | Persistence | main thread and worker | IndexedDB | Layouts, imported model blobs and bakes (content-addressed), settings |
-| Backend (P1+) | server | Small API plus object storage | Accounts, cloud layouts, share links, model blob storage |
+| Backend | server: `apps/layout-api`, a Cloudflare Worker over D1 and R2 (B6.1) | Small API plus object storage | Accounts by emailed sign-in link; worlds saved as content-addressed shards, original model files and one snapshot per version. Share links, comments and co-editing follow (B6.3 to B6.5). |
 
 **Single parts from the pinned library.** The standard bundle carries `libraryParts`, an index of every pinned part that LDraw lists in part lists (not moved, alias, `~` or baked-colour files), sits in an active LDraw category and has at least one produced colour: its title, category, keywords, Rebrickable number and produced colours (`docs/part-bundle.md`). The palette searches it only once a query has two characters, on the All tab, under its own results, and leaves out parts the palette already offers. Search ranks on that metadata alone. Picking a part in a colour writes a one-line LDraw model, `1 <colour> 0 0 0 1 0 0 0 1 0 0 0 1 <part>.dat`, and hands it to the same import as a user's file. So placing and connecting it come only from the part's own geometry, through the import and bake, exactly as the same part inside any imported file. The bytes depend only on the part and colour, so picking it again finds the stored import by its SHA-256 and adds nothing.
 
@@ -494,11 +494,11 @@ Every page has the trademark disclaimer, and every drawing page a check bar that
 | Data | Format | Location |
 |---|---|---|
 | Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and IndexedDB (`brr-assets`) |
-| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists on the rails as catalog ref, colour and anchor (piece pose, route, direction, whole-LDU offset), vehicle sidecars) plus one shard per super-chunk (placements as catalog ref plus LDraw colour code, so a palette id like `ldraw:3811@2` saves as ref `ldraw:3811` and colour 2; laid track as exact ℤ[ζ₁₆] poses with their global order, filed by the exact floor of their stud position; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
+| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists on the rails as catalog ref, colour and anchor (piece pose, route, direction, whole-LDU offset), vehicle sidecars) plus one shard per super-chunk (placements as catalog ref plus LDraw colour code, so a palette id like `ldraw:3811@2` saves as ref `ldraw:3811` and colour 2; laid track as exact ℤ[ζ₁₆] poses with their global order, filed by the exact floor of their stud position; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip`; with an account, also saved to the layout API, each version a snapshot naming its shards and model files by SHA-256 (B6.1). `CloudWorldRepository` (B6.2) keeps IndexedDB the working copy and syncs it in the background: a world opened with no local edits pulls the account's newest version, and a save made from an older version than the newest becomes a new version, so nothing is overwritten |
 | Plan export | `*.brrplan.zip`: the region's placements, its footprint and the models it references, so it reopens on its own | File |
 | Collection (owned parts) | The CSV of what the user owns, kept as imported (columns: §11 item 22). Own vs buy matches its rows to a parts list's lines only through the crosswalk's Rebrickable part and colour ids, and reports rows no crosswalk entry maps to | IndexedDB (`brr-owned-parts`) |
 | Printable sheets | PDF (one file, a page per sheet page) or SVG (one file per page, a stored ZIP when there are several) | Download |
-| Imported model | Original file plus the bake (instance list, BOM, footprint, LOD meshes, badges), keyed by content hash | IndexedDB; P1 object storage |
+| Imported model | Original file plus the bake (instance list, BOM, footprint, LOD meshes, badges), keyed by content hash | IndexedDB; the original file (never the bake) in the layout API's R2 bucket for worlds saved there |
 | Shareable package | `*.brr.zip`: the world (or `*.brrplan.zip` for a single plan) plus the original files of the models it references | File (MVP), share link (P1) |
 | BOM export | BrickLink Wanted List XML, Rebrickable CSV, plain CSV | Download |
 | Interchange | Import an LDraw `.ldr`/`.mpd` as a layout (each top-level submodel its own placement); export the layout as one LDraw `.mpd` (each model a submodel, placed); glTF export in P2 | File; download |
@@ -694,6 +694,7 @@ This is a **Turborepo** monorepo using pnpm workspaces, plus a Cargo workspace f
 apps/
   web/                    Vite + React app; main-thread composition root
   catalog-api/            Cloudflare Worker: catalog search, set inventory and theme browse over D1; release files from R2 (D5)
+  layout-api/             Cloudflare Worker: accounts by emailed sign-in link and worlds saved to the cloud, over D1 and R2 (B6.1)
 packages/
   math/                   exact ℤ[ζ_N] arithmetic, lattice poses, Rot90, SoA vector helpers
   schema/                 valibot schemas for every wire and file format, one subpath each (bundle, catalog-api, world, decode); types are inferred from them
@@ -720,14 +721,14 @@ crates/
 tools/
   asset-pipeline/         Node CLI: fetch/pin inputs, attribution, Rebrickable → SQLite → shards, connector merge, OMR ingest, publish
 infra/
-  cloudflare/             Terraform for the catalog Worker, its D1 database and its R2 release bucket (D5)
+  cloudflare/             Terraform for the catalog Worker, its D1 database and its R2 release bucket (D5), and the layout API's Worker, database, bucket and mail
 ```
 
 ### 14.2 Dependency direction
 Dependencies only point downward; nothing imports a package from its own layer or a layer above.
 
 ```
-L6  apps/web                             apps/catalog-api (server; imports only schema)
+L6  apps/web                             apps/catalog-api · apps/layout-api (servers; import only schema)
 L5  ui                                   workers/*  (entry points)
 L4  client
 L3  sim · import
@@ -754,6 +755,7 @@ L0  math
 | `tools/asset-pipeline` | math, schema, domain, catalog, valibot, the brick-compile CLI; never imported by apps |
 | `tools/e2e` | math, schema, catalog, import, client, render, storage and inversify; valibot, Playwright and Vitest. A test-tooling composition root like `apps/web` (owner ruling, 2026-11-19): it builds a `Container` from `client`'s `mainThreadModules` and rebinds only boundary tokens. Nothing imports it. |
 | `apps/catalog-api` | schema and valibot only; `@brr/config` presets as dev tooling. Nothing imports it. |
+| `apps/layout-api` | schema and valibot only, like `apps/catalog-api`; `@brr/config` presets as dev tooling. Its services take their collaborators through constructors from one composition root, `createLayoutApi`, without Inversify. Nothing imports it. |
 
 **Enforced rules:**
 - Every wire and file format is one valibot schema in `schema`, with its type inferred from it (owner decision, 2026-11-16). That covers the CDN bundle (manifest, model files, GLB JSON) and the palette that feeds its compiler, the catalog API and the D1 release rows behind it, and saved worlds. A query's projection of D1 rows is composed from the row schemas next to its SQL in `apps/catalog-api`. Packages that run schemas depend on `valibot`; packages that only name the types use `import type` from `schema`.

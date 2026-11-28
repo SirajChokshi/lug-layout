@@ -81,6 +81,7 @@ export interface IWorldRepository {
   ): Promise<WorldIndexEntry>;
   read(id: string): Promise<Decoded<StoredWorld>>;
   save(id: string, change: WorldChange): Promise<WorldIndexEntry>;
+  restoreVersion(id: string, version: number): Promise<void>;
   remove(id: string): Promise<void>;
   shardFiles(id: string): Promise<ReadonlyArray<ShardFile>>;
   packArchive(archive: WorldArchive): Uint8Array;
@@ -399,6 +400,10 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     }
     if (issues.length > 0) return { ok: false, issues };
     return { ok: true, value: { id, manifest: manifest.value, shards, notes } };
+  }
+
+  async restoreVersion(_id: string, version: number): Promise<void> {
+    throw new Error(`version ${version} isn't kept on this device; sign in to keep versions`);
   }
 
   async remove(id: string): Promise<void> {

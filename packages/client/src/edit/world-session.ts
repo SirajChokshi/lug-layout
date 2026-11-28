@@ -156,6 +156,7 @@ export interface IWorldFiles {
   newWorld(name: string): Promise<boolean>;
   openWorld(id: string): Promise<boolean>;
   deleteWorld(id: string): Promise<boolean>;
+  restoreVersion(version: number): Promise<boolean>;
   retrySave(): Promise<void>;
   exportWorld(): Promise<ExportedWorld>;
   importWorld(bytes: Uint8Array): Promise<boolean>;
@@ -785,6 +786,16 @@ export class WorldSession implements IWorldSession {
       },
       true,
     );
+  }
+
+  restoreVersion(version: number): Promise<boolean> {
+    return this.fileAction(`restoring version ${version}`, async () => {
+      const id = this.current?.id ?? null;
+      if (id === null || this.state.readOnly) throw new Error("no world is open for editing here");
+      await this.repository.restoreVersion(id, version);
+      await this.loadWorld(id);
+      await this.refreshWorlds();
+    });
   }
 
   exportWorld(): Promise<ExportedWorld> {

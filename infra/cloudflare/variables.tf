@@ -95,3 +95,36 @@ variable "worker_bundle" {
   type        = string
   default     = "../../apps/catalog-api/dist/index.js"
 }
+
+variable "layout_api" {
+  description = "Deploys the layout API (apps/layout-api): accounts by emailed sign-in link and worlds saved to the cloud. Null, the default, deploys none of it. app_origin is the web app origin that sign-in links open. mail_domain is the subdomain of zone_id that Cloudflare Email Service sends from, and mail_from an address on it. route_pattern is an optional zone route such as layouts-api.example.org/*; workers_dev serves <name>.<account>.workers.dev."
+  type = object({
+    app_origin    = string
+    mail_domain   = string
+    mail_from     = string
+    route_pattern = optional(string)
+    workers_dev   = optional(bool, true)
+  })
+  default = null
+
+  validation {
+    condition     = var.layout_api == null || var.zone_id != null
+    error_message = "layout_api needs zone_id: its sign-in mail is sent from a subdomain of that zone."
+  }
+
+  validation {
+    condition     = var.layout_api == null ? true : can(regex("^https://[a-z0-9.-]+(:[0-9]+)?$", var.layout_api.app_origin))
+    error_message = "layout_api.app_origin is an https origin with no path or trailing slash, for example https://layouts.example.org."
+  }
+
+  validation {
+    condition     = var.layout_api == null ? true : endswith(var.layout_api.mail_from, "@${var.layout_api.mail_domain}")
+    error_message = "layout_api.mail_from must be an address on layout_api.mail_domain."
+  }
+}
+
+variable "layout_worker_bundle" {
+  description = "Worker module built by `pnpm --filter @brr/layout-api build`."
+  type        = string
+  default     = "../../apps/layout-api/dist/index.js"
+}
