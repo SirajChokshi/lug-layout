@@ -41,8 +41,20 @@ const REGION: PlanRegion = {
     roomWidthMm: 3000,
     roomDepthMm: 1200,
     tables: [
-      { id: "t1", name: "Front", rect: { x: 200, z: 200, width: 1234, depth: 600 }, heightMm: 800 },
-      { id: "t2", name: "Back", rect: { x: 1500, z: 200, width: 1200, depth: 600 }, heightMm: 900 },
+      {
+        id: "t1",
+        name: "Front",
+        number: 1,
+        rect: { x: 200, z: 200, width: 1234, depth: 600 },
+        heightMm: 800,
+      },
+      {
+        id: "t2",
+        name: "Back",
+        number: 2,
+        rect: { x: 1500, z: 200, width: 1200, depth: 600 },
+        heightMm: 900,
+      },
     ],
     obstacles: [],
   },
@@ -54,6 +66,7 @@ function tableTops(region: PlanRegion): TableTop[] {
   return region.footprint.tables.map((table) => ({
     id: table.id,
     name: table.name,
+    number: table.number,
     heightMm: table.heightMm,
     surface: mmRectInWorld(region, table.rect),
     studs: studsInside(region, table.rect),
@@ -387,7 +400,13 @@ const SHOW: PlanRegion = {
     ...REGION.footprint,
     tables: [
       ...REGION.footprint.tables,
-      { id: "t3", name: "Side", rect: { x: 200, z: 900, width: 600, depth: 200 }, heightMm: 800 },
+      {
+        id: "t3",
+        name: "Side",
+        number: 3,
+        rect: { x: 200, z: 900, width: 600, depth: 200 },
+        heightMm: 800,
+      },
     ],
   },
 };
