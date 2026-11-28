@@ -60,6 +60,11 @@ export class StudLevel {
     this.bits[word] = ((this.bits[word] ?? 0) & ~(1 << bit)) >>> 0;
   }
 
+  clear(): void {
+    this.bits.fill(0, 0, this.slots * TILE_ROWS);
+    this.stacked.fill(0, 0, this.slots * TILE_CELLS);
+  }
+
   has(cellX: number, cellZ: number): boolean {
     const slot = this.slotAt(cellX >> WORD_SHIFT, cellZ >> TILE_ROW_SHIFT);
     if (slot === NO_TILE) return false;

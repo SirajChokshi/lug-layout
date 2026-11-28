@@ -3798,3 +3798,175 @@ describe("PlacementSearch names models in one fixed order for a given world", ()
     });
   }, 120_000);
 });
+
+const REINSERTED_FROM = 500_000;
+const ASSIST_CELLS = 2;
+const LEFT_OUT_EVERY = 7;
+const REMOVED_FIRST_EVERY = 5;
+const PIN_PROBE = "pin into two bored items at one pose";
+
+function recipeQueries(recipe: CanonicalRecipe): ReadonlyArray<Probe> {
+  return [...recipe.probes, ...recipe.walks.flat()];
+}
+
+function namedQuery(recipe: CanonicalRecipe, name: string): Probe {
+  const query = recipeQueries(recipe).find((candidate) => candidate.name === name);
+  if (!query) throw new Error(`the recipe has no query named ${name}`);
+  return query;
+}
+
+function reinsertedId(position: number): number {
+  return REINSERTED_FROM + position;
+}
+
+function keptOnReAdd(k: number): boolean {
+  return k % LEFT_OUT_EVERY !== 0;
+}
+
+function holdsTrackEnd(piece: Piece, pose: LatticePose): boolean {
+  return piece.connectors.trackEndCount > 0 && pose.x % STUD_LDU === 0 && pose.z % STUD_LDU === 0;
+}
+
+function placedAnswer(history: CanonicalHistory, owner: number): unknown {
+  const view = history.view(owner);
+  return view ? [view.item, view.pose] : null;
+}
+
+function removeSomeFirst(history: CanonicalHistory): number {
+  let heldTrackEndsFreed = 0;
+  for (const [owner, listed] of history.live.listed) {
+    const track = holdsTrackEnd(listed.piece, listed.pose);
+    const removed = track ? heldTrackEndsFreed === 0 : owner % REMOVED_FIRST_EVERY === 0;
+    if (!removed) continue;
+    if (track) heldTrackEndsFreed++;
+    history.live.search.remove(owner);
+    history.live.listed.delete(owner);
+  }
+  return heldTrackEndsFreed;
+}
+
+function answersAfterReAdd(history: CanonicalHistory, kept: ReadonlyArray<number>): unknown[] {
+  const search = history.live.search;
+  const answers: unknown[] = recipeQueries(history.recipe).map((query) => {
+    const checked = placementChoice();
+    search.check(
+      query.piece.connectors,
+      query.piece.volumes,
+      query.piece.parts.boxes,
+      query.piece.parts.technic,
+      query.pose,
+      TABLE_Y_PLATES,
+      checked,
+    );
+    return [
+      query.name,
+      history.raw(history.evaluate(query)),
+      fullVerdict(checked),
+      search
+        .restingOn(query.piece.volumes, query.pose, null)
+        .map((owner) => placedAnswer(history, owner)),
+    ];
+  });
+  kept.forEach((k, position) => {
+    const id = reinsertedId(position);
+    const stranding = search.strandedByRemoval(new Set([id]), history.live.restsOnTable);
+    answers.push([
+      k,
+      placedAnswer(history, search.overlapOf(id)),
+      stranding.kind === "stranded" ? placedAnswer(history, stranding.placement) : stranding,
+    ]);
+  });
+  return answers;
+}
+
+function emptiedThenReAdded(empty: (history: CanonicalHistory) => void) {
+  const history = insertedInOrder(fixture());
+  const heldTrackEndsFreed = removeSomeFirst(history);
+  const held = namedQuery(history.recipe, PIN_PROBE);
+  const assist = window(held.pose.x, held.pose.z, ASSIST_CELLS, held.pose.yPlates);
+  const matedBefore = choose(history.recipe.f, held.piece, assist).votes > 0;
+  const revision = history.live.search.revision();
+  const carried = new Set([...history.live.listed.keys()].slice(0, CANONICAL_CARRY_SIZE));
+  history.live.search.withdrawn(carried, () => history.evaluate(held));
+  empty(history);
+  const revisionAdvanced = history.live.search.revision() !== revision;
+  history.live.listed.clear();
+  const queriesWithRows = recipeQueries(history.recipe)
+    .filter((query) => history.evaluate(query).count > 0)
+    .map((query) => query.name);
+  const atCursor = fullVerdict(choose(history.recipe.f, held.piece, assist));
+  const kept = history.recipe.placed
+    .map((_, k) => k)
+    .filter(keptOnReAdd)
+    .toReversed();
+  history.insert(kept, reinsertedId);
+  const heldTrackEndsReAdded = kept.filter((k) => {
+    const entry = history.recipe.placed[k];
+    return entry !== undefined && holdsTrackEnd(entry.piece, entry.pose);
+  }).length;
+  return {
+    afterEmpty: {
+      carrySize: carried.size,
+      matedBefore,
+      revisionAdvanced,
+      queriesWithRows,
+      atCursor,
+    },
+    partialReAdd: {
+      differsFromFirst: kept.length < history.recipe.placed.length,
+      heldTrackEnds: { freedBeforeEmpty: heldTrackEndsFreed, reAdded: heldTrackEndsReAdded },
+    },
+    answers: answersAfterReAdd(history, kept),
+  };
+}
+
+function emptySearchAt(cursor: LatticePose) {
+  return {
+    carrySize: CANONICAL_CARRY_SIZE,
+    matedBefore: true,
+    revisionAdvanced: true,
+    queriesWithRows: [],
+    atCursor: {
+      pose: [cursor.x, cursor.z, cursor.yPlates, 0],
+      votes: 0,
+      accepted: true,
+      hit: null,
+    },
+  };
+}
+
+describe("PlacementSearch.clear", () => {
+  it("answers as removing every placement one at a time does: empty despite a warm gather or an owed carry, and the same after a partial re-add", () => {
+    const f = fixture();
+    const pins = pinRow(f);
+    const intoTheBore: LatticePose = { ...ORIGIN, x: HALF, z: STUD_LDU };
+    const report = new MateReport();
+    place(f, 1, boredBlock(f));
+    f.search.evaluate(pins.connectors, intoTheBore, report);
+    const matedThroughTheGather = report.count;
+    f.search.clear();
+    f.search.evaluate(pins.connectors, intoTheBore, report);
+    expect({ matedThroughTheGather, afterClear: report.count }).toEqual({
+      matedThroughTheGather: 1,
+      afterClear: 0,
+    });
+
+    const cleared = emptiedThenReAdded((history) => history.live.search.clear());
+    const removed = emptiedThenReAdded((history) => {
+      for (const owner of history.live.listed.keys()) history.live.search.remove(owner);
+    });
+    const cursor = namedQuery(canonicalRecipe(fixture(), CANONICAL_SEED), PIN_PROBE).pose;
+    const partialReAdd = {
+      differsFromFirst: true,
+      heldTrackEnds: { freedBeforeEmpty: 1, reAdded: 2 },
+    };
+    expect({
+      cleared: [cleared.afterEmpty, cleared.partialReAdd],
+      removed: [removed.afterEmpty, removed.partialReAdd],
+    }).toEqual({
+      cleared: [emptySearchAt(cursor), partialReAdd],
+      removed: [emptySearchAt(cursor), partialReAdd],
+    });
+    expect(cleared.answers).toEqual(removed.answers);
+  }, 120_000);
+});

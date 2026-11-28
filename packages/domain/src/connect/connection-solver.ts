@@ -172,6 +172,12 @@ export class ConnectionSolver {
     for (let f = 0; f < this.finders.length; f++) this.finders[f]?.remove(model, pose, owner);
   }
 
+  clear(): void {
+    this.withdrawal.take();
+    this.withdrawal.releaseModels();
+    for (let f = 0; f < this.finders.length; f++) this.finders[f]?.clear();
+  }
+
   withdrawn<T>(placements: ReadonlyArray<WithdrawnPlacement>, during: () => T): T {
     const withdrawal = this.withdrawal;
     if (withdrawal.owed && withdrawal.holds(placements)) {

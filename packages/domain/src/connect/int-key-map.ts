@@ -24,6 +24,11 @@ export class IntKeyMap {
     this.used = 0;
   }
 
+  setAll(value: number): void {
+    if (this.used === 0) return;
+    this.values.fill(value);
+  }
+
   set(key: Int32Array, value: number): void {
     let at = this.find(key);
     if (at === MISSING) {

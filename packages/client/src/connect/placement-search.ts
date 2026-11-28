@@ -900,7 +900,14 @@ export class PlacementSearch implements IPlacementSearch {
   }
 
   clear(): void {
-    for (const placement of this.placed.keys()) this.remove(placement);
+    if (this.placed.size > 0) {
+      this.volumes.clear();
+      this.solver.clear();
+      this.placed.clear();
+      this.grids.clear();
+      this.gridUses.clear();
+      this.edits++;
+    }
     this.records.length = 0;
     if (this.awaitedCount > 0) this.edits++;
     this.awaitedCount = 0;

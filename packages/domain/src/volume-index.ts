@@ -111,6 +111,12 @@ class FootprintChunk {
     this.heads[bucket] = n;
   }
 
+  clear(): void {
+    this.heads.fill(NONE);
+    this.used = 0;
+    this.free = NONE;
+  }
+
   unlink(bucket: number, row: number): boolean {
     let previous = NONE;
     for (let n = this.heads[bucket] ?? NONE; n !== NONE; n = this.nodes[n + NEXT] ?? NONE) {
@@ -190,6 +196,15 @@ export class VolumeIndex {
     this.grids[row] = null;
     this.freeRows = grown(this.freeRows, this.freeCount + 1);
     this.freeRows[this.freeCount++] = row;
+  }
+
+  clear(): void {
+    for (const rows of this.byChunkX.values()) {
+      for (const chunk of rows.values()) chunk.clear();
+    }
+    this.grids.length = 0;
+    this.rows = 0;
+    this.freeCount = 0;
   }
 
   firstOverlap(
