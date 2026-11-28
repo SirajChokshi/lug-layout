@@ -650,7 +650,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 9. **BOM economics.** Default: file exports only. Price estimates in P1 only if BrickLink's terms allow non-commercial use. No affiliate links, and an optional donation link if you want one.
    *Updated 2026-11-27 (D6):* prices are out of scope (§13, *Not doing*). Parts lists stay buyable through the BrickLink Wanted List and Rebrickable exports.
 10. **Power systems.** Default: cosmetic attribute only. Mixed 9V and plastic loops get a BOM flag, not an error.
-   *Updated 2026-11-27 (D6):* B3.6 adds a reversing-loop check for all track, read from track-graph topology. It never branches on a track system, and it is advisory, so it never blocks "Buildable as planned" (§13).
+   *Updated 2026-11-27 (D6):* B3.6 adds a reversing-loop check for all track, read from track-graph topology (§7.3). It never branches on a track system. It is a warning rather than an error, because whether track is powered isn't in its geometry, and like every listed issue it keeps the plan from reading "Buildable as planned" while it stands.
 11. **Starter content.** Default: OMR City and Train sets, stations and a few modular buildings that pass L1 and L2, plus the official track and road palette.
 12. **Name.** Default: keep "Brick Railroad" and check the domain and handles. No "LEGO" in the name.
 13. **Real-hardware twin (Powered Up over Bluetooth).** Default: out of scope until P2 or later.
@@ -663,6 +663,8 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 ## 13. Roadmap
 
 Owner decision D6 (2026-11-27) refocuses the roadmap on the 2D-first show planner. The work is nine milestones, B0 to B8, each a list of PR-sized tasks numbered for reference (B2.4 is milestone B2's fourth task). The foundation milestones M0 to M6 built the engine the B milestones stand on, and their record stays below. P1, P2 and the D3 "later" list are retired; *Where the earlier phases went* says where each of their items now sits.
+
+Task status lives in the Project tracker, not here. Once a task lands, the section that documents it describes what was built, and that description wins wherever this roadmap's wording differs.
 
 ### Invariants every PR keeps
 Reviewers check these on every PR:
@@ -753,7 +755,7 @@ The backend and its glyphs are described in §6, *2D plan backend*.
 - **B3.3 Path select:** double-clicking a track piece selects its run to the next switch or open end, and Shift+double-click selects the connected network. Double-clicking a model still frames it.
 - **B3.4 Find and replace:** swap item A for item B wherever B's connectors compose exactly at that instance, and list the instances it couldn't swap.
 - **B3.5 Kits:** "Save selection as kit" to a personal or club library. A kit places as a group whose members connect by their own connectors.
-- **B3.6 Reversing-loop check** from track-graph topology, as an issue and a 2D marker. It reports every loop or wye that reverses direction and says this shorts two-rail powered track such as 9V and 12V. It never branches on a track system, and it is advisory: it never blocks "Buildable as planned", because a reversing loop is real, buildable track that only shorts two-rail power.
+- **B3.6 Reversing-loop check** (§7.3) from track-graph topology, as an issue and a 2D marker. It reports every loop or wye that reverses direction and says this shorts two-rail powered track such as 9V and 12V. It never branches on a track system. It is a warning, not an error, because whether track is powered isn't in its geometry; like every listed issue, it keeps the plan from reading "Buildable as planned" while it stands.
 - **B3.7 Library search:** quoted phrases, `-exclude`, `#number` and colour names; Recent and Favourites; per-section filter memory.
 - **B3.8 Loop closer:** when two open ends can be joined exactly, a one-click "close" that shows the pieces it would use.
 
@@ -765,7 +767,7 @@ The backend and its glyphs are described in §6, *2D plan backend*.
 - **B4.5 Inventories:** per contributor, a Rebrickable collection CSV (extending today's own vs buy), a BlueBrick `.bbb` (through B5.2's mapping) or quick counts. The event budget is their sum.
 - **B4.6 Budget on the library:** tiles show used and available. Over budget is a warning that feeds the shortfall Wanted List and never blocks "Buildable as planned", since missing parts can be bought. The parts list gains per-contributor and missing columns.
 - **B4.7 Member sheets:** "what you bring" lists and per-contributor Wanted Lists.
-- **B4.8 Show sheets** (landed in #811, #814 and #820; §7.3, *Plan outputs*): one draw list, `PlanDrawing`, laid out by `SheetComposer` as one 1:1 sheet, fitted to one page, or tiled at true scale over A4, Letter or A3 with overlap and registration marks; a title block and legend; the table plan sheet (numbers, sizes, heights, colours); and named sheet sets as layer sets ("Main plan", "Table plan", or a user's "Yard plan"). It writes SVG, and PDF through a small vector PDF writer in `client` (`PDF_SHEET_WRITER`) with no dependency, fed by the same draw list, so its bytes are deterministic. Sheet sets persist with the world from B1.2, and document layers join the draw list's layers from B1.3.
+- **B4.8 Show sheets** (§7.3, *Plan outputs*): one draw list, `PlanDrawing`, laid out by `SheetComposer` as one 1:1 sheet, fitted to one page, or tiled at true scale over A4, Letter or A3 with overlap and registration marks; a title block and legend; the table plan sheet (numbers, sizes, heights, colours); and named sheet sets as layer sets ("Main plan", "Table plan", or a user's "Yard plan"). It writes SVG, and PDF through a small vector PDF writer in `client` (`PDF_SHEET_WRITER`) with no dependency, fed by the same draw list, so its bytes are deterministic. Sheet sets persist with the world from B1.2, and document layers join the draw list's layers from B1.3.
 - **B4.9 PNG export** at a chosen number of pixels per stud, tiled.
 - **B4.10 LDraw `.mpd` export:** one submodel per layer, each placement a type-1 line at its exact pose, imported models embedded as their original files. Evidence: a round trip into LDCad or Studio.
 
@@ -837,7 +839,7 @@ These built the engine. An item they list that is still open follows D6: a B mil
 | P1: the "designate bogie" metadata tool | Unscheduled: Play internals are frozen |
 | P1: Rebrickable API collection sync | Unscheduled. Inventories come from a collection CSV, a BlueBrick `.bbb` or quick counts (B4.5) |
 | P1: BrickLink price estimates and a cost total per plan | *Not doing* (prices) |
-| P1: PDF plans | B4.8, landed |
+| P1: PDF plans | B4.8 |
 | P1: build-phase splits, and a moving and storage view | Unscheduled |
 | P1: floor plans or room photos for tracing | B4.3 for a floor-plan image; room photos are unscheduled |
 | P1: elevation with grade parts | Ramps and raised track exist (§7.2, *Raised track*); nothing more is scheduled |
