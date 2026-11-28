@@ -233,6 +233,12 @@ function withGlyph<M extends PlacementModel>(model: M, bake: Pick<ModelBake, "gl
   return bake.glyph === null ? model : { ...model, glyph: bake.glyph };
 }
 
+function noLatticeReason({ refusedConnectorRecords: { length } }: ImportReport): string {
+  if (length === 0) return NO_LATTICE_REASON;
+  const records = length === 1 ? "1 part's connector record" : `${length} parts' connector records`;
+  return `${NO_LATTICE_REASON}, and ${records} couldn't be read (listed in the import report)`;
+}
+
 export function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor {
   const color = colors.find((c) => c.code === code);
   if (!color) throw new Error(`LDConfig has no colour ${code}`);
@@ -699,7 +705,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const reports = { report: result.report, studio: result.studio ?? null };
     const { bake } = result;
     if (!bake || bake.lattice === null || bake.cells === null) {
-      const refusal = result.report.bakeIssue ?? bake?.latticeIssue ?? NO_LATTICE_REASON;
+      const refusal =
+        result.report.bakeIssue ?? bake?.latticeIssue ?? noLatticeReason(result.report);
       return { ...reports, kind: "refused", refusal };
     }
     const placed = { ...result, sections: result.report.sections, bake };

@@ -4786,12 +4786,14 @@ function refusedBake(fileName: string): ImportResult {
 }
 
 class RefusingModelImporter implements IModelImporter {
+  constructor(private readonly refused: (fileName: string) => ImportResult) {}
+
   async importText(fileName: string): Promise<ImportResult> {
-    return refusedBake(fileName);
+    return this.refused(fileName);
   }
 
   async importStudio(fileName: string): Promise<ImportResult> {
-    return refusedBake(fileName);
+    return this.refused(fileName);
   }
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
@@ -4803,45 +4805,71 @@ class RefusingModelImporter implements IModelImporter {
   }
 }
 
-it("resolves a model file the bake refuses as not imported and keeps the chosen item, so a drop places nothing", async () => {
-  vi.stubGlobal("requestAnimationFrame", () => 0);
-  const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-  const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
-  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
-  container.rebind(MODEL_IMPORTER).toConstantValue(new RefusingModelImporter());
-  const editor = container.get(EDITOR);
-  const canvas = {
-    clientWidth: 640,
-    clientHeight: 480,
-    dataset: {},
-  } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  await chosen(editor, BASEPLATE);
+function withUnreadRecord(record: ModelRecord): (fileName: string) => ImportResult {
+  return (fileName) => {
+    const baked = importedRecord(fileName, record);
+    return {
+      ...baked,
+      report: {
+        ...baked.report,
+        refusedConnectorRecords: [{ partId: REFUSED_PART, reason: REFUSED_REASON }],
+      },
+      bake: baked.bake && { ...baked.bake, lattice: null },
+    };
+  };
+}
 
-  const imported = await editor.importModelFile({
-    name: "no-studs.ldr",
-    bytes: new TextEncoder().encode("0 A model with no studs\n"),
-  });
+it.each([
+  { bake: "refuses", refused: () => refusedBake, reason: NO_LATTICE_REASON },
+  {
+    bake: "finds no lattice, while a part's connector record couldn't be read,",
+    refused: withUnreadRecord,
+    reason: `${NO_LATTICE_REASON}, and 1 part's connector record couldn't be read (listed in the import report)`,
+  },
+])(
+  "resolves a model file whose bake $bake as not imported, says why, and keeps the chosen item, so a drop places nothing",
+  async ({ refused, reason }) => {
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    const container = new Container();
+    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+    container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+    const realLoader = container.get(PART_BUNDLE_LOADER);
+    container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+    container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+    container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
+    const record = await realLoader.loadModelRecord("standard", PLACEABLE_SET);
+    container.rebind(MODEL_IMPORTER).toConstantValue(new RefusingModelImporter(refused(record)));
+    const editor = container.get(EDITOR);
+    const canvas = {
+      clientWidth: 640,
+      clientHeight: 480,
+      dataset: {},
+    } as unknown as HTMLCanvasElement;
+    await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+    await chosen(editor, BASEPLATE);
 
-  const { activeItem, modelImport, catalog } = editor.snapshot();
-  expect({
-    imported,
-    activeItem,
-    status: modelImport?.status,
-    reason: modelImport?.reason,
-    listed: catalog.some((item) => item.id.startsWith("import:")),
-  }).toEqual({
-    imported: false,
-    activeItem: BASEPLATE,
-    status: "refused",
-    reason: NO_LATTICE_REASON,
-    listed: false,
-  });
-}, 120_000);
+    const imported = await editor.importModelFile({
+      name: "no-studs.ldr",
+      bytes: new TextEncoder().encode("0 A model with no studs\n"),
+    });
+
+    const { activeItem, modelImport, catalog } = editor.snapshot();
+    expect({
+      imported,
+      activeItem,
+      status: modelImport?.status,
+      reason: modelImport?.reason,
+      listed: catalog.some((item) => item.id.startsWith("import:")),
+    }).toEqual({
+      imported: false,
+      activeItem: BASEPLATE,
+      status: "refused",
+      reason,
+      listed: false,
+    });
+  },
+  120_000,
+);
 
 function importedRecord(
   fileName: string,
