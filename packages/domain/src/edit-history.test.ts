@@ -1,4 +1,5 @@
 import { POSE16_IDENTITY, STUD_LDU, pose16, zeta16 } from "@brr/math";
+import type { NoteRecordV2 } from "@brr/schema/world";
 import { describe, expect, it } from "vitest";
 import {
   EditHistory,
@@ -45,6 +46,18 @@ function liveConsists(layout: ConsistLayout): string[] {
     )
     .toSorted();
 }
+
+const TEXT_NOTE: NoteRecordV2 = {
+  kind: "text",
+  index: 0,
+  layer: 1,
+  text: "Station",
+  x: 0,
+  z: 0,
+  rot: 0,
+  heightStuds: 2,
+  color: "#000000",
+};
 
 function lcg(seed: number): () => number {
   let state = seed >>> 0;
@@ -212,6 +225,31 @@ describe("EditHistory", () => {
 
     expect(history.redo()).toMatchObject({ track: run, plan: change });
     expect(livePlacements(world)).toEqual(["1,2,0,0,0,0", "3,0,40,60,1,3"]);
+  });
+
+  it("keeps the note change its follower makes for moved placements in the same step, and keeps a note edit as its own step, both reversed on undo", () => {
+    const world = new World();
+    const label = { id: "note-1", note: TEXT_NOTE };
+    const followed = { before: [label], after: [{ ...label, note: { ...TEXT_NOTE, x: 640 } }] };
+    const history = new EditHistory(world, new ConsistLayout(), {
+      follow: (changes) => (changes.some((change) => change.before !== null) ? followed : null),
+    });
+    const placed = history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0 });
+    const placement = placed.changes[0]?.placement ?? null;
+
+    const moved = history.commit("move", [
+      { placement, to: { refId: 1, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0 } },
+    ]);
+    const added = { before: followed.after, after: [] };
+    const annotated = history.annotate(added);
+
+    expect([placed.notes, moved.notes, annotated.notes]).toEqual([null, followed, added]);
+    expect(history.nextUndo()).toEqual({ kind: "note" });
+    expect(history.undo()?.notes).toEqual({ before: [], after: followed.after });
+    const undoneMove = history.undo();
+    expect(undoneMove?.notes).toEqual({ before: followed.after, after: followed.before });
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0"]);
+    expect(history.redo()?.notes).toBe(followed);
   });
 
   it("drops the redo branch when a new edit follows an undo", () => {

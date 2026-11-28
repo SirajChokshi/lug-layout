@@ -5,6 +5,7 @@ import {
   runEditorAction,
   type EditorActionId,
   type EditorOptions,
+  type IAnnotationService,
   type IBomService,
   type IEditor,
   type IEditorCamera,
@@ -45,6 +46,7 @@ import { useSafeArea } from "./safe-area.ts";
 import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
+import { useAnnotationVersion } from "./use-annotation-version.ts";
 import { usePlanVersion } from "./use-plan-version.ts";
 import { useWelcome } from "./use-welcome.ts";
 import { ViewControls } from "./view-controls.tsx";
@@ -62,6 +64,7 @@ interface EditorAppProps {
   readonly camera: IEditorCamera;
   readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
+  readonly annotations: IAnnotationService;
   readonly sheets: IPlanSheetService;
   readonly sheetSets: ISheetSets;
   readonly bomService: IBomService;
@@ -111,6 +114,16 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
   );
 }
 
+function NoteState({ annotations }: { readonly annotations: IAnnotationService }) {
+  useAnnotationVersion(annotations);
+  const notes = annotations.notes();
+  return (
+    <pre id="note-state" data-notes={notes.length}>
+      {JSON.stringify(notes.map(({ id, note }) => ({ id, note, span: annotations.rulerSpan(id) })))}
+    </pre>
+  );
+}
+
 function CameraState({ camera }: { readonly camera: IEditorCamera }) {
   const dump = useRef<HTMLPreElement>(null);
   useEffect(() => {
@@ -146,6 +159,7 @@ export function EditorApp({
   camera,
   scaleBar,
   plans,
+  annotations,
   sheets,
   sheetSets,
   bomService,
@@ -281,6 +295,7 @@ export function EditorApp({
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
+      {showState && <NoteState annotations={annotations} />}
       {showState && <CameraState camera={camera} />}
       <EditorFooter disclaimer={disclaimer} />
       {welcome.open && <WelcomeCard starters={starters} view={welcome} />}

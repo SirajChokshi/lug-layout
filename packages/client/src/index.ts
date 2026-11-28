@@ -167,6 +167,8 @@ export {
   type PlanRowSegment,
   type TableInput,
 } from "./plan/plan-service.ts";
+export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
+export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -217,6 +219,7 @@ export type {
   TableTop,
 } from "@brr/domain";
 export {
+  ANNOTATION_SERVICE,
   RUNNING_GEAR,
   BOM_SERVICE,
   OWNED_PARTS,

@@ -1,4 +1,5 @@
 import {
+  ANNOTATION_SERVICE,
   BOM_SERVICE,
   CREDITS,
   EDITOR,
@@ -150,6 +151,7 @@ function root(): ReactNode {
         camera={container.get(EDITOR_CAMERA)}
         scaleBar={container.get(SCALE_BAR)}
         plans={container.get(PLAN_SERVICE)}
+        annotations={container.get(ANNOTATION_SERVICE)}
         sheets={container.get(PLAN_SHEET_SERVICE)}
         sheetSets={container.get(SHEET_SETS)}
         bomService={container.get(BOM_SERVICE)}
