@@ -2491,10 +2491,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   private applyTiers(): void {
     const orthoStudPitchPx = this.orthoStudPitchPx();
+    const flat = this.camera === this.orthographic;
     for (let i = 0; i < this.chunkList.length; i++) {
       const record = this.chunkList[i];
       if (!record) continue;
       record.studPitchPx = this.studPitchPx(record, orthoStudPitchPx);
+      if (flat) continue;
       const tier = this.tierOf(record.studPitchPx);
       if (tier === record.tier) continue;
       this.changed = true;
