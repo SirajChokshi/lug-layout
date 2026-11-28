@@ -1972,7 +1972,7 @@ it("lists a layout for a shopper by what each placement is, from its parts and w
 
   const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, { kind: "world" });
 
-  const laidStraights = ["74746 Train Track 9V Straight, Dark Bluish Grey", 3, 1];
+  const laidRun = ["74746 Train Track 9V Straight, Dark Bluish Grey", 3, 1];
   const baseplates = ["baseplates", [["3811 Baseplate 32 x 32, Green", 2, 1]]];
   const road = [
     "road",
@@ -1987,7 +1987,7 @@ it("lists a layout for a shopper by what each placement is, from its parts and w
   const models = ["models", [["my-cottage.ldr", 1, 11]]];
   expect(editor.snapshot().placements).toBe(6);
   expect(shoppingLines(bom.shopping?.asSets)).toEqual([
-    ["track", [laidStraights]],
+    ["track", [laidRun]],
     baseplates,
     road,
     ["sets", [["7936-1 Level Crossing (2010)", 1, setParts]]],
@@ -1995,7 +1995,7 @@ it("lists a layout for a shopper by what each placement is, from its parts and w
     ["parts", [["3001 Brick 2 x 4, Red", 1, 1]]],
   ]);
   expect(shoppingLines(bom.shopping?.asParts)?.slice(0, -1)).toEqual([
-    ["track", [["53401 Train Track 6 Studs Wide Straight, Dark Bluish Grey", 4, 1], laidStraights]],
+    ["track", [["53401 Train Track 6 Studs Wide Straight, Dark Bluish Grey", 4, 1], laidRun]],
     baseplates,
     road,
     models,
