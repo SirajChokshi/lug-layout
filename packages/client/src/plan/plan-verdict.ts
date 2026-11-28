@@ -1,3 +1,4 @@
+import type { PlanIssue } from "@brr/domain";
 import type { IPlanService } from "./plan-service.ts";
 
 export interface UncheckedPlanRule {
@@ -53,10 +54,14 @@ export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
   },
 ];
 
+function blocksBuilding(issue: PlanIssue): boolean {
+  return issue.rule !== "bomMapping";
+}
+
 export function buildableAsPlanned(plans: IPlanService, planId: string): boolean {
   return (
     UNCHECKED_PLAN_RULES.length === 0 &&
-    plans.issueCount(planId) === 0 &&
+    !plans.issues(planId).some(blocksBuilding) &&
     plans.unmeasuredCount(planId) === 0
   );
 }

@@ -148,7 +148,7 @@ describe("reach from the free table edges", () => {
 });
 
 describe("measured facts on a placement", () => {
-  it("reports the footprint first, then unmapped parts per catalog, then each placement's support, overlap and road issues in rule order", () => {
+  it("reports the footprint first, then unmapped parts per catalog as warnings, then each placement's support, overlap and road issues in rule order", () => {
     const plan = region([table("A", 0, 0, 1000, 1000)], { maxReachMm: -1 });
     const loose = placed(0, 200, 200, {
       unsupported: true,
@@ -158,27 +158,34 @@ describe("measured facts on a placement", () => {
       carriedTrackUnsupported: true,
       facts: { unmeasured: true, unmappedRebrickable: 1, unmappedBrickLink: 1 },
     });
-    expect(checkPlan(plan, [loose, pending]).issues.map((i) => [i.rule, i.message])).toEqual([
-      ["footprint", "The reach limit must be zero or more whole mm."],
+    expect(
+      checkPlan(plan, [loose, pending]).issues.map((i) => [i.rule, i.severity, i.message]),
+    ).toEqual([
+      ["footprint", "error", "The reach limit must be zero or more whole mm."],
       [
         "bomMapping",
+        "warning",
         "3 parts in this plan have no Rebrickable part or colour id; the parts list names them.",
       ],
       [
         "bomMapping",
+        "warning",
         "1 part in this plan has no BrickLink part or colour id; the parts list names them.",
       ],
       [
         "unsupported",
+        "error",
         "brick 0 isn't held: none of its anti-studs sits on a stud, and it doesn't stand on the bare table.",
       ],
-      ["overlap", "brick 0 overlaps brick 1."],
+      ["overlap", "error", "brick 0 overlaps brick 1."],
       [
         "roadJoin",
+        "error",
         "brick 0's road doesn't continue into its neighbour on 3 edge cells: the lanes or curbs differ.",
       ],
       [
         "unsupported",
+        "error",
         "brick 1 carries track that isn't held: none of that track's anti-studs sits on a stud, and it doesn't stand on the bare table.",
       ],
     ]);

@@ -968,13 +968,14 @@ export function bomMappingIssues(rebrickable: number, brickLink: number, out: Pl
   [rebrickable, brickLink].forEach((parts, i) => {
     if (parts <= 0) return;
     const one = parts === 1;
-    out.push(
-      issue(
+    out.push({
+      ...issue(
         "bomMapping",
         [],
         `${parts} ${one ? "part" : "parts"} in this plan ${one ? "has" : "have"} no ${BOM_CATALOGS[i] ?? ""} part or colour id; the parts list names them.`,
       ),
-    );
+      severity: "warning",
+    });
   });
 }
 

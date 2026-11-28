@@ -444,7 +444,7 @@ Extra plan rules:
 1. **Fits the footprint.** Every placement in the region lies on a table top, and nothing overhangs a table edge beyond the profile's limit (0 by default).
 2. **Reach.** Every point of the layout is within the maximum reach depth from an aisle or table edge you can access. The default depth is an owner decision (§12).
 3. **Seams.** Table seams fall on module boundaries, with a warning for any track that crosses a seam off a module edge.
-4. **Complete BOM.** Every part is mapped to Rebrickable and BrickLink ids. Nothing is a placeholder. Substructure, baseplates, track and road plates are all counted.
+4. **Complete BOM.** Every part is mapped to Rebrickable and BrickLink ids. Nothing is a placeholder. Substructure, baseplates, track and road plates are all counted. Parts without an id are listed as a warning per catalog that doesn't block "Buildable as planned": a missing id changes how the part is ordered, not whether the layout can be built (owner request, 2026-11-27).
 5. **Real elements.** Every placed model has badge L1. Models claiming to be sets have badge L2, either exact or "buildable from".
 6. All layout rules from §7.2 pass with zero errors.
 
