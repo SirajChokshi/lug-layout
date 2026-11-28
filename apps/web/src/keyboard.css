@@ -426,8 +426,10 @@
   border-radius: var(--radius-xs);
 }
 
-.hotbar li[data-pinned="false"]:not(:hover, :focus-within) .hotbar-pin {
-  opacity: 0;
+@media (hover: hover) {
+  .hotbar li[data-pinned="false"]:not(:hover, :focus-within) .hotbar-pin {
+    opacity: 0;
+  }
 }
 
 .placement-chip {
