@@ -9,8 +9,9 @@ A starter is an ordinary saved world: an unpacked `.brr.zip` in the world format
 ```
 apps/web/starters/
   starters.json            the shelf: which starters the card offers, in order, with a one-line summary each
-  <name>/manifest.json     world format v1, exactly as Export writes it
+  <name>/manifest.json     world format v1 or v2; v1 files are migrated to v2 as they're read
   <name>/shards/*.json
+  <name>/notes/*.json      only in a v2 world with notes
   <name>/imports/<sha256>/<file>   only if the world places an imported model
 ```
 

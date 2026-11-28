@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import { decode } from "../decode/index.ts";
 import {
   CREDITS_FILE,
+  DEFAULT_WORLD_DOCUMENT,
   SUPER_CHUNK_CHUNKS,
   WorldManifestV1,
   WorldShardV1,
+  WorldShardV2,
   canonicalJson,
   encodeTrackPosition,
   importRef,
@@ -104,7 +106,7 @@ function backwards<T>(rows: ReadonlyArray<T>): ReadonlyArray<T> {
   return rows.map((_, i) => rows[rows.length - 1 - i]).filter((row) => row !== undefined);
 }
 
-describe("world schema v1", () => {
+describe("world schema", () => {
   it("accepts a valid shard and manifest unchanged, with or without consists on the rails and wagons coupled to them", () => {
     const decodedShard = decode(WorldShardV1, shard);
     const decodedManifest = decode(WorldManifestV1, manifest);
@@ -155,7 +157,7 @@ describe("world schema v1", () => {
       "$.track.0.position",
     ],
     ["neither placements nor track", { ...shard, placements: [], track: [] }, "$"],
-    ["a newer schema version", { ...shard, schemaVersion: 2 }, "$.schemaVersion"],
+    ["a newer schema version", { ...shard, schemaVersion: 3 }, "$.schemaVersion"],
   ])("rejects a shard with %s at its path", (_name, value, path) => {
     const decoded = decode(WorldShardV1, value);
     expect(decoded.ok ? [] : decoded.issues.map((issue) => issue.path)).toContain(path);
@@ -261,6 +263,7 @@ describe("world schema v1", () => {
     bundleVersion: "1fd935a2278f8b65",
     view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0.78, pitch: 0.75 },
     disclaimer: "disclaimer",
+    ...DEFAULT_WORLD_DOCUMENT,
   };
   const placements: ReadonlyArray<PlacementRecordV1> = [
     { ref: "omr:10185-1", color: 0, x: 640, z: -1280, yPlates: 0, rot: 3 },
@@ -306,6 +309,7 @@ describe("world schema v1", () => {
         })),
       ),
       shards,
+      notes: [],
       credits: "credits",
     });
     return new Map(files.map((file) => [file.name, file.text]));
@@ -349,6 +353,7 @@ describe("world schema v1", () => {
     const files = worldArchiveFiles({
       manifest: worldManifest({ ...header, consists }, shards.map(shardEntry)),
       shards,
+      notes: [],
       credits: "credits",
     });
     const loaded = reread(new Map(files.map((file) => [file.name, file.text])));
@@ -367,9 +372,12 @@ describe("world schema v1", () => {
   it("reads a world from its files alone, while an archive must also carry its credits", () => {
     const archive = archiveFiles(placements, track);
     const world = new Map([...archive].filter(([name]) => name !== CREDITS_FILE));
-    const { manifest: archived, shards } = reread(archive);
+    const { manifest: archived, shards, notes } = reread(archive);
 
-    expect(readWorldFiles(world)).toEqual({ ok: true, value: { manifest: archived, shards } });
+    expect(readWorldFiles(world)).toEqual({
+      ok: true,
+      value: { manifest: archived, shards, notes },
+    });
     expect(readWorldArchive(world)).toEqual({
       ok: false,
       issues: [{ path: CREDITS_FILE, message: "is missing" }],
@@ -431,8 +439,8 @@ describe("world schema v1", () => {
   it("bounds the int32 range by the exact position, not its floored stud", () => {
     const inside = ["107374182", ...ZEROS.slice(1)];
     const past = ["107374182", "1", ...ZEROS.slice(2)];
-    expect(decode(WorldShardV1, shardFor(inside)).ok).toBe(true);
-    expect(decode(WorldShardV1, shardFor(past))).toMatchObject({
+    expect(decode(WorldShardV2, shardFor(inside)).ok).toBe(true);
+    expect(decode(WorldShardV2, shardFor(past))).toMatchObject({
       ok: false,
       issues: [{ path: "$.track.0.position", message: "is outside the int32 LDU range" }],
     });
@@ -473,7 +481,7 @@ describe("world schema v1", () => {
       );
       expect(superChunkOfTrack(position)).toEqual([lineX, insideZ]);
       const piece = { index: 0, ref: "ldraw:74747", heading: 4, position, yPlates: 0 };
-      expect(decode(WorldShardV1, worldShard([lineX, insideZ], [], [piece])).ok).toBe(true);
+      expect(decode(WorldShardV2, worldShard([lineX, insideZ], [], [piece])).ok).toBe(true);
     }
     expect(superChunkOfTrack(["1024", "40", "0", "0", "0", "0", "0", "40"])).toEqual([4, 0]);
   });
