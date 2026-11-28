@@ -5035,7 +5035,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   setAllowThirdParty(allow: boolean): void {
-    if (allow === this.state.allowThirdParty) return;
+    if (this.state.readOnly || allow === this.state.allowThirdParty) return;
     const laid = allow ? 0 : (this.trackWorld.drawing()?.laidThirdParty() ?? 0);
     if (laid > 0) {
       this.update({
