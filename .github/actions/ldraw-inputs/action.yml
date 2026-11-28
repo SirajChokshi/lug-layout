@@ -13,8 +13,9 @@ runs:
           .cache/ldcad-shadow-bundle
           .cache/omr
           .cache/catalog
-        key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-        restore-keys: ldraw-inputs-v3-
+          .cache/third-party
+        key: ldraw-inputs-v4-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json', 'tools/asset-pipeline/third-party-track.json') }}
+        restore-keys: ldraw-inputs-v4-
     - shell: bash
       run: pnpm --filter @brr/asset-pipeline restore-ldraw
     - if: ${{ github.event_name != 'pull_request' && steps.restore.outputs.cache-hit != 'true' }}
@@ -27,4 +28,5 @@ runs:
           .cache/ldcad-shadow-bundle
           .cache/omr
           .cache/catalog
+          .cache/third-party
         key: ${{ steps.restore.outputs.cache-primary-key }}

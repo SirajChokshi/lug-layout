@@ -1,4 +1,4 @@
-import type { BundleColor, BundleLod } from "@brr/schema/bundle";
+import type { BundleColor, BundleLod, TrackPiece } from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
@@ -208,12 +208,13 @@ import {
   type IPlacementSearch,
   type PlacementChoice,
 } from "../connect/placement-search.ts";
-import type {
-  RaisedPiece,
-  SolidRects,
-  TrackBlockView,
-  TrackDrawing,
-  TrackRouteView,
+import {
+  thirdPartyRefusal,
+  type RaisedPiece,
+  type SolidRects,
+  type TrackBlockView,
+  type TrackDrawing,
+  type TrackRouteView,
 } from "./track-drawing.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
 import { BOX_FLOATS } from "./local-box.ts";
@@ -558,6 +559,9 @@ export interface EditorSnapshot
   readonly roads: RoadJoinView;
   readonly showJoins: boolean;
   readonly snapRoads: boolean;
+  readonly allowThirdParty: boolean;
+  readonly thirdPartyVendors: ReadonlyArray<string>;
+  readonly thirdPartyRefusal: string | null;
   readonly placementMode: PlacementMode;
   readonly placementModeOverride: boolean;
   readonly snap: RoadSnapView | null;
@@ -702,6 +706,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   undo(eventTimeMs: number): void;
   redo(eventTimeMs: number): void;
   setShowJoins(show: boolean): void;
+  setAllowThirdParty(allow: boolean): void;
   setShowGrid(show: boolean): void;
   setSnapRoads(snap: boolean): void;
   setPlacementMode(mode: PlacementMode): void;
@@ -1479,6 +1484,9 @@ export class Editor implements IEditor, IEditedWorld {
     credits: null,
     roads: EMPTY_ROADS,
     showJoins: true,
+    allowThirdParty: false,
+    thirdPartyVendors: [],
+    thirdPartyRefusal: null,
     showGrid: true,
     snapRoads: true,
     placementMode: "assist",
@@ -1538,6 +1546,7 @@ export class Editor implements IEditor, IEditedWorld {
     trackBlock: null,
   };
   private catalogItems: ReadonlyArray<CatalogItemView> = [];
+  private thirdPartyItems: ReadonlyArray<CatalogItemView> = [];
   private bundleColors: ReadonlyArray<BundleColor> | null = null;
   private placed: PlacedChunks;
   private active: Placeable | null = null;
@@ -1938,7 +1947,16 @@ export class Editor implements IEditor, IEditedWorld {
       this.loadTrackSupport();
       const trackItems = this.tracks.start();
       this.roads.start(index.colors);
-      this.update({ catalog: [...catalog.items, ...trackItems] });
+      this.thirdPartyItems = trackItems.filter((item) => item.thirdPartyVendor !== undefined);
+      this.update({
+        catalog: [
+          ...catalog.items,
+          ...trackItems.filter((item) => item.thirdPartyVendor === undefined),
+        ],
+        thirdPartyVendors: [
+          ...new Set(this.thirdPartyItems.flatMap((item) => item.thirdPartyVendor ?? [])),
+        ],
+      });
       const loadMs = performance.now() - started;
       await this.session.start(this, index.bundleVersion);
       this.update({
@@ -2782,6 +2800,12 @@ export class Editor implements IEditor, IEditedWorld {
     this.cancelFill();
     this.waitingFill = null;
     if (id !== null && this.state.readOnly) return;
+    const refusedPiece =
+      id === null || this.state.allowThirdParty ? null : this.thirdPartyPiece(id);
+    if (refusedPiece?.thirdParty) {
+      this.update({ thirdPartyRefusal: thirdPartyRefusal(refusedPiece, refusedPiece.thirdParty) });
+      return;
+    }
     this.queueClick(null);
     this.cancelGesture();
     if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();
@@ -5009,6 +5033,42 @@ export class Editor implements IEditor, IEditedWorld {
     this.showMarkers();
   }
 
+  setAllowThirdParty(allow: boolean): void {
+    if (allow === this.state.allowThirdParty) return;
+    const laid = allow ? 0 : (this.trackWorld.drawing()?.laidThirdParty() ?? 0);
+    if (laid > 0) {
+      this.update({
+        thirdPartyRefusal: `${laid} laid track ${laid === 1 ? "piece is" : "pieces are"} third-party. Lift ${laid === 1 ? "it" : "them"} before turning third-party parts off.`,
+      });
+      return;
+    }
+    if (!allow && this.heldThirdParty()) this.chooseItem(null);
+    this.update({
+      allowThirdParty: allow,
+      thirdPartyRefusal: null,
+      catalog: this.catalogWithThirdParty(allow),
+    });
+    this.session.documentEdited();
+  }
+
+  private catalogWithThirdParty(allow: boolean): ReadonlyArray<CatalogItemView> {
+    const official = this.state.catalog.filter((item) => item.thirdPartyVendor === undefined);
+    return allow ? [...official, ...this.thirdPartyItems] : official;
+  }
+
+  private thirdPartyPiece(id: string): TrackPiece | null {
+    const piece = this.trackWorld
+      .drawing()
+      ?.pieceParts()
+      .find((part) => `${TRACK_PIECE_PREFIX}${part.piece.id}` === id)?.piece;
+    return piece?.thirdParty ? piece : null;
+  }
+
+  private heldThirdParty(): boolean {
+    const held = this.state.activeItem;
+    return held !== null && this.thirdPartyPiece(held) !== null;
+  }
+
   setRoadErase(erase: boolean): void {
     this.roads.setErase(erase, this.roadNeighbourhood);
     this.update(this.roads.view());
@@ -6436,6 +6496,8 @@ export class Editor implements IEditor, IEditedWorld {
     }
     const laid = track?.laidPieces(records) ?? { ok: true, value: [] };
     if (!laid.ok) return laid;
+    const refused = this.state.allowThirdParty ? [] : (track?.thirdPartyIssues(records) ?? []);
+    if (refused.length > 0) return { ok: false, issues: refused };
     const models = poses.value.map((pose) => ({
       model: null,
       placeable: this.placeableAt(pose.refId),
@@ -6477,6 +6539,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   contents(): WorldContents {
     return {
+      allowThirdParty: this.state.allowThirdParty,
       world: this.world,
       refs: this.catalog.refs(),
       track: this.trackWorld.records(),
@@ -6763,6 +6826,12 @@ export class Editor implements IEditor, IEditedWorld {
     if (noteIssues.length > 0) return noteIssues;
     this.reportedPlans = stored.plans;
     this.plans.restore(stored.plans);
+    const allowThirdParty = stored.document.allowThirdParty === true;
+    this.update({
+      allowThirdParty,
+      thirdPartyRefusal: null,
+      catalog: this.catalogWithThirdParty(allowThirdParty),
+    });
     for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);
@@ -6793,7 +6862,12 @@ export class Editor implements IEditor, IEditedWorld {
     if (!handles.ok) return handles;
     const noteIssues = this.annotations.check({ notes, document, world });
     if (noteIssues.length > 0) return { ok: false, issues: noteIssues };
-    const trackIssues = this.trackWorld.restore(worldTrack(shards));
+    const records = worldTrack(shards);
+    const refused = document.allowThirdParty
+      ? []
+      : (this.trackWorld.drawing()?.thirdPartyIssues(records) ?? []);
+    if (refused.length > 0) return { ok: false, issues: refused };
+    const trackIssues = this.trackWorld.restore(records);
     if (trackIssues.length > 0) return { ok: false, issues: trackIssues };
     const issues: Issue[] = [];
     const poses: ConsistPose[] = [];

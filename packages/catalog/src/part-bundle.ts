@@ -241,6 +241,7 @@ export interface CatalogColorIds {
 export interface CatalogCrosswalk {
   readonly parts: ReadonlyMap<string, CatalogPartIds>;
   readonly colors: ReadonlyMap<number, CatalogColorIds>;
+  readonly thirdParty: ReadonlyMap<string, string>;
 }
 
 export type BricklinkPartCandidates = Readonly<Record<string, ReadonlyArray<string>>>;

@@ -87,8 +87,9 @@ jobs:
             .cache/ldcad-shadow-bundle
             .cache/omr
             .cache/catalog
-          key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-          restore-keys: ldraw-inputs-v3-
+            .cache/third-party
+          key: ldraw-inputs-v4-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json', 'tools/asset-pipeline/third-party-track.json') }}
+          restore-keys: ldraw-inputs-v4-
       - name: Generate the bundle
         if: steps.status.outputs.published == 'false'
         run: pnpm --filter @brr/asset-pipeline build

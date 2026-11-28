@@ -101,8 +101,25 @@ export type PoseStatus = v.InferOutput<typeof PoseStatus>;
 export const PieceKind = v.picklist(["straight", "curve", "switch", "crossing"]);
 export type PieceKind = v.InferOutput<typeof PieceKind>;
 
-export const TrackSystem = v.picklist(["lego-9v", "lego-plastic"]);
+export const LegoTrackSystem = v.picklist(["lego-9v", "lego-plastic"]);
+export type LegoTrackSystem = v.InferOutput<typeof LegoTrackSystem>;
+
+const THIRD_PARTY_SOURCE = /^thirdparty-[a-z0-9-]+$/u;
+
+export const ThirdPartySourceId = v.custom<`thirdparty-${string}`>(
+  (input) => typeof input === "string" && THIRD_PARTY_SOURCE.test(input),
+  'must be a third-party source id, "thirdparty-" and a vendor name',
+);
+export type ThirdPartySourceId = v.InferOutput<typeof ThirdPartySourceId>;
+
+export const TrackSystem = v.union([LegoTrackSystem, ThirdPartySourceId]);
 export type TrackSystem = v.InferOutput<typeof TrackSystem>;
+
+export const ThirdPartyProvenance = v.object({
+  source: ThirdPartySourceId,
+  vendor: v.pipe(v.string(), v.minLength(1)),
+});
+export type ThirdPartyProvenance = v.InferOutput<typeof ThirdPartyProvenance>;
 
 export const TrackConnector = v.pipe(
   v.object({
@@ -147,6 +164,7 @@ export const TrackPiece = v.pipe(
     connectors: v.array(TrackConnector),
     routes: v.array(TrackRoute),
     partFrame: TrackPartFrame,
+    thirdParty: v.optional(ThirdPartyProvenance),
   }),
   v.check(
     (piece) =>
@@ -445,6 +463,7 @@ export const ManifestPart = v.object({
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
   glyph: v.optional(FileRef),
+  thirdParty: v.optional(ThirdPartyProvenance),
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 

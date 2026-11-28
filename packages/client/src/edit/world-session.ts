@@ -120,6 +120,7 @@ export interface WorldSessionView {
 }
 
 export interface WorldContents {
+  readonly allowThirdParty: boolean;
   readonly world: World;
   readonly refs: ReadonlyArray<string>;
   readonly track: ReadonlyArray<TrackRecordV2>;
@@ -408,9 +409,13 @@ export class WorldSession implements IWorldSession {
   }
 
   private header(current: OpenWorld): WorldHeader {
-    const { consists, groups } = this.editedWorld().contents();
+    const { consists, groups, allowThirdParty } = this.editedWorld().contents();
     const event = this.events.event();
-    const { groups: _opened, ...document } = worldDocument(current.document);
+    const {
+      groups: _opened,
+      allowThirdParty: _stored,
+      ...document
+    } = worldDocument(current.document);
     return {
       name: current.name,
       bundleVersion: this.bundleVersion,
@@ -420,6 +425,7 @@ export class WorldSession implements IWorldSession {
       ...withPlanState({ ...document, layers: [...this.layers.table().layers] }, this.plans),
       ...(event === null ? {} : { event }),
       ...(groups.groups.length > 0 ? { groups: [...groups.groups] } : {}),
+      ...(allowThirdParty ? { allowThirdParty: true } : {}),
     };
   }
 

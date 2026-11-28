@@ -90,6 +90,8 @@ export interface CatalogItemView {
   readonly toggleable: boolean;
   readonly listedUnder: string | null;
   readonly customParts: number;
+  readonly thirdPartyVendor?: string;
+  readonly unverified?: true;
 }
 
 export interface SkippedCatalogModel {

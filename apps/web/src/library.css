@@ -368,6 +368,25 @@
   color: var(--status-warn);
 }
 
+.palette-third-party {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+}
+
+.palette-third-party .palette-hint,
+.palette-third-party .palette-note {
+  margin: var(--space-2) 0 0;
+}
+
+.palette-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-strong);
+}
+
 .palette-empty {
   margin: var(--space-6) 0;
   padding: var(--space-6) var(--space-5);

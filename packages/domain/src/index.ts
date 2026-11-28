@@ -443,6 +443,7 @@ export {
   type PartComponent,
   type PartCrosswalkEntry,
   type ResolvedLine,
+  type ThirdPartyLine,
   type UnmappedLine,
 } from "./bom/catalog-ids.ts";
 export {

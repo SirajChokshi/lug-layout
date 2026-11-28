@@ -55,6 +55,9 @@ const PALETTE_FIELDS = [
   "roadKits",
   "roadKit",
   "pendingItem",
+  "allowThirdParty",
+  "thirdPartyVendors",
+  "thirdPartyRefusal",
 ] as const satisfies ReadonlyArray<keyof EditorSnapshot>;
 
 type PaletteSnapshot = Pick<EditorSnapshot, (typeof PALETTE_FIELDS)[number]>;
@@ -392,6 +395,7 @@ function TrackSection({
         Drag on the ground to lay a run. Start or release on an open end (amber arrow) to join it
         exactly; red arrows mark ends that nearly meet but don't join.
       </p>
+      <ThirdPartyToggle editor={editor} snapshot={snapshot} />
       <ul className="palette-pieces" aria-label="Single track pieces">
         {pieces.map((item) => (
           <li key={item.id}>
@@ -402,7 +406,9 @@ function TrackSection({
               aria-pressed={snapshot.activeItem === item.id}
               onClick={() => choosePaletteItem(editor, snapshot, item)}
             >
-              <span className="catalog-name">{item.label}</span>
+              <span className="catalog-name">
+                {item.label} <PieceBadges item={item} />
+              </span>
               <span className="catalog-meta">
                 {item.studsWide}×{item.studsDeep} studs
               </span>
@@ -462,6 +468,60 @@ function TrackSection({
         </p>
       )}
     </Section>
+  );
+}
+
+function ThirdPartyToggle({ editor, snapshot }: Pick<PaletteProps, "editor" | "snapshot">) {
+  if (snapshot.thirdPartyVendors.length === 0) return null;
+  const vendors = snapshot.thirdPartyVendors.join(", ");
+  return (
+    <div className="palette-third-party">
+      <label className="palette-toggle">
+        <input
+          type="checkbox"
+          data-third-party-toggle=""
+          checked={snapshot.allowThirdParty}
+          disabled={snapshot.readOnly}
+          onChange={(event) => editor.setAllowThirdParty(event.currentTarget.checked)}
+        />
+        Third-party track ({vendors})
+      </label>
+      <p className="palette-hint">
+        {snapshot.allowThirdParty
+          ? `Wide curves drawn from ${vendors}' own LDraw files. They join any track exactly, and the parts list marks them third-party.`
+          : `Turn on to lay wide curves from ${vendors}. They're not LEGO parts.`}
+      </p>
+      {snapshot.thirdPartyRefusal !== null && (
+        <p className="palette-note" role="status" data-third-party-refusal="">
+          {snapshot.thirdPartyRefusal}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PieceBadges({ item }: { readonly item: CatalogItemView }) {
+  return (
+    <>
+      {item.thirdPartyVendor !== undefined && (
+        <span
+          className="part-badge"
+          data-badge="third-party"
+          title={`A ${item.thirdPartyVendor} part, not LEGO: drawn from the vendor's own LDraw file`}
+        >
+          third-party
+        </span>
+      )}{" "}
+      {item.unverified === true && (
+        <span
+          className="part-badge"
+          data-badge="unverified"
+          title="Its connector poses are derived from the part file but aren't certified, so its joins are only as exact as those poses."
+        >
+          unverified
+        </span>
+      )}
+    </>
   );
 }
 

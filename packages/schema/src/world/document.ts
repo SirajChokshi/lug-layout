@@ -350,6 +350,7 @@ export const WorldDocumentEntries = {
   activePlan: v.exactOptional(Count),
   tableTypes: v.exactOptional(TableTypeTableV2),
   event: v.exactOptional(EventRecordV2),
+  allowThirdParty: v.exactOptional(v.literal(true)),
 };
 
 export const WorldDocument = v.strictObject(WorldDocumentEntries, strictMessage);
@@ -366,6 +367,7 @@ export function worldDocument(source: WorldDocument): WorldDocument {
     ...(source.activePlan === undefined ? {} : { activePlan: source.activePlan }),
     ...(source.tableTypes ? { tableTypes: source.tableTypes } : {}),
     ...(source.event ? { event: source.event } : {}),
+    ...(source.allowThirdParty ? { allowThirdParty: true } : {}),
   };
 }
 

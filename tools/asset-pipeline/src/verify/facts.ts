@@ -4,7 +4,11 @@ import type { AuditLock, ConnectivityLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import type { Palette } from "@brr/schema/bundle";
 import { CATALOG_LAYOUTS, catalogScene } from "../track/catalog-scenes.ts";
-import { buildTrackCatalog, type TrackCatalogReport } from "../track/track-catalog.ts";
+import {
+  buildTrackCatalog,
+  type MeasuredCurveSource,
+  type TrackCatalogReport,
+} from "../track/track-catalog.ts";
 import { LEVEL_CROSSING_FILE, levelCrossingData } from "../crossing/level-crossing.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { measureBaseplate } from "./geometry.ts";
@@ -186,9 +190,13 @@ export function geometryReports(
 
 export const TRACK_CATALOG_FILE = "track-catalog.json";
 
-export function paletteTrackCatalog(library: LdrawLibrary, palette: Palette): TrackCatalogReport {
+export function paletteTrackCatalog(
+  library: LdrawLibrary,
+  palette: Palette,
+  thirdParty: ReadonlyArray<MeasuredCurveSource>,
+): TrackCatalogReport {
   const trackParts = palette.parts.filter((part) => part.role === "track").map((part) => part.id);
-  return buildTrackCatalog(library, trackParts, loadTrackEndMarkers());
+  return buildTrackCatalog(library, trackParts, loadTrackEndMarkers(), thirdParty);
 }
 
 export function trackCatalogReports(

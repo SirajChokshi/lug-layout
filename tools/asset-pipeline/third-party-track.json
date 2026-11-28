@@ -1,0 +1,49 @@
+{
+  "sources": [
+    {
+      "id": "thirdparty-fxbricks",
+      "namespace": "fxbricks",
+      "vendor": "Fx Bricks",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "fx-bricks/fx-track-ldraw",
+        "commit": "351eacd643d7e07259bc09fa3ce78af075b27c2b",
+        "root": "ldraw"
+      },
+      "track": [
+        "FxTrackR56",
+        "FxTrackR64P",
+        "FxTrackR72",
+        "FxTrackR88",
+        "FxTrackR104",
+        "FxTrackR120"
+      ],
+      "files": {
+        "FxTrackR104.dat": "c9609c1bc573ed40c77a3b35b1fec62c051918a7003b4b840c1cec7ae42078c4",
+        "FxTrackR120.dat": "69037747b97558f88c371b1896aa2b7e374e60ad1a97693a932fbeabd14d4770",
+        "FxTrackR56.dat": "0a417322255366b5b8b8ad0f217b3c87697bf8d969bf1b09d48bb24e66e7311a",
+        "FxTrackR64P.dat": "418936ecb1d2514c3c61d63d27a42c197e9524b705597f461892c11921acabb0",
+        "FxTrackR72.dat": "b0a4726360c33614c612553c23fa8ba8d8967ffe0b1c71a679a523a6e694abc0",
+        "FxTrackR88.dat": "c1ce4c1c17d8ff393ffd3826a0a49d7b79fd31ea9dc1dc50bd18cc69f4748dac",
+        "s/R104.dat": "a2016fe98e7704d7bc00e511573c5cba96fdb31f34307d077f828a04a44e407e",
+        "s/R104InnerRail.dat": "15c1968a6f98f24f55a4e22b37c62c21204de7820ba2e63a37831ceb1f9606eb",
+        "s/R104OuterRail.dat": "bd7e4efbf7886e00954db7d78d83b0b99e53516b27e82726bf14bbe98ab730d1",
+        "s/R120.dat": "c76ec52db3415cd580092f7de11506f58aae7ee57f0a52a9df78dd0a9cf9692a",
+        "s/R120InnerRail.dat": "5ff404a30f4e7d559a4828bf84c4c8d2430b3c67efc283a43a9b58a0844c3720",
+        "s/R120OuterRail.dat": "7780f77de76688f38b4e4675c013aa29b2c9ba2462716becf50269d2716e7ae1",
+        "s/R56.dat": "a9f5ef022e203e5f2f93383c1492fe4c7165d37d994c4eab9d064429e0701d45",
+        "s/R56InnerRail.dat": "ed5212a5106f520d0e012a0e325ec4267f25eb5854f21331a34ef8b823f95334",
+        "s/R56OuterRail.dat": "6e66f7cd33ca0d0a3752fca07b5cf321d35f28e424b615697d8d414b5f3e4385",
+        "s/R64P.dat": "c5e84204cc5021b0c1d91e07b187dc0bb41025bfd3ccad5b8c4c86edd42c6326",
+        "s/R64PInnerRail.dat": "b3c3af02484d1eaf3afb14ba18a3d4f19f70e864e4bad6c642818a2c10bda9a4",
+        "s/R64POuterRail.dat": "e1058ac8429dc8bdcaa94a485976fae2434c6e8b1a7c7cf350234ce40058290d",
+        "s/R72.dat": "e6bb0b7d64beb2a88d6b862756716ae480a39fe03eb7ef03777f65281bc8900e",
+        "s/R72InnerRail.dat": "4fbac41b2859840432d48587d4fdf74aeaf3fdfaf0b2a9fb19e2a245a413625a",
+        "s/R72OuterRail.dat": "1298241eeaf1b44c99e33e701928b6825651d2bd8c8e99f064e1509ecf03e9e6",
+        "s/R88.dat": "48e06052202e89bf6f1c47ee085256dbbef6c9a6da9cb4affb335a705a0cf1a6",
+        "s/R88InnerRail.dat": "b9787ec2f068f5acafb7690ecae68cb52ce1480f74e630f275aafc142b65fe9e",
+        "s/R88OuterRail.dat": "1fca90b9d8f6b33edb997c56f2abeafbfe451995bdfc0c72b1a132c3e78ff242"
+      }
+    }
+  ]
+}

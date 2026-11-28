@@ -1,5 +1,11 @@
 import type { PartBundle, PartShapeAsset } from "@brr/catalog";
-import type { PoseStatus, TrackPartFrame, TrackPiece, TrackShape } from "@brr/schema/bundle";
+import type {
+  PoseStatus,
+  ThirdPartyProvenance,
+  TrackPartFrame,
+  TrackPiece,
+  TrackShape,
+} from "@brr/schema/bundle";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import {
   BASE_LAYER_ID,
@@ -581,6 +587,10 @@ function endView(end: Pose16, frame: TrackFrame, yPlates: number): TrackEndView 
     heading: end.heading,
     headingRadians: end.heading * HEADING_RADIANS,
   };
+}
+
+export function thirdPartyRefusal(piece: TrackPiece, provenance: ThirdPartyProvenance): string {
+  return `${piece.title} is a third-party part from ${provenance.vendor}: turn on third-party parts in this world to lay it.`;
 }
 
 function pieceSpec(piece: TrackPiece): TrackPieceSpec {
@@ -3490,6 +3500,23 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
       ];
     });
     return { ok: true, value: lay };
+  }
+
+  thirdPartyIssues(records: ReadonlyArray<TrackRecordV2>): ReadonlyArray<Issue> {
+    return records.flatMap((record) => {
+      const piece = this.byPieceId.get(record.ref)?.piece;
+      return piece?.thirdParty
+        ? [{ path: `track ${record.index}`, message: thirdPartyRefusal(piece, piece.thirdParty) }]
+        : [];
+    });
+  }
+
+  laidThirdParty(): number {
+    let laid = 0;
+    for (let p = 0; p < this.layout.count; p++) {
+      if (this.pieces[this.layout.piece(p)]?.thirdParty) laid++;
+    }
+    return laid;
   }
 
   chunkKeys(): ReadonlyArray<number> {

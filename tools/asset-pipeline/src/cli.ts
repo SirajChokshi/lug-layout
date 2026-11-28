@@ -123,6 +123,15 @@ import {
   writeReports,
 } from "./verify/facts.ts";
 import { auditBundleStuds, summarizeStudAudit } from "./verify/stud-audit-bundle.ts";
+import {
+  measuredCurveSources,
+  partLibraries,
+  readThirdPartyTrack,
+  restoreAllThirdParty,
+  THIRD_PARTY_CACHE_DIRECTORY,
+  thirdPartyRoot as thirdPartyRootOf,
+  verifyAllThirdParty,
+} from "./third-party/third-party-sources.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -144,6 +153,8 @@ const TEST_DATA_DIRECTORIES = [join("packages", "import", "test-data")];
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
 const bundleRoot = join(toolRoot, "dist", "bundle");
 const inferredConnectorsPath = join(toolRoot, "inferred-connectors.json");
+const thirdPartyTrackPath = join(repoRoot, BUNDLE_DATA_FILES.thirdPartyTrack);
+const thirdPartyRoot = join(repoRoot, THIRD_PARTY_CACHE_DIRECTORY);
 
 const InferredConnectors = v.object({
   cavityProbe: v.string(),
@@ -287,6 +298,7 @@ async function restoreCommand(): Promise<void> {
     );
   }
   await restoreModels(await readPalette(palettePath));
+  await restoreAllThirdParty(await readThirdPartyTrack(thirdPartyTrackPath), thirdPartyRoot);
   await restoreCatalog(lock, "crosswalk");
   await restoreCatalog(lock, "inventory-check");
   await restoreCatalog(lock, "categories");
@@ -310,13 +322,16 @@ async function verifyCommand(): Promise<void> {
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "inventory-check")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "connectors")),
+    ...(await verifyAllThirdParty(await readThirdPartyTrack(thirdPartyTrackPath), thirdPartyRoot)),
   ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
     process.exitCode = 1;
     return;
   }
-  process.stdout.write("LDraw inputs match ldraw.lock.json and omr-errata.json\n");
+  process.stdout.write(
+    "LDraw inputs match ldraw.lock.json and omr-errata.json, third-party track matches third-party-track.json\n",
+  );
 }
 
 async function sectionVocabularyCommand(check: boolean): Promise<void> {
@@ -372,6 +387,7 @@ async function factsCommand(check: boolean): Promise<void> {
   if (audit === undefined) throw new Error("ldraw.lock.json has no audit inputs; run fetch-ldraw");
   const connectivity = connectivityLock(lock);
   const omrModels = palette.models.filter((model) => model.origin === "omr");
+  const thirdParty = await readThirdPartyTrack(thirdPartyTrackPath);
   const problems = [
     ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyAuditInputs(audit, auditRoot, connectivityRoot)),
@@ -382,6 +398,7 @@ async function factsCommand(check: boolean): Promise<void> {
       lock.files,
     )),
     ...(await verifyModels(omrModels, modelRoots)),
+    ...(await verifyAllThirdParty(thirdParty, thirdPartyRoot)),
   ];
   if (problems.length > 0) {
     process.stderr.write(
@@ -392,7 +409,11 @@ async function factsCommand(check: boolean): Promise<void> {
   }
   const auditLibrary = new LdrawLibrary([auditRoot]);
   const shadowLibrary = new LdrawLibrary([connectivityRoot]);
-  const catalog = paletteTrackCatalog(auditLibrary, palette);
+  const catalog = paletteTrackCatalog(
+    auditLibrary,
+    palette,
+    measuredCurveSources(thirdParty, thirdPartyRoot),
+  );
   const studs = studPrimitives(await readPrimitiveTable(primitiveTablePath));
   const reports = [
     licenseAuditReport({
@@ -556,9 +577,12 @@ async function catalogPlanOutlines(): Promise<ReadonlyMap<string, PlanOutline>> 
     ...crossing.ramps.map((ramp) => ramp.part),
   ]);
   const outlines = new Map<string, PlanOutline>();
-  for (const [part, { rings, roundedLdu }] of planOutlines(new LdrawLibrary([ldrawRoot]), [
-    ...parts,
-  ])) {
+  const libraries = partLibraries(
+    new LdrawLibrary([ldrawRoot]),
+    await readThirdPartyTrack(thirdPartyTrackPath),
+    thirdPartyRoot,
+  );
+  for (const [part, { rings, roundedLdu }] of planOutlines(libraries, [...parts])) {
     process.stdout.write(
       `plan outline ${part}: ${rings.length} rings, largest rounding ${roundedLdu} LDU\n`,
     );
@@ -665,6 +689,12 @@ async function compileLod(
     compilerWasm,
     "--cover-cache",
     shared.coverCache,
+    "--third-party",
+    thirdPartyTrackPath,
+    "--third-party-root",
+    thirdPartyRoot,
+    "--track-catalog",
+    join(repoRoot, BUNDLE_DATA_FILES.trackCatalog),
   ]);
   await attachSectionVocabulary(out, join(repoRoot, BUNDLE_DATA_FILES.sectionVocabulary));
   await attachPartCategories(join(out, MANIFEST_FILE), shared.ldrawParts, shared.categories);
@@ -784,9 +814,13 @@ async function bundleCommand(): Promise<void> {
 const STUD_AUDIT_LOD: BundleLod = "standard";
 
 async function studAuditCommand(out: string | undefined): Promise<boolean> {
+  const thirdParty = await readThirdPartyTrack(thirdPartyTrackPath);
   const report = await auditBundleStuds(
     join(bundleRoot, STUD_AUDIT_LOD),
-    new LdrawLibrary([ldrawRoot]),
+    new LdrawLibrary([
+      ldrawRoot,
+      ...thirdParty.sources.map((source) => thirdPartyRootOf(thirdPartyRoot, source)),
+    ]),
     studPrimitives(await readPrimitiveTable(primitiveTablePath)),
   );
   if (out !== undefined) await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);

@@ -1,10 +1,16 @@
-import type { CrosswalkFile } from "@brr/schema/bundle";
+import type { CrosswalkFile, ManifestPart } from "@brr/schema/bundle";
 import type { CatalogCrosswalk } from "./part-bundle.ts";
 
 const BRICKLINK_FROM_KEYWORD = "ldraw-keyword";
 
-export function crosswalkMaps(file: CrosswalkFile): CatalogCrosswalk {
+export function crosswalkMaps(
+  file: CrosswalkFile,
+  parts: ReadonlyArray<Pick<ManifestPart, "id" | "thirdParty">>,
+): CatalogCrosswalk {
   return {
+    thirdParty: new Map(
+      parts.flatMap((part) => (part.thirdParty ? [[part.id, part.thirdParty.vendor]] : [])),
+    ),
     parts: new Map(
       Object.entries(file.parts).map(([id, ids]) => [
         id,

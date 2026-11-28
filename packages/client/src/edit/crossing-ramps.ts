@@ -57,6 +57,7 @@ interface RampAsset {
 }
 
 const RAMP_CHUNK_KEY_OFFSET = -(2 ** 47);
+const NO_MEASURED_RAIL_TOP = Number.NaN;
 
 export function rampChunkKey(chunkX: number, chunkZ: number): number {
   return RAMP_CHUNK_KEY_OFFSET - chunkKey(chunkX, chunkZ);
@@ -325,10 +326,7 @@ export class CrossingRamps {
     const key = `${piece.system}|${piece.bedLdu}`;
     let track = bySystem.get(key);
     if (!track) {
-      const railTopLdu = this.railTops.get(piece.system);
-      if (railTopLdu === undefined) {
-        throw new Error(`track system ${piece.system} has no rail top in the bundle`);
-      }
+      const railTopLdu = this.railTops.get(piece.system) ?? NO_MEASURED_RAIL_TOP;
       track = { outline: piece.outline, bedLdu: piece.bedLdu, railTopLdu };
       bySystem.set(key, track);
     }

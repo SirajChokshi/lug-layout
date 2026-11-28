@@ -165,6 +165,7 @@ class BaseplateWorld implements IEditedWorld {
 
   contents(): WorldContents {
     return {
+      allowThirdParty: false,
       world: this.world,
       refs: [BASEPLATE],
       track: [],
