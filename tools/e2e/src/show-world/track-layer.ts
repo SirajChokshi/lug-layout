@@ -54,7 +54,8 @@ export class TrackLayer {
     let reach = 0;
     let curves = 0;
     while (end.heading !== HALF_TURN) {
-      if (++curves > ZETA16_ORDER) throw new Error("the probe's curves never turned the track around");
+      if (++curves > ZETA16_ORDER)
+        throw new Error("the probe's curves never turned the track around");
       end = await this.extend(end, "left");
       reach = Math.max(reach, end.xLdu - east.xLdu);
     }
