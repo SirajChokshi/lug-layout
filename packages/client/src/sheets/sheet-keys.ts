@@ -11,6 +11,7 @@ import type { TableHeights } from "./table-heights.ts";
 export interface KeyTable {
   readonly widthMm: number;
   readonly rowCount: number;
+  breaksBefore(row: number): boolean;
   column(from: number, to: number, continuing: boolean): Block;
 }
 
@@ -45,10 +46,7 @@ function placementLine(placement: SheetPlacement): string {
   return notes.join(" · ");
 }
 
-function notCheckedLines(sheet: PlanSheet): ReadonlyArray<string> {
-  const { notChecked } = sheet.verdict;
-  return notChecked.length === 0 ? [] : ["Not checked yet:", ...notChecked.map((r) => `· ${r}`)];
-}
+const NOT_CHECKED_TITLE = "Not checked yet:";
 
 type PlacementRow =
   | { readonly kind: "title" }
@@ -56,7 +54,21 @@ type PlacementRow =
   | { readonly kind: "placement"; readonly placement: SheetPlacement; readonly label: string }
   | { readonly kind: "continuation"; readonly text: string }
   | { readonly kind: "total" }
-  | { readonly kind: "note"; readonly text: string };
+  | { readonly kind: "gap" }
+  | { readonly kind: "notes-title" }
+  | { readonly kind: "note"; readonly text: string }
+  | { readonly kind: "note-wrap"; readonly text: string };
+
+const KEPT_WITH_NEXT: ReadonlySet<PlacementRow["kind"]> = new Set([
+  "title",
+  "header",
+  "notes-title",
+]);
+const KEPT_WITH_PREVIOUS: ReadonlySet<PlacementRow["kind"]> = new Set([
+  "continuation",
+  "gap",
+  "note-wrap",
+]);
 
 export class PlacementKey implements KeyTable {
   readonly widthMm: number;
@@ -79,10 +91,24 @@ export class PlacementKey implements KeyTable {
     return this.rows.length;
   }
 
+  breaksBefore(row: number): boolean {
+    const at = this.rows[row];
+    const before = this.rows[row - 1];
+    return (
+      at !== undefined &&
+      !KEPT_WITH_PREVIOUS.has(at.kind) &&
+      (before === undefined || !KEPT_WITH_NEXT.has(before.kind))
+    );
+  }
+
   column(from: number, to: number, continuing: boolean): Block {
+    const shown = this.rows.slice(from, to);
+    const placementsContinue = shown.some(
+      (row) => row.kind === "placement" || row.kind === "continuation",
+    );
     const rows: PlacementRow[] = [
-      ...(continuing ? [{ kind: "header" } satisfies PlacementRow] : []),
-      ...this.rows.slice(from, to),
+      ...(continuing && placementsContinue ? [{ kind: "header" } satisfies PlacementRow] : []),
+      ...shown,
     ];
     return {
       width: this.widthMm,
@@ -105,14 +131,18 @@ export class PlacementKey implements KeyTable {
       );
     }
     rows.push({ kind: "total" });
-    const notes = notCheckedLines(this.sheet);
-    if (notes.length > 0) rows.push({ kind: "note", text: "" });
+    const { notChecked } = this.sheet.verdict;
+    if (notChecked.length > 0) rows.push({ kind: "gap" }, { kind: "notes-title" });
     const indentMm = this.typeface.widthMm(NOTE_INDENT, SMALL_MM);
-    for (const note of notes) {
-      const [first = "", ...more] = this.typeface.wrapped(note, SMALL_MM, widthMm - indentMm);
+    for (const check of notChecked) {
+      const [first = "", ...more] = this.typeface.wrapped(
+        `· ${check}`,
+        SMALL_MM,
+        widthMm - indentMm,
+      );
       rows.push(
         { kind: "note", text: first },
-        ...more.map((line): PlacementRow => ({ kind: "note", text: `${NOTE_INDENT}${line}` })),
+        ...more.map((line): PlacementRow => ({ kind: "note-wrap", text: `${NOTE_INDENT}${line}` })),
       );
     }
     return rows;
@@ -152,8 +182,13 @@ export class PlacementKey implements KeyTable {
             SMALL_BOLD,
           ),
         ];
+      case "gap":
+        return [];
+      case "notes-title":
+        return [text([0, y], NOT_CHECKED_TITLE, SMALL)];
       case "note":
-        return row.text === "" ? [] : [text([0, y], row.text, SMALL)];
+      case "note-wrap":
+        return [text([0, y], row.text, SMALL)];
       default: {
         const unhandled: never = row;
         throw new Error(`unhandled key row ${String(unhandled)}`);
@@ -231,6 +266,10 @@ export class TableSchedule implements KeyTable {
 
   get rowCount(): number {
     return this.rows.length;
+  }
+
+  breaksBefore(row: number): boolean {
+    return row > 0 && row < this.rows.length;
   }
 
   column(from: number, to: number, continuing: boolean): Block {

@@ -168,6 +168,14 @@ function finiteRect(rect: LduRect): boolean {
   return [rect.minX, rect.minZ, rect.maxX, rect.maxZ].every(Number.isFinite);
 }
 
+function columnEnd(key: KeyTable, from: number, limit: number): number {
+  if (limit >= key.rowCount) return key.rowCount;
+  for (let at = limit; at > from; at--) {
+    if (key.breaksBefore(at)) return at;
+  }
+  return limit;
+}
+
 function bestBy<T extends object>(candidates: ReadonlyArray<T>, cost: (candidate: T) => number): T {
   let best: T | null = null;
   for (const candidate of candidates) {
@@ -464,7 +472,7 @@ export class SheetComposer implements ISheetComposer {
       const columns = Math.floor((region.box.width + GAP_MM) / (width + GAP_MM));
       for (let column = 0; column < columns && next < key.rowCount; column++) {
         const continuing = next > 0;
-        const to = Math.min(key.rowCount, next + capacity - (continuing ? 1 : 0));
+        const to = columnEnd(key, next, next + capacity - (continuing ? 1 : 0));
         region.page.items.push(
           placed("key", key.column(next, to, continuing), [
             region.box.x + column * (width + GAP_MM),

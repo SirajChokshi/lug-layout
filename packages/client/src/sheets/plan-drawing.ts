@@ -85,6 +85,7 @@ const LABEL_LIFT_MM = 1;
 const TABLE_TEXT_INSET_MM = 2;
 const VENUE_TEXT_INSET_MM = 1;
 const NUMBER_RADIUS_MM = 3.5;
+const NOTE_LINE_MM = SMALL_MM + LABEL_LIFT_MM;
 const HATCH_SPACING_MM = 4;
 
 const SMALL_HALO = textStyle(SMALL_MM, { halo: true });
@@ -327,6 +328,67 @@ export function segmentLayer(segment: SheetPlacement["segment"]): SheetLayerId {
   }
 }
 
+interface NumberedPlacement {
+  readonly placement: SheetPlacement;
+  readonly box: Box;
+  readonly centre: Point;
+}
+
+function numbered(
+  sheet: PlanSheet,
+  frame: DrawingFrame,
+  layers: ReadonlySet<SheetLayerId>,
+): ReadonlyArray<NumberedPlacement> {
+  return sheet.placements
+    .filter(
+      (placement) => layers.has(segmentLayer(placement.segment)) && drawableRings(placement.rings),
+    )
+    .map((placement) => {
+      const bounds = ringsBounds(placement.rings);
+      const box = {
+        x: frame.x(bounds.minX),
+        y: frame.z(bounds.minZ),
+        width: frame.x(bounds.maxX) - frame.x(bounds.minX),
+        height: frame.z(bounds.maxZ) - frame.z(bounds.minZ),
+      };
+      return { placement, box, centre: [box.x + box.width / 2, box.y + box.height / 2] };
+    });
+}
+
+function numberBox([x, y]: Point): Box {
+  return {
+    x: x - NUMBER_RADIUS_MM,
+    y: y - NUMBER_RADIUS_MM,
+    width: 2 * NUMBER_RADIUS_MM,
+    height: 2 * NUMBER_RADIUS_MM,
+  };
+}
+
+function horizontalEdges({ x, y, width, height }: Box): ReadonlyArray<Box> {
+  return [
+    { x, y, width, height: 0 },
+    { x, y: y + height, width, height: 0 },
+  ];
+}
+
+function liftClearOf(avoided: ReadonlyArray<Box>, notes: Box, ceiling: number): number | null {
+  const bottom = notes.y + notes.height;
+  const covering = (lift: number): Box | undefined =>
+    avoided.find(
+      (box) =>
+        box.x + box.width + LABEL_LIFT_MM > notes.x &&
+        box.x - LABEL_LIFT_MM < notes.x + notes.width &&
+        box.y + box.height + LABEL_LIFT_MM > notes.y - lift &&
+        box.y - LABEL_LIFT_MM < bottom - lift,
+    );
+  let lift = 0;
+  for (let box = covering(lift); box; box = covering(lift)) {
+    lift = bottom - (box.y - LABEL_LIFT_MM);
+    if (notes.y - lift < ceiling) return null;
+  }
+  return lift;
+}
+
 function placementRole(placement: SheetPlacement): string {
   return placement.flagged ? `${placement.segment} flagged` : placement.segment;
 }
@@ -439,7 +501,7 @@ export class PlanDrawing implements IPlanDrawing {
           .filter(drawableRings)
           .map((ramp) => path("ramp", PAINTS.ramp, frame.localRings(ramp)));
       case "dimensions":
-        return this.dimensionItems(sheet, frame);
+        return this.dimensionItems(sheet, frame, layers);
       case "numbers":
         return this.numberItems(sheet, frame, layers);
       case "table-numbers":
@@ -467,7 +529,14 @@ export class PlanDrawing implements IPlanDrawing {
       );
   }
 
-  private dimensionItems(sheet: PlanSheet, frame: DrawingFrame): DrawItem[] {
+  private dimensionItems(
+    sheet: PlanSheet,
+    frame: DrawingFrame,
+    layers: ReadonlySet<SheetLayerId>,
+  ): DrawItem[] {
+    const drawn = numbered(sheet, frame, layers);
+    const numbers = layers.has("numbers") ? drawn.map(({ centre }) => numberBox(centre)) : [];
+    const edges = drawn.flatMap(({ box }) => horizontalEdges(box));
     const items: DrawItem[] = [];
     for (const table of sheet.tables) {
       const { surface, studs } = table;
@@ -495,6 +564,8 @@ export class PlanDrawing implements IPlanDrawing {
             `from the left wall ${lengthText(surface.minX - sheet.room.minX)}, from the back wall ${lengthText(surface.minZ - sheet.room.minZ)}`,
           ],
           { x: left, y: top, width: right - left, height: bottom - top },
+          numbers,
+          edges,
         ),
       );
     }
@@ -535,23 +606,37 @@ export class PlanDrawing implements IPlanDrawing {
     return items;
   }
 
-  private tableNotes(lines: ReadonlyArray<string>, table: Box): DrawItem[] {
+  private tableNotes(
+    lines: ReadonlyArray<string>,
+    table: Box,
+    numbers: ReadonlyArray<Box>,
+    edges: ReadonlyArray<Box>,
+  ): DrawItem[] {
     const width = table.width - 2 * TABLE_TEXT_INSET_MM;
-    const rows = Math.floor((table.height - TABLE_TEXT_INSET_MM) / (SMALL_MM + LABEL_LIFT_MM));
-    const shown = lines.slice(0, Math.max(0, rows));
-    const bottom = table.y + table.height - TABLE_TEXT_INSET_MM;
-    return shown.flatMap((line, i) => {
-      const fitted = this.typeface.fitted(line, SMALL_MM, width);
-      if (fitted === "") return [];
-      const fromBottom = shown.length - 1 - i;
-      return [
-        text(
-          [table.x + TABLE_TEXT_INSET_MM, bottom - fromBottom * (SMALL_MM + LABEL_LIFT_MM)],
-          fitted,
-          SMALL_HALO,
-        ),
-      ];
-    });
+    const rows = Math.floor((table.height - TABLE_TEXT_INSET_MM) / NOTE_LINE_MM);
+    const shown = lines
+      .slice(0, Math.max(0, rows))
+      .map((line) => this.typeface.fitted(line, SMALL_MM, width));
+    const left = table.x + TABLE_TEXT_INSET_MM;
+    const lowest = table.y + table.height - TABLE_TEXT_INSET_MM;
+    const above = (shown.length - 1) * NOTE_LINE_MM + this.typeface.capHeightMm(SMALL_MM);
+    const notes = {
+      x: left,
+      y: lowest - above,
+      width: Math.max(0, ...shown.map((line) => this.typeface.widthMm(line, SMALL_MM))),
+      height: above + LABEL_LIFT_MM,
+    };
+    const ceiling = table.y + TABLE_TEXT_INSET_MM;
+    const lift =
+      liftClearOf([...numbers, ...edges], notes, ceiling) ??
+      liftClearOf(numbers, notes, ceiling) ??
+      0;
+    const bottom = lowest - lift;
+    return shown.flatMap((line, i) =>
+      line === ""
+        ? []
+        : [text([left, bottom - (shown.length - 1 - i) * NOTE_LINE_MM], line, SMALL_HALO)],
+    );
   }
 
   private tableNumberItems(sheet: PlanSheet, frame: DrawingFrame): DrawItem[] {
@@ -584,32 +669,22 @@ export class PlanDrawing implements IPlanDrawing {
     frame: DrawingFrame,
     layers: ReadonlySet<SheetLayerId>,
   ): DrawItem[] {
-    return sheet.placements
-      .filter(
-        (placement) =>
-          layers.has(segmentLayer(placement.segment)) && drawableRings(placement.rings),
-      )
-      .flatMap((placement): DrawItem[] => {
-        const bounds = ringsBounds(placement.rings);
-        const cx = frame.x((bounds.minX + bounds.maxX) / 2);
-        const cz = frame.z((bounds.minZ + bounds.maxZ) / 2);
-        return [
-          {
-            kind: "circle",
-            role: placement.flagged ? "number flagged" : "number",
-            paint: placement.flagged ? PAINTS.numberFlagged : PAINTS.number,
-            center: [cx, cz],
-            radius: NUMBER_RADIUS_MM,
-          },
-          {
-            kind: "text",
-            role: "number",
-            style: NUMBER_TEXT,
-            at: [cx, cz + this.typeface.capHeightMm(SMALL_MM) / 2],
-            text: String(placement.number),
-            turn: "none",
-          },
-        ];
-      });
+    return numbered(sheet, frame, layers).flatMap(({ placement, centre }): DrawItem[] => [
+      {
+        kind: "circle",
+        role: placement.flagged ? "number flagged" : "number",
+        paint: placement.flagged ? PAINTS.numberFlagged : PAINTS.number,
+        center: centre,
+        radius: NUMBER_RADIUS_MM,
+      },
+      {
+        kind: "text",
+        role: "number",
+        style: NUMBER_TEXT,
+        at: [centre[0], centre[1] + this.typeface.capHeightMm(SMALL_MM) / 2],
+        text: String(placement.number),
+        turn: "none",
+      },
+    ]);
   }
 }

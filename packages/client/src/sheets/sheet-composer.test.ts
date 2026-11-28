@@ -10,7 +10,7 @@ import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import type { PlanSheet, SheetPlacement } from "../plan/plan-sheet.ts";
-import { SHEET_COMPOSER } from "../tokens.ts";
+import { PLAN_DRAWING, SHEET_COMPOSER, SHEET_TYPEFACE } from "../tokens.ts";
 import {
   boxesOverlap,
   composed,
@@ -26,6 +26,7 @@ import {
   type SheetPage,
   type SheetSelection,
 } from "./sheet-document.ts";
+import { SMALL_MM } from "./sheet-paints.ts";
 import { TABLE_PLAN_LAYERS, WHOLE_PLAN_SELECTION } from "./sheet-sets.ts";
 
 const container = new Container();
@@ -178,6 +179,24 @@ function tilePages(layout: SheetLayout, sheet: PlanSheet = SHEET): SheetPage[] {
   return composer
     .compose(sheet, layout, WHOLE_PLAN_SELECTION)
     .pages.filter((page) => /^[A-Z]+\d+$/u.test(page.name));
+}
+
+function keyRows(column: DrawItem): string[] {
+  const rows = new Map<number, Array<{ x: number; text: string }>>();
+  for (const { item } of walk([column])) {
+    if (item.kind !== "text") continue;
+    const row = rows.get(item.at[1]) ?? [];
+    row.push({ x: item.at[0], text: item.text });
+    rows.set(item.at[1], row);
+  }
+  return [...rows]
+    .toSorted(([a], [b]) => a - b)
+    .map(([, row]) =>
+      row
+        .toSorted((a, b) => a.x - b.x)
+        .map((cell) => cell.text)
+        .join(" "),
+    );
 }
 
 function titleLines(page: SheetPage): string[] {
@@ -363,6 +382,50 @@ describe("a sheet fitted to one page", () => {
     });
   });
 
+  it("continues a key in its next column at a whole row, with the column header only over placements", () => {
+    const placements = Array.from({ length: 24 }, (_, i): SheetPlacement => ({
+      number: i + 1,
+      label: `Train Track 9V Straight #${i + 1}`,
+      parts: 1,
+      segment: "track",
+      rings: square(400 + i * 160, 800, 160),
+      flagged: false,
+    }));
+    const notChecked = Array.from(
+      { length: 12 },
+      (_, i) =>
+        `Rule ${i + 1}: a check the plan doesn't make yet, explained at some length so that its note wraps onto more than one line of the key (not yet assigned)`,
+    );
+    const sheet: PlanSheet = {
+      ...sheetWith(placements),
+      verdict: { ...SHEET.verdict, notChecked },
+    };
+    const columns = composer
+      .compose(sheet, { kind: "fit", paper: "a4", orientation: "portrait" }, WHOLE_PLAN_SELECTION)
+      .pages.flatMap((page) => page.items.filter((item) => item.role === "key"))
+      .map(keyRows);
+    const continued = columns.slice(1).map((rows) => ({
+      header: rows[0] === "No. Parts Placement",
+      placements: rows.some((row) => /^\d+ 1 Train Track/u.test(row)),
+      first: rows[0] ?? "",
+      last: rows.at(-1) ?? "",
+    }));
+
+    expect({
+      columns: continued.length > 1,
+      notesOnly: continued.some((column) => !column.placements),
+      headerOverPlacementsOnly: continued.every((column) => column.header === column.placements),
+      startsInsideAWrappedNote: continued.some((column) => column.first.startsWith(" ")),
+      endsOnTheNotesTitle: continued.some((column) => column.last === "Not checked yet:"),
+    }).toEqual({
+      columns: true,
+      notesOnly: true,
+      headerOverPlacementsOnly: true,
+      startsInsideAWrappedNote: false,
+      endsOnTheNotesTitle: false,
+    });
+  });
+
   it("flows a long key onto continuation pages, listing every placement once and in order", () => {
     const many = Array.from({ length: 150 }, (_, i): SheetPlacement => ({
       number: i + 1,
@@ -390,6 +453,102 @@ describe("a sheet fitted to one page", () => {
     );
     expect(pages.length).toBeGreaterThan(1);
     expect(listed).toEqual(many.map((placement) => placement.number));
+  });
+});
+
+function bottomOf(boxes: ReadonlyArray<Box>): number {
+  return Math.max(...boxes.map((box) => box.y + box.height));
+}
+
+describe("a table's notes on the plan", () => {
+  const drawings = container.get(PLAN_DRAWING);
+  const typeface = container.get(SHEET_TYPEFACE);
+
+  function drawn(placements: ReadonlyArray<SheetPlacement>) {
+    const sheet = sheetWith(placements);
+    const items = walk(
+      drawings
+        .draw(sheet, 10, new Set(drawings.layersOf(sheet)))
+        .layers.flatMap((layer) => layer.items),
+    );
+    const [table] = items.flatMap(({ item, transform }): Box[] => {
+      if (item.kind !== "rect" || item.role !== "table") return [];
+      const [x, y] = onPage([item.box.x, item.box.y], transform);
+      return [
+        {
+          x,
+          y,
+          width: item.box.width * transform.scale,
+          height: item.box.height * transform.scale,
+        },
+      ];
+    });
+    if (!table) throw new Error("the plan draws the front table");
+    const notes = items.flatMap(({ item }): Box[] =>
+      item.kind === "text" &&
+      /^(Front · |from the left wall )/u.test(item.text) &&
+      item.at[0] > table.x &&
+      item.at[0] < table.x + table.width &&
+      item.at[1] > table.y &&
+      item.at[1] < table.y + table.height
+        ? [
+            {
+              x: item.at[0],
+              y: item.at[1] - SMALL_MM,
+              width: typeface.widthMm(item.text, SMALL_MM),
+              height: SMALL_MM,
+            },
+          ]
+        : [],
+    );
+    const numbers = items.flatMap(({ item }): Box[] =>
+      item.kind === "circle" && item.role.startsWith("number")
+        ? [
+            {
+              x: item.center[0] - item.radius,
+              y: item.center[1] - item.radius,
+              width: 2 * item.radius,
+              height: 2 * item.radius,
+            },
+          ]
+        : [],
+    );
+    return { table, notes, numbers };
+  }
+
+  it("lifts a table's notes clear of a placement number at the table's bottom edge, keeping them on the table", () => {
+    const front = tableTops(REGION)[0];
+    if (!front) throw new Error("the region has a front table");
+    const { surface } = front;
+    const cottage: SheetPlacement = {
+      number: 1,
+      label: "my-cottage.ldr at stud 20, 30",
+      parts: 21,
+      segment: "model",
+      rings: square(surface.minX + 400, surface.maxZ - 240, 160),
+      flagged: false,
+    };
+    const bare = drawn([]);
+    const numbered = drawn([cottage]);
+    const [number] = numbered.numbers;
+    if (!number) throw new Error("the plan numbers the cottage");
+    const { table } = numbered;
+
+    expect({
+      notes: [bare.notes.length, numbered.notes.length],
+      coveredAtTheBottom: bare.notes.some((box) => boxesOverlap(box, number)),
+      coveredWhenNumbered: numbered.notes.some((box) => boxesOverlap(box, number)),
+      lifted: bottomOf(numbered.notes) < bottomOf(bare.notes),
+      onTheTable: numbered.notes.every(
+        (box) => box.y >= table.y && box.y + box.height <= table.y + table.height,
+      ),
+    }).toEqual({
+      notes: [2, 2],
+      coveredAtTheBottom: true,
+      coveredWhenNumbered: false,
+      lifted: true,
+      onTheTable: true,
+    });
   });
 });
 
