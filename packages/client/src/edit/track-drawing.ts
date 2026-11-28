@@ -855,7 +855,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
     };
     this.bands = new TrackBands(pieces, this.verticalRange(), this.supportedOn);
     this.extension = new TrackExtension(this);
-    this.closer = new LoopCloser(this, () => performance.now());
+    this.closer = new LoopCloser(this);
   }
 
   private endsChanged(): void {

@@ -1105,7 +1105,6 @@ function offerBetween(
 
 const GAP_STRAIGHTS = 2;
 const STRAIGHT_STUDS = 16;
-const SCAN_DEADLINE_MS = 1;
 const EAST = 0;
 const WEST = 8;
 
@@ -1190,17 +1189,15 @@ it("offers every pair of open ends it can close exactly, nearest first with the 
 
 it("scans at least one pair of ends per slice, stops each slice at its deadline, and finds the same closes as a scan run to the end at once", async () => {
   const layout = (await openOval())();
-  let now = 0;
-  const sliced = new LoopCloser(layout, () => now);
-  now = SCAN_DEADLINE_MS;
+  const sliced = new LoopCloser(layout);
   const checkedAfterEachSlice: number[] = [];
-  while (sliced.advance(SCAN_DEADLINE_MS)) checkedAfterEachSlice.push(sliced.checked);
-  const whole = new LoopCloser(layout, () => 0);
-  const wholeAdvanced = whole.advance(SCAN_DEADLINE_MS);
+  while (sliced.advance(Number.NEGATIVE_INFINITY)) checkedAfterEachSlice.push(sliced.checked);
+  const whole = new LoopCloser(layout);
+  const wholeAdvanced = whole.advance(Number.POSITIVE_INFINITY);
 
   expect(wholeAdvanced).toBe(true);
   expect(whole.scanning).toBe(false);
-  expect(whole.advance(SCAN_DEADLINE_MS)).toBe(false);
+  expect(whole.advance(Number.POSITIVE_INFINITY)).toBe(false);
   expect(whole.checked).toBe(whole.pairCount);
   expect(checkedAfterEachSlice).toEqual(
     Array.from({ length: whole.checked }, (_, slice) => slice + 1),

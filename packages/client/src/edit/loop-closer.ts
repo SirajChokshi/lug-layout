@@ -10,8 +10,6 @@ export interface LoopCloserSite {
   closure(from: number, to: number): ExtensionJoin;
 }
 
-export type Clock = () => number;
-
 export interface LoopClosure {
   readonly key: string;
   readonly from: number;
@@ -40,10 +38,7 @@ export class LoopCloser {
   private previewKey: string | null = null;
   private changes = 0;
 
-  constructor(
-    private readonly site: LoopCloserSite,
-    private readonly clock: Clock,
-  ) {}
+  constructor(private readonly site: LoopCloserSite) {}
 
   get version(): number {
     return this.changes;
@@ -97,7 +92,7 @@ export class LoopCloser {
     if (!this.scanning) return false;
     const pairs = (this.pairs ??= this.endPairs());
     for (let solved = 0; this.next < pairs.length; solved++) {
-      if (solved > 0 && this.clock() >= deadlineMs) break;
+      if (solved > 0 && performance.now() >= deadlineMs) break;
       const pair = pairs[this.next];
       this.next++;
       const closure = pair ? this.closureOf(pair) : null;
