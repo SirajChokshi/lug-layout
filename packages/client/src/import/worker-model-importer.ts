@@ -1,9 +1,15 @@
-import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
+import {
+  BUNDLE_BASE_URL,
+  PART_BUNDLE_LOADER,
+  type ImportContext,
+  type IPartBundleLoader,
+} from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
 import type {
   ImportInput,
   ImportJob,
   ImportResult,
+  LayoutPart,
   PlacementListener,
   RollingDiagnosticsRows,
 } from "@brr/import";
@@ -34,6 +40,7 @@ export interface IModelImporter {
     partIds: ReadonlyArray<string>,
     lod?: BundleLod,
   ): Promise<RollingDiagnosticsRows>;
+  layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>>;
 }
 
 @injectable()
@@ -84,6 +91,19 @@ export class WorkerModelImporter implements IModelImporter {
     );
   }
 
+  async layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>> {
+    const compilerUrl = this.compilerUrl(await this.loader.importContext("standard"));
+    return this.workers.layoutParts({ compilerUrl, fileName, text });
+  }
+
+  private compilerUrl(context: ImportContext): string {
+    return new URL(context.compilerPath, this.bundleBase()).href;
+  }
+
+  private bundleBase(): URL {
+    return new URL(this.bundleBaseUrl.replace(/\/?$/u, "/"));
+  }
+
   private async job(fileName: string, lod: BundleLod): Promise<Omit<ImportJob, "text">> {
     const context = await this.loader.importContext(lod);
     return {
@@ -110,11 +130,10 @@ export class WorkerModelImporter implements IModelImporter {
     onPlaced: PlacementListener | undefined,
   ): Promise<ImportResult> {
     const context = await this.loader.importContext(lod);
-    const bundleBase = new URL(this.bundleBaseUrl.replace(/\/?$/u, "/"));
     return this.workers.run(
       {
-        compilerUrl: new URL(context.compilerPath, bundleBase).href,
-        bundleBaseUrl: bundleBase.href,
+        compilerUrl: this.compilerUrl(context),
+        bundleBaseUrl: this.bundleBase().href,
         connectorIndexes: context.connectorIndexes,
         connectorVocabulary: context.sectionVocabulary.sha256,
         ...(this.ldrawLibraryBaseUrl === null ? {} : { ldrawLibraryUrl: this.ldrawLibraryBaseUrl }),

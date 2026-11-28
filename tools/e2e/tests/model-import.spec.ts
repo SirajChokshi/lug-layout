@@ -1,3 +1,4 @@
+import { PLATE_LDU } from "@brr/math";
 import { expect, test } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -22,6 +23,31 @@ function customModule(): string {
     "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 3003.dat",
     "1 14 260 -24 290 1 0 0 0 1 0 0 0 1 3700.dat",
     "1 15 0 -48 0 1 0 0 0 1 0 0 0 1 3003.dat",
+    "",
+  ].join("\n");
+}
+
+function layoutExportedByLayer(): string {
+  return [
+    "0 FILE layers-export.ldr",
+    "0 layers-export",
+    "0 Name: layers-export.mpd",
+    "0 Author: lug-layout e2e (generated at test time)",
+    "0 Unofficial Model",
+    "1 1 0 0 0 1 0 0 0 1 0 0 0 1 Baseplates.ldr",
+    "1 1 0 0 0 1 0 0 0 1 0 0 0 1 Houses.ldr",
+    "1 1 0 0 0 1 0 0 0 1 0 0 0 1 Grid.ldr",
+    "0 FILE Baseplates.ldr",
+    "0 Unofficial Model",
+    "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.DAT",
+    "1 2 640 0 0 1 0 0 0 1 0 0 0 1 3811.DAT",
+    "0 FILE Houses.ldr",
+    "0 Unofficial Model",
+    "1 4 -280 -24 -280 1 0 0 0 1 0 0 0 1 3001.DAT",
+    "1 1 600 -24 20 0 0 1 0 1 0 -1 0 0 3001.DAT",
+    "1 15 600 -48 20 0 0 1 0 1 0 -1 0 0 3001.DAT",
+    "0 FILE Grid.ldr",
+    "0 // Grid layer not implemented yet",
     "",
   ].join("\n");
 }
@@ -105,6 +131,37 @@ test("a custom model file is placed in the editor through the UI and comes back 
   await expect
     .poll(() => reopened.poses(), { timeout: 180_000, message: "the import comes back" })
     .toEqual(placed);
+});
+
+test("a layout exported layer by layer, imported as a layout, is held as one placement per layer, lands where the file puts each layer, and leaves out a layer that draws nothing", async ({
+  page,
+}) => {
+  const file = test.info().outputPath("layers-export.mpd");
+  await writeFile(file, layoutExportedByLayer());
+  const editor = await EditorPage.open(page);
+  await editor.serveLdrawLibrary();
+
+  const held = await editor.importLayout(file);
+  expect(held.status, held.text).toBe("held");
+  expect(held.text).toContain("Left out: Grid.ldr: nothing in the file is drawn.");
+  await editor.zoom(400);
+  await editor.clickAt({ x: 0, z: 0 });
+  await editor.escape();
+
+  const poses = await editor.poses();
+  const layoutOrigins = await Promise.all(
+    poses.map(async ({ item, x, z, yPlates }) => {
+      const [shiftX, shiftY, shiftZ] = await editor.frameShift(item);
+      return [x + shiftX, yPlates * PLATE_LDU + shiftY, z + shiftZ];
+    }),
+  );
+  expect(poses).toHaveLength(2);
+  expect(poses.map(({ item }) => item)).toEqual([
+    expect.stringMatching(IMPORT_REF),
+    expect.stringMatching(IMPORT_REF),
+  ]);
+  expect(layoutOrigins[1]).toEqual(layoutOrigins[0]);
+  await page.screenshot({ path: test.info().outputPath("layers-export-placed.png") });
 });
 
 test("track far from an imported layout's centre is identified from its double-precision transforms, and dust beyond the residual is not", async ({

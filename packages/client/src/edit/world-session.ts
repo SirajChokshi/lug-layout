@@ -138,7 +138,7 @@ export interface IEditedWorld extends IPlanSheetSource {
   placedCredits(): ReadonlyArray<ModelCredit>;
   validate(stored: StoredContents): ReadonlyArray<Issue>;
   load(stored: StoredContents): Promise<ReadonlyArray<Issue>>;
-  addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<string | null>;
+  addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<ModelFileOutcome>;
   planContents(planId: string): Decoded<PlanContents>;
   addPlan(plan: StoredPlan): Promise<ReadonlyArray<Issue>>;
 }
@@ -163,7 +163,7 @@ export interface IWorldSession extends IWorldFiles {
   placementsEdited(edit: AppliedEdit): void;
   trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void;
   pollCamera(): void;
-  addModelFile(file: ModelFileInput, notice: ModelImportNotice): Promise<string | null>;
+  addModelFile(file: ModelFileInput, notice: ModelImportNotice): Promise<ModelFileOutcome>;
   importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean>;
 }
 
@@ -173,6 +173,10 @@ export interface ModelFileInput {
 }
 
 export type ModelImportNotice = "announce" | "quiet";
+
+export type ModelFileOutcome =
+  | { readonly kind: "added"; readonly item: string }
+  | { readonly kind: "refused"; readonly reason: string };
 
 const CAMERA_SAVE_DELAY_MS = 500;
 const UNSEEN = Number.NaN;
@@ -650,7 +654,7 @@ export class WorldSession implements IWorldSession {
       if (!file) {
         throw new Error(`it places an imported file (sha256 ${sha256}) that isn't stored here`);
       }
-      if ((await this.editedWorld().addImportedModel(file, "quiet")) === null) {
+      if ((await this.editedWorld().addImportedModel(file, "quiet")).kind === "refused") {
         throw new Error(`the imported file ${file.name} can't be placed any more`);
       }
       this.importedFiles.set(sha256, file);
@@ -911,8 +915,8 @@ export class WorldSession implements IWorldSession {
     });
   }
 
-  async addModelFile(input: ModelFileInput, notice: ModelImportNotice): Promise<string | null> {
-    let item: string | null = null;
+  async addModelFile(input: ModelFileInput, notice: ModelImportNotice): Promise<ModelFileOutcome> {
+    let outcome: ModelFileOutcome | null = null;
     await this.fileAction(
       "model import",
       async () => {
@@ -920,15 +924,14 @@ export class WorldSession implements IWorldSession {
         const known = this.importedFiles.get(sha256);
         const file = known ?? { sha256, name: input.name, bytes: input.bytes.slice() };
         const placed = await this.editedWorld().addImportedModel(file, notice);
-        if (placed === null) return;
-        if (!known) {
+        if (placed.kind === "added" && !known) {
           this.importedFiles.set(sha256, file);
           if (this.state.storageError === null) await this.repository.putImportedFile(file);
         }
-        item = placed;
+        outcome = placed;
       },
       true,
     );
-    return item;
+    return outcome ?? { kind: "refused", reason: this.state.fileError ?? "the import failed" };
   }
 }

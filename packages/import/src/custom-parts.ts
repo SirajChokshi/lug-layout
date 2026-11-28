@@ -30,6 +30,11 @@ export interface CustomCycle {
   readonly through: ReadonlyArray<string>;
 }
 
+export interface MpdSection {
+  readonly name: string | null;
+  readonly lines: ReadonlyArray<string>;
+}
+
 interface Reserved {
   readonly path: string;
   readonly hex: string;
@@ -46,24 +51,28 @@ function fileMetaName(line: string): string | null {
   return name === "" ? null : normalizeReference(name);
 }
 
-export function mpdSections(text: string): ReadonlyMap<string, string> {
-  const sections = new Map<string, string>();
-  let current: string | null = null;
-  let body: string[] = [];
-  const close = (): void => {
-    if (current !== null) sections.set(current, body.join(""));
-  };
+export function sectionList(text: string): ReadonlyArray<MpdSection> {
+  const sections: Array<{ readonly name: string | null; readonly lines: string[] }> = [];
   for (const line of text.split(/\r?\n/u)) {
     const name = fileMetaName(line);
-    if (name !== null) {
-      close();
-      current = name;
-      body = [];
-      continue;
-    }
-    body.push(`${line}\n`);
+    if (name !== null || sections.length === 0) sections.push({ name, lines: [] });
+    sections.at(-1)?.lines.push(line);
   }
-  close();
+  return sections;
+}
+
+export function mpdSections(text: string): ReadonlyMap<string, string> {
+  const sections = new Map<string, string>();
+  for (const { name, lines } of sectionList(text)) {
+    if (name !== null)
+      sections.set(
+        name,
+        lines
+          .slice(1)
+          .map((line) => `${line}\n`)
+          .join(""),
+      );
+  }
   return sections;
 }
 
@@ -71,14 +80,27 @@ function lineTokens(line: string): ReadonlyArray<string> {
   return line.trim().split(/\s+/u);
 }
 
-function subfileReference(tokens: ReadonlyArray<string>): string | null {
+function rawSubfileName(tokens: ReadonlyArray<string>): string | null {
   if (tokens[0] !== SUBFILE_LINE || tokens.length <= SUBFILE_REFERENCE_TOKEN) return null;
-  return normalizeReference(tokens.slice(SUBFILE_REFERENCE_TOKEN).join(" "));
+  return tokens.slice(SUBFILE_REFERENCE_TOKEN).join(" ");
+}
+
+export function subfileName(line: string): string | null {
+  return rawSubfileName(lineTokens(line));
+}
+
+function subfileReference(tokens: ReadonlyArray<string>): string | null {
+  const name = rawSubfileName(tokens);
+  return name === null ? null : normalizeReference(name);
+}
+
+export function lineReference(line: string): string | null {
+  return subfileReference(lineTokens(line));
 }
 
 function subfileReferences(text: string): ReadonlyArray<string> {
   return text.split(/\r?\n/u).flatMap((line) => {
-    const reference = subfileReference(lineTokens(line));
+    const reference = lineReference(line);
     return reference === null ? [] : [reference];
   });
 }
