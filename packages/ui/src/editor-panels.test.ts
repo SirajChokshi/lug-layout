@@ -84,6 +84,7 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
         toggleable: true,
         listedUnder: null,
         customParts: 0,
+        shelf: null,
       },
     ],
     roadKit: "road",

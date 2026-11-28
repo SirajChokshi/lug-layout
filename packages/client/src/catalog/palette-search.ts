@@ -10,6 +10,7 @@ import {
 import type { CatalogSearchStatus, ICatalogSearch } from "./catalog-search.ts";
 import type { ILibraryFilterStore, LibraryFilterScope, LibraryFilters } from "./library-filters.ts";
 import type { ILibraryPartSearch, LibrarySearchView } from "./library-part-search.ts";
+import { LIBRARY_SHELVES, SHELF_LABEL, type LibraryShelf } from "./library-shelves.ts";
 import { LibraryQuery } from "./library-query.ts";
 import type { IPaletteCatalog } from "./palette-catalog.ts";
 import type { IPaletteMemory } from "./palette-memory.ts";
@@ -38,11 +39,19 @@ export interface PaletteColors {
   readonly current: number | null;
 }
 
+export interface PaletteShelf {
+  readonly shelf: LibraryShelf;
+  readonly label: string;
+  readonly rows: ReadonlyArray<PaletteRow>;
+  readonly unplaceable: ReadonlyArray<SkippedCatalogModel>;
+}
+
 export interface PaletteSection {
   readonly category: PaletteCategory;
   readonly colors: PaletteColors;
   readonly rows: ReadonlyArray<PaletteRow>;
   readonly unmade: ReadonlyArray<PaletteRow>;
+  readonly shelves: ReadonlyArray<PaletteShelf>;
 }
 
 export interface PaletteSearchSnapshot {
@@ -87,19 +96,38 @@ function browseRow(index: PaletteIndex, entry: PaletteEntry, current: number | n
   };
 }
 
+function shelfOf(item: CatalogItemView | undefined): LibraryShelf {
+  return item?.shelf ?? "other";
+}
+
+function shelves(
+  rows: ReadonlyArray<PaletteRow>,
+  skipped: ReadonlyArray<SkippedCatalogModel>,
+): ReadonlyArray<PaletteShelf> {
+  return LIBRARY_SHELVES.map((shelf) => ({
+    shelf,
+    label: SHELF_LABEL[shelf],
+    rows: rows.filter((row) => shelfOf(row.entry.items[0]) === shelf),
+    unplaceable: skipped.filter((model) => shelfOf(model.item) === shelf),
+  })).filter((shelf) => shelf.rows.length + shelf.unplaceable.length > 0);
+}
+
 function section(
   index: PaletteIndex,
   category: PaletteCategory,
   color: number | null,
+  skipped: ReadonlyArray<SkippedCatalogModel>,
 ): PaletteSection {
   const choices = index.colorChoices(category);
   const current = choices.some((option) => option.color.code === color) ? color : null;
   const rows = index.entries(category).map((entry) => browseRow(index, entry, current));
+  const shown = current === null ? rows : rows.filter((row) => row.chosen !== undefined);
   return {
     category,
     colors: { choices, current },
-    rows: current === null ? rows : rows.filter((row) => row.chosen !== undefined),
+    rows: shown,
     unmade: current === null ? [] : rows.filter((row) => row.chosen === undefined),
+    shelves: category === "sets" ? shelves(shown, skipped) : [],
   };
 }
 
@@ -219,7 +247,7 @@ export class PaletteSearch implements IPaletteSearch {
         scope === "per-tab" ? PALETTE_TABS.filter((option) => filters.filtered(option)) : [],
       ),
       color,
-      sections: shownCategories(tab).map((category) => section(index, category, color)),
+      sections: shownCategories(tab).map((category) => section(index, category, color, skipped)),
       hits: hits.map(({ entry, items }) => {
         const chosen = index.defaultItem(items, color);
         return { entry, items, chosen, preview: chosen };

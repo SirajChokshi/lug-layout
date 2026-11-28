@@ -32,6 +32,7 @@ function catalogItem(
     toggleable: false,
     listedUnder: null,
     customParts: 0,
+    shelf: null,
   };
 }
 

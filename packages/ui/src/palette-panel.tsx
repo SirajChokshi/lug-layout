@@ -29,6 +29,7 @@ import {
   type PaletteEntry,
   type PaletteRow,
   type PaletteSection,
+  type PaletteShelf,
   type PaletteTab,
   type SkippedCatalogModel,
 } from "@brr/client";
@@ -45,7 +46,6 @@ const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 const PALETTE_FIELDS = [
   "catalog",
-  "catalogSkipped",
   "activeItem",
   "mode",
   "status",
@@ -510,6 +510,27 @@ function PaintedSection({
   );
 }
 
+function ShelfList({ shelf, ...props }: PaletteProps & { readonly shelf: PaletteShelf }) {
+  const items = shelf.rows.flatMap((row) => row.items);
+  const count = items.length + shelf.unplaceable.length;
+  return (
+    <section className="palette-shelf" data-shelf={shelf.shelf} aria-label={shelf.label}>
+      <h3 className="palette-shelf-title">
+        <span>{shelf.label}</span>
+        <span className="palette-count">{count}</span>
+      </h3>
+      <ul>
+        {items.map((item) => (
+          <ItemButton key={item.id} {...props} item={item} />
+        ))}
+        {shelf.unplaceable.map((model) => (
+          <UnplaceableItem key={model.item.id} model={model} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function CategorySection({
   section,
   color,
@@ -539,14 +560,9 @@ function CategorySection({
       const items = section.rows.flatMap((row) => row.items);
       return (
         <Section id={category} title={CATEGORY_LABEL[category]} count={`${items.length} sets`}>
-          <ul>
-            {items.map((item) => (
-              <ItemButton key={item.id} {...props} item={item} />
-            ))}
-            {snapshot.catalogSkipped.map((model) => (
-              <UnplaceableItem key={model.item.id} model={model} />
-            ))}
-          </ul>
+          {section.shelves.map((shelf) => (
+            <ShelfList key={shelf.shelf} {...props} shelf={shelf} />
+          ))}
         </Section>
       );
     }

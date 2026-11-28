@@ -157,14 +157,20 @@ describe("palette categories", () => {
     expect(reported).toContain(problem);
   });
 
-  it("reports an OMR set the palette would list by file name", () => {
+  it("reports an OMR set the palette would list by file name or the library couldn't shelve", () => {
     const models = [
       { name: "10014-1", origin: "omr" },
-      { name: "10133-1", origin: "omr", set: { name: "Locomotive", year: 2004, source: "S13" } },
+      {
+        name: "10133-1",
+        origin: "omr",
+        set: { name: "Locomotive", year: 2004, theme: ["Train", "9V"], source: "S13" },
+      },
+      { name: "10205-1", origin: "omr", set: { name: "Locomotive", year: 2002, source: "S13" } },
       { name: "mils-plain", origin: "generated" },
     ] as unknown as Palette["models"];
     expect(paletteCategoryProblems(palette([], models), library, categories)).toEqual([
       "10014-1 is an OMR set with no Rebrickable set name, so the palette would list it by file name",
+      "10205-1 is an OMR set with no Rebrickable theme, so the library can't shelve it",
     ]);
   });
 });

@@ -40,6 +40,7 @@ function plate(
     toggleable: false,
     listedUnder: null,
     customParts: 0,
+    shelf: null,
   }));
 }
 
@@ -75,6 +76,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     toggleable: false,
     listedUnder: null,
     customParts: 0,
+    shelf: null,
   },
   {
     id: "track:lego-9v",
@@ -95,6 +97,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     toggleable: true,
     listedUnder: null,
     customParts: 0,
+    shelf: null,
   },
 ];
 
@@ -117,6 +120,7 @@ const trackSiding: CatalogItemView = {
   toggleable: false,
   listedUnder: null,
   customParts: 0,
+  shelf: null,
 };
 
 const index = new PaletteIndex(catalog, [
@@ -257,6 +261,7 @@ function trackPiece(number: string, title: string): CatalogItemView {
     toggleable: true,
     listedUnder: "track:lego-9v",
     customParts: 0,
+    shelf: null,
   };
 }
 
