@@ -4,6 +4,7 @@ import * as v from "valibot";
 import { AccountHandlers } from "./account-handlers.ts";
 import { Accounts } from "./accounts.ts";
 import type { IClock } from "./clock.ts";
+import { Comments } from "./comments.ts";
 import { EmailServiceMailer } from "./email-service-mailer.ts";
 import { LayoutApi } from "./layout-api.ts";
 import { LAYOUT_MIGRATIONS } from "./migrations.ts";
@@ -52,6 +53,6 @@ export function createLayoutApi(env: LayoutEnv, clock: IClock, random: IRandomSo
     shareLinks,
     new RateLimitBindings(env.SIGN_IN_RATE_LIMIT, env.ACCOUNT_RATE_LIMIT),
     new AccountHandlers(accounts, directory, files, clock),
-    new WorldHandlers(directory, files, history, shareLinks),
+    new WorldHandlers(directory, files, history, shareLinks, new Comments(db, clock, random)),
   );
 }

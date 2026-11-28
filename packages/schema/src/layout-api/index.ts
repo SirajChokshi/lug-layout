@@ -1,6 +1,7 @@
 import * as v from "valibot";
 import {
   Count,
+  PlacementRecordV1,
   SafeInteger,
   SuperChunk,
   WorldManifestV2,
@@ -28,6 +29,7 @@ export const MEBIBYTE = 1024 * 1024;
 export const MAX_SHARD_BYTES = 16 * MEBIBYTE;
 export const MAX_IMPORT_BYTES = 32 * MEBIBYTE;
 export const MAX_REQUEST_JSON_BYTES = 4 * MEBIBYTE;
+export const COMMENT_MAX_LENGTH = 2000;
 
 const VERSION_PAGE_LIMIT = { fallback: "50", max: 200 } as const;
 const SHARD_NAME = /^-?(?:0|[1-9]\d*)_-?(?:0|[1-9]\d*)$/u;
@@ -253,6 +255,77 @@ export type VersionListResponse = v.InferOutput<typeof VersionListResponse>;
 export const VersionResponse = v.object({ version: VersionSummary, snapshot: WorldSnapshot });
 export type VersionResponse = v.InferOutput<typeof VersionResponse>;
 
+export const PointPin = v.strictObject(
+  { on: v.literal("point"), x: PlacementRecordV1.entries.x, z: PlacementRecordV1.entries.z },
+  strictMessage,
+);
+export type PointPin = v.InferOutput<typeof PointPin>;
+
+export const ModelPin = v.strictObject(
+  { on: v.literal("model"), ...PlacementRecordV1.entries },
+  strictMessage,
+);
+export type ModelPin = v.InferOutput<typeof ModelPin>;
+
+export const CommentPin = v.variant("on", [PointPin, ModelPin], (issue) =>
+  issue.received === "undefined" ? "is missing" : `must be "point" or "model"`,
+);
+export type CommentPin = v.InferOutput<typeof CommentPin>;
+
+export function pinsPlacement(pin: ModelPin, placement: PlacementRecordV1): boolean {
+  return (
+    pin.ref === placement.ref &&
+    pin.color === placement.color &&
+    pin.x === placement.x &&
+    pin.z === placement.z &&
+    pin.yPlates === placement.yPlates &&
+    pin.rot === placement.rot
+  );
+}
+
+export const CommentText = v.pipe(
+  v.string(),
+  v.check(
+    (text) => text.trim() !== "" && text.length <= COMMENT_MAX_LENGTH,
+    `must be 1 to ${COMMENT_MAX_LENGTH} characters, not all spaces`,
+  ),
+);
+
+export const StartThreadRequest = v.strictObject(
+  { version: VersionNumber, pin: CommentPin, text: CommentText },
+  strictMessage,
+);
+export type StartThreadRequest = v.InferOutput<typeof StartThreadRequest>;
+
+export const ReplyRequest = v.strictObject({ text: CommentText }, strictMessage);
+export type ReplyRequest = v.InferOutput<typeof ReplyRequest>;
+
+export const ResolutionRequest = v.strictObject({ resolved: v.boolean() }, strictMessage);
+export type ResolutionRequest = v.InferOutput<typeof ResolutionRequest>;
+
+export const CommentSummary = v.object({
+  id: RecordId,
+  author: RecordId,
+  text: v.string(),
+  createdAt: Timestamp,
+});
+export type CommentSummary = v.InferOutput<typeof CommentSummary>;
+
+export const ThreadSummary = v.object({
+  id: RecordId,
+  version: VersionNumber,
+  pin: CommentPin,
+  resolved: v.nullable(v.object({ by: RecordId, at: Timestamp })),
+  comments: v.array(CommentSummary),
+});
+export type ThreadSummary = v.InferOutput<typeof ThreadSummary>;
+
+export const ThreadResponse = v.object({ thread: ThreadSummary });
+export type ThreadResponse = v.InferOutput<typeof ThreadResponse>;
+
+export const ThreadListResponse = v.object({ threads: v.array(ThreadSummary) });
+export type ThreadListResponse = v.InferOutput<typeof ThreadListResponse>;
+
 export const ErrorResponse = v.object({ error: v.string() });
 export type ErrorResponse = v.InferOutput<typeof ErrorResponse>;
 
@@ -331,6 +404,24 @@ export const ShareLinkRow = v.object({
   created_at: Integer,
 });
 export type ShareLinkRow = v.InferOutput<typeof ShareLinkRow>;
+
+export const CommentThreadRow = v.object({
+  id: RecordId,
+  version: Integer,
+  pin: v.pipe(v.string(), v.parseJson(), CommentPin),
+  resolved_by: v.nullable(RecordId),
+  resolved_at: v.nullable(Integer),
+});
+export type CommentThreadRow = v.InferOutput<typeof CommentThreadRow>;
+
+export const CommentRow = v.object({
+  id: RecordId,
+  thread_id: RecordId,
+  author_id: RecordId,
+  text: v.string(),
+  created_at: Integer,
+});
+export type CommentRow = v.InferOutput<typeof CommentRow>;
 
 export const StoredFileRow = v.object({ sha256: Sha256, bytes: Integer });
 export type StoredFileRow = v.InferOutput<typeof StoredFileRow>;

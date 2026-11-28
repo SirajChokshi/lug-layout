@@ -1,10 +1,15 @@
+import type { Issue } from "@brr/schema/decode";
 import {
   CreateShareLinkRequest,
   CreateWorldRequest,
   MAX_IMPORT_BYTES,
   MAX_SHARD_BYTES,
+  ReplyRequest,
+  ResolutionRequest,
   SaveVersionRequest,
+  StartThreadRequest,
   WORLD_ROLES,
+  pinsPlacement,
   type MissingFilesResponse,
   type RecordId,
   type SaveVersionResponse,
@@ -12,6 +17,8 @@ import {
   type ShareLinkListResponse,
   type ShareLinkResponse,
   type StoredFileResponse,
+  type ThreadListResponse,
+  type ThreadResponse,
   type VersionListResponse,
   type VersionPageParams,
   type VersionResponse,
@@ -19,9 +26,11 @@ import {
   type WorldResponse,
   type WorldRole,
 } from "@brr/schema/layout-api";
+import { shardName, superChunkOf } from "@brr/schema/world";
 import type * as v from "valibot";
 import type { AccountRecord } from "./accounts.ts";
-import { shareLinkBody, versionBody, worldBody } from "./bodies.ts";
+import { shareLinkBody, threadBody, versionBody, worldBody } from "./bodies.ts";
+import { COMMENT_LIMIT, type IComments, type ThreadRecord } from "./comments.ts";
 import {
   IMMUTABLE_PRIVATE,
   contentAddressed,
@@ -57,7 +66,7 @@ export interface Caller {
 type RouteInWorld = Exclude<WorldRoute, { kind: "world-list" } | { kind: "world-create" }>;
 type ReadRoute = Extract<
   RouteInWorld,
-  { kind: "world" | "shard" | "import" | "version-list" | "version" }
+  { kind: "world" | "shard" | "import" | "version-list" | "version" | "thread-list" }
 >;
 type SignedInWorldRoute = Exclude<RouteInWorld, ReadRoute>;
 
@@ -69,6 +78,9 @@ const NEEDED_ROLE: Readonly<Record<SignedInWorldRoute["kind"], WorldRole>> = {
   "share-link-list": "owner",
   "share-link-create": "owner",
   "share-link-revoke": "owner",
+  "thread-start": "commenter",
+  "thread-reply": "commenter",
+  "thread-resolve": "commenter",
 };
 
 function roleIn(world: WorldRecord, caller: Caller): WorldRole | undefined {
@@ -87,12 +99,26 @@ function overQuota(usage: number): Response {
   );
 }
 
+function commentLimitReached(): Response {
+  return problem(507, `this world already has its limit of ${COMMENT_LIMIT} comments`);
+}
+
+function noThread(world: WorldRecord, thread: RecordId): Response {
+  return problem(404, `world ${world.id} has no comment thread ${thread}`);
+}
+
+function threadJson(thread: ThreadRecord, status: number): Response {
+  const body: v.InferInput<typeof ThreadResponse> = { thread: threadBody(thread) };
+  return json(body, status);
+}
+
 export class WorldHandlers {
   constructor(
     private readonly directory: IWorldDirectory,
     private readonly files: IWorldFiles,
     private readonly history: IWorldHistory,
     private readonly shareLinks: IShareLinks,
+    private readonly comments: IComments,
   ) {}
 
   async handle(route: WorldRoute, caller: Caller, request: Request): Promise<Response> {
@@ -134,6 +160,8 @@ export class WorldHandlers {
         return this.listVersions(world, route.page, request);
       case "version":
         return this.readVersion(world, route.version);
+      case "thread-list":
+        return this.listThreads(world);
       default: {
         const needed = NEEDED_ROLE[route.kind];
         if (!grants(role, needed)) {
@@ -176,6 +204,12 @@ export class WorldHandlers {
         return this.createShareLink(world, request);
       case "share-link-revoke":
         return this.revokeShareLink(world, route.link);
+      case "thread-start":
+        return this.startThread(world, account, request);
+      case "thread-reply":
+        return this.reply(world, route.thread, account, request);
+      case "thread-resolve":
+        return this.resolveThread(world, route.thread, account, request);
       default: {
         const exhaustive: never = route;
         throw new Error(`unhandled world route ${String(exhaustive)}`);
@@ -356,5 +390,79 @@ export class WorldHandlers {
       return problem(404, `world ${world.id} has no share link ${link}`);
     }
     return noContent();
+  }
+
+  private async listThreads(world: WorldRecord): Promise<Response> {
+    const threads = await this.comments.list(world.id);
+    const body: v.InferInput<typeof ThreadListResponse> = { threads: threads.map(threadBody) };
+    return json(body, 200);
+  }
+
+  private async startThread(
+    world: WorldRecord,
+    account: AccountRecord,
+    request: Request,
+  ): Promise<Response> {
+    const body = await readJson(request, StartThreadRequest);
+    if (!body.ok) return body.response;
+    const issues = await this.pinIssues(world, body.value);
+    if (issues.length > 0) return issuesProblem(422, issues);
+    const thread = await this.comments.start(world.id, account.id, body.value);
+    return thread === undefined ? commentLimitReached() : threadJson(thread, 201);
+  }
+
+  private async pinIssues(
+    world: WorldRecord,
+    { version, pin }: StartThreadRequest,
+  ): Promise<ReadonlyArray<Issue>> {
+    const read = await this.history.read(world.id, version);
+    if (read === undefined) {
+      return [{ path: "version", message: `is version ${version}, which this world doesn't have` }];
+    }
+    if (pin.on === "point") return [];
+    const sha256 = read.snapshot.shards[shardName(superChunkOf(pin.x, pin.z))];
+    const shard =
+      sha256 === undefined ? undefined : await this.files.readStoredShard(world.id, sha256);
+    if (shard?.placements.some((placement) => pinsPlacement(pin, placement))) return [];
+    return [{ path: "pin", message: `names no placement of version ${version}` }];
+  }
+
+  private async reply(
+    world: WorldRecord,
+    thread: RecordId,
+    account: AccountRecord,
+    request: Request,
+  ): Promise<Response> {
+    const body = await readJson(request, ReplyRequest);
+    if (!body.ok) return body.response;
+    const outcome = await this.comments.reply(world.id, thread, account.id, body.value.text);
+    switch (outcome.kind) {
+      case "replied":
+        return threadJson(outcome.thread, 201);
+      case "no-thread":
+        return noThread(world, thread);
+      case "limit-reached":
+        return commentLimitReached();
+      default: {
+        const exhaustive: never = outcome;
+        throw new Error(`unhandled reply outcome ${String(exhaustive)}`);
+      }
+    }
+  }
+
+  private async resolveThread(
+    world: WorldRecord,
+    thread: RecordId,
+    account: AccountRecord,
+    request: Request,
+  ): Promise<Response> {
+    const body = await readJson(request, ResolutionRequest);
+    if (!body.ok) return body.response;
+    const resolved = await this.comments.resolve(
+      world.id,
+      thread,
+      body.value.resolved ? account.id : null,
+    );
+    return resolved === undefined ? noThread(world, thread) : threadJson(resolved, 200);
   }
 }

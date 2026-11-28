@@ -6,7 +6,7 @@ import {
   type ShardSummary,
   type Sha256,
 } from "@brr/schema/layout-api";
-import { SafeInteger, canonicalJson, parseJsonText } from "@brr/schema/world";
+import { SafeInteger, WorldShardV2, canonicalJson, parseJsonText } from "@brr/schema/world";
 import * as v from "valibot";
 import type { IClock } from "./clock.ts";
 import { sha256Hex } from "./digest.ts";
@@ -46,6 +46,7 @@ export interface IWorldFiles {
   readShard(worldId: string, sha256: Sha256): Promise<R2ObjectBody | null>;
   readImport(worldId: string, sha256: Sha256): Promise<R2ObjectBody | null>;
   readSnapshot(worldId: string, sha256: Sha256): Promise<WorldSnapshot>;
+  readStoredShard(worldId: string, sha256: Sha256): Promise<WorldShardV2>;
   shardSummaries(
     worldId: string,
     hashes: ReadonlyArray<Sha256>,
@@ -137,12 +138,12 @@ export class WorldFiles implements IWorldFiles {
     return this.bucket.get(importKey(worldId, sha256));
   }
 
-  async readSnapshot(worldId: string, sha256: Sha256): Promise<WorldSnapshot> {
-    const key = snapshotKey(worldId, sha256);
-    const object = await this.bucket.get(key);
-    if (object === null) throw new Error(`${key} is listed in world_versions but missing`);
-    const json = parseJsonText(await object.text(), key);
-    return decodedOrThrow(json.ok ? decode(WorldSnapshot, json.value, key) : json, key);
+  readSnapshot(worldId: string, sha256: Sha256): Promise<WorldSnapshot> {
+    return this.readStoredJson(snapshotKey(worldId, sha256), WorldSnapshot);
+  }
+
+  readStoredShard(worldId: string, sha256: Sha256): Promise<WorldShardV2> {
+    return this.readStoredJson(shardKey(worldId, sha256), WorldShardV2);
   }
 
   async shardSummaries(
@@ -228,6 +229,16 @@ export class WorldFiles implements IWorldFiles {
       return { kind: "stored", created: false, bytes };
     await this.bucket.delete(object.key);
     return { kind: "over-quota", usage: await this.usage(world.ownerId) };
+  }
+
+  private async readStoredJson<const TSchema extends v.GenericSchema>(
+    key: string,
+    schema: TSchema,
+  ): Promise<v.InferOutput<TSchema>> {
+    const object = await this.bucket.get(key);
+    if (object === null) throw new Error(`${key} is indexed in D1 but missing from R2`);
+    const json = parseJsonText(await object.text(), key);
+    return decodedOrThrow(json.ok ? decode(schema, json.value, key) : json, key);
   }
 
   private async isStored(table: FileTable, worldId: string, sha256: Sha256): Promise<boolean> {

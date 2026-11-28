@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import {
   AccountResponse,
+  COMMENT_MAX_LENGTH,
   ErrorResponse,
   MAX_SHARD_BYTES,
   MissingFilesResponse,
@@ -18,12 +19,16 @@ import {
   ShareLinkResponse,
   SignInLinkResponse,
   StoredFileResponse,
+  ThreadListResponse,
+  ThreadResponse,
   VersionListResponse,
   VersionResponse,
   WORLD_FRAGMENT_KEY,
   WorldListResponse,
   WorldResponse,
+  type CommentPin,
   type ShareRole,
+  type StartThreadRequest,
   type WorldSnapshot,
 } from "@brr/schema/layout-api";
 import {
@@ -55,6 +60,7 @@ import {
   SIGN_IN_LINK_LIFETIME_MS,
 } from "./accounts.ts";
 import type { IClock } from "./clock.ts";
+import { COMMENT_LIMIT } from "./comments.ts";
 import type { IMailer, SignInMail } from "./mailer.ts";
 import { LAYOUT_MIGRATIONS } from "./migrations.ts";
 import type { IRandomSource } from "./random.ts";
@@ -285,6 +291,28 @@ function save(
     json: { parent, snapshot },
     session: user.session,
   });
+}
+
+function postThread(
+  world: string,
+  credentials: Pick<CallOptions, "session" | "share">,
+  thread: StartThreadRequest,
+): Promise<Response> {
+  return call(`/v1/worlds/${world}/threads`, { method: "POST", json: thread, ...credentials });
+}
+
+async function startThread(
+  user: SignedIn,
+  world: string,
+  version: number,
+  pin: CommentPin,
+): Promise<string> {
+  const started = await expectJson(
+    await postThread(world, { session: user.session }, { version, pin, text: "Room here?" }),
+    201,
+    ThreadResponse,
+  );
+  return started.thread.id;
 }
 
 const utf8 = new TextEncoder();
@@ -812,6 +840,7 @@ describe("layout API worlds", () => {
     const [shard] = files.shards;
     const [unstored] = worldFiles([station], [], []).shards;
     if (shard === undefined || unstored === undefined) throw new Error("a fixture has no shard");
+    const thread = await startThread(owner, world, 1, { on: "point", x: 0, z: 0 });
     const viewer = await shareWorld(owner, world, "viewer");
     const commenter = await shareWorld(owner, world, "commenter");
     const editor = await shareWorld(owner, world, "editor");
@@ -823,7 +852,7 @@ describe("layout API worlds", () => {
     expect(revocation.status).toBe(204);
     const elsewhere = await shareWorld(owner, await createWorld(owner, "Other yard"), "editor");
 
-    type Group = "read" | "edit" | "manage";
+    type Group = "read" | "comment" | "resolve" | "edit" | "manage";
     const inWorld = `/v1/worlds/${world}`;
     const endpoints: ReadonlyArray<{
       readonly name: string;
@@ -840,6 +869,28 @@ describe("layout API worlds", () => {
         group: "read",
         path: `${inWorld}/imports/${signalBox.sha256}`,
         options: {},
+      },
+      { name: "GET threads", group: "read", path: `${inWorld}/threads`, options: {} },
+      {
+        name: "POST thread",
+        group: "comment",
+        path: `${inWorld}/threads`,
+        options: {
+          method: "POST",
+          json: { version: 1, pin: { on: "model", ...baseplate }, text: "Room for a crossing?" },
+        },
+      },
+      {
+        name: "POST reply",
+        group: "comment",
+        path: `${inWorld}/threads/${thread}/comments`,
+        options: { method: "POST", json: { text: "Two studs to spare." } },
+      },
+      {
+        name: "PUT resolution",
+        group: "resolve",
+        path: `${inWorld}/threads/${thread}/resolution`,
+        options: { method: "PUT", json: { resolved: true } },
       },
       {
         name: "PUT shard",
@@ -889,15 +940,39 @@ describe("layout API worlds", () => {
       "another account with an editor link": { session: helper.session, share: editor.token },
     };
     const expected: Readonly<Record<string, Readonly<Record<Group, number>>>> = {
-      "no credentials": { read: 401, edit: 401, manage: 401 },
-      "a revoked link": { read: 401, edit: 401, manage: 401 },
-      "another account": { read: 404, edit: 404, manage: 404 },
-      "another account with another world's link": { read: 404, edit: 404, manage: 404 },
-      "a viewer link": { read: 200, edit: 403, manage: 403 },
-      "another account with a viewer link": { read: 200, edit: 403, manage: 403 },
-      "another account with a commenter link": { read: 200, edit: 403, manage: 403 },
-      "an editor link": { read: 200, edit: 401, manage: 403 },
-      "another account with an editor link": { read: 200, edit: 201, manage: 403 },
+      "no credentials": { read: 401, comment: 401, resolve: 401, edit: 401, manage: 401 },
+      "a revoked link": { read: 401, comment: 401, resolve: 401, edit: 401, manage: 401 },
+      "another account": { read: 404, comment: 404, resolve: 404, edit: 404, manage: 404 },
+      "another account with another world's link": {
+        read: 404,
+        comment: 404,
+        resolve: 404,
+        edit: 404,
+        manage: 404,
+      },
+      "a viewer link": { read: 200, comment: 403, resolve: 403, edit: 403, manage: 403 },
+      "another account with a viewer link": {
+        read: 200,
+        comment: 403,
+        resolve: 403,
+        edit: 403,
+        manage: 403,
+      },
+      "another account with a commenter link": {
+        read: 200,
+        comment: 201,
+        resolve: 200,
+        edit: 403,
+        manage: 403,
+      },
+      "an editor link": { read: 200, comment: 401, resolve: 401, edit: 401, manage: 403 },
+      "another account with an editor link": {
+        read: 200,
+        comment: 201,
+        resolve: 200,
+        edit: 201,
+        manage: 403,
+      },
     };
 
     const answered: Record<string, Record<string, number>> = {};
@@ -1047,6 +1122,196 @@ describe("layout API worlds", () => {
     ).toBe(`this world already has its limit of ${SHARE_LINK_LIMIT} share links`);
   });
 
+  it("pins threads to a point or to a placement of a saved version, then replies, resolves and reopens them", async () => {
+    const owner = await signIn("planner@club.example");
+    const member = await signIn("member@club.example");
+    const world = await createWorld(owner, "Show floor");
+    const turned = { ...signalBoxOnBaseplate, rot: 3 };
+    for (const [parent, placements] of [
+      [null, [baseplate, signalBoxOnBaseplate, station]],
+      [1, [baseplate, turned, station]],
+    ] as const) {
+      const files = worldFiles(placements, straights, [signalBox]);
+      for (const shard of files.shards) await put(owner, world, "shards", shard);
+      await put(owner, world, "imports", signalBox);
+      await expectJson(await save(owner, world, parent, files.snapshot), 201, SaveVersionResponse);
+    }
+    const asMember = {
+      session: member.session,
+      share: (await shareWorld(owner, world, "commenter")).token,
+    };
+    const asOwner = { session: owner.session };
+    const inWorld = `/v1/worlds/${world}`;
+    const onSignalBox: CommentPin = { on: "model", ...signalBoxOnBaseplate };
+
+    const question = "Can the signal box face the line?";
+    const started = await expectJson(
+      await postThread(world, asMember, { version: 1, pin: onSignalBox, text: question }),
+      201,
+      ThreadResponse,
+    );
+    expect(started.thread).toMatchObject({
+      version: 1,
+      pin: onSignalBox,
+      resolved: null,
+      comments: [{ author: member.accountId, text: question }],
+    });
+    const asked = started.thread.id;
+
+    const refusals: ReadonlyArray<readonly [StartThreadRequest, number, string]> = [
+      [
+        { version: 2, pin: onSignalBox, text: question },
+        422,
+        "pin: names no placement of version 2",
+      ],
+      [
+        { version: 2, pin: { on: "model", ...station, x: 40_000 }, text: question },
+        422,
+        "pin: names no placement of version 2",
+      ],
+      [
+        { version: 3, pin: { on: "point", x: 0, z: 0 }, text: question },
+        422,
+        "version: is version 3, which this world doesn't have",
+      ],
+      [
+        { version: 2, pin: { on: "point", x: 10, z: 0 }, text: " " },
+        400,
+        `body.pin.x: must be a multiple of 20 LDU; body.text: must be 1 to ${COMMENT_MAX_LENGTH} characters, not all spaces`,
+      ],
+    ];
+    for (const [thread, status, error] of refusals) {
+      expect(await expectError(await postThread(world, asMember, thread), status)).toBe(error);
+    }
+
+    const noted = await startThread(owner, world, 2, { on: "point", x: 400, z: -200 });
+    const replied = await expectJson(
+      await call(`${inWorld}/threads/${asked}/comments`, {
+        method: "POST",
+        json: { text: "Turned it in version 2." },
+        ...asOwner,
+      }),
+      201,
+      ThreadResponse,
+    );
+    expect(replied.thread.comments.map((comment) => [comment.author, comment.text])).toEqual([
+      [member.accountId, question],
+      [owner.accountId, "Turned it in version 2."],
+    ]);
+
+    const resolve = (thread: string, resolved: boolean, credentials: CallOptions) =>
+      call(`${inWorld}/threads/${thread}/resolution`, {
+        method: "PUT",
+        json: { resolved },
+        ...credentials,
+      });
+    const resolvedBy = async (response: Response) =>
+      (await expectJson(response, 200, ThreadResponse)).thread.resolved?.by ?? null;
+    expect(await resolvedBy(await resolve(asked, true, asMember))).toBe(member.accountId);
+    expect(await resolvedBy(await resolve(asked, false, asOwner))).toBeNull();
+    expect(await resolvedBy(await resolve(noted, true, asOwner))).toBe(owner.accountId);
+
+    const elsewhere = await createWorld(owner, "Other floor");
+    const elsewhereFiles = worldFiles([baseplate], [], []);
+    for (const shard of elsewhereFiles.shards) await put(owner, elsewhere, "shards", shard);
+    await expectJson(
+      await save(owner, elsewhere, null, elsewhereFiles.snapshot),
+      201,
+      SaveVersionResponse,
+    );
+    const foreign = await startThread(owner, elsewhere, 1, { on: "model", ...baseplate });
+    expect(await expectError(await resolve(foreign, true, asOwner), 404)).toBe(
+      `world ${world} has no comment thread ${foreign}`,
+    );
+    expect(
+      await expectError(
+        await call(`${inWorld}/threads/${foreign}/comments`, {
+          method: "POST",
+          json: { text: "Anyone?" },
+          ...asOwner,
+        }),
+        404,
+      ),
+    ).toBe(`world ${world} has no comment thread ${foreign}`);
+    const untouched = await expectJson(
+      await call(`/v1/worlds/${elsewhere}/threads`, asOwner),
+      200,
+      ThreadListResponse,
+    );
+    expect(
+      untouched.threads.map((thread) => [thread.id, thread.resolved, thread.comments.length]),
+    ).toEqual([[foreign, null, 1]]);
+
+    const viewer = await shareWorld(owner, world, "viewer");
+    const listed = await expectJson(
+      await call(`${inWorld}/threads`, { share: viewer.token }),
+      200,
+      ThreadListResponse,
+    );
+    expect(
+      listed.threads.map((thread) => ({
+        id: thread.id,
+        version: thread.version,
+        pin: thread.pin,
+        resolvedBy: thread.resolved?.by ?? null,
+        comments: thread.comments.length,
+      })),
+    ).toEqual([
+      { id: asked, version: 1, pin: onSignalBox, resolvedBy: null, comments: 2 },
+      {
+        id: noted,
+        version: 2,
+        pin: { on: "point", x: 400, z: -200 },
+        resolvedBy: owner.accountId,
+        comments: 1,
+      },
+    ]);
+  });
+
+  it("holds at most its limit of comments in a world, replies and opening posts alike", async () => {
+    const owner = await signIn("chatty@club.example");
+    const world = await createWorld(owner, "Busy yard");
+    const files = worldFiles([baseplate], [], []);
+    for (const shard of files.shards) await put(owner, world, "shards", shard);
+    await expectJson(await save(owner, world, null, files.snapshot), 201, SaveVersionResponse);
+    const thread = await startThread(owner, world, 1, { on: "model", ...baseplate });
+    await bindings.LAYOUT_DB.prepare(
+      `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
+       INSERT INTO comments (id, world_id, thread_id, author_id, text, created_at)
+       SELECT printf('%032x', i), ?2, ?3, ?4, '+1', 0 FROM n`,
+    )
+      .bind(COMMENT_LIMIT - 2, world, thread, owner.accountId)
+      .run();
+    const reply = () =>
+      call(`/v1/worlds/${world}/threads/${thread}/comments`, {
+        method: "POST",
+        json: { text: "+1" },
+        session: owner.session,
+      });
+    await expectJson(await reply(), 201, ThreadResponse);
+
+    const full = `this world already has its limit of ${COMMENT_LIMIT} comments`;
+    expect(await expectError(await reply(), 507)).toBe(full);
+    expect(
+      await expectError(
+        await postThread(
+          world,
+          { session: owner.session },
+          { version: 1, pin: { on: "point", x: 0, z: 0 }, text: "One more?" },
+        ),
+        507,
+      ),
+    ).toBe(full);
+    const listed = await expectJson(
+      await call(`/v1/worlds/${world}/threads`, { session: owner.session }),
+      200,
+      ThreadListResponse,
+    );
+    expect(
+      listed.threads.map((listedThread) => [listedThread.id, listedThread.comments.length]),
+    ).toEqual([[thread, COMMENT_LIMIT]]);
+  });
+
   it("deletes a world with its files, and an account with every world it owns", async () => {
     const user = await signIn("tidy@club.example");
     const kept = await createWorld(user, "Kept for now");
@@ -1056,6 +1321,7 @@ describe("layout API worlds", () => {
       for (const shard of files.shards) await put(user, world, "shards", shard);
       await put(user, world, "imports", signalBox);
       await expectJson(await save(user, world, null, files.snapshot), 201, SaveVersionResponse);
+      await startThread(user, world, 1, { on: "model", ...signalBoxOnBaseplate });
       expect(await storedKeys(world)).toHaveLength(3);
     }
 

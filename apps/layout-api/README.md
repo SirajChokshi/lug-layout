@@ -1,6 +1,6 @@
 # @brr/layout-api
 
-Cloudflare Worker for accounts, worlds saved to the cloud (plan item B6.1) and worlds shared by link (B6.3). Accounts sign in with a link sent by email and are kept in D1. Worlds are stored as content-addressed files in R2: world shards, the original model files the world places, and one snapshot document per saved version. Infrastructure and deployment: [`infra/cloudflare`](../../infra/cloudflare/README.md). Wire formats live in `@brr/schema/layout-api`.
+Cloudflare Worker for accounts, worlds saved to the cloud (plan item B6.1), worlds shared by link (B6.3) and comment threads pinned in them (B6.4). Accounts sign in with a link sent by email and are kept in D1. Worlds are stored as content-addressed files in R2: world shards, the original model files the world places, and one snapshot document per saved version. Infrastructure and deployment: [`infra/cloudflare`](../../infra/cloudflare/README.md). Wire formats live in `@brr/schema/layout-api`.
 
 Compiled custom geometry is never uploaded. A world carries only the original `.ldr`, `.mpd` or `.io` files it places, as a `.brr.zip` does, and each device compiles them itself. The API has no endpoint that takes anything else.
 
@@ -28,6 +28,10 @@ Every endpoint except the first two needs `Authorization: Bearer <session token>
 | `POST /v1/worlds/<id>/share-links` `{ role }` | Creates a share link: 201 `{ shareLink: { id, role, createdAt }, url }` (see *Sharing*). |
 | `GET /v1/worlds/<id>/share-links` | The world's share links, oldest first, without their tokens. |
 | `DELETE /v1/worlds/<id>/share-links/<link id>` | Revokes a share link. It stops working with the next request. |
+| `GET /v1/worlds/<id>/threads` | The world's comment threads, oldest first, each with its comments oldest first (see *Comments*). |
+| `POST /v1/worlds/<id>/threads` `{ version, pin, text }` | Starts a thread pinned to a point or a placement of that version: 201 `{ thread }`. |
+| `POST /v1/worlds/<id>/threads/<thread id>/comments` `{ text }` | Replies in a thread: 201 `{ thread }`. |
+| `PUT /v1/worlds/<id>/threads/<thread id>/resolution` `{ resolved }` | Resolves the thread (`true`) or reopens it (`false`): 200 `{ thread }`. |
 
 ## Sharing
 
@@ -37,8 +41,8 @@ Whoever holds a link sends its token as `Brr-Share-Token: <token>` to the world'
 
 | Role | Can |
 |---|---|
-| `viewer` | Read the world, its versions and its files, without signing in. |
-| `commenter` | The same until comments arrive (B6.4). |
+| `viewer` | Read the world, its versions, its files and its comment threads, without signing in. |
+| `commenter` | Also start, reply to, resolve and reopen comment threads, signed in. |
 | `editor` | Also upload files and save versions, signed in. A version records who saved it; its files count against the owner's quota. |
 | owner | Also delete the world and create, list and revoke its share links. Only the owner can. |
 
@@ -74,9 +78,29 @@ A snapshot is the world's manifest plus the SHA-256 of each shard, note shard an
 
 Saving the same state again stores nothing new: its files and snapshot are already there, so only the version row is added.
 
+## Comments
+
+A thread is pinned to what its author was looking at, a saved `version`, and to one of two things in it:
+
+- a point, `{ "on": "point", "x": 400, "z": -200 }`, in LDU on the stud lattice, as placements are;
+- a placement, `{ "on": "model", "ref": "import:<sha256>", "color": 16, "x": 100, "z": 60, "yPlates": 1, "rot": 1 }`: the placement record exactly as the version's shard holds it, the way the world format already names a placement (a consist carried on a model, a ruler end on a model).
+ Starting a thread answers 422 unless the version exists and, for a `model` pin, the shard of its super-chunk in that version holds that placement. The pin and version never change afterwards, so a client reading a newer version can tell what the comment was about even after the placement moved.
+
+```json
+{
+  "id": "<thread id>",
+  "version": 1,
+  "pin": { "on": "point", "x": 400, "z": -200 },
+  "resolved": { "by": "<account id>", "at": "2026-11-27T22:00:00.000Z" },
+  "comments": [{ "id": "<comment id>", "author": "<account id>", "text": "…", "createdAt": "…" }]
+}
+```
+
+`resolved` is `null` while the thread is open. Anyone who can comment can resolve or reopen any thread, and replying doesn't reopen it. Authors are account ids, like a version's `savedBy`, so a link never reveals anyone's address. Comment text is 1 to 2,000 characters, not all spaces. Comments can't be edited or deleted; they go with their world.
+
 ## Storage
 
-D1 (`brr-layouts`) holds accounts, sign-in links, sessions and share links (each only as the SHA-256 of its token, so the database never holds a usable token), worlds, their versions, and an index of each world's files with their sizes. R2 (`brr-layout-files`, private, no public domain) holds the files:
+D1 (`brr-layouts`) holds accounts, sign-in links, sessions and share links (each only as the SHA-256 of its token, so the database never holds a usable token), worlds, their versions, their comment threads and comments, and an index of each world's files with their sizes. R2 (`brr-layout-files`, private, no public domain) holds the files:
 
 | Key | Holds |
 |---|---|
@@ -97,6 +121,8 @@ The Worker creates and upgrades its own D1 tables: before an isolate first touch
 | Requests per account | 1,200 a minute | 429 |
 | Requests with a share link and no session, per client address | 1,200 a minute | 429 |
 | Share links per world | 50 | 507 |
+| Comments per world, opening comments and replies together | 1,000 | 507 |
+| A comment | 2,000 characters | 400 |
 | A shard | 16 MiB | 413 |
 | A model file | 32 MiB | 413 |
 | A JSON request body | 4 MiB | 413 |

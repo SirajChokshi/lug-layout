@@ -123,7 +123,7 @@ Adding a vendor later means writing a source adapter, the vendor's connector dat
 | Sim worker | Web Worker | TypeScript | Fixed-timestep simulation of track and road graphs, consists and routing. Headless-testable. |
 | Renderer | main thread for the MVP; OffscreenCanvas worker in P1 if the main thread misses its budget | three.js `WebGPURenderer` behind `SceneBackend` | Chunked scene, model instancing, LOD, stud handling, look |
 | Persistence | main thread and worker | IndexedDB | Layouts, imported model blobs and bakes (content-addressed), settings |
-| Backend | server: `apps/layout-api`, a Cloudflare Worker over D1 and R2 (B6.1, B6.3) | Small API plus object storage | Accounts by emailed sign-in link; worlds saved as content-addressed shards, original model files and one snapshot per version; revocable share links that make their holder a viewer, commenter or editor of one world. Comments and co-editing follow (B6.4, B6.5). |
+| Backend | server: `apps/layout-api`, a Cloudflare Worker over D1 and R2 (B6.1, B6.3, B6.4) | Small API plus object storage | Accounts by emailed sign-in link; worlds saved as content-addressed shards, original model files and one snapshot per version; revocable share links that make their holder a viewer, commenter or editor of one world; comment threads pinned to a point or a placement of a saved version, threaded and resolvable. Co-editing follows (B6.5). |
 
 **Single parts from the pinned library.** The standard bundle carries `libraryParts`, an index of every pinned part that LDraw lists in part lists (not moved, alias, `~` or baked-colour files), sits in an active LDraw category and has at least one produced colour: its title, category, keywords, Rebrickable number and produced colours (`docs/part-bundle.md`). The palette searches it only once a query has two characters, on the All tab, under its own results, and leaves out parts the palette already offers. Search ranks on that metadata alone. Picking a part in a colour writes a one-line LDraw model, `1 <colour> 0 0 0 1 0 0 0 1 0 0 0 1 <part>.dat`, and hands it to the same import as a user's file. So placing and connecting it come only from the part's own geometry, through the import and bake, exactly as the same part inside any imported file. The bytes depend only on the part and colour, so picking it again finds the stored import by its SHA-256 and adds nothing.
 
@@ -680,7 +680,7 @@ This is a **Turborepo** monorepo using pnpm workspaces, plus a Cargo workspace f
 apps/
   web/                    Vite + React app; main-thread composition root
   catalog-api/            Cloudflare Worker: catalog search, set inventory and theme browse over D1; release files from R2 (D5)
-  layout-api/             Cloudflare Worker: accounts by emailed sign-in link, worlds saved to the cloud and shared by link, over D1 and R2 (B6.1, B6.3)
+  layout-api/             Cloudflare Worker: accounts by emailed sign-in link, worlds saved to the cloud, shared by link and commented on, over D1 and R2 (B6.1, B6.3, B6.4)
 packages/
   math/                   exact ℤ[ζ_N] arithmetic, lattice poses, Rot90, SoA vector helpers
   schema/                 valibot schemas for every wire and file format, one subpath each (bundle, catalog-api, world, decode); types are inferred from them
