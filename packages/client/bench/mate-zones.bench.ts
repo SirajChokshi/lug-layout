@@ -13,6 +13,7 @@ import {
   LatticeStudFinder,
   MateReport,
   ModelConnectors,
+  NO_OVERLAP,
   SECTION_ROUND,
   SOURCE_SHADOW,
   STATUS_VERIFIED,
@@ -247,7 +248,7 @@ function hover(): void {
   solver.evaluate(candidate, origin, report);
   zones.collect(report, candidateBoxes, candidateTechnic, origin, placed);
   for (const [owner, cellX, heldCell] of exempted) zones.exempts(owner, cellX, 0, heldCell);
-  if (!zones.firstOverlap(index, held, hit)) clear++;
+  if (zones.firstOverlap(index, held, hit) === NO_OVERLAP) clear++;
 }
 
 function settle(): Promise<void> {

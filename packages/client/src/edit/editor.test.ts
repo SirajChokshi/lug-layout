@@ -64,6 +64,7 @@ import { decode, decodedOrThrow } from "@brr/schema/decode";
 import crossingJson from "../../../../docs/verified-facts/level-crossing.json" with { type: "json" };
 import { PLATE_LDU, STUD_LDU, pose16, zeta16 } from "@brr/math";
 import { Container } from "inversify";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
@@ -10996,3 +10997,337 @@ it("keeps track support, clearance, blocking and the trains after every edit of 
   }
   for (const [kind, count] of Object.entries(seen)) expect(count, `${kind}`).toBeGreaterThan(0);
 }, 900_000);
+
+const CUSTOM_PILE = new URL("../../../import/test-data/custom-pile.ldr", import.meta.url);
+const NAMING_BRICK_MODEL = "brick-2x4";
+const NAMING_BRICK = `omr:${NAMING_BRICK_MODEL}`;
+const ONE_BY_ONE_BRICK = ["1 4 0 -24 0 1 0 0 0 1 0 0 0 1 3005.dat"];
+const TOWER = [
+  "1 14 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 14 0 -48 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 14 0 -72 0 1 0 0 0 1 0 0 0 1 3001.dat",
+];
+const PINNED_BRICK = [
+  "1 0 0 -24 0 0 0 1 0 1 0 -1 0 0 3700.dat",
+  "1 0 10 -14 0 1 0 0 0 1 0 0 0 1 2780.dat",
+];
+const PLAIN_TECHNIC_BRICK = ["1 0 0 -24 0 0 0 1 0 1 0 -1 0 0 3700.dat"];
+const MODULE_TOP_PLATES = 4;
+const STACK_X = 620;
+const STACK_Z = 620;
+
+function startNamingEditor(
+  repository: MemoryRepository = new MemoryRepository(),
+  userModels: ReadonlyArray<string> = [],
+) {
+  return startEditor(
+    [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+    new BundleDirectoryFetcher(),
+    userModels,
+    (bound) => {
+      const loader = bound.get(PART_BUNDLE_LOADER);
+      const records = { read: (partId: string) => loader.readPartConnectors("standard", partId) };
+      bound.rebind(MODEL_IMPORTER).toConstantValue(new InThreadModelImporter(loader, records));
+      bound.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+    },
+  );
+}
+
+async function openedWorld(editor: IEditor, id: string): Promise<void> {
+  if (!(await editor.openWorld(id))) throw new Error(`world ${id} didn't open`);
+}
+
+async function builtWorld(
+  editor: IEditor,
+  repository: MemoryRepository,
+  name: string,
+  build: () => Promise<void>,
+  placements: number,
+): Promise<string> {
+  if (!(await editor.newWorld(name))) throw new Error(`world ${name} wasn't created`);
+  await build();
+  await vi.waitFor(() => {
+    if (repository.storedPlacements() < placements) throw new Error(`${name} isn't stored yet`);
+  });
+  return editor.snapshot().world?.id ?? "";
+}
+
+function refusalShown(editor: IEditor) {
+  const { lastRefusal } = editor.snapshot();
+  return lastRefusal === null
+    ? null
+    : {
+        item: lastRefusal.item,
+        x: lastRefusal.x,
+        z: lastRefusal.z,
+        rot: lastRefusal.rot,
+        reason: lastRefusal.reason,
+      };
+}
+
+describe("the model a refusal names, for a given world however it was reached", () => {
+  it("names the same carrier when two MILS modules under a set are deleted, whichever is selected first: the one first by height, then x, z and turn", async () => {
+    const shown = [];
+    for (const leftFirst of [true, false]) {
+      const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
+      await loadCatalogItem(catalog, PLAIN_MODULE);
+      await loadCatalogItem(catalog, SET);
+      const place = placer(editor, backend);
+      await place(PLAIN_MODULE, 320, 320);
+      await place(PLAIN_MODULE, 960, 320);
+      await place(SET, 640, 320);
+      const left: Ground = [20, 20];
+      const right: Ground = [1260, 20];
+      selectAt(editor, backend, ...(leftFirst ? left : right));
+      toggleAt(editor, backend, leftFirst ? right : left);
+      editor.deleteSelection(0);
+      shown.push({ poses: posesOf(editor), refusal: refusalShown(editor) });
+    }
+    const expected = {
+      poses: shown[0]?.poses,
+      refusal: {
+        item: PLAIN_MODULE,
+        x: 320,
+        z: 320,
+        rot: 0,
+        reason: expect.stringContaining(`${SET_LABEL} rests on it`),
+      },
+    };
+    expect(shown).toEqual([expected, expected]);
+  }, 120_000);
+
+  it("names the same stranded rider when a MILS module carrying a 3001 brick and a user's own pile is deleted, whether the brick or the pile was placed first, the brick's placement was undone and redone, or the world was reopened: the rider first by height, then x, z and turn", async () => {
+    const pileBytes = await readFile(CUSTOM_PILE);
+    const repository = new MemoryRepository();
+    const shown = [];
+    let built = "";
+    for (const history of ["brick first", "pile first", "reopened"] as const) {
+      const { editor, backend, catalog } = await startNamingEditor(repository, [
+        NAMING_BRICK_MODEL,
+      ]);
+      await loadCatalogItem(catalog, PLAIN_MODULE);
+      await loadCatalogItem(catalog, NAMING_BRICK);
+      const place = placer(editor, backend);
+      if (history === "reopened") {
+        await openedWorld(editor, built);
+      } else {
+        const pile = await importUserFile(editor, "custom-pile.ldr", pileBytes);
+        const brickFirst = history === "brick first";
+        const storedBefore = repository.storedPlacements();
+        const id = await builtWorld(
+          editor,
+          repository,
+          history,
+          async () => {
+            await place(PLAIN_MODULE, 320, 320);
+            await place(brickFirst ? NAMING_BRICK : pile, brickFirst ? 200 : 520, 320);
+            await place(brickFirst ? pile : NAMING_BRICK, brickFirst ? 520 : 200, 320);
+          },
+          storedBefore + 3,
+        );
+        if (brickFirst) built = id;
+        else {
+          editor.undo(0);
+          editor.redo(0);
+        }
+      }
+      selectAt(editor, backend, 20, 20);
+      editor.deleteSelection(0);
+      shown.push({ poses: posesOf(editor), refusal: refusalShown(editor) });
+    }
+    const expected = {
+      poses: shown[0]?.poses,
+      refusal: {
+        item: PLAIN_MODULE,
+        x: 320,
+        z: 320,
+        rot: 0,
+        reason: expect.stringContaining(`${NAMING_BRICK_MODEL} rests on it`),
+      },
+    };
+    expect(shown).toEqual([expected, expected, expected]);
+  }, 180_000);
+
+  it("names the same model in a precise overlap refusal whether the world was built or reopened: of a 1x1 brick and the 1x1 brick on it under a held tower's first cell, the lower one, with its real part title and the same cell", async () => {
+    const repository = new MemoryRepository();
+    const bricks = ["my-first-brick.ldr", "my-second-brick.ldr"]
+      .map((name) => ({ name, bytes: userRoadFile(name, ONE_BY_ONE_BRICK) }))
+      .map((file) => ({ ...file, sha: createHash("sha256").update(file.bytes).digest("hex") }))
+      .toSorted((a, b) => (a.sha < b.sha ? -1 : 1));
+    const [lower, upper] = bricks;
+    if (!lower || !upper) throw new Error("two bricks expected");
+    const shown = [];
+    let built = "";
+    for (const reopened of [false, true]) {
+      const { editor, backend, frame } = await startNamingEditor(repository);
+      const tower = await importUserFile(
+        editor,
+        "my-tower.ldr",
+        userRoadFile("my-tower.ldr", TOWER),
+      );
+      if (reopened) {
+        await openedWorld(editor, built);
+      } else {
+        const lowerItem = await importUserFile(editor, lower.name, lower.bytes);
+        const upperItem = await importUserFile(editor, upper.name, upper.bytes);
+        const place = placer(editor, backend);
+        built = await builtWorld(
+          editor,
+          repository,
+          "Stacked",
+          async () => {
+            await place(lowerItem, STACK_X, STACK_Z);
+            await place(upperItem, STACK_X, STACK_Z);
+          },
+          2,
+        );
+      }
+      const poses = posesOf(editor);
+      await chosen(editor, tower);
+      editor.setPlacementMode("precise");
+      backend.aim(STACK_X + 20, STACK_Z);
+      editor.pointerMove(0, 0);
+      const hover = await settledHover(editor, frame);
+      shown.push({ poses, refusal: hover?.refusal ?? null });
+    }
+    const expected = {
+      poses: shown[0]?.poses,
+      refusal: `my-tower.ldr would overlap Brick 1 x 1's bounds in ${lower.name} at cell 30, 30`,
+    };
+    expect(shown).toEqual([expected, expected]);
+  }, 180_000);
+
+  it("names the same member and marker when a carried group lands on two models that each refuse a member, whichever member was selected first: the member first by its target height, then x, z and turn", async () => {
+    const shown = [];
+    for (const leftFirst of [true, false]) {
+      const { editor, backend, catalog } = await startNamingEditor(undefined, [NAMING_BRICK_MODEL]);
+      await loadCatalogItem(catalog, NAMING_BRICK);
+      const place = placer(editor, backend);
+      await place(NAMING_BRICK, 200, 1200);
+      await place(NAMING_BRICK, 400, 1200);
+      await place(NAMING_BRICK, 200, 1600);
+      await place(NAMING_BRICK, 400, 1600);
+      editor.setPlacementMode("precise");
+      const left: Ground = [200, 1200];
+      const right: Ground = [400, 1200];
+      selectAt(editor, backend, ...(leftFirst ? left : right));
+      toggleAt(editor, backend, leftFirst ? right : left);
+      dragGroup(editor, backend, left, [200, 1600]);
+      shown.push({ poses: posesOf(editor), refusal: refusalShown(editor) });
+    }
+    const expected = {
+      poses: shown[0]?.poses,
+      refusal: {
+        item: NAMING_BRICK,
+        x: 200,
+        z: 1600,
+        rot: 0,
+        reason: "brick-2x4 would overlap Brick 2 x 4's bounds in brick-2x4 at cell 8, 79",
+      },
+    };
+    expect(shown).toEqual([expected, expected]);
+  }, 120_000);
+
+  it("names the same lowest member when a carried group of two bricks joined by a third is carried off a MILS module to where nothing holds it, whichever brick was selected first: of the two at one height, the one first by x, z and turn", async () => {
+    const shown = [];
+    for (const westFirst of [true, false]) {
+      const { editor, backend, catalog } = await startNamingEditor(undefined, [NAMING_BRICK_MODEL]);
+      await loadCatalogItem(catalog, PLAIN_MODULE);
+      await loadCatalogItem(catalog, NAMING_BRICK);
+      const place = placer(editor, backend);
+      await place(PLAIN_MODULE, 320, 320);
+      editor.setPlacementMode("precise");
+      await place(NAMING_BRICK, 200, 320);
+      await place(NAMING_BRICK, 280, 320);
+      editor.setPlacementMode("assist");
+      await place(NAMING_BRICK, 240, 320);
+      editor.setPlacementMode("precise");
+      const west: Ground = [170, 320];
+      const east: Ground = [310, 320];
+      selectAt(editor, backend, ...(westFirst ? west : east));
+      toggleAt(editor, backend, westFirst ? east : west);
+      toggleAt(editor, backend, [240, 320]);
+      dragGroup(editor, backend, west, [970, 1120]);
+      shown.push({ poses: posesOf(editor), refusal: refusalShown(editor) });
+    }
+    const expected = {
+      poses: shown[0]?.poses,
+      refusal: {
+        item: NAMING_BRICK,
+        x: 1000,
+        z: 1120,
+        rot: 0,
+        reason:
+          "brick-2x4 has nothing to rest on here: none of its connectors mate, and it isn't on the table",
+      },
+    };
+    expect(shown).toEqual([expected, expected]);
+  }, 120_000);
+
+  it("puts the same marker on a refusal that strands a user's Technic brick hanging on a pin past a MILS module's edge, whichever chosen model was selected first: the chosen model first by height, then x, z and turn", async () => {
+    const repository = new MemoryRepository();
+    const shown = [];
+    let copy = "";
+    for (const pinnedFirst of [true, false]) {
+      const { editor, backend, catalog } = await startNamingEditor(repository, [
+        NAMING_BRICK_MODEL,
+      ]);
+      await loadCatalogItem(catalog, PLAIN_MODULE);
+      await loadCatalogItem(catalog, NAMING_BRICK);
+      const pinned = await importUserFile(
+        editor,
+        "my-pinned-brick.ldr",
+        userRoadFile("my-pinned-brick.ldr", PINNED_BRICK),
+      );
+      const hanging = await importUserFile(
+        editor,
+        "my-technic-brick.ldr",
+        userRoadFile("my-technic-brick.ldr", PLAIN_TECHNIC_BRICK),
+      );
+      if (copy === "") {
+        const place = placer(editor, backend);
+        const built = await builtWorld(
+          editor,
+          repository,
+          "Pinned",
+          async () => {
+            await place(PLAIN_MODULE, 320, 320);
+            await place(NAMING_BRICK, 1200, 320);
+            await place(pinned, 1200, 1200);
+            await place(hanging, 1600, 1200);
+          },
+          4,
+        );
+        copy = await repository.copyWith(built, "Hanging", (placements) => {
+          const pin = placements.find((placement) => placement.ref === pinned);
+          const brick = placements.find((placement) => placement.ref === hanging);
+          if (!pin || !brick) return [];
+          return [
+            { ...pin, x: 640, z: 320, yPlates: MODULE_TOP_PLATES, rot: 0 },
+            { ...brick, x: 660, z: 320, yPlates: MODULE_TOP_PLATES, rot: 0 },
+          ];
+        });
+      }
+      await openedWorld(editor, copy);
+      const onModule: Ground = [630, 320];
+      const onTable: Ground = [1200, 320];
+      selectAt(editor, backend, ...(pinnedFirst ? onModule : onTable));
+      toggleAt(editor, backend, pinnedFirst ? onTable : onModule);
+      editor.deleteSelection(0);
+      shown.push({ poses: posesOf(editor), refusal: refusalShown(editor) });
+    }
+    const expected = {
+      poses: shown[0]?.poses,
+      refusal: {
+        item: NAMING_BRICK,
+        x: 1200,
+        z: 320,
+        rot: 0,
+        reason: expect.stringContaining(
+          "my-technic-brick.ldr connects only through the selected models",
+        ),
+      },
+    };
+    expect(shown).toEqual([expected, expected]);
+  }, 180_000);
+});

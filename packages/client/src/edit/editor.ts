@@ -156,6 +156,8 @@ import { effectivePlacementMode } from "./placement-mode.ts";
 import { failedLoadText, mateCounts, refusalText } from "./placement-hover-view.ts";
 import { ghostSettles, ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
+import { placementBefore } from "../connect/placement-order.ts";
+import { MemberRanking } from "./member-ranking.ts";
 import {
   CLASH_RANK,
   NO_CLASH_PART,
@@ -1030,6 +1032,23 @@ function poseOf(model: PlacedModel): PlacementPose {
   };
 }
 
+function firstByPlacement(
+  models: ReadonlyArray<PlacedModel>,
+  wanted: (model: PlacedModel) => boolean = () => true,
+): PlacedModel | null {
+  let first: PlacedModel | null = null;
+  for (const model of models) {
+    if (!wanted(model)) continue;
+    if (
+      first === null ||
+      placementBefore(model.handle, model.placeable.id, first.handle, first.placeable.id)
+    ) {
+      first = model;
+    }
+  }
+  return first;
+}
+
 function refusedAt(
   item: string,
   at: { readonly x: number; readonly z: number; readonly rot: number },
@@ -1331,6 +1350,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly tilePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
   private readonly tileChoice = placementChoice();
   private readonly groupChoice = placementChoice();
+  private readonly memberRanking = new MemberRanking();
   private readonly memberMates = new MateReport();
   private solidBoxes = new Float64Array(0);
   private solidRects = new Float64Array(0);
@@ -5082,7 +5102,9 @@ export class Editor implements IEditor, IEditedWorld {
     const { models: members, exempt, placedRoads, trackSkip: skip } = check;
     const supported = new Set<number>();
     const lowest = new Map<number, number>();
-    for (let index = 0; index < poses.length; index++) {
+    const order = this.memberRanking.rank(poses, members);
+    for (let ranked = 0; ranked < poses.length; ranked++) {
+      const index = order[ranked] ?? 0;
       const pose = poses[index];
       const member = members[index];
       if (!pose || !member) continue;
@@ -5205,7 +5227,8 @@ export class Editor implements IEditor, IEditedWorld {
     const reason = second
       ? `${left} connects only through the selected models, so ${verb} them would leave ${left} unconnected. ${remedy(action, left)}`
       : `${only.placeable.label}: ${left} connects only through it, so ${verb} it would leave ${left} unconnected. ${remedy(action, left)}`;
-    return refusedAt(only.placeable.id, only.handle, reason);
+    const marker = firstByPlacement(chosen) ?? only;
+    return refusedAt(marker.placeable.id, marker.handle, reason);
   }
 
   private trainBlock(
@@ -5255,12 +5278,10 @@ export class Editor implements IEditor, IEditedWorld {
 
   private carrierAmong(rider: PlacedModel, chosen: ReadonlyArray<PlacedModel>): PlacedModel | null {
     const carriers = this.carriersOf(rider);
-    return (
-      chosen.find((model) => {
-        const id = this.searchIds.get(model.id);
-        return id !== undefined && carriers.includes(id);
-      }) ?? null
-    );
+    return firstByPlacement(chosen, (model) => {
+      const id = this.searchIds.get(model.id);
+      return id !== undefined && carriers.includes(id);
+    });
   }
 
   private commitGroup(
@@ -5635,7 +5656,8 @@ export class Editor implements IEditor, IEditedWorld {
     const id = this.awaitingIds.get(model.id) ?? this.nextSearchId++;
     this.awaitingIds.delete(model.id);
     const { model: connectors, volumes, boxes, technic } = this.connectedOf(model.placeable);
-    this.search.add(id, connectors, volumes, boxes, technic, { x, z, yPlates, rot });
+    const pose = { x, z, yPlates, rot };
+    this.search.add(id, connectors, volumes, boxes, technic, pose, model.placeable.id);
     this.searchIds.set(model.id, id);
     this.searchModels.set(id, model);
   }
