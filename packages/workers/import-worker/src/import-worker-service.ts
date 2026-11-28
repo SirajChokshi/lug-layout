@@ -5,6 +5,7 @@ import {
   importStudioFile,
   LibraryBakeStore,
   LibraryConnectorStore,
+  PlanGlyphCache,
   ShadowMirror,
   type BrickCompiler,
   type FetchFunction,
@@ -49,6 +50,7 @@ export type ModelImportEngineFactory = (
   records: IPartRecords | null,
   helpers: ReadonlyArray<IBakeHelper>,
   shadowLibrary: IShadowLibrary | null,
+  glyphs: PlanGlyphCache,
 ) => ModelImportEngine;
 
 @injectable()
@@ -143,7 +145,16 @@ export class ImportWorkerService implements IImportWorkerService {
     const { input } = request;
     const mirror = this.createMirror(input.job.source, request.ldrawLibraryUrl);
     const shadow = this.shadowLibrary(request.shadowLibrary);
-    const engine = this.createEngine(compiler, mirror, connectors, records, helpers, shadow);
+    const glyphs = new PlanGlyphCache(request.compilerUrl, this.assetCache);
+    const engine = this.createEngine(
+      compiler,
+      mirror,
+      connectors,
+      records,
+      helpers,
+      shadow,
+      glyphs,
+    );
     switch (input.kind) {
       case "ldraw":
         return engine.importText(input.job, onPlaced);

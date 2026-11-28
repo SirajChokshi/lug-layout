@@ -45,8 +45,17 @@ function importWorkerModule(port: RpcPort): ContainerModule {
     bind(MODEL_IMPORT_ENGINE_FACTORY)
       .toDynamicValue((context) => {
         const now = context.get(IMPORT_CLOCK);
-        return (compiler, mirror, connectors, records, helpers, shadowLibrary) =>
-          new ModelImportEngine(compiler, mirror, connectors, records, now, helpers, shadowLibrary);
+        return (compiler, mirror, connectors, records, helpers, shadowLibrary, glyphs) =>
+          new ModelImportEngine(
+            compiler,
+            mirror,
+            connectors,
+            records,
+            now,
+            helpers,
+            shadowLibrary,
+            glyphs,
+          );
       })
       .inSingletonScope();
     bind(BAKE_HELPER_REGISTRY).to(BakeHelperRegistry).inSingletonScope();
