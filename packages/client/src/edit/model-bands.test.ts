@@ -259,6 +259,7 @@ class GeneratedWorld {
         consists: [],
         track: NO_TRACK_CHANGE,
         plan: null,
+        notes: null,
       },
       this.placeableOf,
     );

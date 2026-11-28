@@ -1,7 +1,10 @@
 import {
   DEFAULT_OVERLAP_MM,
+  DEFAULT_PIXELS_PER_STUD,
   MAX_OVERLAP_MM,
+  MAX_PIXELS_PER_STUD,
   MIN_OVERLAP_MM,
+  MIN_PIXELS_PER_STUD,
   PAPER_SIZES,
   SHEET_LAYER_IDS,
   TILED_SCALE_DENOMINATORS,
@@ -31,6 +34,7 @@ const MODES: ReadonlyArray<{ readonly id: SheetMode; readonly label: string }> =
   { id: "tiled", label: "Tiled" },
   { id: "fit", label: "Fit to a page" },
   { id: "whole", label: "One 1:1 sheet" },
+  { id: "image", label: "Image" },
 ];
 
 const ORIENTATIONS: ReadonlyArray<{ readonly id: OrientationChoice; readonly label: string }> = [
@@ -42,6 +46,7 @@ const ORIENTATIONS: ReadonlyArray<{ readonly id: OrientationChoice; readonly lab
 const FORMATS: ReadonlyArray<{ readonly id: SheetFormat; readonly label: string }> = [
   { id: "pdf", label: "PDF" },
   { id: "svg", label: "SVG" },
+  { id: "png", label: "PNG" },
 ];
 
 const CONTENTS: ReadonlyArray<{ readonly id: SheetContent; readonly label: string }> = [
@@ -88,28 +93,33 @@ interface LayoutChoices {
   readonly orientation: OrientationChoice;
   readonly denominator: number;
   readonly overlapMm: number;
+  readonly pixelsPerStud: number;
 }
+
+const DEFAULT_CHOICES: Omit<LayoutChoices, "mode"> = {
+  paper: "a4",
+  orientation: "auto",
+  denominator: 1,
+  overlapMm: DEFAULT_OVERLAP_MM,
+  pixelsPerStud: DEFAULT_PIXELS_PER_STUD,
+};
 
 function choicesOf(layout: SheetLayout): LayoutChoices {
   switch (layout.kind) {
     case "whole":
-      return {
-        mode: "whole",
-        paper: "a4",
-        orientation: "auto",
-        denominator: 1,
-        overlapMm: DEFAULT_OVERLAP_MM,
-      };
+      return { ...DEFAULT_CHOICES, mode: "whole" };
+    case "image":
+      return { ...DEFAULT_CHOICES, mode: "image", pixelsPerStud: layout.pixelsPerStud };
     case "fit":
       return {
+        ...DEFAULT_CHOICES,
         mode: "fit",
         paper: layout.paper,
         orientation: layout.orientation,
-        denominator: 1,
-        overlapMm: DEFAULT_OVERLAP_MM,
       };
     case "tiled":
       return {
+        ...DEFAULT_CHOICES,
         mode: "tiled",
         paper: layout.paper,
         orientation: layout.orientation,
@@ -124,10 +134,12 @@ function choicesOf(layout: SheetLayout): LayoutChoices {
 }
 
 function layoutOf(choices: LayoutChoices): SheetLayout {
-  const { mode, paper, orientation, denominator, overlapMm } = choices;
+  const { mode, paper, orientation, denominator, overlapMm, pixelsPerStud } = choices;
   switch (mode) {
     case "whole":
       return { kind: "whole" };
+    case "image":
+      return { kind: "image", pixelsPerStud };
     case "fit":
       return { kind: "fit", paper, orientation };
     case "tiled":
@@ -147,9 +159,10 @@ function requestOf(set: SheetSet): SheetRequest {
   };
 }
 
-function savedLines(file: SheetFile): ReadonlyArray<string> {
+function savedLines(file: SheetFile, format: SheetFormat): ReadonlyArray<string> {
+  const print = format === "png" ? "" : " Print at 100% (actual size).";
   return [
-    `Saved ${file.pages === 1 ? "1 page" : `${file.pages} pages`} as ${file.fileName}. Print at 100% (actual size).`,
+    `Saved ${file.pages === 1 ? "1 page" : `${file.pages} pages`} as ${file.fileName}.${print}`,
     ...file.notes,
   ];
 }
@@ -194,12 +207,13 @@ export function PrintSheets({
   const choose = (patch: Partial<LayoutChoices>): void =>
     update({ layout: layoutOf({ ...choices, ...patch }) });
   const problems = sheetLayoutProblems(chosen.layout);
-  const onPaper = choices.mode !== "whole";
+  const onPaper = choices.mode === "fit" || choices.mode === "tiled";
   const tiled = choices.mode === "tiled";
+  const image = choices.mode === "image";
   const allValid = sets.every((set) => sheetLayoutProblems(set.layout).length === 0);
-  const save = (file: SheetFile): void => {
+  const save = (file: SheetFile, format: SheetFormat): void => {
     downloadBlob(file.fileName, new Blob([file.bytes.slice()], { type: file.mimeType }));
-    setSaved(savedLines(file));
+    setSaved(savedLines(file, format));
   };
   return (
     <section className="print-sheets" aria-label="Print sheets">
@@ -249,7 +263,12 @@ export function PrintSheets({
             name="sheet-layout"
             value={choices.mode}
             onChange={(event) => {
-              if (isMode(event.target.value)) choose({ mode: event.target.value });
+              const mode = event.target.value;
+              if (!isMode(mode)) return;
+              update({
+                layout: layoutOf({ ...choices, mode }),
+                ...(mode === "image" ? { format: "png" } : {}),
+              });
             }}
           >
             {MODES.map((option) => (
@@ -322,6 +341,19 @@ export function PrintSheets({
           />
         </label>
         <label className="mm-field">
+          Pixels per stud
+          <input
+            name="sheet-pixels-per-stud"
+            type="number"
+            min={MIN_PIXELS_PER_STUD}
+            max={MAX_PIXELS_PER_STUD}
+            step={1}
+            value={choices.pixelsPerStud}
+            disabled={!image}
+            onChange={(event) => choose({ pixelsPerStud: Number(event.target.value) })}
+          />
+        </label>
+        <label className="mm-field">
           Format
           <select
             name="sheet-format"
@@ -369,7 +401,11 @@ export function PrintSheets({
           data-action="download-sheets"
           disabled={problems.length > 0}
           title="Download this sheet with its title block, legend and key"
-          onClick={() => save(sheets.download(editor, plan.id, requestOf(chosen)))}
+          onClick={() =>
+            void sheets
+              .download(editor, plan.id, requestOf(chosen))
+              .then((file) => save(file, chosen.format))
+          }
         >
           Download sheet
         </button>
@@ -379,7 +415,9 @@ export function PrintSheets({
           disabled={!allValid}
           title="Download every sheet of this plan in one file, in the format chosen above"
           onClick={() =>
-            save(sheets.downloadAll(editor, plan.id, sets.map(requestOf), chosen.format))
+            void sheets
+              .downloadAll(editor, plan.id, sets.map(requestOf), chosen.format)
+              .then((file) => save(file, chosen.format))
           }
         >
           Download all sheets

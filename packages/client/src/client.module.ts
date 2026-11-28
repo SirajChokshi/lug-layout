@@ -55,10 +55,12 @@ import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
+import { AnnotationService } from "./notes/annotation-service.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { PlanSheetService } from "./plan/plan-sheet-service.ts";
 import { PdfSheetWriter } from "./sheets/pdf-sheet-writer.ts";
 import { PlanDrawing } from "./sheets/plan-drawing.ts";
+import { PngSheetWriter } from "./sheets/png-sheet-writer.ts";
 import { SheetComposer } from "./sheets/sheet-composer.ts";
 import { SheetSets } from "./sheets/sheet-sets.ts";
 import { CourierTypeface } from "./sheets/sheet-typeface.ts";
@@ -80,6 +82,7 @@ import { VehicleIds } from "./trains/vehicle-ids.ts";
 import { FetchedStarterFiles } from "./starters/starter-files.ts";
 import { StarterWorlds } from "./starters/starter-worlds.ts";
 import {
+  ANNOTATION_SERVICE,
   BOM_SERVICE,
   OWNED_PARTS,
   CATALOG_SEARCH,
@@ -140,6 +143,7 @@ import {
   SHEET_TYPEFACE,
   SVG_SHEET_WRITER,
   PDF_SHEET_WRITER,
+  PNG_SHEET_WRITER,
   SHEET_SETS,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
@@ -185,6 +189,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(TRACK_SCENE).to(TrackScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
+  bind(ANNOTATION_SERVICE).to(AnnotationService).inSingletonScope();
   bind(PLAN_SHEET_SERVICE).to(PlanSheetService).inSingletonScope();
   bind(SHEET_TYPEFACE).to(CourierTypeface).inSingletonScope();
   bind(SHEET_TILER).to(SheetTiler).inSingletonScope();
@@ -192,6 +197,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(SHEET_COMPOSER).to(SheetComposer).inSingletonScope();
   bind(SVG_SHEET_WRITER).to(SvgSheetWriter).inSingletonScope();
   bind(PDF_SHEET_WRITER).to(PdfSheetWriter).inSingletonScope();
+  bind(PNG_SHEET_WRITER).to(PngSheetWriter).inSingletonScope();
   bind(SHEET_SETS).to(SheetSets).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();

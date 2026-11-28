@@ -1,4 +1,11 @@
-import { runMoves, type DrawingKit, type TrackMove, type TrackRun } from "@brr/domain";
+import {
+  continuingMove,
+  runMoves,
+  type DrawingKit,
+  type TrackMove,
+  type TrackPieceDef,
+  type TrackRun,
+} from "@brr/domain";
 import {
   HALF_TURN_16,
   STUD_LDU,
@@ -12,15 +19,16 @@ import {
 import type { TrackBlockView, TrackRefusal } from "./track-drag.ts";
 
 export type ExtensionTurn = "straight" | "left" | "right";
-export type ExtensionKind = ExtensionTurn | "join";
+export type ExtensionKind = ExtensionTurn | "piece" | "join";
+type PreferredKind = ExtensionTurn | "piece";
+
+export interface PieceFit {
+  readonly joins: number | null;
+  readonly blocked: TrackBlockView | null;
+}
 
 export type ExtensionChoice =
-  | {
-      readonly kind: ExtensionTurn;
-      readonly moves: readonly [TrackMove];
-      readonly joins: number | null;
-      readonly blocked: TrackBlockView | null;
-    }
+  | ({ readonly kind: PreferredKind; readonly moves: readonly [TrackMove] } & PieceFit)
   | {
       readonly kind: "join";
       readonly moves: ReadonlyArray<TrackMove>;
@@ -36,7 +44,8 @@ export type ExtensionJoin =
       readonly blocked: TrackBlockView | null;
     };
 
-type PieceChoice = Extract<ExtensionChoice, { readonly kind: ExtensionTurn }>;
+type SingleChoice = Extract<ExtensionChoice, { readonly kind: PreferredKind }>;
+type TurnChoice = SingleChoice & { readonly kind: ExtensionTurn };
 
 export interface ExtensionSite {
   readonly kit: DrawingKit;
@@ -44,6 +53,8 @@ export interface ExtensionSite {
   joinedEnd(from: number, move: TrackMove): number | null;
   closure(from: number, to: number): ExtensionJoin;
   crosses(from: number, move: TrackMove, joins: number | null): TrackBlockView | null;
+  pieceFit(from: number, move: TrackMove): PieceFit;
+  pieceLabel(piece: TrackPieceDef): string;
 }
 
 export interface ExtensionRun {
@@ -52,13 +63,22 @@ export interface ExtensionRun {
   readonly choice: ExtensionChoice;
 }
 
-export interface TrackChoiceView {
-  readonly kind: ExtensionKind;
+interface ChoiceCounts {
   readonly straights: number;
   readonly curves: number;
   readonly joinsEnd: boolean;
   readonly blocked: TrackBlockView | null;
 }
+
+export interface TrackChoicePiece {
+  readonly label: string;
+  readonly end: number;
+  readonly ends: number;
+}
+
+export type TrackChoiceView =
+  | (ChoiceCounts & { readonly kind: ExtensionTurn | "join" })
+  | (ChoiceCounts & { readonly kind: "piece"; readonly piece: TrackChoicePiece });
 
 export interface UnjoinedEndView {
   readonly studs: number;
@@ -94,6 +114,7 @@ const JOIN_TARGETS = 4;
 const SUGGESTED_JOIN_PIECES = 4;
 const TURN_ORDER: ReadonlyArray<ExtensionTurn> = ["straight", "left", "right"];
 const NO_ENDS: ReadonlyArray<number> = [];
+const LIBRARY_ENTRY = 0;
 
 function targetAhead(start: Pose16, end: Pose16, index: number): JoinTarget | null {
   const from = zeta16ToStuds(start.position);
@@ -112,10 +133,9 @@ function turnSeenFromAbove(move: TrackMove): ExtensionTurn {
   return turn < HALF_TURN_16 ? "right" : "left";
 }
 
-function choiceView(choice: ExtensionChoice): TrackChoiceView {
+function choiceCounts(choice: ExtensionChoice): ChoiceCounts {
   const straights = choice.moves.filter((move) => move.turn === 0).length;
   return {
-    kind: choice.kind,
     straights,
     curves: choice.moves.length - straights,
     joinsEnd: choice.joins !== null,
@@ -127,7 +147,8 @@ export class TrackExtension {
   private anchor: Pose16 | null = null;
   private anchorEnd: number | null = null;
   private focus: Focus | null = null;
-  private preferred: ExtensionTurn = "straight";
+  private preferred: PreferredKind = "straight";
+  private piece: TrackMove | null = null;
   private readonly options = new Map<number, EndOptions>();
   private changes = 0;
   private chosenAt = -1;
@@ -180,8 +201,31 @@ export class TrackExtension {
       this.focus = null;
       return;
     }
-    const options = this.optionsFrom(from);
-    this.focus = { from, options, index: this.suggested(options.choices) };
+    this.focusWith(from);
+  }
+
+  append(piece: TrackPieceDef): boolean {
+    const from = this.anchorEnd;
+    const move =
+      this.piece?.piece.id === piece.id ? this.piece : continuingMove(piece, LIBRARY_ENTRY);
+    if (from === null || move === null) return false;
+    this.remember(move, from);
+    return true;
+  }
+
+  nextEntry(): boolean {
+    const focus = this.focus;
+    const choice = focus?.options.choices[focus.index];
+    if (!focus || choice?.kind !== "piece") return false;
+    const [current] = choice.moves;
+    const ends = current.piece.connectors.length;
+    for (let step = 1; step < ends; step++) {
+      const move = continuingMove(current.piece, (current.from + step) % ends);
+      if (move === null) continue;
+      this.remember(move, focus.from);
+      return true;
+    }
+    return false;
   }
 
   cycle(step: 1 | -1): boolean {
@@ -228,6 +272,19 @@ export class TrackExtension {
     return this.extendView;
   }
 
+  private remember(move: TrackMove, from: number): void {
+    this.piece = move;
+    this.preferred = "piece";
+    this.options.clear();
+    this.focusWith(from);
+    this.changes++;
+  }
+
+  private focusWith(from: number): void {
+    const options = this.optionsFrom(from);
+    this.focus = { from, options, index: this.suggested(options.choices) };
+  }
+
   private findChosen(): ExtensionRun | null {
     const focus = this.focus;
     const choice = focus?.options.choices[focus.index];
@@ -246,11 +303,23 @@ export class TrackExtension {
     const focus = this.focus;
     if (!focus) return null;
     return {
-      choices: focus.options.choices.map(choiceView),
+      choices: focus.options.choices.map((choice) => this.choiceView(choice)),
       index: focus.index,
       continuing: this.anchorEnd !== null && this.anchorEnd === focus.from,
       unjoined: focus.options.unjoined,
     };
+  }
+
+  private choiceView(choice: ExtensionChoice): TrackChoiceView {
+    const counts = choiceCounts(choice);
+    if (choice.kind !== "piece") return { kind: choice.kind, ...counts };
+    const [move] = choice.moves;
+    const piece: TrackChoicePiece = {
+      label: this.site.pieceLabel(move.piece),
+      end: move.from,
+      ends: move.piece.connectors.length,
+    };
+    return { kind: "piece", ...counts, piece };
   }
 
   private endIndex(pose: Pose16): number | null {
@@ -259,6 +328,8 @@ export class TrackExtension {
   }
 
   private suggested(choices: ReadonlyArray<ExtensionChoice>): number {
+    const piece = choices.findIndex((choice) => choice.kind === "piece");
+    if (this.preferred === "piece" && piece >= 0) return piece;
     let shortest = -1;
     choices.forEach((choice, index) => {
       if (choice.blocked !== null || choice.joins === null) return;
@@ -280,8 +351,8 @@ export class TrackExtension {
     const ends = this.site.endPoses();
     const start = ends[from];
     if (!start) throw new RangeError(`there is no open end ${from}`);
-    const pieces = [kit.straight, kit.left, kit.right]
-      .map((move): PieceChoice => {
+    const turns = [kit.straight, kit.left, kit.right]
+      .map((move): TurnChoice => {
         const joins = this.site.joinedEnd(from, move);
         return {
           kind: turnSeenFromAbove(move),
@@ -291,6 +362,11 @@ export class TrackExtension {
         };
       })
       .toSorted((a, b) => TURN_ORDER.indexOf(a.kind) - TURN_ORDER.indexOf(b.kind));
+    const remembered = this.piece;
+    const library: ReadonlyArray<SingleChoice> =
+      remembered === null
+        ? []
+        : [{ kind: "piece", moves: [remembered], ...this.site.pieceFit(from, remembered) }];
     const nearest = ends
       .flatMap((end, index) => (index === from ? [] : (targetAhead(start, end, index) ?? [])))
       .toSorted((a, b) => a.distanceLdu - b.distanceLdu)
@@ -313,7 +389,7 @@ export class TrackExtension {
       if (moves.length > 1) joins.push({ kind: "join", moves, joins: index, blocked: null });
     });
     const options: EndOptions = {
-      choices: [...pieces, ...joins.toSorted((a, b) => a.moves.length - b.moves.length)],
+      choices: [...turns, ...library, ...joins.toSorted((a, b) => a.moves.length - b.moves.length)],
       unjoined,
     };
     this.options.set(from, options);

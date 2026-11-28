@@ -167,6 +167,8 @@ export {
   type PlanRowSegment,
   type TableInput,
 } from "./plan/plan-service.ts";
+export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
+export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -180,8 +182,11 @@ export type {
 } from "./plan/plan-sheet-service.ts";
 export {
   DEFAULT_OVERLAP_MM,
+  DEFAULT_PIXELS_PER_STUD,
   MAX_OVERLAP_MM,
+  MAX_PIXELS_PER_STUD,
   MIN_OVERLAP_MM,
+  MIN_PIXELS_PER_STUD,
   sheetLayoutProblems,
   type SheetContent,
   type SheetFile,
@@ -214,6 +219,7 @@ export type {
   TableTop,
 } from "@brr/domain";
 export {
+  ANNOTATION_SERVICE,
   RUNNING_GEAR,
   BOM_SERVICE,
   OWNED_PARTS,
@@ -329,6 +335,7 @@ export { trackBlockText } from "./edit/track-drag.ts";
 export type { TallestTrain } from "./trains/tallest-train.ts";
 export {
   TOO_STEEP,
+  libraryPieceEndText,
   lowClearanceText,
   tallyText,
   toolHints,
@@ -382,6 +389,7 @@ export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type {
   ExtensionKind,
   ExtensionTurn,
+  TrackChoicePiece,
   TrackChoiceView,
   TrackExtendView,
   UnjoinedEndView,

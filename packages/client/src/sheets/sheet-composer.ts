@@ -34,6 +34,8 @@ import {
   type TitleLine,
 } from "./sheet-blocks.ts";
 import {
+  IMAGE_PIXELS_PER_MM,
+  imageDenominator,
   sheetLayoutProblems,
   type SheetDocument,
   type SheetLayout,
@@ -214,7 +216,21 @@ export class SheetComposer implements ISheetComposer {
     const job = new SheetJob(sheet, selection);
     switch (layout.kind) {
       case "whole":
-        return this.finished(job, this.whole(job));
+        return this.finished(
+          job,
+          this.whole(job, 1, this.titleContent(job, 1, "drawn at 1:1", [])),
+        );
+      case "image": {
+        const denominator = imageDenominator(layout.pixelsPerStud);
+        const scaleLine = `drawn at ${layout.pixelsPerStud} px per stud`;
+        return this.finished(
+          job,
+          this.whole(job, denominator, {
+            ...this.titleContent(job, denominator, scaleLine, [], false),
+            pixelsPerMm: IMAGE_PIXELS_PER_MM,
+          }),
+        );
+      }
       case "fit":
         return this.finished(job, this.fitted(job, paperSize(layout.paper), layout.orientation));
       case "tiled":
@@ -235,13 +251,13 @@ export class SheetComposer implements ISheetComposer {
     }
   }
 
-  private whole(job: SheetJob): PageDraft[] {
-    const drawing = this.drawings.draw(job.sheet, 1, job.layers, job.heights);
+  private whole(job: SheetJob, denominator: number, titleContent: TitleContent): PageDraft[] {
+    const drawing = this.drawings.draw(job.sheet, denominator, job.layers, job.heights);
     const legend = this.legend(job, []);
     const keyTable = this.keyTable(job, Number.POSITIVE_INFINITY);
     const sideWidth = Math.max(legend.width, keyTable.widthMm);
     const contentWidth = drawing.extent.width + GAP_MM + sideWidth;
-    const title = this.blocks.title(this.titleContent(job, 1, "drawn at 1:1", []), contentWidth);
+    const title = this.blocks.title(titleContent, contentWidth);
     const top = WHOLE_MARGIN_MM + title.height;
     const sideLeft = WHOLE_MARGIN_MM + drawing.extent.width + GAP_MM;
     const key = keyTable.column(0, keyTable.rowCount, false);

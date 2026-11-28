@@ -1,6 +1,7 @@
 import {
   TOO_STEEP,
   heightText,
+  libraryPieceEndText,
   lowClearanceText,
   trackBlockText,
   unjoinedText,
@@ -308,10 +309,12 @@ function choiceLabel(choice: TrackChoiceView): string {
       return "Curve left";
     case "right":
       return "Curve right";
+    case "piece":
+      return choice.piece.label;
     case "join":
       return `Join: ${choice.straights + choice.curves} pieces`;
     default: {
-      const unhandled: never = choice.kind;
+      const unhandled: never = choice;
       throw new Error(`unhandled choice ${String(unhandled)}`);
     }
   }
@@ -322,7 +325,10 @@ function sentence(text: string): string {
 }
 
 function choiceDetail(choice: TrackChoiceView): string {
-  const run = `${choice.straights} straight, ${choice.curves} curve`;
+  const run =
+    choice.kind === "piece"
+      ? libraryPieceEndText(choice.piece)
+      : `${choice.straights} straight, ${choice.curves} curve`;
   if (choice.blocked) return `${run}; it would ${trackBlockText(choice.blocked)}`;
   return choice.joinsEnd ? `${run}; joins an open end exactly` : run;
 }
@@ -458,8 +464,10 @@ export function TrackExtendPanel({
       <ExtendStrip editor={editor} extend={extend} />
       <p className="toolbar-hint">
         Click the preview or press Enter to lay it, and keep going from its far end. W, A and D lay
-        a straight, a left curve or a right curve. Pick another choice here, or step through them
-        with , and . (exact joins to nearby ends are among them).
+        a straight, a left curve or a right curve. Click a track piece in the library to lay it on
+        the last end laid; it stays previewed on its far end, Enter lays another, and Q turns it to
+        attach by its next end. Pick another choice here, or step through them with , and . (exact
+        joins to nearby ends are among them).
       </p>
     </section>
   );

@@ -1,4 +1,5 @@
 import { mmRectInWorld, studsInside, type PlanRegion, type TableTop } from "@brr/domain";
+import { lduFromMm, STUD_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
@@ -13,7 +14,12 @@ import {
   type Point,
   type Similarity,
 } from "./draw-list.ts";
-import type { SheetLayout, SheetPage, SheetSelection } from "./sheet-document.ts";
+import {
+  IMAGE_PIXELS_PER_MM,
+  type SheetLayout,
+  type SheetPage,
+  type SheetSelection,
+} from "./sheet-document.ts";
 import { TABLE_PLAN_LAYERS, WHOLE_PLAN_SELECTION } from "./sheet-sets.ts";
 
 const container = new Container();
@@ -322,6 +328,56 @@ describe("a sheet fitted to one page", () => {
     );
     expect(pages.length).toBeGreaterThan(1);
     expect(listed).toEqual(many.map((placement) => placement.number));
+  });
+});
+
+describe("an image", () => {
+  it("draws the plan so a stud is the chosen whole pixels at the PNG's density, and states its check bar in pixels", () => {
+    const counts = [1, 3, 8, 32];
+    const drawn = counts.map((pixelsPerStud) => {
+      const { pages } = composer.compose(
+        SHEET,
+        { kind: "image", pixelsPerStud },
+        WHOLE_PLAN_SELECTION,
+      );
+      const [page] = pages;
+      if (!page || pages.length !== 1) throw new Error("an image is one page");
+      const title = titleLines(page).join(" ");
+      return {
+        tablesPx: tablesOn(page).map((table) =>
+          [table.width, table.height].map((mm) => (mm * IMAGE_PIXELS_PER_MM).toFixed(9)),
+        ),
+        scale: title.includes(`drawn at ${pixelsPerStud} px per stud`),
+        printAdvice: title.includes("100%"),
+      };
+    });
+    const [eight] = composer.compose(
+      SHEET,
+      { kind: "image", pixelsPerStud: 8 },
+      WHOLE_PLAN_SELECTION,
+    ).pages;
+    expect(drawn).toEqual(
+      counts.map((pixelsPerStud) => ({
+        tablesPx: REGION.footprint.tables.map((table) =>
+          [table.rect.width, table.rect.depth].map((mm) =>
+            ((lduFromMm(mm) / STUD_LDU) * pixelsPerStud).toFixed(9),
+          ),
+        ),
+        scale: true,
+        printAdvice: false,
+      })),
+    );
+    expect(eight && titleLines(eight)).toContain(
+      "this bar is 256 px at 4 px per mm: 32 studs · 25.6 cm",
+    );
+  });
+
+  it("refuses a pixel count that isn't whole, or is past the one that draws at 1:1", () => {
+    for (const pixelsPerStud of [0, 2.5, 33]) {
+      expect(() =>
+        composer.compose(SHEET, { kind: "image", pixelsPerStud }, WHOLE_PLAN_SELECTION),
+      ).toThrow(RangeError);
+    }
   });
 });
 
