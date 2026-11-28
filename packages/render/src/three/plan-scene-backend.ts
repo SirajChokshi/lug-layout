@@ -1,5 +1,5 @@
 import type { StudPrimitiveAsset } from "@brr/catalog";
-import { CHUNK_LDU, chunkKey } from "@brr/math";
+import { CHUNK_LDU, chunkKey, chunkOf } from "@brr/math";
 import {
   BufferAttribute,
   Color,
@@ -41,7 +41,7 @@ import {
   type PlanPartLines,
   type PlanSprite,
 } from "../plan-scene.ts";
-import { COLOR_CHANNELS } from "../scene-backend.ts";
+import { COLOR_CHANNELS, MARKER_COLORS, type EdgeMarker } from "../scene-backend.ts";
 import { type AtlasPage, type AtlasSlot, GlyphAtlas, type LdrawColorOf } from "./glyph-atlas.ts";
 import {
   MATRIX4_FLOATS,
@@ -181,6 +181,16 @@ function dotMaterial(): MeshBasicNodeMaterial {
   return material;
 }
 
+function markerMaterial(): MeshBasicNodeMaterial {
+  const material = new MeshBasicNodeMaterial({ side: DoubleSide });
+  const corner = positionGeometry.xz;
+  const box = attribute("markerBox", "vec4");
+  const color = attribute("markerColor", "vec4");
+  material.positionNode = vec3(mix(box.x, box.z, corner.x), color.w, mix(box.y, box.w, corner.y));
+  material.colorNode = varying(color.rgb);
+  return material;
+}
+
 function studShapeOf(primitive: StudPrimitiveAsset): StudShape {
   const { positions } = primitive.mesh;
   let top = 0;
@@ -241,13 +251,13 @@ class PlanBatch {
   get empty(): boolean {
     return this.placements.size === 0 && this.parts.size === 0;
   }
+}
 
-  clear(): void {
-    for (const child of this.group.children) {
-      if (child instanceof Mesh || child instanceof LineSegments) child.geometry.dispose();
-    }
-    this.group.clear();
+function disposeChildren(group: Group): void {
+  for (const child of group.children) {
+    if (child instanceof Mesh || child instanceof LineSegments) child.geometry.dispose();
   }
+  group.clear();
 }
 
 export class PlanSceneBackend implements IPlanSceneBackend {
@@ -265,6 +275,10 @@ export class PlanSceneBackend implements IPlanSceneBackend {
   private readonly placementBatch = new Map<number, PlanBatch>();
   private readonly partBatch = new Map<number, PlanBatch>();
   private readonly dirty: PlanBatch[] = [];
+  private readonly markerGroup = new Group();
+  private readonly markerSurface = markerMaterial();
+  private markerAnchorX = 0;
+  private markerAnchorZ = 0;
   private renderOriginX = 0;
   private renderOriginZ = 0;
   private dotsShown = false;
@@ -273,6 +287,43 @@ export class PlanSceneBackend implements IPlanSceneBackend {
   constructor(private readonly source: PlanSceneSource) {
     this.root.matrixAutoUpdate = false;
     this.root.visible = false;
+    this.markerGroup.matrixAutoUpdate = false;
+    this.root.add(this.markerGroup);
+  }
+
+  setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
+    disposeChildren(this.markerGroup);
+    this.source.changed();
+    const first = markers[0];
+    if (!first) return;
+    const anchorX = chunkOf(first.box.minX) * CHUNK_LDU;
+    const anchorZ = chunkOf(first.box.minZ) * CHUNK_LDU;
+    const box = new Float32Array(markers.length * VEC4);
+    const color = new Float32Array(markers.length * VEC4);
+    const bounds = new Bounds();
+    markers.forEach((marker, m) => {
+      const o = m * VEC4;
+      box[o] = marker.box.minX - anchorX;
+      box[o + 1] = marker.box.minZ - anchorZ;
+      box[o + 2] = marker.box.maxX - anchorX;
+      box[o + 3] = marker.box.maxZ - anchorZ;
+      this.dotColor.setHex(MARKER_COLORS[marker.kind]);
+      color[o] = this.dotColor.r;
+      color[o + 1] = this.dotColor.g;
+      color[o + 2] = this.dotColor.b;
+      color[o + 3] = marker.box.maxY;
+      bounds.add(box[o] ?? 0, marker.box.maxY, box[o + 1] ?? 0);
+      bounds.add(box[o + 2] ?? 0, marker.box.maxY, box[o + 3] ?? 0);
+    });
+    const geometry = instancedQuad(markers.length, { markerBox: box, markerColor: color });
+    bounds.sphereOf(geometry);
+    const mesh = new Mesh(geometry, this.markerSurface);
+    mesh.matrixAutoUpdate = false;
+    mesh.renderOrder = LINE_RENDER_ORDER;
+    this.markerGroup.add(mesh);
+    this.markerAnchorX = anchorX;
+    this.markerAnchorZ = anchorZ;
+    this.placeGroup(this.markerGroup, anchorX, anchorZ);
   }
 
   setSprite(id: number, sprite: PlanSprite): void {
@@ -331,7 +382,9 @@ export class PlanSceneBackend implements IPlanSceneBackend {
   place(renderOriginX: number, renderOriginZ: number): void {
     this.renderOriginX = renderOriginX;
     this.renderOriginZ = renderOriginZ;
-    for (const batch of this.batches.values()) this.placeBatch(batch);
+    for (const batch of this.batches.values())
+      this.placeGroup(batch.group, batch.originX, batch.originZ);
+    this.placeGroup(this.markerGroup, this.markerAnchorX, this.markerAnchorZ);
   }
 
   prepare(studPitchPx: number): void {
@@ -371,19 +424,15 @@ export class PlanSceneBackend implements IPlanSceneBackend {
       batch = new PlanBatch(key, batchX * BATCH_LDU, batchZ * BATCH_LDU);
       this.batches.set(key, batch);
       this.root.add(batch.group);
-      this.placeBatch(batch);
+      this.placeGroup(batch.group, batch.originX, batch.originZ);
     }
     return batch;
   }
 
-  private placeBatch(batch: PlanBatch): void {
-    batch.group.position.set(
-      batch.originX - this.renderOriginX,
-      0,
-      batch.originZ - this.renderOriginZ,
-    );
-    batch.group.updateMatrix();
-    batch.group.updateMatrixWorld(true);
+  private placeGroup(group: Group, originX: number, originZ: number): void {
+    group.position.set(originX - this.renderOriginX, 0, originZ - this.renderOriginZ);
+    group.updateMatrix();
+    group.updateMatrixWorld(true);
   }
 
   private markDirty(batch: PlanBatch): void {
@@ -395,7 +444,7 @@ export class PlanSceneBackend implements IPlanSceneBackend {
 
   private rebuild(batch: PlanBatch): void {
     batch.dirty = false;
-    batch.clear();
+    disposeChildren(batch.group);
     if (batch.empty) {
       this.root.remove(batch.group);
       this.batches.delete(batch.key);

@@ -186,7 +186,7 @@ describe("the plan scene", () => {
     for (let chunk = 0; chunk <= 8; chunk++) backend.plan.deletePlacements(chunk);
     backend.plan.prepare(1);
 
-    expect({ drawn, afterDelete: backend.plan.root.children.length }).toEqual({
+    expect({ drawn, afterDelete: meshesOf(backend).length }).toEqual({
       drawn: [8, 1],
       afterDelete: 0,
     });
@@ -215,6 +215,29 @@ describe("the plan scene", () => {
       shown: true,
       count: 1,
       centre: [CHUNK_LDU + 30, 8 + STUD_TOP_LDU, 50, STUD_RADIUS_LDU],
+    });
+  });
+
+  it("draws every edge marker as one instanced draw, at its box's top in its kind's colour", () => {
+    const backend = backendWithPalette();
+    const box = (minX: number) => ({ minX, minY: 0, minZ: 0, maxX: minX + 4, maxY: 3, maxZ: 20 });
+    backend.setMarkers([
+      { box: box(0), kind: "joined" },
+      { box: box(20), kind: "open" },
+      { box: box(40), kind: "mismatch" },
+    ]);
+    const meshes = backend.plan.root.children.flatMap((group) => group.children);
+    const geometry = (meshes[0] as Mesh | undefined)?.geometry as InstancedBufferGeometry;
+    const colors = Array.from(geometry.getAttribute("markerColor").array);
+    const kindColors = [0x1fbf4a, 0xffb000, 0xe0202a].flatMap((srgb) => [
+      ...new Color(srgb).toArray(),
+      3,
+    ]);
+
+    expect({ draws: meshes.length, count: geometry.instanceCount, colors }).toEqual({
+      draws: 1,
+      count: 3,
+      colors: Array.from(Float32Array.from(kindColors)),
     });
   });
 

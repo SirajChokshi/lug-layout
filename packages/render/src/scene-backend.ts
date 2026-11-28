@@ -126,6 +126,12 @@ export interface WorldBox {
 
 export type MarkerKind = "joined" | "open" | "mismatch";
 
+export const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
+  joined: 0x1fbf4a,
+  open: 0xffb000,
+  mismatch: 0xe0202a,
+};
+
 export interface EdgeMarker {
   readonly box: WorldBox;
   readonly kind: MarkerKind;

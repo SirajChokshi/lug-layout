@@ -42,6 +42,7 @@ import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
   CAMERA_FOV_DEGREES,
   COLOR_CHANNELS,
+  MARKER_COLORS,
   PROJECTED_IN_VIEW,
   PROJECTED_NDC_X,
   PROJECTED_NDC_Y,
@@ -200,11 +201,6 @@ const SELECTION_COLOR = 0xff8c00;
 const SELECTION_RENDER_ORDER = 1;
 const ISSUE_RENDER_ORDER = 2;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
-const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
-  joined: 0x1fbf4a,
-  open: 0xffb000,
-  mismatch: 0xe0202a,
-};
 const TRACK_END_COLORS: Readonly<Record<TrackEndKind, number>> = {
   open: 0xffb000,
   gap: 0xe0202a,
@@ -1541,6 +1537,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.markerGroup.add(mesh);
     }
     this.positionMarkers();
+    this.plan.setMarkers(markers);
   }
 
   private positionMarkers(): void {
@@ -2575,6 +2572,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const flat = this.camera === this.orthographic;
     this.chunkHolders.show(!flat);
     this.farModelHolders.show(!flat);
+    this.markerGroup.visible = !flat;
     this.plan.root.visible = flat;
     if (flat) this.plan.prepare(this.orthoStudPitchPx());
     renderer.info.reset();
