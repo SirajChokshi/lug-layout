@@ -1,5 +1,6 @@
 import { inject, injectable } from "inversify";
 import type { ICatalogSearch } from "../catalog/catalog-search.ts";
+import { LibraryQuery } from "../catalog/library-query.ts";
 import type { IPaletteCatalog } from "../catalog/palette-catalog.ts";
 import type { IPaletteMemory } from "../catalog/palette-memory.ts";
 import { COMMAND_CATALOG_SEARCH, PALETTE_CATALOG, PALETTE_MEMORY } from "../tokens.ts";
@@ -48,7 +49,7 @@ export class CommandPaletteSearch implements ICommandPaletteSearch {
   }
 
   search(query: string): void {
-    this.catalogSearch.search(query);
+    this.catalogSearch.search(LibraryQuery.parse(query).remoteText);
   }
 
   private update(): void {

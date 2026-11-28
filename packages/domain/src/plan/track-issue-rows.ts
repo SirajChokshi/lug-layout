@@ -8,6 +8,7 @@ export const TRACK_UNJOINED_ENDS = 1;
 export const TRACK_UNVERIFIED = 2;
 export const TRACK_UNIDENTIFIED = 3;
 export const TRACK_LAID_UNVERIFIED = 4;
+export const TRACK_REVERSING = 5;
 
 const NO_HEADING_OFFSET = -1;
 const INITIAL_ISSUES = 8;
@@ -287,6 +288,14 @@ export function trackIssue(region: PlanRegion, rows: TrackIssueRows, issue: numb
         severity: "warning",
         placements,
         message: `${heldParts(names, rows, issue)} placed where no exact track pose fits, ${UNCHECKED_ENDS}`,
+        ...fit,
+      };
+    case TRACK_REVERSING:
+      return {
+        rule: "trackReversing",
+        severity: "warning",
+        placements,
+        message: `Reversing loop or wye through ${listed(names)}: a train can run through it and come back past ${at} the other way, so each rail runs round into the other. That shorts two-rail powered track such as 9V or 12V.`,
         ...fit,
       };
     default:

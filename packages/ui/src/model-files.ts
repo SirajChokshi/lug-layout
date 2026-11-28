@@ -1,6 +1,7 @@
 import type { IEditor } from "@brr/client";
 
 export const MODEL_FILE_ACCEPT = ".io,.ldr,.mpd";
+export const LAYOUT_FILE_ACCEPT = ".ldr,.mpd";
 const MODEL_FILE = /\.(?:io|ldr|mpd)$/iu;
 
 export function modelFiles(files: Iterable<File>): File[] {

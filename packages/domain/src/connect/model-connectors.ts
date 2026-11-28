@@ -525,6 +525,7 @@ export class ModelConnectors {
     readonly trackPosition: Int32Array,
     readonly trackYPlates: Int32Array,
     readonly trackInstance: Int32Array,
+    readonly instanceStart: Int32Array,
   ) {}
 
   get internalMates(): number {
@@ -639,6 +640,13 @@ export class ModelConnectors {
       }
     }
     const track = exactTrackEnds(trackEnds);
+    const instanceStart = new Int32Array(instances.count + 1);
+    let connector = 0;
+    for (let i = 0; i < instances.count; i++) {
+      instanceStart[i] = connector;
+      while (connector < n && exposed.instance[connector] === i) connector++;
+    }
+    instanceStart[instances.count] = n;
     return new ModelConnectors(
       n,
       exposed.shape,
@@ -657,6 +665,7 @@ export class ModelConnectors {
       track.position,
       track.yPlates,
       track.instance,
+      instanceStart,
     );
   }
 }

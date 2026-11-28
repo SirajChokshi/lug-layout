@@ -22,7 +22,7 @@ import {
   turnSin,
 } from "./lattice-frame.ts";
 import { MateClasses } from "./mate-classes.ts";
-import type { MateFinder } from "./mate-finder.ts";
+import type { PartnerNamingFinder } from "./mate-finder.ts";
 import { MODEL_CACHE_CONNECTORS, MODEL_CACHE_MODELS, ModelCache } from "./model-cache.ts";
 import { NO_PROPOSAL_SLOT, ProposalProgress } from "./proposal-progress.ts";
 import {
@@ -57,6 +57,11 @@ const Y = 1;
 const Z = 2;
 const AXIAL_GROUP = -1;
 const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
+const PHASE_RADIX = STUD_SIXTEENTHS;
+const UNBUILT_OFF_AXIS_PHASES = new Int32Array(0);
+const UNBUILT_ROWS = new Int32Array(0);
+const EVERY_PARTNER = -1;
+const EVERY_INSTANCE = -1;
 const JOINT_KEY_INTS = 6;
 const LINE_KEY_INTS = 4;
 
@@ -68,6 +73,24 @@ function axisStep(axis: number, dimension: number): number {
   return axisDimension(axis) === dimension ? axisSign(axis) : 0;
 }
 
+function shiftFitsWindow(
+  shiftX: number,
+  shiftY: number,
+  shiftZ: number,
+  planStep: number,
+  spanXZ: number,
+  plates: number,
+): boolean {
+  return (
+    shiftX % planStep === 0 &&
+    shiftZ % planStep === 0 &&
+    shiftY % PLATE_SIXTEENTHS === 0 &&
+    Math.abs(shiftX) <= spanXZ &&
+    Math.abs(shiftZ) <= spanXZ &&
+    Math.abs(shiftY / PLATE_SIXTEENTHS) <= plates
+  );
+}
+
 function phaseKey(x16: number, z16: number): number {
   return phaseOf(x16) * STUD_SIXTEENTHS + phaseOf(z16);
 }
@@ -77,6 +100,22 @@ function latticeKey(pose: LatticePose): number {
     STUD_CENTRE_SIXTEENTHS - sixteenths(pose.x),
     STUD_CENTRE_SIXTEENTHS - sixteenths(pose.z),
   );
+}
+
+function writeLineKey(
+  position: Int32Array,
+  axis: Int8Array,
+  n: number,
+  size: number,
+  m: number,
+  key: Int32Array,
+): void {
+  const dimension = axisDimension(axis[m] ?? 0);
+  const at = m * VECTOR_FLOATS;
+  key[0] = Math.floor(m / n);
+  key[1] = dimension;
+  key[2] = cellOf(position[at + ((dimension + 1) % VECTOR_FLOATS)] ?? 0, size);
+  key[3] = cellOf(position[at + ((dimension + 2) % VECTOR_FLOATS)] ?? 0, size);
 }
 
 function lineIndex(
@@ -91,12 +130,7 @@ function lineIndex(
   const lines = new IntKeyMap(MODEL_KEY_INTS);
   let count = 0;
   for (let m = 0; m < total; m++) {
-    const dimension = axisDimension(axis[m] ?? 0);
-    const at = m * VECTOR_FLOATS;
-    key[0] = Math.floor(m / n);
-    key[1] = dimension;
-    key[2] = cellOf(position[at + ((dimension + 1) % VECTOR_FLOATS)] ?? 0, size);
-    key[3] = cellOf(position[at + ((dimension + 2) % VECTOR_FLOATS)] ?? 0, size);
+    writeLineKey(position, axis, n, size, m, key);
     let line = lines.get(key);
     if (line === MISSING) {
       line = count++;
@@ -128,9 +162,123 @@ function firstAtLeast(values: Int32Array, from: number, to: number, value: numbe
   return low;
 }
 
+function platePhaseOf(y16: number): number {
+  return ((y16 % PLATE_SIXTEENTHS) + PLATE_SIXTEENTHS) % PLATE_SIXTEENTHS;
+}
+
+function offAxisPhaseKey(rot: number, axis: number, x16: number, y16: number, z16: number): number {
+  const dimension = axisDimension(axis);
+  const across = (dimension + 1) % VECTOR_FLOATS;
+  const beyond = (dimension + 2) % VECTOR_FLOATS;
+  const acrossPhase = across === Y ? platePhaseOf(y16) : phaseOf(across === X ? x16 : z16);
+  const beyondPhase = beyond === Y ? platePhaseOf(y16) : phaseOf(beyond === X ? x16 : z16);
+  return ((rot * AXIS_CODES + axis) * PHASE_RADIX + acrossPhase) * PHASE_RADIX + beyondPhase;
+}
+
+function offAxisPhaseIndex(turned: TurnedModel, n: number): Int32Array<ArrayBuffer> {
+  const total = QUARTER_TURNS * n;
+  const keys = new Int32Array(total);
+  for (let m = 0; m < total; m++) {
+    const at = m * VECTOR_FLOATS;
+    keys[m] = offAxisPhaseKey(
+      Math.floor(m / n),
+      turned.axis[m] ?? 0,
+      turned.position[at + X] ?? 0,
+      turned.position[at + Y] ?? 0,
+      turned.position[at + Z] ?? 0,
+    );
+  }
+  keys.sort();
+  let distinct = 0;
+  for (let k = 0; k < total; k++) {
+    if (k === 0 || keys[k] !== keys[k - 1]) keys[distinct++] = keys[k] ?? 0;
+  }
+  return keys.slice(0, distinct);
+}
+
+function rowIndex(
+  turned: TurnedModel,
+  n: number,
+): readonly [
+  Int32Array<ArrayBuffer>,
+  Int32Array<ArrayBuffer>,
+  Int32Array<ArrayBuffer>,
+  Int32Array<ArrayBuffer>,
+  Int32Array<ArrayBuffer>,
+] {
+  const lines = turned.columnStart.length - 1;
+  const key = new Int32Array(MODEL_KEY_INTS);
+  const lineTurnedDimension = new Int32Array(lines);
+  const lineAcross = new Int32Array(lines);
+  const lineBeyond = new Int32Array(lines);
+  for (let line = 0; line < lines; line++) {
+    writeLineKey(
+      turned.position,
+      turned.axis,
+      n,
+      CELL_SIXTEENTHS,
+      turned.columnOrder[turned.columnStart[line] ?? 0] ?? 0,
+      key,
+    );
+    lineTurnedDimension[line] = (key[0] ?? 0) * VECTOR_FLOATS + (key[1] ?? 0);
+    lineAcross[line] = key[2] ?? 0;
+    lineBeyond[line] = key[3] ?? 0;
+  }
+  const order = Int32Array.from({ length: lines }, (_, line) => line).toSorted(
+    (a, b) =>
+      (lineTurnedDimension[a] ?? 0) - (lineTurnedDimension[b] ?? 0) ||
+      (lineAcross[a] ?? 0) - (lineAcross[b] ?? 0) ||
+      (lineBeyond[a] ?? 0) - (lineBeyond[b] ?? 0),
+  );
+  const turnedDimensions = QUARTER_TURNS * VECTOR_FLOATS;
+  const dimensionRowStart = new Int32Array(turnedDimensions + 1);
+  const rowAcross = new Int32Array(lines);
+  const rowStart = new Int32Array(lines + 1);
+  let rows = 0;
+  let rowTurnedDimension = -1;
+  let filledTurnedDimensions = 0;
+  for (let k = 0; k < lines; k++) {
+    const line = order[k] ?? 0;
+    const turnedDimension = lineTurnedDimension[line] ?? 0;
+    const across = lineAcross[line] ?? 0;
+    if (turnedDimension === rowTurnedDimension && across === (rowAcross[rows - 1] ?? 0)) continue;
+    for (; filledTurnedDimensions <= turnedDimension; filledTurnedDimensions++)
+      dimensionRowStart[filledTurnedDimensions] = rows;
+    rowTurnedDimension = turnedDimension;
+    rowAcross[rows] = across;
+    rowStart[rows] = k;
+    rows++;
+  }
+  for (; filledTurnedDimensions <= turnedDimensions; filledTurnedDimensions++)
+    dimensionRowStart[filledTurnedDimensions] = rows;
+  rowStart[rows] = lines;
+  return [
+    dimensionRowStart,
+    rowAcross.slice(0, rows),
+    rowStart.slice(0, rows + 1),
+    Int32Array.from(order, (line) => lineBeyond[line] ?? 0),
+    order,
+  ];
+}
+
+function hasOffAxisPhase(
+  turned: TurnedModel,
+  rot: number,
+  wanted: number,
+  sx: number,
+  sy: number,
+  sz: number,
+): boolean {
+  const key = offAxisPhaseKey(rot, wanted, sx, sy, sz);
+  const keys = turned.offAxisPhases;
+  const k = firstAtLeast(keys, 0, keys.length, key);
+  return k < keys.length && (keys[k] ?? 0) === key;
+}
+
 class TurnedModel {
   constructor(readonly model: ModelConnectors | null) {}
   order = new Int32Array(0);
+  connectorGroupKey = new Int32Array(0);
   groupKey = new Int32Array(0);
   groupEnd = new Int32Array(0);
   readonly groupsOfTurn = new Int32Array(QUARTER_TURNS + 1);
@@ -152,10 +300,16 @@ class TurnedModel {
   columnStart = new Int32Array(1);
   columnOrder = new Int32Array(0);
   columnAlong = new Int32Array(0);
+  offAxisPhases: Int32Array<ArrayBuffer> = UNBUILT_OFF_AXIS_PHASES;
+  dimensionRowStart: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
+  rowAcross: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
+  rowStart: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
+  rowBeyond: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
+  rowLine: Int32Array<ArrayBuffer> = UNBUILT_ROWS;
   lineShared = new Uint8Array(0);
 }
 
-export class SparseConnectorFinder implements MateFinder {
+export class SparseConnectorFinder implements PartnerNamingFinder {
   readonly namesPartners = true;
   readonly proposesEveryPose = false;
   private readonly classes: MateClasses;
@@ -295,6 +449,18 @@ export class SparseConnectorFinder implements MateFinder {
     }
     progress.revision = this.revision;
     const turned = this.turn(model);
+    if (latticeOnly && turned.offAxisPhases === UNBUILT_OFF_AXIS_PHASES) {
+      turned.offAxisPhases = offAxisPhaseIndex(turned, model.count);
+    }
+    if (latticeOnly && turned.rowStart === UNBUILT_ROWS) {
+      [
+        turned.dimensionRowStart,
+        turned.rowAcross,
+        turned.rowStart,
+        turned.rowBeyond,
+        turned.rowLine,
+      ] = rowIndex(turned, model.count);
+    }
     const reach = this.modelTravel(turned);
     const spanXZ = window.cells * STUD_SIXTEENTHS + reach;
     const spanY = window.plates * PLATE_SIXTEENTHS + reach;
@@ -364,6 +530,28 @@ export class SparseConnectorFinder implements MateFinder {
   mates(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
     checkPose(pose);
     this.matesAt(model, pose, out);
+  }
+
+  joinsPart(
+    model: ModelConnectors,
+    pose: LatticePose,
+    instance: number,
+    partner: number,
+    partnerInstance: number,
+  ): boolean {
+    checkPose(pose);
+    const turned = this.turn(model);
+    const skipped = latticeKey(pose);
+    const first = pose.rot * model.count;
+    this.joints.clear();
+    const from = model.instanceStart[instance] ?? 0;
+    const to = model.instanceStart[instance + 1] ?? 0;
+    for (let i = from; i < to; i++) {
+      const m = first + i;
+      if (turned.connectorGroupKey[m] === skipped) continue;
+      if (this.connectorMates(model, m, pose, null, partner, partnerInstance) > 0) return true;
+    }
+    return false;
   }
 
   private matesAt(model: ModelConnectors, pose: LatticePose, out: MateReport | null): number {
@@ -569,7 +757,14 @@ export class SparseConnectorFinder implements MateFinder {
       const to = turned.groupEnd[g] ?? from;
       if (turned.groupKey[g] !== skipped) {
         for (let k = from; k < to; k++) {
-          n += this.connectorMates(model, turned.order[k] ?? 0, pose, out);
+          n += this.connectorMates(
+            model,
+            turned.order[k] ?? 0,
+            pose,
+            out,
+            EVERY_PARTNER,
+            EVERY_INSTANCE,
+          );
         }
       }
       from = to;
@@ -582,6 +777,8 @@ export class SparseConnectorFinder implements MateFinder {
     m: number,
     pose: LatticePose,
     out: MateReport | null,
+    partner: number,
+    partnerInstance: number,
   ): number {
     const turned = this.turned;
     const classes = this.classes;
@@ -620,6 +817,10 @@ export class SparseConnectorFinder implements MateFinder {
         const sz = (this.slotZ[slot] ?? 0) - z;
         const d = Math.imul(sx, dx) + Math.imul(sy, dy) + Math.imul(sz, dz);
         if (sx !== dx * d || sy !== dy * d || sz !== dz * d) continue;
+        if (partner !== EVERY_PARTNER && this.slotOwner[slot] !== partner) continue;
+        if (partnerInstance !== EVERY_INSTANCE && this.slotInstance[slot] !== partnerInstance) {
+          continue;
+        }
         if (!classes.engagesAt(own, this.slotClass[slot] ?? UNCLASSED, d)) continue;
         if (!out) {
           n += this.sharesLine(i, slot) ? this.newJoint(model, i, slot, axis, x, y, z) : 1;
@@ -807,6 +1008,7 @@ export class SparseConnectorFinder implements MateFinder {
     const sx = (this.slotX[slot] ?? 0) - sixteenths(window.x);
     const sy = (this.slotY[slot] ?? 0) - window.yPlates * PLATE_SIXTEENTHS;
     const sz = (this.slotZ[slot] ?? 0) - sixteenths(window.z);
+    if (latticeOnly && !hasOffAxisPhase(turned, rot, wanted, sx, sy, sz)) return;
     const spanXZ = window.cells * STUD_SIXTEENTHS;
     const spanY = window.plates * PLATE_SIXTEENTHS;
     const ax = Math.abs(axisStep(wanted, X)) * travel;
@@ -831,9 +1033,22 @@ export class SparseConnectorFinder implements MateFinder {
       : this.inBlock(rot, wanted, block);
     for (let j = 0; j < found; j++) {
       const m = this.candidates[j] ?? 0;
+      const at = m * VECTOR_FLOATS;
+      if (
+        !shiftFitsWindow(
+          wantedDimension === X ? 0 : sx - (turned.position[at + X] ?? 0),
+          wantedDimension === Y ? 0 : sy - (turned.position[at + Y] ?? 0),
+          wantedDimension === Z ? 0 : sz - (turned.position[at + Z] ?? 0),
+          planStep,
+          spanXZ,
+          window.plates,
+        )
+      ) {
+        continue;
+      }
       const i = m - rot * connectors;
       const own = turned.connectorClass[i] ?? UNCLASSED;
-      const along = sAlong - (turned.position[m * VECTOR_FLOATS + wantedDimension] ?? 0);
+      const along = sAlong - (turned.position[at + wantedDimension] ?? 0);
       const lowest = Math.imul(wantedSign, along) - spanAlong;
       const highest = Math.imul(wantedSign, along) + spanAlong;
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
@@ -851,26 +1066,14 @@ export class SparseConnectorFinder implements MateFinder {
             d <= top;
             d += latticeStep
           ) {
-            const shiftX =
-              sx - axisStep(wanted, X) * d - (turned.position[m * VECTOR_FLOATS + X] ?? 0);
-            const shiftY =
-              sy - axisStep(wanted, Y) * d - (turned.position[m * VECTOR_FLOATS + Y] ?? 0);
-            const shiftZ =
-              sz - axisStep(wanted, Z) * d - (turned.position[m * VECTOR_FLOATS + Z] ?? 0);
-            if (shiftX % planStep !== 0 || shiftZ % planStep !== 0) continue;
-            if (shiftY % PLATE_SIXTEENTHS !== 0) continue;
-            const plates = shiftY / PLATE_SIXTEENTHS;
-            if (
-              Math.abs(shiftX) > spanXZ ||
-              Math.abs(shiftZ) > spanXZ ||
-              Math.abs(plates) > window.plates
-            ) {
-              continue;
-            }
+            const shiftX = sx - axisStep(wanted, X) * d - (turned.position[at + X] ?? 0);
+            const shiftY = sy - axisStep(wanted, Y) * d - (turned.position[at + Y] ?? 0);
+            const shiftZ = sz - axisStep(wanted, Z) * d - (turned.position[at + Z] ?? 0);
+            if (!shiftFitsWindow(shiftX, shiftY, shiftZ, planStep, spanXZ, window.plates)) continue;
             out.add(
               window.x + shiftX / SIXTEENTHS_PER_LDU,
               window.z + shiftZ / SIXTEENTHS_PER_LDU,
-              window.yPlates + plates,
+              window.yPlates + shiftY / PLATE_SIXTEENTHS,
               rot,
             );
           }
@@ -927,17 +1130,31 @@ export class SparseConnectorFinder implements MateFinder {
     const beyond = (dimension + 2) % VECTOR_FLOATS;
     const alongLow = (block[dimension] ?? 0) * CELL_SIXTEENTHS;
     const alongHigh = ((block[dimension + VECTOR_FLOATS] ?? 0) + 1) * CELL_SIXTEENTHS - 1;
+    const acrossHigh = block[across + VECTOR_FLOATS] ?? 0;
+    const beyondLow = block[beyond] ?? 0;
+    const beyondHigh = block[beyond + VECTOR_FLOATS] ?? 0;
+    const turnedDimension = rot * VECTOR_FLOATS + dimension;
+    const rowsEnd = turned.dimensionRowStart[turnedDimension + 1] ?? 0;
     const connectors = turned.connectorClass.length;
     const classCount = turned.classCount;
     let found = 0;
-    for (let a = block[across] ?? 0; a <= (block[across + VECTOR_FLOATS] ?? 0); a++) {
-      for (let b = block[beyond] ?? 0; b <= (block[beyond + VECTOR_FLOATS] ?? 0); b++) {
-        this.modelKey[0] = rot;
-        this.modelKey[1] = dimension;
-        this.modelKey[2] = a;
-        this.modelKey[3] = b;
-        const line = turned.columnLines.get(this.modelKey);
-        if (line === MISSING) continue;
+    for (
+      let r = firstAtLeast(
+        turned.rowAcross,
+        turned.dimensionRowStart[turnedDimension] ?? 0,
+        rowsEnd,
+        block[across] ?? 0,
+      );
+      r < rowsEnd && (turned.rowAcross[r] ?? 0) <= acrossHigh;
+      r++
+    ) {
+      const rowEnd = turned.rowStart[r + 1] ?? 0;
+      for (
+        let c = firstAtLeast(turned.rowBeyond, turned.rowStart[r] ?? 0, rowEnd, beyondLow);
+        c < rowEnd && (turned.rowBeyond[c] ?? 0) <= beyondHigh;
+        c++
+      ) {
+        const line = turned.rowLine[c] ?? 0;
         const end = turned.columnStart[line + 1] ?? 0;
         for (
           let k = firstAtLeast(turned.columnAlong, turned.columnStart[line] ?? 0, end, alongLow);
@@ -1102,6 +1319,7 @@ export class SparseConnectorFinder implements MateFinder {
       }
     }
     turned.groupsOfTurn[QUARTER_TURNS] = keys.length;
+    turned.connectorGroupKey = keyOf;
     turned.groupKey = Int32Array.from(keys);
     turned.groupEnd = Int32Array.from(ends);
   }

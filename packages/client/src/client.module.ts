@@ -33,6 +33,7 @@ import { Palette } from "./catalog/palette.ts";
 import { PaletteCatalog } from "./catalog/palette-catalog.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
+import { LocalStorageLibraryFilterStore } from "./catalog/library-filters.ts";
 import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
 import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
@@ -115,6 +116,7 @@ import {
   HOTBAR,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
+  LIBRARY_FILTER_STORE,
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
@@ -233,6 +235,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(COMMAND_CATALOG_SEARCH).toDynamicValue(catalogSearch).inSingletonScope();
   bind(PALETTE_MEMORY_STORE).to(LocalStoragePaletteMemoryStore).inSingletonScope();
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
+  bind(LIBRARY_FILTER_STORE).to(LocalStorageLibraryFilterStore).inSingletonScope();
   bind(HOTBAR).to(HotbarService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
   bind(LIBRARY_PART_SEARCH).to(LibraryPartSearch).inSingletonScope();

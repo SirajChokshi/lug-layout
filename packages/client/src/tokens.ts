@@ -17,6 +17,7 @@ import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteCatalog } from "./catalog/palette-catalog.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
+import type { ILibraryFilterStore } from "./catalog/library-filters.ts";
 import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
@@ -179,6 +180,9 @@ export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symb
 );
 export const PALETTE_MEMORY: ServiceIdentifier<IPaletteMemory> = Symbol.for(
   "brr.client.PaletteMemory",
+);
+export const LIBRARY_FILTER_STORE: ServiceIdentifier<ILibraryFilterStore> = Symbol.for(
+  "brr.client.LibraryFilterStore",
 );
 export const HOTBAR: ServiceIdentifier<IHotbar> = Symbol.for("brr.client.Hotbar");
 export const PALETTE_THUMBNAILS: ServiceIdentifier<IPaletteThumbnails> = Symbol.for(

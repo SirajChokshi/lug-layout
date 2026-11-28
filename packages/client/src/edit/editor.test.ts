@@ -104,7 +104,12 @@ import {
   type CommandId,
 } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@brr/import";
+import type {
+  ImportResult,
+  LayoutPart,
+  PlacementListener,
+  RollingDiagnosticsRows,
+} from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import {
   BOM_SERVICE,
@@ -1174,6 +1179,81 @@ it("lists a user's own file in the catalog by its name when a fresh editor reope
       .catalog.filter((item) => item.id === cottage)
       .map((item) => item.label),
   ).toEqual(["my-cottage.mpd"]);
+}, 240_000);
+
+const USERS_LAYOUT = [
+  "0 FILE brick-layout.ldr",
+  "0 A user's layout of three towers and a brick on one of them",
+  "0 Author: lug-layout test",
+  "1 4 0 -48 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 16 100 0 20 0 0 1 0 1 0 -1 0 0 tower.ldr",
+  "1 16 -100 -4 0 1 0 0 0 1 0 0 0 1 tower.ldr",
+  "1 16 0 0 0 1 0 0 0 1 0 0 0 1 tower.ldr",
+  "0 FILE tower.ldr",
+  "1 1 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 2 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "",
+].join("\n");
+
+function placedPartFrames(editor: IEditor, catalog: IPlaceableCatalog): ReadonlyArray<string> {
+  const { placements } = editor.dump();
+  const frames = placements.refId.flatMap((refId, i) => {
+    const placeable = catalog.placeables()[refId];
+    if (!placeable || placements.rot[i] !== 0) throw new Error(`placement ${i} isn't unturned`);
+    const { count, matrices } = placeable.partTransforms;
+    return Array.from({ length: count }, (_, k) => {
+      const m = matrices.subarray(k * INSTANCE_MATRIX_FLOATS, (k + 1) * INSTANCE_MATRIX_FLOATS);
+      const at: readonly [number, number, number] = [
+        (placements.x[i] ?? 0) + (m[3] ?? 0),
+        (placements.yPlates[i] ?? 0) * PLATE_LDU + (m[7] ?? 0),
+        (placements.z[i] ?? 0) + (m[11] ?? 0),
+      ];
+      return { turn: [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]].join(" "), at };
+    });
+  });
+  frames.sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1] || a.at[2] - b.at[2]);
+  const [origin] = frames;
+  return frames.map(
+    ({ turn, at }) => `${turn} at ${at.map((v, axis) => v - (origin?.at[axis] ?? 0)).join(" ")}`,
+  );
+}
+
+it("imports an LDraw file's top-level submodels as separate placements held as laid out, places them where the file puts them, and leaves out one that doesn't sit at whole plates", async () => {
+  const { editor, backend, catalog } = await startImportingEditor();
+  const notices = new Set<string>();
+  const stopWatching = editor.subscribe(() => {
+    const shown = editor.snapshot().modelImport;
+    if (shown) notices.add(`${shown.file} ${shown.status}`);
+  });
+
+  const held = await editor.importLayoutFile({
+    name: "brick-layout.ldr",
+    bytes: new TextEncoder().encode(USERS_LAYOUT),
+  });
+  stopWatching();
+  const notice = editor.snapshot().modelImport;
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0), { timeout: 60_000 });
+  backend.aim(OPEN_TABLE_X, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+
+  expect(held).toBe(true);
+  expect([...notices]).toEqual(["brick-layout.ldr importing", "brick-layout.ldr held"]);
+  expect(notice).toMatchObject({
+    file: "brick-layout.ldr",
+    status: "held",
+    reason:
+      "Left out: tower.ldr: its height isn't a whole number of plates from brick-layout.ldr's.",
+  });
+  expect(editor.snapshot()).toMatchObject({ placements: 3, refusedClicks: 0 });
+  expect([...editor.dump().placements.yPlates].toSorted()).toEqual([0, 0, 6]);
+  expect(placedPartFrames(editor, catalog)).toEqual([
+    "1 0 0 0 1 0 0 0 1 at 0 0 0",
+    "1 0 0 0 1 0 0 0 1 at 0 24 0",
+    "1 0 0 0 1 0 0 0 1 at 0 48 0",
+    "0 0 -1 0 1 0 1 0 0 at 100 0 -20",
+    "0 0 -1 0 1 0 1 0 0 at 100 24 -20",
+  ]);
 }, 240_000);
 
 it("saves a plan's tables, placements, laid track and every user file it places, whatever its own parts' licences, and a fresh editor reopens them exactly as one undo step", async () => {
@@ -3614,6 +3694,10 @@ class RefusingModelImporter implements IModelImporter {
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
   }
+
+  layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
+    return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
+  }
 }
 
 it("resolves a model file the bake refuses as not imported and keeps the chosen item, so a drop places nothing", async () => {
@@ -3732,6 +3816,10 @@ class GatedModelImporter implements IModelImporter {
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
+  }
+
+  layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
+    return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
   }
 }
 
@@ -4191,6 +4279,10 @@ class BakedRecordImporter implements IModelImporter {
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
+  }
+
+  layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
+    return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
   }
 }
 
@@ -8239,6 +8331,10 @@ class ImporterBringing implements IModelImporter {
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
   }
+
+  layoutParts(fileName: string): Promise<ReadonlyArray<LayoutPart>> {
+    return Promise.reject(new Error(`${fileName}: this test imports no layouts`));
+  }
 }
 
 it("gives a part the bundle's packages don't list the record an import brought for it", async () => {
@@ -9740,6 +9836,10 @@ class StudsLandLaterImporter implements IModelImporter {
 
   rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return this.inner.rollingDiagnostics([], "standard");
+  }
+
+  layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>> {
+    return this.inner.layoutParts(fileName, text);
   }
 }
 

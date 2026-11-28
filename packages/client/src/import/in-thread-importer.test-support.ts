@@ -3,8 +3,10 @@ import {
   BrickCompiler,
   LdrawMirror,
   ModelImportEngine,
+  layoutParts,
   type FetchFunction,
   type ImportResult,
+  type LayoutPart,
   type PartConnectorSource,
   type RollingDiagnosticsRows,
 } from "@brr/import";
@@ -45,9 +47,8 @@ export class InThreadModelImporter implements IModelImporter {
     lod: BundleLod = "standard",
   ): Promise<ImportResult> {
     const context = await this.loader.importContext(lod);
-    const wasm = await readFile(new URL(context.compilerPath, bundleRoot));
     const engine = new ModelImportEngine(
-      new BrickCompiler(await WebAssembly.compile(wasm)),
+      await this.compiler(lod),
       new LdrawMirror(context.source, pinnedMirror),
       this.connectors,
       null,
@@ -79,5 +80,15 @@ export class InThreadModelImporter implements IModelImporter {
 
   async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     return {};
+  }
+
+  async layoutParts(fileName: string, text: string): Promise<ReadonlyArray<LayoutPart>> {
+    return layoutParts(await this.compiler("standard"), fileName, text);
+  }
+
+  private async compiler(lod: BundleLod): Promise<BrickCompiler> {
+    const context = await this.loader.importContext(lod);
+    const wasm = await readFile(new URL(context.compilerPath, bundleRoot));
+    return new BrickCompiler(await WebAssembly.compile(wasm));
   }
 }
