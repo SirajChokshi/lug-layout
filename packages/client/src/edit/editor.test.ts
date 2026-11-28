@@ -41,6 +41,8 @@ import {
   type ChunkTier,
   type FarModelPlacement,
   type GhostVerdict,
+  type GuideKind,
+  type GuideSegment,
   type ISceneBackend,
   type LookSettings,
   type NeededMeshListener,
@@ -86,6 +88,7 @@ import {
   type WorldHeader,
   type WorldIndexEntry,
   type WorldShardV2,
+  type WorldVersionEntry,
 } from "@brr/schema/world";
 import {
   WORLD_LOCKS,
@@ -450,7 +453,10 @@ class HeadlessBackend implements ISceneBackend {
     this.vehicleModels.delete(vehicle);
   }
   setIssueBoxes(): void {}
-  setGuides(): void {}
+  guides: ReadonlyArray<GuideSegment> = [];
+  setGuides(segments: ReadonlyArray<GuideSegment>): void {
+    this.guides = segments;
+  }
   projectToNdc(): void {}
   private aimX = 0;
   private aimZ = 0;
@@ -1505,6 +1511,94 @@ it("imports an LDraw file's top-level submodels as separate placements held as l
   ]);
 }, 240_000);
 
+function guidesOf(backend: HeadlessBackend, kind: GuideKind): number[][] {
+  return backend.guides
+    .filter((segment) => segment.kind === kind)
+    .map(({ ax, az, bx, bz }) => [ax, az, bx, bz]);
+}
+
+function ringEdges(rings: ReadonlyArray<ReadonlyArray<readonly [number, number]>>): number[][] {
+  return rings.flatMap((ring) =>
+    ring.map(([ax, az], i) => {
+      const [bx, bz] = ring[(i + 1) % ring.length] ?? [ax, az];
+      return [ax, az, bx, bz];
+    }),
+  );
+}
+
+function spanOf(edges: ReadonlyArray<ReadonlyArray<number>>) {
+  const xs = edges.flatMap(([ax = 0, , bx = 0]) => [ax, bx]);
+  const zs = edges.flatMap(([, az = 0, , bz = 0]) => [az, bz]);
+  return {
+    minX: Math.min(...xs),
+    minZ: Math.min(...zs),
+    width: Math.max(...xs) - Math.min(...xs),
+    depth: Math.max(...zs) - Math.min(...zs),
+  };
+}
+
+it("compares the layout with a named version: a user's own model moved, a laid piece removed and a baseplate added are outlined from their geometry, follow later edits, and clear on Stop", async () => {
+  const { editor, backend } = await startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+  });
+  const cottage = await importUserFile(
+    editor,
+    "my-cottage.mpd",
+    userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+  );
+  drawOval(editor, backend);
+  const place = placer(editor, backend);
+  await place(cottage, 1600, 1600);
+  const saved = await editor.saveVersion("Before the show");
+  const straight = editor.dump().laidTrack.findIndex((piece) => piece.ref === TRACK_STRAIGHT);
+  const straightEdges = ringEdges(editor.planSheetShapes().trackOutlineOf(straight));
+  const straightSpan = spanOf(straightEdges);
+  const straightPicked = selectAt(
+    editor,
+    backend,
+    straightSpan.minX + straightSpan.width / 2,
+    straightSpan.minZ + straightSpan.depth / 2,
+  );
+  editor.deleteSelection(0);
+  const cottagePicked = selectAt(editor, backend, 1600, 1600);
+  editor.moveSelectionBy(10 * STUD, 0, 0);
+  await place(BASEPLATE, 3200, -3200);
+
+  const compared = await editor.compareWithVersion(1);
+  const comparison = editor.snapshot().comparison;
+  const added = guidesOf(backend, "added");
+  const removed = guidesOf(backend, "removed");
+  const moved = guidesOf(backend, "moved");
+  editor.undo(0);
+  await vi.waitFor(() => expect(editor.snapshot().comparison?.added).toBe(0));
+  const afterUndo = { comparison: editor.snapshot().comparison, added: guidesOf(backend, "added") };
+  const stopped = await editor.compareWithVersion(null);
+
+  expect({ saved, compared, stopped }).toEqual({ saved: true, compared: true, stopped: true });
+  expect({ straight: straightPicked?.kind, cottage: cottagePicked?.item }).toEqual({
+    straight: "track",
+    cottage,
+  });
+  expect(comparison).toEqual({
+    version: 1,
+    name: "Before the show",
+    added: 1,
+    removed: 1,
+    moved: 1,
+  });
+  expect(removed).toEqual(straightEdges);
+  expect(spanOf(added)).toMatchObject({ width: 32 * STUD, depth: 32 * STUD });
+  expect(
+    moved.filter(([ax = 0, az, bx = 0, bz]) => bx - ax === 10 * STUD && bz === az),
+  ).toHaveLength(1);
+  expect(afterUndo).toEqual({ comparison: { ...comparison, added: 0 }, added: [] });
+  expect(editor.snapshot().comparison).toBeNull();
+  expect(backend.guides).toEqual([]);
+}, 240_000);
+
 it("saves a plan's tables, placements, laid track and every user file it places, whatever its own parts' licences, and a fresh editor reopens them exactly as one undo step", async () => {
   const saving = await startImportingEditor();
   const cottageFile = userFileWithOwnPart("my-cottage.mpd", CC_BY_4);
@@ -2000,6 +2094,18 @@ class MemoryRepository implements IWorldRepository {
 
   async importedFile(sha256: string): Promise<ImportedFile | undefined> {
     return this.imports.get(sha256);
+  }
+
+  async saveVersion(): Promise<never> {
+    throw new Error("this test saves no versions");
+  }
+
+  async versions(): Promise<ReadonlyArray<WorldVersionEntry>> {
+    return [];
+  }
+
+  async readVersion(): Promise<Decoded<StoredWorld>> {
+    return { ok: false, issues: [{ path: "version", message: "is not saved in this test" }] };
   }
 }
 

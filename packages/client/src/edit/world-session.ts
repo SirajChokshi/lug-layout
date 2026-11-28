@@ -1,11 +1,15 @@
 import {
   DirtyShards,
   SavedNoteShards,
+  diffWorlds,
   worldPlacements,
   type AppliedEdit,
   type PlanRegion,
+  type RecordChanges,
   type TrackPieceAt,
   type World,
+  type WorldDiff,
+  type WorldRecords,
 } from "@brr/domain";
 import { CAMERA_FOV_DEGREES } from "@brr/render";
 import { decode, issueText, type Decoded, type Issue } from "@brr/schema/decode";
@@ -34,6 +38,7 @@ import {
   worldNotes,
   worldShards,
   worldShardsV1,
+  worldTrack,
   type ConsistRecordV1,
   type EventRecordV2,
   type ImportedFile,
@@ -49,6 +54,7 @@ import {
   type WorldIndexEntry,
   type WorldManifestV2,
   type WorldShardV2,
+  type WorldVersionEntry,
 } from "@brr/schema/world";
 import {
   WORLD_LOCKS,
@@ -100,9 +106,19 @@ export interface ExportedWorld {
   readonly bytes: Uint8Array;
 }
 
+export interface VersionComparison {
+  readonly version: number;
+  readonly name: string;
+  readonly added: number;
+  readonly removed: number;
+  readonly moved: number;
+}
+
 export interface WorldSessionView {
   readonly world: WorldFileView | null;
   readonly worlds: ReadonlyArray<WorldIndexEntry>;
+  readonly versions: ReadonlyArray<WorldVersionEntry>;
+  readonly comparison: VersionComparison | null;
   readonly fileError: string | null;
   readonly storageError: string | null;
   readonly readOnly: boolean;
@@ -151,6 +167,7 @@ export interface IEditedWorld extends IPlanSheetSource {
   addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<ModelFileOutcome>;
   planContents(planId: string): Decoded<PlanContents>;
   addPlan(plan: StoredPlan): Promise<ReadonlyArray<Issue>>;
+  showDiff(diff: WorldDiff | null): Promise<void>;
 }
 
 export interface IWorldFiles {
@@ -159,6 +176,8 @@ export interface IWorldFiles {
   newWorld(name: string): Promise<boolean>;
   openWorld(id: string): Promise<boolean>;
   deleteWorld(id: string): Promise<boolean>;
+  saveVersion(name: string): Promise<boolean>;
+  compareWithVersion(version: number | null): Promise<boolean>;
   retrySave(): Promise<void>;
   exportWorld(): Promise<ExportedWorld>;
   importWorld(bytes: Uint8Array): Promise<boolean>;
@@ -272,6 +291,11 @@ function byReference(parts: ReadonlyArray<CustomPartCredit>): CustomPartCredit[]
   return sorted;
 }
 
+interface ComparedVersion {
+  readonly entry: WorldVersionEntry;
+  readonly records: WorldRecords;
+}
+
 interface OpenWorld {
   readonly id: string | null;
   readonly name: string;
@@ -296,6 +320,8 @@ export class WorldSession implements IWorldSession {
   private state: WorldSessionView = {
     world: null,
     worlds: [],
+    versions: [],
+    comparison: null,
     fileError: null,
     storageError: null,
     readOnly: false,
@@ -320,6 +346,7 @@ export class WorldSession implements IWorldSession {
   private saveFailed = false;
   private lastSaveError: string | null = null;
   private readonly importedFiles = new Map<string, ImportedFile>();
+  private compared: ComparedVersion | null = null;
 
   constructor(
     @inject(WORLD_REPOSITORY) private readonly repository: IWorldRepository,
@@ -494,6 +521,12 @@ export class WorldSession implements IWorldSession {
       this.saveFailed = false;
       this.lastSaveError = null;
       this.syncUnsaved();
+      const compared = this.compared;
+      if (compared && (change.put.length > 0 || change.drop.length > 0)) {
+        await this.showComparison(compared).catch((error: unknown) => {
+          this.update({ fileError: `comparing failed: ${errorText(error)}` });
+        });
+      }
     } catch (error) {
       this.dirty.restore(change);
       this.cameraDirty ||= cameraWasDirty;
@@ -544,7 +577,11 @@ export class WorldSession implements IWorldSession {
 
   private async refreshWorlds(): Promise<void> {
     if (this.state.storageError !== null) return;
-    this.update({ worlds: await this.repository.list() });
+    const id = this.current?.id ?? null;
+    this.update({
+      worlds: await this.repository.list(),
+      versions: id === null ? [] : await this.repository.versions(id),
+    });
   }
 
   private async openFirstWorld(): Promise<void> {
@@ -641,6 +678,7 @@ export class WorldSession implements IWorldSession {
     this.documentDirty = false;
     this.saveFailed = false;
     this.lastSaveError = null;
+    this.clearComparison();
     this.update({ fileError: null });
     this.syncUnsaved();
   }
@@ -811,6 +849,75 @@ export class WorldSession implements IWorldSession {
       },
       true,
     );
+  }
+
+  saveVersion(name: string): Promise<boolean> {
+    return this.fileAction("saving the version", async () => {
+      const id = this.current?.id ?? null;
+      if (id === null || this.state.storageError !== null) {
+        throw new Error("storage is unavailable");
+      }
+      if (this.state.readOnly) {
+        throw new Error("this world is open in another tab, so it's read-only here");
+      }
+      const issue = this.worldNameIssue(name);
+      if (issue !== null) throw new Error(`the name ${issue}`);
+      const trimmed = name.trim();
+      await this.repository.saveVersion(
+        id,
+        trimmed === "" ? `Version ${this.state.versions.length + 1}` : trimmed,
+      );
+      await this.refreshWorlds();
+    });
+  }
+
+  compareWithVersion(version: number | null): Promise<boolean> {
+    return this.fileAction(
+      "comparing",
+      async () => {
+        if (version === null) {
+          this.clearComparison();
+          return;
+        }
+        const id = this.current?.id ?? null;
+        const entry = this.state.versions.find((saved) => saved.version === version);
+        if (id === null || !entry) throw new Error(`version ${version} isn't saved`);
+        const stored = await this.repository.readVersion(id, entry.version);
+        if (!stored.ok) throw new Error(issueText(stored.issues));
+        const { manifest, shards, notes } = stored.value;
+        await this.ensureImports(storedContents(manifest, shards, notes), (sha256) =>
+          this.repository.importedFile(sha256),
+        );
+        const placements = shards.flatMap((shard) => shard.placements);
+        const compared = { entry, records: { placements, track: worldTrack(shards) } };
+        await this.showComparison(compared);
+        this.compared = compared;
+      },
+      true,
+    );
+  }
+
+  private async showComparison(compared: ComparedVersion): Promise<void> {
+    const { world, refs, track } = this.editedWorld().contents();
+    const diff = diffWorlds(compared.records, { placements: worldPlacements(world, refs), track });
+    await this.editedWorld().showDiff(diff);
+    const total = (change: keyof RecordChanges<unknown>): number =>
+      diff.placements[change].length + diff.track[change].length;
+    this.update({
+      comparison: {
+        version: compared.entry.version,
+        name: compared.entry.name,
+        added: total("added"),
+        removed: total("removed"),
+        moved: total("moved"),
+      },
+    });
+  }
+
+  private clearComparison(): void {
+    this.compared = null;
+    void this.editedWorld().showDiff(null);
+    this.update({ comparison: null });
   }
 
   exportWorld(): Promise<ExportedWorld> {

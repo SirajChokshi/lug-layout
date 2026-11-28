@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { Count, FiniteNumber, strictMessage } from "./fields.ts";
+import { Count, FiniteNumber, WorldName, strictMessage } from "./fields.ts";
 
 export const WorldIndexEntry = v.strictObject(
   {
@@ -13,3 +13,15 @@ export const WorldIndexEntry = v.strictObject(
   strictMessage,
 );
 export type WorldIndexEntry = v.InferOutput<typeof WorldIndexEntry>;
+
+export const WorldVersionEntry = v.strictObject(
+  {
+    version: Count,
+    name: WorldName,
+    placements: Count,
+    track: Count,
+    savedAt: FiniteNumber,
+  },
+  strictMessage,
+);
+export type WorldVersionEntry = v.InferOutput<typeof WorldVersionEntry>;

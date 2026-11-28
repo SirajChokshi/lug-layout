@@ -117,6 +117,7 @@ export type {
   ExportedWorld,
   ModelFileInput,
   SaveState,
+  VersionComparison,
   WorldFileView,
 } from "./edit/world-session.ts";
 export type { RoadShape } from "@brr/domain";

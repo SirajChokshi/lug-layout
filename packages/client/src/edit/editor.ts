@@ -54,6 +54,7 @@ import {
   GENDER_MALE,
   NO_SHAPE,
   type ModelConnectors,
+  type WorldDiff,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -80,6 +81,7 @@ import {
   type ChunkInstances,
   type LookSettings,
   type ISceneBackend,
+  type GuideSegment,
   type WorldBox,
 } from "@brr/render";
 import type { Decoded, Issue } from "@brr/schema/decode";
@@ -122,6 +124,7 @@ import {
 } from "../tokens.ts";
 import { NOTHING_REBUILT, type ITrackWorld } from "./track-world.ts";
 import type { ITrackPathSelection, TrackPathScope } from "./track-path-selection.ts";
+import { diffGuides, type DiffShapes } from "./version-diff.ts";
 import {
   TRACK_PIECE_PREFIX,
   type ExtensionAttempt,
@@ -1328,6 +1331,8 @@ export class Editor implements IEditor, IEditedWorld {
     bundleVersion: null,
     world: null,
     worlds: [],
+    versions: [],
+    comparison: null,
     fileError: null,
     storageError: null,
     readOnly: false,
@@ -1536,6 +1541,8 @@ export class Editor implements IEditor, IEditedWorld {
   private measure: MeasureTool | null = null;
   private tables: TableTool | null = null;
   private fillTool: FillTool | null = null;
+  private guideY = 0;
+  private versionGuides: ReadonlyArray<GuideSegment> = [];
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -1730,9 +1737,10 @@ export class Editor implements IEditor, IEditedWorld {
       const index = await this.loader.loadIndex(EDITOR_LOD);
       this.ground.lay(index.tablePlane);
       this.canvas = canvas;
-      this.measure = new MeasureTool(-index.tablePlane.depthBelowTopLdu);
-      this.tables = new TableTool(this.plans, -index.tablePlane.depthBelowTopLdu);
-      this.fillTool = new FillTool(-index.tablePlane.depthBelowTopLdu);
+      this.guideY = -index.tablePlane.depthBelowTopLdu;
+      this.measure = new MeasureTool(this.guideY);
+      this.tables = new TableTool(this.plans, this.guideY);
+      this.fillTool = new FillTool(this.guideY);
       const catalog = await this.catalog.start(index);
       this.catalogItems = catalog.items;
       this.bundleColorCodes = index.colors.map((color) => color.code);
@@ -2153,21 +2161,50 @@ export class Editor implements IEditor, IEditedWorld {
     this.catalog.requestMeshes(new Set(placeable.parts.partIndex));
   }
 
-  private async ensureStoredPlaceables({
-    shards,
-    consists,
-  }: Pick<StoredContents, "shards" | "consists">): Promise<void> {
+  private loadPlaceables(
+    placed: ReadonlyArray<{ readonly ref: string; readonly color: number }>,
+  ): Promise<Placeable[]> {
     const refIds = new Set<number>();
-    const placed = [
-      ...shards.flatMap((shard) => shard.placements),
-      ...consists.flatMap((consist) => [consist, ...(consist.coupled ?? [])]),
-    ];
     for (const { ref, color } of placed) {
       const target = this.catalog.resolveRef(ref, color);
       if (target) refIds.add(target.refId);
     }
-    const placeables = await Promise.all([...refIds].map((refId) => this.catalog.load(refId)));
+    return Promise.all([...refIds].map((refId) => this.catalog.load(refId)));
+  }
+
+  private async ensureStoredPlaceables({
+    shards,
+    consists,
+  }: Pick<StoredContents, "shards" | "consists">): Promise<void> {
+    const placeables = await this.loadPlaceables([
+      ...shards.flatMap((shard) => shard.placements),
+      ...consists.flatMap((consist) => [consist, ...(consist.coupled ?? [])]),
+    ]);
     await Promise.all(placeables.map((placeable) => this.connectorTables.load(placeable)));
+  }
+
+  async showDiff(diff: WorldDiff | null): Promise<void> {
+    if (diff) {
+      const { removed, moved } = diff.placements;
+      await this.loadPlaceables([...removed, ...moved.map(({ from }) => from)]);
+    }
+    this.versionGuides = diff ? diffGuides(diff, this.diffShapes(), this.guideY) : [];
+    this.showGuides();
+  }
+
+  private diffShapes(): DiffShapes {
+    return {
+      placementBox: ({ ref, color, x, z, yPlates, rot }) => {
+        const target = this.catalog.resolveRef(ref, color);
+        if (!target) throw new Error(`"${ref}" in colour ${color} isn't in this app's catalog`);
+        return posedBox(this.placeableAt(target.refId).box, x, z, yPlates * PLATE_LDU, rot);
+      },
+      trackRings: (record) => {
+        const drawing = this.trackWorld.drawing();
+        if (!drawing) throw new Error(`"${record.ref}" can't be drawn before the track loads`);
+        return drawing.recordOutline(record).lduRings();
+      },
+    };
   }
 
   private baseplateBottomY(): number {
@@ -4345,7 +4382,11 @@ export class Editor implements IEditor, IEditedWorld {
 
   private showGuides(): void {
     const tables = this.state.mode === "table" ? this.tables : null;
-    const guides = [...(this.measure?.guides() ?? []), ...(tables?.guides() ?? [])];
+    const guides = [
+      ...this.versionGuides,
+      ...(this.measure?.guides() ?? []),
+      ...(tables?.guides() ?? []),
+    ];
     this.fillTool?.guides(guides);
     this.backend.setGuides(guides);
     this.update({
@@ -6092,6 +6133,14 @@ export class Editor implements IEditor, IEditedWorld {
 
   deleteWorld(id: string): Promise<boolean> {
     return this.session.deleteWorld(id);
+  }
+
+  saveVersion(name: string): Promise<boolean> {
+    return this.session.saveVersion(name);
+  }
+
+  compareWithVersion(version: number | null): Promise<boolean> {
+    return this.session.compareWithVersion(version);
   }
 
   retrySave(): Promise<void> {
