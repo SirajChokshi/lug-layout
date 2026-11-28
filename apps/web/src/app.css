@@ -477,6 +477,7 @@ footer {
 .plan-panel button,
 .plan-panel select {
   font: inherit;
+  height: auto;
   padding: 4px 8px;
   border: 1px solid #c3ccd6;
   border-radius: 6px;
@@ -864,6 +865,7 @@ footer {
 .view-controls button,
 .view-controls select {
   font: inherit;
+  height: auto;
   padding: 4px 9px;
   border: 1px solid #c3ccd6;
   border-radius: 6px;
@@ -941,6 +943,7 @@ footer {
 }
 
 .view-scroll select {
+  height: auto;
   padding: 3px 4px;
 }
 
@@ -1584,6 +1587,7 @@ footer a {
 .world-new input,
 .go-to input {
   font: inherit;
+  height: auto;
   padding: 5px 8px;
   border: 1px solid #c3ccd6;
   border-radius: 6px;
@@ -1874,6 +1878,7 @@ footer a {
 
 .play-start select {
   font: inherit;
+  height: auto;
   padding: 4px;
 }
 
