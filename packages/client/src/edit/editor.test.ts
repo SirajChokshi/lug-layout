@@ -1945,6 +1945,36 @@ describe("layers", () => {
     });
   }, 240_000);
 
+  it("refuses to drop a held switch into straights on a locked layer, naming the layer, and once unlocked drops it on the active layer, undo giving the straights back on their own layer", async () => {
+    const { editor, backend, container, at } = await runsOffUsersSwitch();
+    const layers = container.get(LAYER_SERVICE);
+    const laid = editor.dump().laidTrack;
+    const created = layers.create("Junctions", "parts");
+    if (!created.ok) throw new Error("the layer wasn't created");
+    const junctions = created.value;
+    layers.setLocked(BASE_LAYER_ID, true);
+
+    const locked = holdAndClick(editor, backend, RIGHT_SWITCH, at.west);
+    layers.setLocked(BASE_LAYER_ID, false);
+    const dropped = holdAndClick(editor, backend, RIGHT_SWITCH, at.west);
+    const onLayers = editor
+      .dump()
+      .laidTrack.filter((piece) => piece.layer !== undefined)
+      .map(({ ref, layer }) => [ref, layer]);
+    editor.undo(0);
+
+    expect({ locked, dropped, onLayers }).toEqual({
+      locked: {
+        refusedClicks: expect.any(Number),
+        reason: expect.stringContaining('would replace track on locked layer "Parts".'),
+        pieces: laid.length,
+      },
+      dropped: expect.objectContaining({ pieces: laid.length - 1 }),
+      onLayers: [[RIGHT_SWITCH, junctions]],
+    });
+    expect(editor.dump().laidTrack).toEqual(laid);
+  }, 120_000);
+
   it("refuses a road stroke over a user's own baseplate on a locked layer, naming it, then lays the road on the active layer, and erasing keeps a re-laid junction and gives the baseplate back on their own layers", async () => {
     const { editor, backend, container } = await startImportingEditor();
     const layers = container.get(LAYER_SERVICE);

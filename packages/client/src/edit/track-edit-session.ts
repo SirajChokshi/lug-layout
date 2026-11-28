@@ -1,6 +1,6 @@
 import type { PartAsset, PartShapeAsset } from "@brr/catalog";
 import type { PoseStatus, TrackSystem } from "@brr/schema/bundle";
-import type { TrackArrangement, TrackChange } from "@brr/domain";
+import type { LayerTable, TrackArrangement, TrackChange } from "@brr/domain";
 import { PLATE_LDU, QUARTER_TURN_16, STUD_LDU, ZETA16_ORDER, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type TrackEndMarker } from "@brr/render";
 import { inject, injectable } from "inversify";
@@ -421,6 +421,7 @@ export class TrackEditSession implements ITrackEditSession {
   private placingPiers = false;
   private blockedSnap: PieceSnap | null = null;
   private blockedBands = -1;
+  private blockedLayers: LayerTable | null = null;
 
   constructor(
     @inject(TRACK_WORLD) private readonly trackWorld: ITrackWorld,
@@ -1202,9 +1203,17 @@ export class TrackEditSession implements ITrackEditSession {
 
   private heldBlock(track: TrackDrawing, held: HeldPiece, snap: PieceSnap): TrackBlockView | null {
     this.trackWorld.ensureObstacles();
-    if (snap === this.blockedSnap && track.bandsVersion === this.blockedBands) return held.blocked;
+    const layers = this.layers.table();
+    if (
+      snap === this.blockedSnap &&
+      track.bandsVersion === this.blockedBands &&
+      layers === this.blockedLayers
+    ) {
+      return held.blocked;
+    }
     this.blockedSnap = snap;
     this.blockedBands = track.bandsVersion;
+    this.blockedLayers = layers;
     return this.snapBlock(track, held, snap);
   }
 
@@ -1212,6 +1221,10 @@ export class TrackEditSession implements ITrackEditSession {
     const { placement, yPlates, replaces } = snap;
     const block = track.arrangementBlock(held.arrangement, placement, yPlates, replaces);
     if (block) return block;
+    for (const piece of replaces) {
+      const locked = this.lockedLayerName(piece);
+      if (locked !== null) return { kind: "locked", layer: locked };
+    }
     for (const piece of replaces) {
       const train = this.trainOn(piece);
       if (train !== null) return { kind: "model", label: train, unseated: false };

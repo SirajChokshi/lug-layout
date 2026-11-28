@@ -261,8 +261,7 @@ function lockedLayerOf(
 }
 
 export function layOnLayer(change: TrackChange, layer: number): TrackChange {
-  if (change.lift.length > 0) throw new Error("only newly laid track is put on a layer");
-  return { lift: [], lay: change.lay.map((piece) => ({ ...piece, layer })) };
+  return { lift: change.lift, lay: change.lay.map((piece) => ({ ...piece, layer })) };
 }
 
 export class EditHistory {

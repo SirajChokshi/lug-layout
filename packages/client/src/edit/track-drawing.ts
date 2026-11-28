@@ -2663,6 +2663,7 @@ export class TrackDrawing implements ExtensionSite, LoopCloserSite {
         pose: composePose16(placement, local),
         yPlates,
         rise: 0,
+        layer: BASE_LAYER_ID,
       })),
     };
   }

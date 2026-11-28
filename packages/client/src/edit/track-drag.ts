@@ -41,7 +41,8 @@ export type JoinWithheld = "unsupported" | "pending";
 export type TrackBlockView =
   | { readonly kind: "track" }
   | { readonly kind: "run" }
-  | { readonly kind: "model"; readonly label: string; readonly unseated: boolean };
+  | { readonly kind: "model"; readonly label: string; readonly unseated: boolean }
+  | { readonly kind: "locked"; readonly layer: string };
 
 export function trackBlockText(block: TrackBlockView): string {
   switch (block.kind) {
@@ -53,6 +54,8 @@ export function trackBlockText(block: TrackBlockView): string {
       return block.unseated
         ? `sit on ${block.label} where it has no studs`
         : `run into ${block.label}`;
+    case "locked":
+      return `replace track on locked layer "${block.layer}"`;
     default: {
       const unhandled: never = block;
       throw new Error(`unhandled block ${String(unhandled)}`);
