@@ -456,7 +456,7 @@ async function reopenWarm(page: Page, baseUrl: string): Promise<OpenTimes> {
     "the world to save",
   );
   const started = Date.now();
-  await page.goto(`${baseUrl}?api=webgl2`);
+  await page.goto(`${baseUrl}?api=webgl2&tier=far`);
   await page.waitForSelector('.editor[data-status="ready"]', {
     state: "attached",
     timeout: READY_TIMEOUT_MS,
@@ -733,7 +733,7 @@ async function moduleCycle(
     (await log.edit("move", () => page.keyboard.press("ArrowLeft")));
   if (!nudged) return;
   await log.edit("delete", () => page.keyboard.press("Delete"));
-  await log.edit("undo", () => page.keyboard.press("Control+z"));
+  await log.edit("undo model", () => page.keyboard.press("Control+z"));
   await log.edit("delete", () => page.keyboard.press("Delete"));
 }
 
@@ -747,7 +747,7 @@ async function trackCycle(
   await pick(page, script.track.item);
   const from = await map.aim(script.track.from);
   const to = await map.aim(script.track.to);
-  const laid = await log.edit("track commit", async () => {
+  const laid = await log.edit("track commit, drag", async () => {
     await page.mouse.move(from.sx, from.sy);
     await page.mouse.down();
     for (let step = 1; step <= DRAG_STEPS; step++) {
@@ -759,10 +759,10 @@ async function trackCycle(
   if (!laid) return;
   let commits = 1;
   for (let press = 0; press < script.track.extensions; press++) {
-    if (await log.edit("track commit", () => page.keyboard.press("w"))) commits++;
+    if (await log.edit("track commit, W", () => page.keyboard.press("w"))) commits++;
   }
   for (let undo = 0; undo < commits; undo++) {
-    await log.edit("undo", () => page.keyboard.press("Control+z"));
+    await log.edit("undo track", () => page.keyboard.press("Control+z"));
   }
 }
 
@@ -799,6 +799,7 @@ async function measureEdits(
 ): Promise<EditMeasurement> {
   const map = await zoomOnto(page, script);
   await setPrecise(page);
+  await until(() => meshesSettled(page), "the meshes at the edit site");
   const log = new LatencyLog(page);
   for (let cycle = 0; cycle < repeats; cycle++) await moduleCycle(page, map, log, script);
   for (let cycle = 0; cycle < repeats; cycle++) await trackCycle(page, map, log, script);
@@ -827,7 +828,7 @@ async function measureWorld(
 ): Promise<WorldMeasurement> {
   const settleMs = Number(values["settle-ms"]);
   const gestureMs = Number(values["gesture-ms"]);
-  const world = stemOf(archive);
+  const world = basename(archive, ".zip");
   let row: WorldMeasurement = {
     world,
     archive: basename(archive),

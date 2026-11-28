@@ -1,11 +1,10 @@
 import type { ExtensionTurn, TrackEndView } from "@brr/client";
+import { UNROUNDED_TOLERANCE_LDU, ZETA16_ORDER } from "@brr/math";
 import type { EditorPath } from "../held-out/editor-pairs.ts";
 import type { OvalPlan, Point, TrackKit } from "./show-layout.ts";
 
-const HEADINGS = 16;
-const HALF_TURN = HEADINGS / 2;
+const HALF_TURN = ZETA16_ORDER / 2;
 const PROBE_RUN_LDU = 1_280;
-const LATTICE_RESIDUAL_LDU = 1e-6;
 const MAX_SIDING_STRAIGHTS = 6;
 const HELD_CONNECTOR_TRIES = 4;
 
@@ -25,7 +24,7 @@ function sameEnd(a: TrackEndView, b: TrackEndView): boolean {
 
 function exactLdu(value: number, what: string): number {
   const rounded = Math.round(value);
-  if (Math.abs(value - rounded) > LATTICE_RESIDUAL_LDU) {
+  if (Math.abs(value - rounded) > UNROUNDED_TOLERANCE_LDU) {
     throw new Error(`${what} is ${value} LDU, off the whole-LDU lattice`);
   }
   return rounded + 0;
@@ -55,7 +54,7 @@ export class TrackLayer {
     let reach = 0;
     let curves = 0;
     while (end.heading !== HALF_TURN) {
-      if (++curves > HEADINGS) throw new Error("the probe's curves never turned the track around");
+      if (++curves > ZETA16_ORDER) throw new Error("the probe's curves never turned the track around");
       end = await this.extend(end, "left");
       reach = Math.max(reach, end.xLdu - east.xLdu);
     }
