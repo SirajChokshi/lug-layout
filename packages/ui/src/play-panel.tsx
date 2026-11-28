@@ -105,7 +105,8 @@ export function PlayPanel({
             </ul>
           ) : (
             <p className="toolbar-hint">
-              Hold a train over laid track: it sets itself on the rails there. R turns it round.
+              In Build, hold a train over laid track: it sets itself on the rails there. R turns it
+              round.
             </p>
           )}
           <button

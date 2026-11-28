@@ -13,6 +13,10 @@
   color: var(--text-primary);
 }
 
+.library[hidden] {
+  display: none;
+}
+
 .library[data-open="false"] {
   bottom: auto;
   width: auto;

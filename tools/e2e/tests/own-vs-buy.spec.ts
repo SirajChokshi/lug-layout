@@ -68,6 +68,7 @@ test("parts owned in a CSV split a plan's parts list, holding an imported custom
   await writeFile(file, customModel());
   const imported = await editor.importModel(file);
   expect(imported.status, imported.text).toBe("placeable");
+  await editor.chooseMode("plan");
   await page.locator(".plan-panel > summary").click();
   await page.locator('[data-action="new-plan"]').click();
   await page.locator('[data-action="add-table"]').click();

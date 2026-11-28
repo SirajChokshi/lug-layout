@@ -88,6 +88,7 @@ test("the event panel measures a user's overhanging module beside a baseplate fr
     ].toSorted(byPosition),
   );
 
+  await editor.chooseMode("plan");
   await openEventPanel(page);
   expect(await shownSize(page)).toEqual(SIZE);
   const panel = eventPanel(page);
@@ -104,6 +105,7 @@ test("the event panel measures a user's overhanging module beside a baseplate fr
   await expect
     .poll(() => reopened.poses(), { timeout: 180_000, message: "the import comes back" })
     .toEqual(placed);
+  await reopened.chooseMode("plan");
   await openEventPanel(page);
   await expect(eventPanel(page).locator(".event-glance")).toHaveText(DETAILS.title);
   expect({ details: await shownDetails(page), size: await shownSize(page) }).toEqual({
