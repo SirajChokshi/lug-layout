@@ -596,7 +596,7 @@ describe("schema v2 document data", () => {
 
     const refused = { labels: layers.remove(1), tables: layers.remove(4) };
     expect(layers.remove(2)).toEqual([]);
-    session.layersEdited();
+    session.documentEdited();
     const storedLayers = async () => {
       const stored = await repository.read(id);
       return stored.ok ? stored.value.manifest.layers.map((layer) => layer.id) : null;
