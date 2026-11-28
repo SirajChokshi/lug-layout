@@ -6,6 +6,7 @@ import {
 } from "@brr/catalog";
 import { CHUNK_LDU } from "@brr/math";
 import {
+  DirectionalLight,
   InstancedMesh,
   Matrix3,
   Matrix4,
@@ -14,6 +15,7 @@ import {
   Vector3,
   type BufferGeometry,
   type MeshStandardNodeMaterial,
+  type WebGPURenderer,
 } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -21,6 +23,8 @@ import type {
   ChunkTier,
   EdgeMarker,
   FarModelPlacement,
+  FrameStats,
+  LookSettings,
   NeededMeshListener,
   PartPalette,
   PlanOverlay,
@@ -1083,4 +1087,176 @@ it("keeps the sign of a zero in a rebuilt chunk's bounding sphere, whether the s
     computed: [true, true],
     reused: [true, true],
   });
+});
+
+const SHADOWS_ONLY = {
+  plastic: false,
+  gtao: false,
+  outlines: false,
+  bevel: false,
+  shadows: true,
+  oit: false,
+} as const;
+const REST_FRAMES_ALLOWED = 3;
+
+function frameStats(): FrameStats {
+  return {
+    drawCalls: 0,
+    triangles: 0,
+    nearChunks: 0,
+    midChunks: 0,
+    farChunks: 0,
+    nearestStudPitchPx: 0,
+    renderOriginChunkX: 0,
+    renderOriginChunkZ: 0,
+    rebaseCount: 0,
+  };
+}
+
+interface ShadowedBackend {
+  readonly backend: ThreeSceneBackend;
+  renderedShadowFar(): number;
+}
+
+function shadowedBackend(
+  chunkOrigins: ReadonlyArray<readonly [number, number]>,
+  look: LookSettings = SHADOWS_ONLY,
+): ShadowedBackend {
+  const { backend } = tieredBackend();
+  let rendered: Object3D | undefined;
+  const renderer = {
+    shadowMap: { enabled: false },
+    info: { reset: () => undefined, render: { drawCalls: 0, triangles: 0 } },
+    render: (scene: Object3D) => {
+      rendered = scene;
+    },
+  } as unknown as WebGPURenderer;
+  backend["renderer"] = renderer;
+  backend["light"](renderer, look);
+  setChunks(backend, chunkOrigins);
+  const renderedShadowFar = (): number => {
+    const sun = rendered?.children.find(
+      (child): child is DirectionalLight => child instanceof DirectionalLight && child.castShadow,
+    );
+    const shadowNode = (sun?.shadow as { shadowNode?: { maxFar: number } } | undefined)?.shadowNode;
+    if (!shadowNode) throw new Error("the rendered scene has no shadow-casting sun");
+    return shadowNode.maxFar;
+  };
+  return { backend, renderedShadowFar };
+}
+
+function setChunks(
+  backend: ThreeSceneBackend,
+  chunkOrigins: ReadonlyArray<readonly [number, number]>,
+): void {
+  chunkOrigins.forEach(([originX, originZ], key) =>
+    backend.setChunk(key, { ...chunkOf(0), originX, originZ }),
+  );
+}
+
+function viewedAlong(backend: ThreeSceneBackend, eyeHeights: ReadonlyArray<number>): void {
+  const stats = frameStats();
+  for (const eyeY of eyeHeights) {
+    backend.setView(0, eyeY, 0, 0, 0, 1);
+    backend.renderFrame(stats);
+  }
+}
+
+function rested({ backend, renderedShadowFar }: ShadowedBackend): {
+  asked: number;
+  stillAsking: boolean;
+  far: number;
+} {
+  let asked = 0;
+  while (backend.needsFrame() && asked < REST_FRAMES_ALLOWED) {
+    asked++;
+    backend.renderFrame(frameStats());
+  }
+  return { asked, stillAsking: backend.needsFrame(), far: renderedShadowFar() };
+}
+
+const SPREAD_CHUNKS = [
+  [0, 0],
+  [19_200, 12_800],
+] as const;
+const RESTING_EYE_LDU = 12_000;
+const FAR_PART_X_LDU = 3_200;
+
+function withFarPart(originX: number, originZ: number): ChunkInstances {
+  return {
+    ...chunkOf(0),
+    originX,
+    originZ,
+    count: 2,
+    partIndex: new Uint16Array(2),
+    colorIndex: new Uint16Array(2),
+    matrices: Float32Array.from([...IDENTITY, ...translatedX(IDENTITY, FAR_PART_X_LDU)]),
+  };
+}
+
+function restedFresh(chunkOrigins: ReadonlyArray<readonly [number, number]>): number {
+  const fresh = shadowedBackend(chunkOrigins);
+  viewedAlong(fresh.backend, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
+  return rested(fresh).far;
+}
+
+it.each([
+  {
+    path: "from close in, holding a range it outgrew",
+    eyeHeights: [2_000, 6_000, RESTING_EYE_LDU],
+    asked: 1,
+  },
+  {
+    path: "from far away, refitting on its last step",
+    eyeHeights: [90_000, 60_000, 30_000, RESTING_EYE_LDU],
+    asked: 0,
+  },
+])(
+  "asks for frames after the view stops only until the shadow range rests, and rests at one range whichever way the view came: $path",
+  ({ eyeHeights, asked }) => {
+    const shadowed = shadowedBackend(SPREAD_CHUNKS);
+    viewedAlong(shadowed.backend, eyeHeights);
+
+    expect(rested(shadowed)).toEqual({
+      asked,
+      stillAsking: false,
+      far: restedFresh(SPREAD_CHUNKS),
+    });
+  },
+);
+
+it("rests at the shadow range the live chunks need once a model leaves a chunk or a chunk is deleted, and keeps it when a chunk is rebuilt with the same parts", () => {
+  const shadowed = shadowedBackend(SPREAD_CHUNKS);
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU, RESTING_EYE_LDU]);
+  const before = rested(shadowed).far;
+  setChunks(shadowed.backend, SPREAD_CHUNKS);
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+  const rebuilt = rested(shadowed);
+  const [originX, originZ] = SPREAD_CHUNKS[1];
+  shadowed.backend.setChunk(1, withFarPart(originX, originZ));
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+  const grown = rested(shadowed);
+  shadowed.backend.setChunk(1, { ...chunkOf(0), originX, originZ });
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+  const modelLeft = rested(shadowed);
+  shadowed.backend.deleteChunk(1);
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+  const deleted = rested(shadowed);
+
+  expect({ rebuilt, modelLeft, deleted }).toEqual({
+    rebuilt: { asked: 0, stillAsking: false, far: before },
+    modelLeft: { asked: 0, stillAsking: false, far: before },
+    deleted: { asked: 0, stillAsking: false, far: restedFresh(SPREAD_CHUNKS.slice(0, 1)) },
+  });
+  expect(grown.far).toBeGreaterThan(before);
+});
+
+it.each([
+  { scene: "without shadows", look: { ...SHADOWS_ONLY, shadows: false }, chunks: SPREAD_CHUNKS },
+  { scene: "with shadows and no chunks", look: SHADOWS_ONLY, chunks: [] },
+])("asks for no further frame once a frame is drawn $scene", ({ look, chunks }) => {
+  const shadowed = shadowedBackend(chunks, look);
+  viewedAlong(shadowed.backend, [RESTING_EYE_LDU]);
+
+  expect(shadowed.backend.needsFrame()).toBe(false);
 });
