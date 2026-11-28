@@ -7,6 +7,8 @@ import {
   roadShape,
   rotateArms,
   type ExistingRoadTile,
+  type LayeredPose,
+  type LayerLocks,
   type PlacementPose,
   type PlacementRef,
   type PlacementRequest,
@@ -33,7 +35,7 @@ export interface RoadNeighbourhood {
   near(area: WorldBox, roadModels: PlacedModel[], otherModels: PlacedModel[]): void;
 }
 
-export type RoadTileProblem = "no-piece" | "other-family" | "mismatch" | "overlap";
+export type RoadTileProblem = "no-piece" | "other-family" | "mismatch" | "overlap" | "locked";
 
 export interface RoadKitView {
   readonly id: string;
@@ -83,6 +85,7 @@ interface TilePlacement {
   readonly tile: PlannedRoadTile;
   readonly choice: number;
   readonly pose: PlacementPose;
+  readonly restoresLayer: number | null;
   readonly replaces: PlacedModel | null;
 }
 
@@ -237,7 +240,7 @@ export class RoadDrawing {
   private path: ReadonlyArray<RoadTile> = [];
   private dragging = false;
   private evaluated: Evaluated | null = null;
-  private readonly groundUnder = new Map<PlacementRef, PlacementPose>();
+  private readonly groundUnder = new Map<PlacementRef, LayeredPose>();
   private atIx = 0;
   private atIz = 0;
   private existing: Map<string, ExistingTileAt> | null = null;
@@ -256,6 +259,7 @@ export class RoadDrawing {
   constructor(
     private readonly placeablesByRef: () => ReadonlyArray<Placeable | null>,
     familyLabel: (placeable: Placeable) => string,
+    private readonly locks: LayerLocks,
   ) {
     const kits = roadKits(
       placeablesByRef().flatMap((placeable, ref) =>
@@ -385,7 +389,10 @@ export class RoadDrawing {
     return this.evaluate(neighbours);
   }
 
-  end(neighbours: RoadNeighbourhood): {
+  end(
+    neighbours: RoadNeighbourhood,
+    layer: number,
+  ): {
     readonly requests: ReadonlyArray<PlacementRequest>;
     readonly view: RoadStrokeView;
   } | null {
@@ -400,14 +407,22 @@ export class RoadDrawing {
     if (evaluated.issues.length > 0) return { requests: [], view: evaluated.view };
     for (const { tile, replaces } of evaluated.placements) {
       if (!replaces || tile.kind !== "lay" || tile.replaces) continue;
-      const { refId, colorId, x, z, yPlates, rot } = replaces.handle;
-      this.groundUnder.set(replaces.placement, { refId, colorId, x, z, yPlates, rot });
+      const { refId, colorId, x, z, yPlates, rot, layer: groundLayer } = replaces.handle;
+      this.groundUnder.set(replaces.placement, {
+        refId,
+        colorId,
+        x,
+        z,
+        yPlates,
+        rot,
+        layer: groundLayer,
+      });
     }
     const requests: PlacementRequest[] = [
       ...evaluated.removals.map((model) => ({ placement: model.placement, to: null })),
-      ...evaluated.placements.map(({ pose, replaces }) => ({
+      ...evaluated.placements.map(({ pose, restoresLayer, replaces }) => ({
         placement: replaces?.placement ?? null,
-        to: pose,
+        to: { ...pose, layer: restoresLayer ?? layer },
       })),
     ];
     return { requests, view: evaluated.view };
@@ -635,6 +650,7 @@ export class RoadDrawing {
       if (retry.length === 0) break;
       for (const p of retry) choiceOf.set(p.tile, p.choice + 1);
     }
+    issues = [...issues, ...this.lockedIssues(placements, removals)];
     const laying = placements.filter((p) => p.tile.kind === "lay");
     const replaced = laying.filter((p) => p.tile.kind === "lay" && p.tile.replaces).length;
     const overGround = laying.filter((p) => p.replaces !== null).length - replaced;
@@ -665,7 +681,25 @@ export class RoadDrawing {
 
   private refill(tile: PlannedRoadTile, lifted: PlacedModel): TilePlacement | null {
     const pose = this.groundUnder.get(lifted.placement);
-    return pose ? { tile, choice: 0, pose, replaces: lifted } : null;
+    return pose ? { tile, choice: 0, pose, restoresLayer: pose.layer, replaces: lifted } : null;
+  }
+
+  private lockedIssues(
+    placements: ReadonlyArray<TilePlacement>,
+    removals: ReadonlyArray<PlacedModel>,
+  ): RoadTileIssue[] {
+    const issues: RoadTileIssue[] = [];
+    const lockedAt = (model: PlacedModel, x: number, z: number): void => {
+      if (!this.locks.isLocked(model.handle.layer)) return;
+      issues.push({ x, z, problem: "locked", shape: null, blocker: model.placeable.label });
+    };
+    for (const { tile, replaces } of placements) {
+      if (!replaces) continue;
+      const [x, z] = this.centre(tile);
+      lockedAt(replaces, x, z);
+    }
+    for (const model of removals) lockedAt(model, model.handle.x, model.handle.z);
+    return issues;
   }
 
   private sameTile(issue: RoadTileIssue, tile: PlannedRoadTile): boolean {
@@ -686,6 +720,9 @@ export class RoadDrawing {
       const picked = tile.choices[choice];
       if (!picked) continue;
       const [x, z] = this.centre(tile);
+      const replaces = tile.replaces
+        ? (existing.get(`${tile.ix},${tile.iz}`)?.model ?? null)
+        : (ground.get(`${tile.ix},${tile.iz}`) ?? null);
       placements.push({
         tile,
         choice,
@@ -697,9 +734,8 @@ export class RoadDrawing {
           yPlates: 0,
           rot: picked.rot,
         },
-        replaces: tile.replaces
-          ? (existing.get(`${tile.ix},${tile.iz}`)?.model ?? null)
-          : (ground.get(`${tile.ix},${tile.iz}`) ?? null),
+        restoresLayer: this.erasing ? (replaces?.handle.layer ?? null) : null,
+        replaces,
       });
     }
     return placements;

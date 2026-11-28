@@ -39,10 +39,11 @@ export {
   type RoadTile,
   type RoadTileRefusal,
 } from "./road-tiles.ts";
-export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
+export { SLOT_LIVE, World, isLayerId, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
   EditHistory,
   NO_TRACK_CHANGE,
+  layOnLayer,
   type AppliedChange,
   type AppliedConsistChange,
   type AppliedEdit,
@@ -51,6 +52,8 @@ export {
   type EditSummary,
   type EventChange,
   type HistoryStep,
+  type LayeredPose,
+  type LayerLocks,
   type PlanChange,
   type PlacementFollower,
   type PlacementPose,
@@ -80,6 +83,13 @@ export {
   type PlacementMove,
 } from "./notes/note-state.ts";
 export { SavedNoteShards, type NoteShardChange } from "./notes/saved-note-shards.ts";
+export {
+  LayerTable,
+  type CreatedLayer,
+  type LayerAction,
+  type LayerChange,
+  type LayerPatch,
+} from "./layers/layer-table.ts";
 export {
   ConsistHandle,
   ConsistLayout,

@@ -4,7 +4,8 @@ import type { BundleColor } from "@brr/schema/bundle";
 import { inject, injectable } from "inversify";
 import { colorOf, type IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { IConnectorTables } from "../connect/connector-tables.ts";
-import { CONNECTOR_TABLES, PLACEABLE_CATALOG } from "../tokens.ts";
+import type { ILayerService } from "../layers/layer-service.ts";
+import { CONNECTOR_TABLES, LAYER_SERVICE, PLACEABLE_CATALOG } from "../tokens.ts";
 import {
   ROAD_KIT_PREFIX,
   RoadDrawing,
@@ -62,6 +63,8 @@ export class RoadEditSession implements IRoadEditSession {
     @inject(PLACEABLE_CATALOG)
     private readonly catalog: Pick<IPlaceableCatalog, "placeables" | "itemRefId" | "requestMeshes">,
     @inject(CONNECTOR_TABLES) private readonly connectorTables: Pick<IConnectorTables, "load">,
+    @inject(LAYER_SERVICE)
+    private readonly layers: Pick<ILayerService, "isLocked" | "activeLayer">,
   ) {}
 
   start(colors: ReadonlyArray<BundleColor>): void {
@@ -69,6 +72,7 @@ export class RoadEditSession implements IRoadEditSession {
       () => this.catalog.placeables(),
       (placeable) =>
         `${colorOf(colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
+      this.layers,
     );
     this.drawing = drawing;
     this.kits = drawing.kitViews();
@@ -132,7 +136,7 @@ export class RoadEditSession implements IRoadEditSession {
   endStroke(neighbours: RoadNeighbourhood): ReadonlyArray<PlacementRequest> | null {
     const drawing = this.drawing;
     if (!drawing) return null;
-    const stroke = drawing.end(neighbours);
+    const stroke = drawing.end(neighbours, this.layers.activeLayer());
     this.clearPreview();
     if (!stroke) return null;
     if (stroke.requests.length === 0) {

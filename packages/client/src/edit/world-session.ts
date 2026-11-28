@@ -1,6 +1,7 @@
 import {
   DirtyShards,
   SavedNoteShards,
+  LayerTable,
   worldPlacements,
   type AppliedEdit,
   type PlanRegion,
@@ -70,12 +71,14 @@ import type {
 import type { IBomService } from "../bom/bom-service.ts";
 import type { IEventDetails } from "../event/event-details.ts";
 import type { IPlanSheetService, IPlanSheetSource } from "../plan/plan-sheet-service.ts";
+import type { ILayerService } from "../layers/layer-service.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import {
   BOM_SERVICE,
   CREDITS,
   EDITOR_CAMERA,
   EVENT_DETAILS,
+  LAYER_SERVICE,
   PLAN_SHEET_SERVICE,
   TRADEMARK_DISCLAIMER,
 } from "../tokens.ts";
@@ -199,8 +202,7 @@ const NOTHING_STORED: StoredContents = {
   notes: [],
   document: DEFAULT_WORLD_DOCUMENT,
 };
-const UNKEPT_TAGS =
-  "is on a layer, in a group or owned by a contributor, which this editor can't keep yet";
+const UNKEPT_TAGS = "is in a group or owned by a contributor, which this editor can't keep yet";
 
 function storedContents(
   manifest: WorldManifestV2,
@@ -220,13 +222,19 @@ function documentTables({ event: _event, ...tables }: WorldDocument): WorldDocum
 }
 
 interface TaggedRecord {
-  readonly layer?: number;
   readonly owner?: number;
   readonly group?: number;
 }
 
 function tagged(record: TaggedRecord): boolean {
-  return record.layer !== undefined || record.owner !== undefined || record.group !== undefined;
+  return record.owner !== undefined || record.group !== undefined;
+}
+
+function layerTable(document: WorldDocument): LayerTable {
+  const table = LayerTable.of(document.layers, "layers");
+  if (!table.ok)
+    throw new Error(`a decoded world's layers are refused: ${issueText(table.issues)}`);
+  return table.value;
 }
 
 function unkeptTagIssues(shards: ReadonlyArray<WorldShardV2>): Issue[] {
@@ -330,6 +338,7 @@ export class WorldSession implements IWorldSession {
     @inject(PLAN_SHEET_SERVICE) private readonly sheets: IPlanSheetService,
     @inject(BOM_SERVICE) private readonly boms: IBomService,
     @inject(EVENT_DETAILS) private readonly events: Pick<IEventDetails, "event" | "restore">,
+    @inject(LAYER_SERVICE) private readonly layers: Pick<ILayerService, "table" | "reset">,
   ) {}
 
   view(): WorldSessionView {
@@ -368,6 +377,7 @@ export class WorldSession implements IWorldSession {
       ...(consists.length > 0 ? { consists: [...consists] } : {}),
       ...worldDocument(current.document),
       ...(event === null ? {} : { event }),
+      layers: [...this.layers.table().layers],
     };
   }
 
@@ -401,6 +411,7 @@ export class WorldSession implements IWorldSession {
   }
 
   documentEdited(): void {
+    if (this.state.readOnly) return;
     this.documentDirty = true;
     this.scheduleSave();
   }
@@ -678,6 +689,7 @@ export class WorldSession implements IWorldSession {
     if (issues.length > 0) {
       throw new Error(`world "${name}" can't be opened: ${issueText(issues)}`);
     }
+    this.layers.reset(layerTable(stored.document));
   }
 
   private async loadShards(

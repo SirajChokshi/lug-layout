@@ -238,6 +238,7 @@ function layFrom(at: Room, start: Pose16, partIds: ReadonlyArray<string>): Track
       pose,
       yPlates: 0,
       rise: 0,
+      layer: 0,
     })),
   };
 }
@@ -526,6 +527,7 @@ function layAt(at: Room, pieces: ReadonlyArray<readonly [string, Pose16]>): Trac
       pose,
       yPlates: 0,
       rise: 0,
+      layer: 0,
     })),
   };
 }

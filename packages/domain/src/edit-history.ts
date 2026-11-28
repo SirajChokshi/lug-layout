@@ -1,10 +1,11 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 import type { NoteChange } from "./notes/note-state.ts";
 import type { EventRecordV2 } from "@brr/schema/world";
+import type { LayerAction, LayerChange } from "./layers/layer-table.ts";
 import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
 import { INT8_MAX, INT8_MIN } from "./track/track-layout.ts";
-import type { PlacementHandle, World } from "./world.ts";
+import { isLayerId, type PlacementHandle, type World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
 
@@ -20,7 +21,8 @@ export type EditKind =
   | "plan"
   | "note"
   | "open-plan"
-  | "event";
+  | "event"
+  | "layer";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
@@ -29,7 +31,14 @@ export interface TrackPieceAt {
   readonly pose: Pose16;
   readonly yPlates: number;
   readonly rise: number;
+  readonly layer: number;
 }
+
+export interface LayerLocks {
+  isLocked(layer: number): boolean;
+}
+
+const NOTHING_LOCKED: LayerLocks = { isLocked: () => false };
 
 export interface TrackChange {
   readonly lift: ReadonlyArray<TrackPieceAt>;
@@ -53,7 +62,8 @@ export type EditSummary =
   | { readonly kind: "throw-switch"; readonly switchAt: number }
   | { readonly kind: "road" | "fill"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number }
-  | { readonly kind: "open-plan"; readonly placements: number; readonly pieces: number };
+  | { readonly kind: "open-plan"; readonly placements: number; readonly pieces: number }
+  | { readonly kind: "layer"; readonly action: LayerAction; readonly name: string };
 
 export interface PlacementPose {
   readonly refId: number;
@@ -62,6 +72,10 @@ export interface PlacementPose {
   readonly z: number;
   readonly yPlates: number;
   readonly rot: number;
+}
+
+export interface LayeredPose extends PlacementPose {
+  readonly layer: number;
 }
 
 export interface PlacementRef {
@@ -81,13 +95,13 @@ const NOTHING_FOLLOWS: PlacementFollower = { follow: () => null };
 
 export interface PlacementRequest {
   readonly placement: PlacementRef | null;
-  readonly to: PlacementPose | null;
+  readonly to: LayeredPose | null;
 }
 
 export interface AppliedChange {
   readonly placement: PlacementRef;
-  readonly from: PlacementPose | null;
-  readonly to: PlacementPose | null;
+  readonly from: LayeredPose | null;
+  readonly to: LayeredPose | null;
   readonly removed: PlacementHandle | null;
   readonly added: PlacementHandle | null;
 }
@@ -113,6 +127,7 @@ export interface AppliedEdit {
   readonly plan: PlanChange | null;
   readonly notes: NoteChange | null;
   readonly event: EventChange | null;
+  readonly layers: LayerChange | null;
 }
 
 class Ref implements PlacementRef {
@@ -129,8 +144,8 @@ class TrainRef implements ConsistRef {
 
 interface Change {
   readonly ref: Ref;
-  readonly before: PlacementPose | null;
-  readonly after: PlacementPose | null;
+  readonly before: LayeredPose | null;
+  readonly after: LayeredPose | null;
 }
 
 interface ConsistChange {
@@ -147,9 +162,10 @@ interface Edit {
   readonly plan: PlanChange | null;
   readonly notes: NoteChange | null;
   readonly event: EventChange | null;
+  readonly layers: LayerChange | null;
 }
 
-function poseOf(handle: PlacementHandle): PlacementPose {
+function poseOf(handle: PlacementHandle): LayeredPose {
   return {
     refId: handle.refId,
     colorId: handle.colorId,
@@ -157,27 +173,34 @@ function poseOf(handle: PlacementHandle): PlacementPose {
     z: handle.z,
     yPlates: handle.yPlates,
     rot: handle.rot,
+    layer: handle.layer,
   };
 }
 
-function checkPose(pose: PlacementPose): void {
+function checkLayer(layer: number): void {
+  if (!isLayerId(layer)) throw new RangeError(`layer ${layer} is not a layer id`);
+}
+
+function checkPose(pose: LayeredPose): void {
   if (!isLatticePose(pose.x, pose.z, pose.yPlates)) {
     throw new RangeError(
       `placement (${pose.x}, ${pose.yPlates}, ${pose.z}) is not an integer pose within int32 x/z and int16 yPlates`,
     );
   }
   if (!isRot90(pose.rot)) throw new Error(`rotation ${pose.rot} is not a quarter turn 0-3`);
+  checkLayer(pose.layer);
 }
 
 function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof TrackChange): void {
   let previous = -1;
-  for (const { index, piece, yPlates, rise } of pieces) {
+  for (const { index, piece, yPlates, rise, layer } of pieces) {
     if (!Number.isInteger(index) || index <= previous) {
       throw new RangeError(`track ${role} indices must be ascending non-negative integers`);
     }
     if (!Number.isInteger(piece) || piece < 0) {
       throw new RangeError(`track piece ${piece} is not a catalog index`);
     }
+    checkLayer(layer);
     if (!isLatticePose(0, 0, yPlates)) {
       throw new RangeError(`track height ${yPlates} plates is not an int16`);
     }
@@ -210,11 +233,36 @@ function summary(edit: Edit): EditSummary {
       return { kind: edit.kind, pieces: edit.track.lay.length };
     case "open-plan":
       return { kind: edit.kind, placements: edit.changes.length, pieces: edit.track.lay.length };
+    case "layer": {
+      const change = edit.layers;
+      if (!change) throw new Error("a layer edit carries no layer change");
+      const name = change.after.layer(change.layer)?.name ?? "";
+      return { kind: edit.kind, action: change.action, name };
+    }
     default: {
       const unhandled: never = edit.kind;
       throw new Error(`unhandled edit ${String(unhandled)}`);
     }
   }
+}
+
+function lockedLayerOf(
+  locks: LayerLocks,
+  changes: ReadonlyArray<Change>,
+  track: TrackChange,
+): number | null {
+  for (const { before, after } of changes) {
+    if (before && locks.isLocked(before.layer)) return before.layer;
+    if (after && locks.isLocked(after.layer)) return after.layer;
+  }
+  for (const piece of track.lift) if (locks.isLocked(piece.layer)) return piece.layer;
+  for (const piece of track.lay) if (locks.isLocked(piece.layer)) return piece.layer;
+  return null;
+}
+
+export function layOnLayer(change: TrackChange, layer: number): TrackChange {
+  if (change.lift.length > 0) throw new Error("only newly laid track is put on a layer");
+  return { lift: [], lay: change.lay.map((piece) => ({ ...piece, layer })) };
 }
 
 export class EditHistory {
@@ -225,6 +273,7 @@ export class EditHistory {
     private readonly world: World,
     private readonly trains: ConsistLayout = new ConsistLayout(),
     private readonly follower: PlacementFollower = NOTHING_FOLLOWS,
+    private readonly locks: LayerLocks = NOTHING_LOCKED,
   ) {}
 
   get undoDepth(): number {
@@ -259,7 +308,7 @@ export class EditHistory {
     return ref;
   }
 
-  place(pose: PlacementPose): AppliedEdit {
+  place(pose: LayeredPose): AppliedEdit {
     return this.commit("place", [{ placement: null, to: pose }]);
   }
 
@@ -272,6 +321,7 @@ export class EditHistory {
       plan: null,
       notes: null,
       event: null,
+      layers: null,
     });
   }
 
@@ -286,6 +336,7 @@ export class EditHistory {
       plan: null,
       notes: null,
       event: null,
+      layers: null,
     });
   }
 
@@ -300,6 +351,20 @@ export class EditHistory {
       plan: null,
       notes: null,
       event: null,
+      layers: null,
+    });
+  }
+
+  layerEdit(change: LayerChange): AppliedEdit {
+    return this.record({
+      kind: "layer",
+      changes: [],
+      consists: [],
+      track: NO_TRACK_CHANGE,
+      plan: null,
+      notes: null,
+      event: null,
+      layers: change,
     });
   }
 
@@ -336,6 +401,8 @@ export class EditHistory {
       seen.add(ref);
       changes.push({ ref, before: poseOf(this.liveHandle(ref)), after: request.to });
     }
+    const locked = lockedLayerOf(this.locks, changes, track);
+    if (locked !== null) throw new Error(`layer ${locked} is locked, so an edit can't touch it`);
     return this.record({
       kind,
       changes,
@@ -344,6 +411,7 @@ export class EditHistory {
       plan,
       notes: this.follower.follow(changes),
       event: null,
+      layers: null,
     });
   }
 
@@ -356,6 +424,7 @@ export class EditHistory {
       plan: null,
       notes,
       event: null,
+      layers: null,
     });
   }
 
@@ -368,6 +437,7 @@ export class EditHistory {
       plan: null,
       notes: null,
       event: change,
+      layers: null,
     });
   }
 
@@ -432,7 +502,7 @@ export class EditHistory {
       const from = backwards ? change.after : change.before;
       const to = backwards ? change.before : change.after;
       const added = to
-        ? this.world.add(to.refId, to.colorId, to.x, to.z, to.yPlates, to.rot)
+        ? this.world.add(to.refId, to.colorId, to.x, to.z, to.yPlates, to.rot, to.layer)
         : null;
       if (added) change.ref.handle = added;
       changes.push({ placement: change.ref, from, to, removed: removed[index] ?? null, added });
@@ -444,6 +514,10 @@ export class EditHistory {
       backwards && edit.notes ? { before: edit.notes.after, after: edit.notes.before } : edit.notes;
     const event =
       backwards && edit.event ? { before: edit.event.after, after: edit.event.before } : edit.event;
+    const layers =
+      backwards && edit.layers
+        ? { ...edit.layers, before: edit.layers.after, after: edit.layers.before }
+        : edit.layers;
     return {
       kind: edit.kind,
       step,
@@ -453,6 +527,7 @@ export class EditHistory {
       plan,
       notes,
       event,
+      layers,
     };
   }
 

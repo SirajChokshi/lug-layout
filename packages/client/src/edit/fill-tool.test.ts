@@ -172,7 +172,7 @@ describe("dragging a fill", () => {
 
     expect(fill.overLimit).toBe(true);
     expect(fill.wanted).toBeGreaterThan(MAX_FILL_TILES);
-    expect(fill.requests(0, 0, 0)).toEqual([]);
+    expect(fill.requests(0, 0, 0, 0)).toEqual([]);
     expect(guides.map((guide) => guide.kind)).toEqual(Array(4).fill("refused"));
   });
 });
@@ -238,8 +238,8 @@ describe("a settled fill", () => {
       { kind: "refused", ax: 1280, ay: GUIDE_Y, az: 0, bx: 640, by: GUIDE_Y, bz: 640 },
     ]);
     expect(fill.view()).toEqual({ wanted: 3, refused: 1, alreadyThere: 1, overLimit: false });
-    expect(fill.requests(7, 15, 1).map((request) => request.to)).toEqual([
-      { refId: 7, colorId: 15, x: 320, z: 320, yPlates: 3, rot: 1 },
+    expect(fill.requests(7, 15, 1, 4).map((request) => request.to)).toEqual([
+      { refId: 7, colorId: 15, x: 320, z: 320, yPlates: 3, rot: 1, layer: 4 },
     ]);
   });
 });
