@@ -21,6 +21,7 @@ import { TrackGraph } from "./track-graph.ts";
 import { TrackLayout, type TrackEndRef, type TrackPieceSpec } from "./track-layout.ts";
 import {
   connectorPose,
+  continuingExit,
   freePlacement,
   layMoves,
   seatsOnStuds,
@@ -37,7 +38,11 @@ interface CatalogPiece {
     readonly coefficients: ReadonlyArray<string>;
     readonly heading: number;
   }>;
-  readonly routes: ReadonlyArray<{ readonly from: number; readonly to: number }>;
+  readonly routes: ReadonlyArray<{
+    readonly from: number;
+    readonly to: number;
+    readonly segments: ReadonlyArray<{ readonly kind: string }>;
+  }>;
 }
 
 const CATALOG = new URL("../../../../docs/verified-facts/track-catalog.json", import.meta.url);
@@ -156,6 +161,51 @@ describe("stud seating", () => {
       });
     }
     expect(wrong).toEqual([]);
+  });
+});
+
+describe("continuing exits", () => {
+  const CONTINUED_FROM_EACH_END: Readonly<Record<string, ReadonlyArray<number>>> = {
+    straight: [1, 0],
+    curve: [1, 0],
+    switch: [1, 0, 0],
+    crossing: [1, 0, 3, 2],
+  };
+
+  it("carries on through each certified 9V piece: a switch from its points along its straight route, and into its points from either route", () => {
+    const continued = defs.map((def, i) => [
+      pieces[i]?.id,
+      def.connectors.map((_end, entry) => continuingExit(def, entry)),
+    ]);
+    const switchRoutes = pieces
+      .filter((piece) => piece.kind === "switch")
+      .map((piece) =>
+        piece.routes
+          .find((route) => route.from === 0 && route.to === 1)
+          ?.segments.map((segment) => segment.kind),
+      );
+
+    expect(continued).toEqual(pieces.map((p) => [p.id, CONTINUED_FROM_EACH_END[p.kind]]));
+    expect(switchRoutes.length).toBeGreaterThan(0);
+    for (const kinds of switchRoutes) expect(kinds).toEqual(["straight"]);
+  });
+
+  it("continues a custom wye by its lowest-numbered exit and a custom buffer stop by none", () => {
+    const wye: TrackPieceDef = {
+      id: "custom:wye",
+      connectors: [
+        pose16(lattice(0n, 0n), HALF_TURN_16),
+        pose16(lattice(32n, 8n), 1),
+        pose16(lattice(32n, -8n), ZETA16_ORDER - 1),
+      ],
+    };
+    const bufferStop: TrackPieceDef = {
+      id: "custom:buffer-stop",
+      connectors: [pose16(lattice(0n, 0n), HALF_TURN_16)],
+    };
+
+    expect(wye.connectors.map((_end, entry) => continuingExit(wye, entry))).toEqual([1, 0, 0]);
+    expect(continuingExit(bufferStop, 0)).toBeNull();
   });
 });
 

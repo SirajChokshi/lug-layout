@@ -446,8 +446,9 @@ function TrackSection({
         ))}
       </ul>
       <p className="palette-hint">
-        Or pick one piece and click to lay it: near an open end it attaches exactly. Click a laid
-        switch to throw it.
+        While you draw from an end, clicking a piece lays it there exactly and Enter lays another.
+        Otherwise pick one piece and click to lay it: near an open end it attaches exactly. Click a
+        laid switch to throw it.
       </p>
       <ul className="palette-keys" aria-label="Keys while holding a piece">
         <li>

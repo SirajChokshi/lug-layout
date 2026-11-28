@@ -3041,6 +3041,7 @@ it("undoes and redoes model and track edits in the order they happened, each tra
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
   record();
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
   backend.aim(16 * STUD, 0);
   editor.pointerMove(0, 0);
@@ -3177,6 +3178,7 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
       dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
     },
     () => {
+      editor.dropTrackEnd();
       editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
       backend.aim(16 * STUD, 0);
       editor.pointerMove(0, 0);
@@ -8641,6 +8643,7 @@ async function supportChecked(editor: IEditor): Promise<void> {
 }
 
 function holdAndClick(editor: IEditor, backend: AimedBackend, piece: string, at: PlanPoint) {
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${piece}`);
   backend.aim(at[0], at[1]);
   editor.pointerMove(0, 0);
@@ -8909,6 +8912,86 @@ describe("track path select", () => {
     expect(whileDrawing).toEqual({ took: false, tally: null, items: [], primary: undefined });
   }, 120_000);
 });
+
+function eastmostEndFacing(editor: IEditor, heading: number) {
+  const ends = editor.dump().trackEnds.filter((open) => open.heading === heading);
+  const east = ends.toSorted((a, b) => b.xLdu - a.xLdu || b.zLdu - a.zLdu)[0];
+  if (!east) throw new Error(`no open end faces heading ${heading}`);
+  return east;
+}
+
+it("lays a switch clicked in the library on the end drawn from a user's own track model where the held switch drops there, previews it on the exit that carries straight on, repeats it on Enter, and turns it on Q to attach by its next end", async () => {
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    USER_TRACK,
+  ]);
+  const container = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, container);
+  await placer(editor, backend)(container, 0, 0);
+  const from = eastmostEndFacing(editor, 0);
+  trackDrawer(editor, backend)([from.xLdu, from.zLdu], outwardFrom(from, REACH_LDU));
+  const drawn = editor.dump().laidTrack.length;
+  const end = eastmostEndFacing(editor, 0);
+  const item = `${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`;
+  const label = editor.snapshot().catalog.find((entry) => entry.id === item)?.label;
+  const joinsDrawn = editor.snapshot().track?.joins ?? 0;
+  const previewed = () => {
+    const extend = editor.snapshot().track?.extend;
+    return { continuing: extend?.continuing, choice: extend?.choices[extend.index] };
+  };
+
+  editor.pointerLeave();
+  editor.chooseItem(item);
+  const clicked = {
+    mode: editor.snapshot().mode,
+    activeItem: editor.snapshot().activeItem,
+    undo: editor.snapshot().history.undoLabel,
+    joins: (editor.snapshot().track?.joins ?? 0) - joinsDrawn,
+    ...previewed(),
+  };
+  const hud = toolHints(editor.snapshot());
+  const straightExit = eastmostEndFacing(editor, end.heading);
+  editor.extendTrack(null, 0);
+  const repeated = {
+    joins: (editor.snapshot().track?.joins ?? 0) - joinsDrawn,
+    exitJoined: !editor
+      .dump()
+      .trackEnds.some((open) => open.xLdu === straightExit.xLdu && open.zLdu === straightExit.zLdu),
+  };
+  editor.cycleConnector();
+  const turned = previewed().choice;
+  editor.extendTrack(null, 0);
+  const [first, second, third] = editor.dump().laidTrack.slice(drawn);
+  for (let step = 0; step < 3; step++) editor.undo(0);
+  holdAndClick(editor, backend, RIGHT_SWITCH, [end.xLdu, end.zLdu]);
+  const dropped = editor.dump().laidTrack.slice(drawn);
+
+  expect(clicked).toEqual({
+    mode: "track",
+    activeItem: TRACK_ITEM_ID,
+    undo: "lay 1 piece",
+    joins: 1,
+    continuing: true,
+    choice: {
+      kind: "piece",
+      piece: { label, end: 0, ends: 3 },
+      straights: 1,
+      curves: 0,
+      joinsEnd: false,
+      blocked: null,
+    },
+  });
+  expect(hud.title).toBe(`Next piece: ${label}`);
+  expect(hud.hints).toContainEqual(expect.objectContaining({ command: "next-connector" }));
+  expect(straightExit.xLdu).toBeGreaterThan(end.xLdu);
+  expect(repeated).toEqual({ joins: 2, exitJoined: true });
+  expect(turned).toMatchObject({ kind: "piece", piece: { end: 1, ends: 3 }, blocked: null });
+  expect(dropped).toEqual([first]);
+  expect(second).toMatchObject({ ref: first?.ref, heading: first?.heading });
+  expect(third).toMatchObject({
+    ref: first?.ref,
+    heading: ((first?.heading ?? 0) + ZETA16_ORDER / 2) % ZETA16_ORDER,
+  });
+}, 120_000);
 
 function overlapIssues(issues: ReadonlyArray<string>): number {
   return issues.filter((issue) => issue.startsWith("overlap: ")).length;
@@ -9338,6 +9421,7 @@ async function reopenedFresh(editor: IEditor) {
 }
 
 function laySwitchAt(editor: IEditor, backend: AimedBackend, x: number, z: number): void {
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
   backend.aim(x, z);
   editor.pointerMove(0, 0);
@@ -9483,6 +9567,7 @@ it("publishes nothing for a pointer move that stays on the same stud, and the ne
   const { editor, backend } = await startEditor([]);
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`);
   backend.aim(0, 40 * STUD);
   editor.pointerMove(0, 0);
@@ -10158,6 +10243,7 @@ async function drawnWithHeightSet(late: boolean) {
   const rampedMidDrag = await dragFromEnd([-48 * STUD, 0], [-96 * STUD, 0], () =>
     editor.setTrackRampPlates(1),
   );
+  editor.dropTrackEnd();
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
   const held = hoverAt([0, 48 * STUD], () => editor.raiseTrack(1));
   editor.click(0, 0, 0);

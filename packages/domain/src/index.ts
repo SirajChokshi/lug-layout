@@ -256,6 +256,8 @@ export {
 export {
   advance,
   connectorPose,
+  continuingExit,
+  continuingMove,
   freePlacement,
   layMoves,
   seatsOnStuds,
