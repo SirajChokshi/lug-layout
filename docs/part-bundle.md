@@ -370,6 +370,8 @@ It reads the package indexes and records with `ConnectorRecords`, the loader the
 
 **Held-out.** The held-out workflow runs `library-connectors --check`, and its harness reads `dist/library-connectors` from disk.
 
+**E2E.** CI's `library-connectors` job caches the records it checked against the pin, and each e2e shard restores them into `dist/library-connectors` before building the app, so library parts outside the bundle carry their connectors there as they do in a deployed app.
+
 ## Publishing the library connector records
 
 `pnpm --filter @brr/asset-pipeline library-connectors` precomputes connector records for every pinned library part, and `library-connectors.json` pins their top index's SHA-256. They publish to `brr-part-bundles` under `library-connectors/`:

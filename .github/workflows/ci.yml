@@ -115,7 +115,7 @@ jobs:
       - run: pnpm turbo run test --concurrency=1
 
   e2e:
-    needs: bundle
+    needs: [bundle, library-connectors]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -155,6 +155,11 @@ jobs:
         name: Build the whole library bake, since no subset is cached for this pin, fixture set and shard
         run: pnpm --filter @brr/asset-pipeline library-bake --check
       - run: pnpm --filter @brr/asset-pipeline shadow-library --check
+      - uses: actions/cache/restore@v4
+        with:
+          path: tools/asset-pipeline/dist/library-connectors
+          key: ${{ needs.library-connectors.outputs.records-key }}
+          fail-on-cache-miss: true
       - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
           LIBRARY_BAKE_REQUEST_LOG: ${{ runner.temp }}/library-bake-requests.txt
@@ -182,6 +187,8 @@ jobs:
   library-connectors:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      records-key: ${{ steps.records-key.outputs.key }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -199,6 +206,12 @@ jobs:
           restore-keys: library-connector-inputs-
       - run: pnpm --filter @brr/asset-pipeline ldraw-library shadow-patches --check
       - run: pnpm --filter @brr/asset-pipeline library-connectors --check
+      - id: records-key
+        run: echo "key=library-connector-records-${{ hashFiles('tools/asset-pipeline/library-connectors.json') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v4
+        with:
+          path: tools/asset-pipeline/dist/library-connectors
+          key: ${{ steps.records-key.outputs.key }}
       - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
