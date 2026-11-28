@@ -86,6 +86,7 @@ test("a club's table types from the library are placed on the canvas a quarter t
   await editor.goTo({ x: 3600, z: 2400 });
   await editor.zoom(900);
 
+  await editor.chooseMode("plan");
   await page.locator(".plan-panel > summary").click();
   await addTableType(page, CLUB_6FT);
   await addTableType(page, FOLDING_4FT);
@@ -146,6 +147,7 @@ test("a club's table types from the library are placed on the canvas a quarter t
   await expect(page.locator(".welcome")).toHaveCount(0);
   await expect.poll(() => tablesOf(editor)).toEqual(placed.tables);
   await expect.poll(() => libraryOf(page)).toEqual(placed.library);
+  await editor.chooseMode("plan");
   await page.locator('section[aria-label="Table library"]').scrollIntoViewIfNeeded();
   await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("library-tables-reloaded.png") });

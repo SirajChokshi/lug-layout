@@ -41,7 +41,7 @@ async function open(browser: Browser, query: string): Promise<Page> {
     if (message.type() === "error") process.stderr.write(`[page] ${message.text()}\n`);
   });
   await page.goto(new URL(`?${query}&api=${values.api}`, values.base).href);
-  await page.waitForSelector(".bom", { timeout: LOAD_TIMEOUT_MS });
+  await page.waitForSelector(".bom", { timeout: LOAD_TIMEOUT_MS, state: "attached" });
   return page;
 }
 
@@ -147,6 +147,7 @@ try {
   if (values.stage === "all" || values.stage === "editor") {
     const page = await open(browser, "state=1");
     const selected = await placeInEditor(page);
+    await page.locator('[data-action="plan-mode"]').click();
     panels["editor/world"] = await buildAndDownload(page, join(out, "editor"));
     await page.locator('input[name="bom-scope"][value="selection"]').check();
     panels[`editor/selection-${selected}`] = await buildAndDownload(page, join(out, "editor"));

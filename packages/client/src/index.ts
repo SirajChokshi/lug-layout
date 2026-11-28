@@ -365,6 +365,7 @@ export {
   PLAY_THROTTLE_STEP_LDU_PER_S,
   runEditorAction,
   runPlayAction,
+  shellModeCommand,
   startPlay,
   type CommandGroup,
   type CommandId,
@@ -374,6 +375,14 @@ export {
   type PointerGesture,
   type ShellCommandId,
 } from "./commands/editor-commands.ts";
+export {
+  SHELL_MODES,
+  enterShellMode,
+  shellModeForTool,
+  shellModeOffered,
+  shownShellMode,
+  type ShellMode,
+} from "./commands/shell-mode.ts";
 export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
 export { trackBlockText } from "./edit/track-drag.ts";

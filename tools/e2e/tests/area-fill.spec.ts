@@ -112,6 +112,7 @@ test("fills a dragged area and the plan's table with a user's own model, at its 
 
   const preview = await dragFill(editor, testInfo, "custom", { x: 0, z: 0 }, { x: 1260, z: 600 });
   const dragged = heldPoses(await editor.poses(), shed.item);
+  await editor.chooseMode("plan");
   await page.locator(".plan-panel > summary").click();
   await page.locator('[data-action="new-plan"]').click();
   await page.locator('[data-action="add-table"]').click();

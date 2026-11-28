@@ -243,118 +243,124 @@ export function PlacementToolbar({
   editor,
   snapshot,
   play,
+  editing,
   onEditorAction,
   onShellCommand,
 }: PanelProps & {
   readonly play: PlaySnapshot;
+  readonly editing: boolean;
   readonly onEditorAction: (id: EditorActionId, eventTimeMs: number) => void;
   readonly onShellCommand: (id: ShellCommandId) => void;
 }) {
   const { history } = snapshot;
   return (
     <div className="toolbar" role="toolbar" aria-label="Placement tools">
-      <ToolButton
-        icon="select"
-        label="Select"
-        command="select-tool"
-        labelled
-        aria-pressed={snapshot.mode === "select"}
-        onClick={() => editor.chooseItem(null)}
-      />
-      <ToolButton
-        icon="track"
-        label="Draw track"
-        command="draw-track"
-        labelled
-        data-action="draw-track"
-        aria-pressed={commandActive("draw-track", snapshot)}
-        disabled={!commandEnabled("draw-track", snapshot, play)}
-        onClick={(event) => onEditorAction("draw-track", event.timeStamp)}
-      />
-      <ToolButton
-        icon="road"
-        label="Draw road"
-        command="draw-road"
-        labelled
-        data-action="draw-road-tool"
-        aria-pressed={commandActive("draw-road", snapshot)}
-        disabled={!commandEnabled("draw-road", snapshot, play)}
-        onClick={(event) => onEditorAction("draw-road", event.timeStamp)}
-      />
-      <ToolButton
-        icon="measure"
-        label="Measure"
-        command="measure"
-        labelled
-        data-action="measure"
-        aria-pressed={commandActive("measure", snapshot)}
-        disabled={!commandEnabled("measure", snapshot, play)}
-        onClick={(event) => onEditorAction("measure", event.timeStamp)}
-      />
-      {NOTE_TOOL_BUTTONS.map(({ id, label, icon }) => (
-        <ToolButton
-          key={id}
-          icon={icon}
-          label={label}
-          command={id}
-          data-action={id}
-          aria-pressed={commandActive(id, snapshot)}
-          disabled={!commandEnabled(id, snapshot, play)}
-          onClick={(event) => onEditorAction(id, event.timeStamp)}
-        />
-      ))}
-      {snapshot.rulers > 0 && (
-        <button
-          type="button"
-          className="tool-button"
-          data-action="clear-rulers"
-          onClick={() => editor.clearRulers()}
-        >
-          <Icon name="ruler" />
-          <span className="tool-label">
-            Clear {snapshot.rulers} {snapshot.rulers === 1 ? "ruler" : "rulers"}
-          </span>
-        </button>
+      {editing && (
+        <>
+          <ToolButton
+            icon="select"
+            label="Select"
+            command="select-tool"
+            labelled
+            aria-pressed={snapshot.mode === "select"}
+            onClick={() => editor.chooseItem(null)}
+          />
+          <ToolButton
+            icon="track"
+            label="Draw track"
+            command="draw-track"
+            labelled
+            data-action="draw-track"
+            aria-pressed={commandActive("draw-track", snapshot)}
+            disabled={!commandEnabled("draw-track", snapshot, play)}
+            onClick={(event) => onEditorAction("draw-track", event.timeStamp)}
+          />
+          <ToolButton
+            icon="road"
+            label="Draw road"
+            command="draw-road"
+            labelled
+            data-action="draw-road-tool"
+            aria-pressed={commandActive("draw-road", snapshot)}
+            disabled={!commandEnabled("draw-road", snapshot, play)}
+            onClick={(event) => onEditorAction("draw-road", event.timeStamp)}
+          />
+          <ToolButton
+            icon="measure"
+            label="Measure"
+            command="measure"
+            labelled
+            data-action="measure"
+            aria-pressed={commandActive("measure", snapshot)}
+            disabled={!commandEnabled("measure", snapshot, play)}
+            onClick={(event) => onEditorAction("measure", event.timeStamp)}
+          />
+          {NOTE_TOOL_BUTTONS.map(({ id, label, icon }) => (
+            <ToolButton
+              key={id}
+              icon={icon}
+              label={label}
+              command={id}
+              data-action={id}
+              aria-pressed={commandActive(id, snapshot)}
+              disabled={!commandEnabled(id, snapshot, play)}
+              onClick={(event) => onEditorAction(id, event.timeStamp)}
+            />
+          ))}
+          {snapshot.rulers > 0 && (
+            <button
+              type="button"
+              className="tool-button"
+              data-action="clear-rulers"
+              onClick={() => editor.clearRulers()}
+            >
+              <Icon name="ruler" />
+              <span className="tool-label">
+                Clear {snapshot.rulers} {snapshot.rulers === 1 ? "ruler" : "rulers"}
+              </span>
+            </button>
+          )}
+          <span className="toolbar-divider" />
+          <ToolButton
+            icon="rotate"
+            label="Rotate"
+            command="rotate"
+            hint={`Shift-click or ${shortcutText("rotate-back")} turns the other way`}
+            disabled={!commandEnabled("rotate", snapshot, play)}
+            onClick={(event) => editor.rotate(event.timeStamp, event.shiftKey ? -1 : 1)}
+          />
+          <PlacementModeSwitch
+            snapshot={snapshot}
+            enabled={placementModeSwitchEnabled(snapshot, play)}
+            onEditorAction={onEditorAction}
+          />
+          <span className="toolbar-divider" />
+          <ToolButton
+            icon="delete"
+            label="Delete"
+            command="delete"
+            disabled={!commandEnabled("delete", snapshot, play)}
+            onClick={(event) => editor.deleteSelection(event.timeStamp)}
+          />
+          <ToolButton
+            icon="undo"
+            label={history.undoLabel === null ? "Undo" : `Undo ${history.undoLabel}`}
+            command="undo"
+            data-action="undo"
+            disabled={!commandEnabled("undo", snapshot, play)}
+            onClick={(event) => editor.undo(event.timeStamp)}
+          />
+          <ToolButton
+            icon="redo"
+            label={history.redoLabel === null ? "Redo" : `Redo ${history.redoLabel}`}
+            command="redo"
+            data-action="redo"
+            disabled={!commandEnabled("redo", snapshot, play)}
+            onClick={(event) => editor.redo(event.timeStamp)}
+          />
+          <span className="toolbar-divider" />
+        </>
       )}
-      <span className="toolbar-divider" />
-      <ToolButton
-        icon="rotate"
-        label="Rotate"
-        command="rotate"
-        hint={`Shift-click or ${shortcutText("rotate-back")} turns the other way`}
-        disabled={!commandEnabled("rotate", snapshot, play)}
-        onClick={(event) => editor.rotate(event.timeStamp, event.shiftKey ? -1 : 1)}
-      />
-      <PlacementModeSwitch
-        snapshot={snapshot}
-        enabled={placementModeSwitchEnabled(snapshot, play)}
-        onEditorAction={onEditorAction}
-      />
-      <span className="toolbar-divider" />
-      <ToolButton
-        icon="delete"
-        label="Delete"
-        command="delete"
-        disabled={!commandEnabled("delete", snapshot, play)}
-        onClick={(event) => editor.deleteSelection(event.timeStamp)}
-      />
-      <ToolButton
-        icon="undo"
-        label={history.undoLabel === null ? "Undo" : `Undo ${history.undoLabel}`}
-        command="undo"
-        data-action="undo"
-        disabled={!commandEnabled("undo", snapshot, play)}
-        onClick={(event) => editor.undo(event.timeStamp)}
-      />
-      <ToolButton
-        icon="redo"
-        label={history.redoLabel === null ? "Redo" : `Redo ${history.redoLabel}`}
-        command="redo"
-        data-action="redo"
-        disabled={!commandEnabled("redo", snapshot, play)}
-        onClick={(event) => editor.redo(event.timeStamp)}
-      />
-      <span className="toolbar-divider" />
       <ToolButton
         icon="find"
         label="Find"

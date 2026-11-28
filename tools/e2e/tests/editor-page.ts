@@ -1,4 +1,4 @@
-import type { HoverMateCount, PlacementHover, PlacementMode } from "@brr/client";
+import type { HoverMateCount, PlacementHover, PlacementMode, ShellMode } from "@brr/client";
 import type { FetchFunction } from "@brr/import";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { access, readFile } from "node:fs/promises";
@@ -275,6 +275,11 @@ export async function startEmpty(page: Page): Promise<void> {
   await expect(welcome).toHaveCount(0);
 }
 
+export async function chooseShellMode(page: Page, mode: ShellMode): Promise<void> {
+  await page.locator(`.mode-switch [data-action="${mode}-mode"]`).click();
+  await expect(page.locator(".editor")).toHaveAttribute("data-shell-mode", mode);
+}
+
 const Z_COEFFICIENT = 4;
 
 export function shiftedPosition(position: ReadonlyArray<string>, dx: number, dz: number): string[] {
@@ -483,6 +488,12 @@ export class EditorPage {
     if ((await stats.getAttribute("open")) === null) await stats.locator("> summary").click();
     await expect(stats).toHaveAttribute("open", "");
     return stats;
+  }
+
+  async chooseMode(mode: ShellMode): Promise<void> {
+    await chooseShellMode(this.page, mode);
+    await this.viewAtRest();
+    this.forgetView();
   }
 
   async goTo(target: LatticePoint): Promise<void> {

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { EditorPage, startEmpty } from "./editor-page.ts";
+import { EditorPage, chooseShellMode, startEmpty } from "./editor-page.ts";
 
 const GREEN_BASEPLATE = "ldraw:3811@2";
 const FIVE_STUDS_OVER = { x: 100, z: 0 };
@@ -75,6 +75,7 @@ async function enterMode(page: Page, mode: Mode): Promise<void> {
       return;
     }
     case "plan":
+      await chooseShellMode(page, "plan");
       await page.locator(".plan-panel > summary").click();
       await page.locator('[data-action="new-plan"]').click();
       await expect(page.locator(".plan-panel")).toHaveAttribute("data-active-plan", /.+/u);
@@ -236,6 +237,18 @@ for (const viewport of VIEWPORTS) {
         await expectOverlaysApart(page, viewport);
       });
     }
+
+    test("overlays never overlap or catch each other's clicks in Play, with the library folded away, stats folded or open", async ({
+      page,
+    }) => {
+      await openEditor(page);
+      await chooseShellMode(page, "play");
+      await expect(page.locator(".play-panel")).toBeVisible();
+      await expect(page.locator(".library")).toBeHidden();
+      await expectOverlaysApart(page, viewport);
+      await page.locator(".editor-hud > summary").click();
+      await expectOverlaysApart(page, viewport);
+    });
 
     test("a refused hover's long tool hint, the placement chip and the mode switch held by Alt stay inside their boxes and on screen", async ({
       page,

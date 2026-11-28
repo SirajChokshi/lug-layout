@@ -6,6 +6,7 @@ import { placementModeSwitchEnabled, togglePlacementMode } from "../edit/placeme
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { KEY_FOR_SLOT } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
+import { shellModeOffered, type ShellMode } from "./shell-mode.ts";
 
 export type NudgeId = "nudge-left" | "nudge-right" | "nudge-forward" | "nudge-back";
 
@@ -64,7 +65,9 @@ export type EditorActionId =
   | "cycle-tier"
   | "measure-frames";
 
-export type ShellCommandId = "show-shortcuts" | "open-palette";
+export type ShellModeCommandId = `${ShellMode}-mode`;
+
+export type ShellCommandId = "show-shortcuts" | "open-palette" | ShellModeCommandId;
 
 export type PlayCommandId = "play" | "throttle-up" | "throttle-down" | "stop-train" | "rerail";
 
@@ -376,6 +379,27 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     repeats: true,
   },
   {
+    id: "build-mode",
+    title: "Build: the library, the tools and the inspector, in 3D",
+    group: "View",
+    keys: [],
+    keywords: "mode edit lay place parts library",
+  },
+  {
+    id: "plan-mode",
+    title: "Plan: tables, checks, print sheets and the parts list, in 2D",
+    group: "View",
+    keys: [],
+    keywords: "mode check issues event print shopping bom",
+  },
+  {
+    id: "play-mode",
+    title: "Play: run the trains from the cab",
+    group: "View",
+    keys: [],
+    keywords: "mode drive throttle train",
+  },
+  {
     id: "focus",
     title: "Frame the selection",
     group: "View",
@@ -604,8 +628,34 @@ export function commandForKey(
   return bound.find((match) => enabled(match.id)) ?? bound[0] ?? null;
 }
 
+export function shellModeCommand(id: ShellCommandId): ShellMode | null {
+  switch (id) {
+    case "build-mode":
+      return "build";
+    case "plan-mode":
+      return "plan";
+    case "play-mode":
+      return "play";
+    case "show-shortcuts":
+    case "open-palette":
+      return null;
+    default: {
+      const unhandled: never = id;
+      throw new Error(`unhandled shell command ${String(unhandled)}`);
+    }
+  }
+}
+
+const SHELL_COMMANDS: ReadonlySet<CommandId> = new Set<ShellCommandId>([
+  "show-shortcuts",
+  "open-palette",
+  "build-mode",
+  "plan-mode",
+  "play-mode",
+]);
+
 export function isShellCommand(id: CommandId): id is ShellCommandId {
-  return id === "show-shortcuts" || id === "open-palette";
+  return SHELL_COMMANDS.has(id);
 }
 
 export function isPlayCommand(id: CommandId): id is PlayCommandId {
@@ -697,7 +747,10 @@ export function commandEnabled(
   snapshot: EditorSnapshot,
   play?: PlaySnapshot,
 ): boolean {
-  if (isShellCommand(id)) return true;
+  if (isShellCommand(id)) {
+    const mode = shellModeCommand(id);
+    return mode === null || shellModeOffered(mode, play);
+  }
   if (snapshot.status !== "ready") return false;
   if (isPlayCommand(id)) return playCommandEnabled(id, play);
   if (play?.status === "running" && !runsDuringPlay(id)) return false;

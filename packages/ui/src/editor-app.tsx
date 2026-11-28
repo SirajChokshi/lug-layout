@@ -1,8 +1,13 @@
 import {
+  SHELL_MODES,
+  enterShellMode,
   heldItem,
   meshesSettled,
   placementFeedback,
   runEditorAction,
+  shellModeCommand,
+  shellModeForTool,
+  shownShellMode,
   type EditorActionId,
   type EditorOptions,
   type IAnnotationService,
@@ -26,6 +31,7 @@ import {
   tallyText,
   type SelectionView,
   type ShellCommandId,
+  type ShellMode,
 } from "@brr/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BomPanel } from "./bom-panel.tsx";
@@ -45,6 +51,7 @@ import { PlanScaleBar } from "./plan-scale-bar.tsx";
 import { SceneLabels } from "./scene-labels.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
+import { ShellModeSwitch, ShellSection } from "./shell-mode.tsx";
 import { TrackExtendPanel, TrackHeightPanel, TrackLoopsPanel } from "./track-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
@@ -59,6 +66,11 @@ import { useWelcome } from "./use-welcome.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WelcomeCard } from "./welcome-card.tsx";
 import { WorldMenu } from "./world-menu.tsx";
+
+const EDITING: ReadonlyArray<ShellMode> = ["build", "plan"];
+const IN_3D: ReadonlyArray<ShellMode> = ["build", "play"];
+const PLANNING: ReadonlyArray<ShellMode> = ["plan"];
+const PLAYING: ReadonlyArray<ShellMode> = ["play"];
 
 function selectionLabel(selection: SelectionView | null): string | null {
   if (!selection) return null;
@@ -191,14 +203,38 @@ export function EditorApp({
   const playSnapshot = usePlaySnapshot(play);
   const welcome = useWelcome(starters);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
+  const [chosenMode, setChosenMode] = useState<ShellMode>("build");
+  useEffect(
+    () =>
+      editor.subscribe(() =>
+        setChosenMode((chosen) => shellModeForTool(chosen, editor.snapshot().mode)),
+      ),
+    [editor],
+  );
+  const mode = shownShellMode(chosenMode, playSnapshot);
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const closeTopOverlay = useCallback(() => {
     if (overlay !== null) setOverlay(null);
     else starters.dismiss();
   }, [overlay, starters]);
-  const toggleOverlay = useCallback(
-    (id: ShellCommandId) => setOverlay((open) => (open === id ? null : id)),
-    [],
+  const chooseMode = useCallback(
+    (next: ShellMode) => {
+      enterShellMode(next, editor, camera, play);
+      setChosenMode(next);
+    },
+    [editor, camera, play],
+  );
+  const runShellCommand = useCallback(
+    (id: ShellCommandId) => {
+      const next = shellModeCommand(id);
+      if (next === null) {
+        setOverlay((open) => (open === id ? null : id));
+        return;
+      }
+      setOverlay(null);
+      chooseMode(next);
+    },
+    [chooseMode],
   );
   const runAction = useCallback(
     (id: EditorActionId, eventTimeMs: number) => runEditorAction(editor, camera, id, eventTimeMs),
@@ -206,7 +242,7 @@ export function EditorApp({
   );
   useEditorKeys(editor, camera, {
     play,
-    onShellCommand: toggleOverlay,
+    onShellCommand: runShellCommand,
     hotbar,
     overlayOpen: overlay !== null || welcome.open,
     closeOverlay: closeTopOverlay,
@@ -240,6 +276,7 @@ export function EditorApp({
       data-unsaved={snapshot.unsavedEdits ? "1" : "0"}
       data-road-pieces={snapshot.roads.placements}
       data-mode={snapshot.mode}
+      data-shell-mode={mode}
       data-latency-samples={snapshot.latencies.length}
     >
       <EditorCanvas
@@ -251,7 +288,12 @@ export function EditorApp({
       />
       <NoteTexts notes={notes} />
       <SceneLabels editor={editor} snapshot={snapshot} />
-      <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
+      <ToolHud
+        snapshot={snapshot}
+        play={playSnapshot}
+        hotbar={hotbar}
+        hotbarShown={mode !== "play"}
+      />
       <PlacementChip snapshot={snapshot} />
       <div className="chrome">
         <header className="menubar">
@@ -259,6 +301,7 @@ export function EditorApp({
             <Icon name="track" size={20} />
             Brick Railroad
           </h1>
+          <ShellModeSwitch mode={mode} play={playSnapshot} onChoose={chooseMode} />
           <span className="menubar-title">{snapshot.world?.name}</span>
         </header>
         <div className="toolstrip">
@@ -266,67 +309,78 @@ export function EditorApp({
             editor={editor}
             snapshot={snapshot}
             play={playSnapshot}
+            editing={mode !== "play"}
             onEditorAction={runAction}
-            onShellCommand={toggleOverlay}
+            onShellCommand={runShellCommand}
           />
           <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
         </div>
       </div>
-      <LibraryColumn panels={panels}>
+      <LibraryColumn panels={panels} hidden={mode === "play"}>
         <PalettePanel editor={editor} snapshot={snapshot} palette={palette} />
       </LibraryColumn>
       <PlanScaleBar scaleBar={scaleBar} />
       <div className="side-panel">
-        <WorldMenu editor={editor} snapshot={snapshot} starters={starters} />
-        <RoadDrawPanel editor={editor} snapshot={snapshot} />
-        <NotePanel editor={editor} notes={notes} snapshot={snapshot} />
-        <TrackHeightPanel editor={editor} snapshot={snapshot} />
-        <TrackExtendPanel editor={editor} snapshot={snapshot} />
-        <TrackLoopsPanel editor={editor} snapshot={snapshot} />
-        <SelectionPanel
-          editor={editor}
-          snapshot={snapshot}
-          play={playSnapshot}
-          onEditorAction={runAction}
-        />
-        <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
-        <PlayPanel
-          editor={editor}
-          camera={camera}
-          play={play}
-          runningGear={runningGear}
-          ready={snapshot.status === "ready"}
-          checkingStuds={snapshot.studChecks > 0}
-        />
-        <EventPanel
-          events={events}
-          size={layoutSize}
-          editable={snapshot.status === "ready" && !snapshot.readOnly}
-        />
-        <PlanPanel
-          camera={camera}
-          editor={editor}
-          drawing={snapshot.mode === "table"}
-          held={heldItem(snapshot)}
-          fillGridStuds={snapshot.fillGridStuds}
-          plans={plans}
-          sheets={sheets}
-          sheetSets={sheetSets}
-          ready={snapshot.status === "ready"}
-          readOnly={snapshot.readOnly}
-          armedType={snapshot.armedTable?.typeId ?? null}
-        />
-        {snapshot.status === "ready" && (
-          <BomPanel
-            service={bomService}
-            ownedParts={ownedParts}
-            source={editor}
-            selectionLabel={selectionLabel(snapshot.selection)}
-            plans={plans}
-            thumbnails={palette.thumbnails}
+        <ShellSection mode={mode} modes={EDITING}>
+          <WorldMenu editor={editor} snapshot={snapshot} starters={starters} />
+          <RoadDrawPanel editor={editor} snapshot={snapshot} />
+          <NotePanel editor={editor} notes={notes} snapshot={snapshot} />
+          <TrackHeightPanel editor={editor} snapshot={snapshot} />
+          <TrackExtendPanel editor={editor} snapshot={snapshot} />
+          <TrackLoopsPanel editor={editor} snapshot={snapshot} />
+          <SelectionPanel
+            editor={editor}
+            snapshot={snapshot}
+            play={playSnapshot}
+            onEditorAction={runAction}
           />
-        )}
-        <EditorHud editor={editor} snapshot={snapshot} panels={panels} plans={plans} />
+        </ShellSection>
+        <ShellSection mode={mode} modes={IN_3D}>
+          <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
+        </ShellSection>
+        <ShellSection mode={mode} modes={PLAYING}>
+          <PlayPanel
+            editor={editor}
+            camera={camera}
+            play={play}
+            runningGear={runningGear}
+            ready={snapshot.status === "ready"}
+            checkingStuds={snapshot.studChecks > 0}
+          />
+        </ShellSection>
+        <ShellSection mode={mode} modes={PLANNING}>
+          <EventPanel
+            events={events}
+            size={layoutSize}
+            editable={snapshot.status === "ready" && !snapshot.readOnly}
+          />
+          <PlanPanel
+            camera={camera}
+            editor={editor}
+            drawing={snapshot.mode === "table"}
+            held={heldItem(snapshot)}
+            fillGridStuds={snapshot.fillGridStuds}
+            plans={plans}
+            sheets={sheets}
+            sheetSets={sheetSets}
+            ready={snapshot.status === "ready"}
+            readOnly={snapshot.readOnly}
+            armedType={snapshot.armedTable?.typeId ?? null}
+          />
+          {snapshot.status === "ready" && (
+            <BomPanel
+              service={bomService}
+              ownedParts={ownedParts}
+              source={editor}
+              selectionLabel={selectionLabel(snapshot.selection)}
+              plans={plans}
+              thumbnails={palette.thumbnails}
+            />
+          )}
+        </ShellSection>
+        <ShellSection mode={mode} modes={SHELL_MODES}>
+          <EditorHud editor={editor} snapshot={snapshot} panels={panels} plans={plans} />
+        </ShellSection>
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
@@ -343,7 +397,7 @@ export function EditorApp({
           search={palette.commandSearch}
           snapshot={snapshot}
           onClose={closeOverlay}
-          onShellCommand={toggleOverlay}
+          onShellCommand={runShellCommand}
         />
       )}
     </div>
