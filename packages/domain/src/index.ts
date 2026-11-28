@@ -223,6 +223,7 @@ export {
   placementInside,
   placementIssueCount,
   placementIssues,
+  placementKeyText,
   regionContext,
   regionOf,
   uncheckedPlan,

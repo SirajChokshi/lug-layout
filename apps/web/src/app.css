@@ -678,13 +678,29 @@ footer {
 }
 
 .plan-issues {
-  margin: 0;
-  padding-left: var(--space-7);
+  margin: var(--space-1) 0 var(--space-2) var(--space-5);
+  padding: 0;
+  list-style: none;
   color: var(--status-danger);
 }
 
 .plan-issues li[data-severity="warning"] {
   color: var(--status-warn);
+}
+
+.plan-issue {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+button.plan-issue:hover {
+  background: var(--surface-hover);
 }
 
 .plan-checks {
