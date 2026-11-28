@@ -254,6 +254,7 @@ export class PlanSceneBackend implements IPlanSceneBackend {
   readonly root = new Group();
   private readonly atlas = new GlyphAtlas();
   private readonly slots: Array<AtlasSlot | null | undefined> = [];
+  private readonly unpacked: Array<readonly [number, PlanSprite]> = [];
   private readonly spriteMaterials: MeshBasicNodeMaterial[] = [];
   private readonly dots = dotMaterial();
   private readonly outlines = new LineBasicNodeMaterial({ color: OUTLINE_COLOR });
@@ -275,11 +276,7 @@ export class PlanSceneBackend implements IPlanSceneBackend {
   }
 
   setSprite(id: number, sprite: PlanSprite): void {
-    this.slots[id] = this.atlas.add(sprite, this.source.ldrawColor);
-    for (let page = this.spriteMaterials.length; page < this.atlas.pages.length; page++) {
-      const atlasPage = this.atlas.pages[page];
-      if (atlasPage) this.spriteMaterials.push(spriteMaterial(atlasPage));
-    }
+    this.unpacked.push([id, sprite]);
     this.source.changed();
   }
 
@@ -338,6 +335,7 @@ export class PlanSceneBackend implements IPlanSceneBackend {
   }
 
   prepare(studPitchPx: number): void {
+    if (this.unpacked.length > 0) this.packSprites();
     for (let i = 0; i < this.dirty.length; i++) {
       const batch = this.dirty[i];
       if (batch) this.rebuild(batch);
@@ -350,6 +348,17 @@ export class PlanSceneBackend implements IPlanSceneBackend {
       for (const child of batch.group.children) {
         if (child instanceof Mesh && child.material === this.dots) child.visible = shown;
       }
+    }
+  }
+
+  private packSprites(): void {
+    for (const [id, sprite] of this.unpacked) {
+      this.slots[id] = this.atlas.add(sprite, this.source.ldrawColor);
+    }
+    this.unpacked.length = 0;
+    for (let page = this.spriteMaterials.length; page < this.atlas.pages.length; page++) {
+      const atlasPage = this.atlas.pages[page];
+      if (atlasPage) this.spriteMaterials.push(spriteMaterial(atlasPage));
     }
   }
 

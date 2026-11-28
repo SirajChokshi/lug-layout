@@ -130,8 +130,8 @@ function premultiplied(srgb: number, alpha: number): ReadonlyArray<number> {
 }
 
 describe("the plan scene", () => {
-  it("writes a glyph's pixels into the atlas with colour 16 in the placement's colour and coverage as premultiplied alpha", () => {
-    const backend = backendWithPalette();
+  it("writes a glyph's pixels into the atlas with colour 16 in the placement's colour and coverage as premultiplied alpha, whenever the palette arrives", () => {
+    const backend = new ThreeSceneBackend();
     backend.plan.setSprite(0, {
       glyph: glyph(
         [BLUE, INHERIT_COLOR, CLEAR_BLUE],
@@ -146,6 +146,8 @@ describe("the plan scene", () => {
       shiftX: 0,
       shiftZ: 0,
     });
+    backend.setPalette(palette());
+    backend.plan.prepare(1);
     const page = backend.plan["atlas"].pages[0];
     const slot = backend.plan["slots"][0];
     if (!page || !slot) throw new Error("the glyph has no atlas slot");
