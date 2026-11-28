@@ -379,7 +379,7 @@ describe("EditHistory", () => {
   it("refuses a group change that would retag a member on a locked layer, or one tagged other than it says, touching nothing", () => {
     const world = new World();
     const locked = new Set<number>();
-    const history = new EditHistory(world, new ConsistLayout(), {
+    const history = new EditHistory(world, new ConsistLayout(), undefined, {
       isLocked: (layer) => locked.has(layer),
     });
     const placements = [0, 2].flatMap(
@@ -450,11 +450,15 @@ describe("EditHistory", () => {
       yPlates: 0,
       rot: 0,
       layer: 0,
+      group: null,
     });
     const placement = placed.changes[0]?.placement ?? null;
 
     const moved = history.commit("move", [
-      { placement, to: { refId: 1, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0, layer: 0 } },
+      {
+        placement,
+        to: { refId: 1, colorId: 0, x: 640, z: 0, yPlates: 0, rot: 0, layer: 0, group: null },
+      },
     ]);
     const added = { before: followed.after, after: [] };
     const annotated = history.annotate(added);
@@ -464,7 +468,7 @@ describe("EditHistory", () => {
     expect(history.undo()?.notes).toEqual({ before: [], after: followed.after });
     const undoneMove = history.undo();
     expect(undoneMove?.notes).toEqual({ before: followed.after, after: followed.before });
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0,-"]);
     expect(history.redo()?.notes).toBe(followed);
   });
 

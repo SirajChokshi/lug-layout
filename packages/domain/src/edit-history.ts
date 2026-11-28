@@ -441,6 +441,7 @@ export class EditHistory {
       consists: [],
       track: NO_TRACK_CHANGE,
       plan: null,
+      notes: null,
       layers: null,
       groups: owned,
     });

@@ -109,8 +109,8 @@ describe("World.add", () => {
 describe("World.has", () => {
   it("finds a live placement only by its whole record, and not once it is removed", () => {
     const world = new World();
-    const kept = world.add(7, 1, -640, 1280, 2, 3, 0);
-    const removed = world.add(7, 1, 40, 60, 0, 0, 0);
+    const kept = world.add(7, 1, -640, 1280, 2, 3, 0, null);
+    const removed = world.add(7, 1, 40, 60, 0, 0, 0, null);
     world.remove(removed);
 
     expect([
