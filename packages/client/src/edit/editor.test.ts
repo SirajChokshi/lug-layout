@@ -4291,6 +4291,10 @@ it("keeps an imported train's bake and train model through its stud check, and a
   if (!checked) throw new Error("the import left the catalog");
 
   expect(checked).not.toBe(pending);
+  expect({ pending: pending.glyph, checked: checked.glyph }).toEqual({
+    pending: null,
+    checked: glyph,
+  });
   expect(whileChecking.train).not.toBeNull();
   expect(whileChecking.bake?.glyph).toBeUndefined();
   expect({ bake: catalog.baked(checked), train: catalog.playModel(checked) }).toEqual({
