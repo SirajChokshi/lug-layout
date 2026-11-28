@@ -9750,7 +9750,8 @@ function laidState(editor: IEditor) {
 }
 
 it("drops track blueprints as one undo step each: a passing siding in place of the straights laid off a user's own track file, clear of its baseplate and one straight longer on '.', a reversing loop on the run's open end, and an oval on open ground", async () => {
-  const { editor, backend } = await startImportingEditor();
+  const { editor, backend, container } = await startImportingEditor();
+  const camera = container.get(EDITOR_CAMERA);
   const file = await importUserFile(
     editor,
     "my-9v-run.ldr",
@@ -9771,7 +9772,11 @@ it("drops track blueprints as one undo step each: a passing siding in place of t
   };
 
   const shorter = hold("passing-siding", [runStart - SIDING_BESIDE_FILE_LDU, 0]);
-  editor.cycleTrackChoice(1);
+  const keys = {
+    longer: commandEnabled("next-track-choice", editor.snapshot()),
+    extend: commandEnabled("extend-straight", editor.snapshot()),
+  };
+  runEditorAction(editor, camera, "next-track-choice", 0);
   const longer = heldDetail(editor, backend, [runStart - SIDING_BESIDE_FILE_LDU, 0]);
   editor.click(0, 0, 0);
   const siding = laidState(editor);
@@ -9783,6 +9788,7 @@ it("drops track blueprints as one undo step each: a passing siding in place of t
   const oval = laidState(editor);
   for (let step = 0; step < 3; step++) editor.undo(0);
 
+  expect(keys).toEqual({ longer: true, extend: false });
   expect({ shorter, longer, onEnd, onGround }).toEqual({
     shorter: "goes in place of 8 pieces exactly",
     longer: "goes in place of 9 pieces exactly",

@@ -692,6 +692,7 @@ export function commandEnabled(
     case "extend-left":
     case "extend-right":
     case "extend-preview":
+      return snapshot.track?.extend != null && !snapshot.readOnly;
     case "next-track-choice":
     case "previous-track-choice":
       return (
