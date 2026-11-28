@@ -329,13 +329,20 @@ it("shows a queued click at once wherever the pointer goes, ahead of the wait on
   });
 });
 
-it("says a click queued while the held item's own connector data loads in the same words in the tool hint and the chip", () => {
+it("shows the held item loading at the cursor once its beat passes, and a click queued meanwhile in the same words in the tool hint and the chip", () => {
   const { show, shown, chipLines } = hintScene(ROAD_WAIT);
-  show({}, { activeItem: "ldraw:3811@2", pendingItem: "ldraw:3811@2", ...QUEUED });
+  const loading = { activeItem: "ldraw:3811@2", pendingItem: "ldraw:3811@2" };
+  show({}, loading);
+  const picked = chipLines();
+  wait(PENDING_CUE_MS);
+  const afterBeat = chipLines();
+  show({}, { ...loading, ...QUEUED });
 
-  expect({ detail: shown().detail, chip: chipLines() }).toEqual({
+  expect({ picked, afterBeat, detail: shown().detail, chip: chipLines() }).toEqual({
+    picked: [],
+    afterBeat: ["Loading ldraw:3811@2…"],
     detail: `loading connectors… · ${QUEUED_LINE}`,
-    chip: [QUEUED_LINE],
+    chip: [QUEUED_LINE, "Loading ldraw:3811@2…"],
   });
 });
 

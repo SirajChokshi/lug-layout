@@ -33,6 +33,7 @@ export interface BadgeCount {
 export type PlacementLineKind =
   | "pending"
   | "waiting"
+  | "loading"
   | "queued"
   | "refusal"
   | "joints"
@@ -71,6 +72,11 @@ export interface QueuedPlacementView {
   readonly z: number;
 }
 
+export interface LabelledItem {
+  readonly id: string;
+  readonly label: string;
+}
+
 export interface PlacementView extends PlacementModeView {
   readonly mode: string;
   readonly hover: PlacementHoverInput | null;
@@ -79,6 +85,7 @@ export interface PlacementView extends PlacementModeView {
   readonly fillDraft: FillView | null;
   readonly pendingItem: string | null;
   readonly queuedPlacement: QueuedPlacementView | null;
+  readonly catalog: ReadonlyArray<LabelledItem>;
 }
 
 export interface SettleView extends PlacementModeView {
@@ -94,6 +101,11 @@ export interface SettleView extends PlacementModeView {
 
 const PLACE_MODE = "place";
 const SELECT_MODE = "select";
+
+export function itemLabel(catalog: ReadonlyArray<LabelledItem>, id: string | null): string {
+  const label = catalog.find((item) => item.id === id)?.label ?? id ?? "";
+  return label.replaceAll("_", " ");
+}
 
 function heldHover(view: PlacementView): PlacementHoverInput | null {
   if (view.mode !== PLACE_MODE || view.ghostSettled || view.fillDraft !== null) return null;
@@ -428,13 +440,8 @@ function heldTone(view: PlacementView, hover: PlacementHoverInput): PlacementTon
   return view.pendingItem === null ? placementTone(hover) : "waiting";
 }
 
-function heldLines(
-  view: PlacementView,
-  hover: PlacementHoverInput,
-  tone: PlacementTone,
-): PlacementLine[] {
+function heldLines(hover: PlacementHoverInput, tone: PlacementTone): PlacementLine[] {
   const { placement } = hover;
-  if (view.pendingItem !== null) return [];
   if (hover.waiting) return [line("waiting", hover.waiting)];
   if (placement?.waitingOn) return [waitLine(placement.waitingOn)];
   if (tone === "pending") return [line("pending", FINDING_A_FIT)];
@@ -442,13 +449,26 @@ function heldLines(
   return hover.refusal === null ? [] : [line("refusal", hover.refusal)];
 }
 
+function loadingFeedback(view: PlacementView, pendingItem: string): PlacementFeedback {
+  const queued = view.queuedPlacement;
+  const loading = line("loading", `Loading ${itemLabel(view.catalog, pendingItem)}…`);
+  return {
+    tone: "waiting",
+    mode: chosenMode(view),
+    lines: queued ? [line("queued", queuedText(queued)), loading] : [loading],
+  };
+}
+
 function feedbackOf(view: PlacementView): PlacementFeedback | null {
   const group = heldGroup(view);
   if (group) return groupFeedback(view, group);
+  if (view.mode === PLACE_MODE && view.pendingItem !== null) {
+    return loadingFeedback(view, view.pendingItem);
+  }
   const hover = heldHover(view);
   if (!hover) return null;
-  const tone = heldTone(view, hover);
-  const lines = heldLines(view, hover, tone);
+  const tone = placementTone(hover);
+  const lines = heldLines(hover, tone);
   const queued = view.queuedPlacement;
   if (queued) lines.push(line("queued", queuedText(queued)));
   const onTime = lines.filter((placementLine) => !showsLate(placementLine));
@@ -456,7 +476,8 @@ function feedbackOf(view: PlacementView): PlacementFeedback | null {
 }
 
 export function showsLate(placementLine: PlacementLine): boolean {
-  return placementLine.kind === "pending" || placementLine.kind === "waiting";
+  const { kind } = placementLine;
+  return kind === "pending" || kind === "waiting" || kind === "loading";
 }
 
 export function badgeText(badge: BadgeCount): string {

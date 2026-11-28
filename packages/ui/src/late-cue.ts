@@ -20,6 +20,7 @@ function useAfter(text: string | null, delayMs: number): string | null {
 }
 
 export function pendingSearch(snapshot: EditorSnapshot): string | null {
+  if (snapshot.pendingItem !== null) return snapshot.pendingItem;
   const pose = snapshot.hover?.placement?.pose;
   if (!pose) return null;
   return `${snapshot.activeItem ?? ""} ${pose.x} ${pose.z} ${pose.yPlates} ${pose.rot}`;

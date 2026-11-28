@@ -409,6 +409,29 @@
   font: var(--weight-strong) var(--text-caption) / 14px var(--font-mono);
 }
 
+.hotbar li {
+  position: relative;
+}
+
+.hotbar-pin {
+  position: absolute;
+  top: -7px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-xs);
+}
+
+@media (hover: hover) {
+  .hotbar li[data-pinned="false"]:not(:hover, :focus-within) .hotbar-pin {
+    opacity: 0;
+  }
+}
+
 .placement-chip {
   --tone: var(--tool-place);
   position: fixed;
@@ -544,8 +567,32 @@
   }
 }
 
+.placement-chip-line[data-line="loading"] {
+  align-items: center;
+  font-weight: var(--weight-strong);
+}
+
+.placement-chip-line[data-line="loading"]::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: placement-chip-loading 0.8s linear infinite;
+}
+
+@keyframes placement-chip-loading {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .placement-chip-line[data-line="pending"] > span:first-child {
+  .placement-chip-line[data-line="pending"] > span:first-child,
+  .placement-chip-line[data-line="loading"]::before {
     animation: none;
   }
 }

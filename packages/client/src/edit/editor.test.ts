@@ -6793,15 +6793,15 @@ it("checks a user's model in a two-table plan on plan sync: across the seam, out
       ],
       [
         "seam",
-        'brick-2x4 at 2500, 1000 stands across the seam between tables "A" and "B"; a seam must fall between placements.',
+        'brick-2x4 at stud 125, 50 stands across the seam between tables "A" and "B"; a seam must fall between placements.',
       ],
       [
         "reach",
-        "brick-2x4 at 2260, 2500 is out of reach: part of it is more than 700 mm from every table edge you can stand at.",
+        "brick-2x4 at stud 113, 125 is out of reach: part of it is more than 700 mm from every table edge you can stand at.",
       ],
       [
         "unsupported",
-        "brick-2x4 at 960, 4360 isn't held: none of its anti-studs sits on a stud, and it doesn't stand on the bare table.",
+        "brick-2x4 at stud 48, 218 isn't held: none of its anti-studs sits on a stud, and it doesn't stand on the bare table.",
       ],
     ],
     plan: ["plan-Two_tables", 5, 5],
@@ -6871,7 +6871,7 @@ it("measures a user's model's reach from the plan's crew aisles once it has one,
   const annexed = await venue();
 
   const outOfReach =
-    "brick-2x4 at 2500, 4400 is out of reach: part of it is more than 700 mm from every crew aisle.";
+    "brick-2x4 at stud 125, 220 is out of reach: part of it is more than 700 mm from every crew aisle.";
   expect({ beside, fromBack, fromBoth, undone, annexed }).toEqual({
     beside: { issues: [], planMm: [3200, 3200] },
     fromBack: { issues: [outOfReach], planMm: [3200, 3200] },
@@ -11274,7 +11274,7 @@ it("keeps a plan's overlap and support after every edit exactly as reopening the
   expect(loaded.filter((issue) => !issue.startsWith("bomMapping"))).toEqual([
     expect.stringMatching(/^overlap: /u),
     expect.stringMatching(/^overlap: /u),
-    expect.stringMatching(/^unsupported: brick-2x4 at 560, 520 /u),
+    expect.stringMatching(/^unsupported: brick-2x4 at stud 28, 26 /u),
   ]);
   for (const { incremental, reopened } of Object.values(steps)) {
     expect(incremental).toEqual(reopened);
@@ -11446,8 +11446,8 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
     ]),
   );
   expect(rows).toEqual([
-    ["1", "1", expect.stringMatching(/^44336p04 .* at 0, 0$/u)],
-    ["2", "11", expect.stringMatching(/^my-cottage\.ldr.* at 960, 320$/u)],
+    ["1", "1", expect.stringMatching(/^44336p04 .* at stud 0, 0$/u)],
+    ["2", "11", expect.stringMatching(/^my-cottage\.ldr.* at stud 48, 16$/u)],
     ["3", "1", expect.stringMatching(/^Train Track 9V Straight #1/u)],
     ["4", "1", expect.stringMatching(/^Train Track 9V Straight #2/u)],
     ["5", "1", expect.stringMatching(/^Train Track 9V Straight #3/u)],
@@ -11499,7 +11499,7 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   const separately = await Promise.all(
     requests.map(async (request) => (await sheets.download(editor, planId, request)).pages),
   );
-  expect(packPages[0]).toBe("01-main-plan-cover.svg");
+  expect(packPages[0]).toBe("01-main-plan-sheet.svg");
   expect(packPages.filter((name) => /^\d+-table-plan-/u.test(name))).toEqual([
     `${String((separately[0] ?? 0) + 1).padStart(2, "0")}-table-plan-sheet.svg`,
   ]);

@@ -1,12 +1,6 @@
 import { injectable } from "inversify";
 import { PLAN_LAYERS, SHEET_LAYER_IDS, type SheetLayerId } from "./plan-drawing.ts";
-import {
-  DEFAULT_OVERLAP_MM,
-  type SheetContent,
-  type SheetFormat,
-  type SheetLayout,
-  type SheetSelection,
-} from "./sheet-document.ts";
+import type { SheetContent, SheetFormat, SheetLayout, SheetSelection } from "./sheet-document.ts";
 
 export interface SheetSet extends SheetSelection {
   readonly id: string;
@@ -50,17 +44,13 @@ export const WHOLE_PLAN_SELECTION: SheetSelection = {
   layers: MAIN_PLAN_LAYERS,
 };
 
+const FIT_TO_A3: SheetLayout = { kind: "fit", paper: "a3", orientation: "auto" };
+
 const MAIN_PLAN: Omit<SheetSet, "id"> = {
   name: "Main plan",
   content: "placements",
   layers: MAIN_PLAN_LAYERS,
-  layout: {
-    kind: "tiled",
-    paper: "a4",
-    orientation: "auto",
-    denominator: 1,
-    overlapMm: DEFAULT_OVERLAP_MM,
-  },
+  layout: FIT_TO_A3,
   format: "pdf",
 };
 
@@ -68,7 +58,7 @@ const TABLE_PLAN: Omit<SheetSet, "id"> = {
   name: "Table plan",
   content: "tables",
   layers: TABLE_PLAN_LAYERS,
-  layout: { kind: "fit", paper: "a3", orientation: "auto" },
+  layout: FIT_TO_A3,
   format: "pdf",
 };
 

@@ -291,31 +291,29 @@ export class SheetComposer implements ISheetComposer {
           `drawn at ${scaleText(denominator)} to fit one ${paper.name} page (${orientation})`,
           [],
         );
-    const best = bestBy(
-      orientationsFor(choice).map((orientation) => {
-        const page = paperPage(paper, orientation);
-        const area = this.bodyArea(page, legend, titleFor(orientation));
-        const denominator = largestFittingScale((n) =>
-          fits(this.drawings.extent(job.sheet, n, job.layers), area),
-        );
-        return { page, area, denominator };
-      }),
-      (candidate) => candidate.denominator,
+    const candidates = orientationsFor(choice).map((orientation) => {
+      const page = paperPage(paper, orientation);
+      const area = this.bodyArea(page, legend, titleFor(orientation));
+      const denominator = largestFittingScale((n) =>
+        fits(this.drawings.extent(job.sheet, n, job.layers), area),
+      );
+      return { page, denominator };
+    });
+    const largest = bestBy(candidates, (candidate) => candidate.denominator).denominator;
+    return bestBy(
+      candidates
+        .filter((candidate) => candidate.denominator === largest)
+        .map(({ page, denominator }) => {
+          const drawing = this.drawings.draw(job.sheet, denominator, job.layers, job.heights);
+          const first = this.bodyPage("sheet", page, legend, titleFor(page.orientation), drawing, {
+            overlay: [],
+            origin: [drawing.extent.x, drawing.extent.y],
+            size: { widthMm: drawing.extent.width, heightMm: drawing.extent.height },
+          });
+          return this.withKey(job, page, first);
+        }),
+      (pages) => pages.length,
     );
-    const drawing = this.drawings.draw(job.sheet, best.denominator, job.layers, job.heights);
-    const first = this.bodyPage(
-      "sheet",
-      best.page,
-      legend,
-      titleFor(best.page.orientation),
-      drawing,
-      {
-        overlay: [],
-        origin: [drawing.extent.x, drawing.extent.y],
-        size: { widthMm: drawing.extent.width, heightMm: drawing.extent.height },
-      },
-    );
-    return this.withKey(job, best.page, first);
   }
 
   private tiled(

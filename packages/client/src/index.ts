@@ -392,7 +392,7 @@ export {
   shownShellMode,
   type ShellMode,
 } from "./commands/shell-mode.ts";
-export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
+export { PINNED_SLOTS, type Hotbar, type IHotbar } from "./commands/hotbar.ts";
 export {
   modelImportText,
   modelImportWarns,
