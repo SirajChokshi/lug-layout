@@ -1057,10 +1057,19 @@ export function PlanPanel({
       ) : (
         <>
           <p className="plan-meta">
-            No plan yet. Outside plans the world is a sandbox and plan rules don't apply. Draw a
-            table to start one around it.
+            No plan yet. Outside plans the world is a sandbox and plan rules don't apply. Check this
+            layout to plan it on one table under everything laid, or draw a table to start a plan
+            around it.
           </p>
           <PlanEdits readOnly={readOnly}>
+            <button
+              type="button"
+              data-action="check-layout"
+              disabled={!ready || plans.placementCount() === 0}
+              onClick={() => editor.checkLayout()}
+            >
+              Check this layout
+            </button>
             <DrawTablesButton editor={editor} drawing={drawing} label="Draw a table (B)" />
             <TableLibrary editor={editor} plans={plans} planId={null} armedType={armedType} />
           </PlanEdits>
