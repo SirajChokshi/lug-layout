@@ -64,18 +64,19 @@ function WorldRow({
   item,
   current,
   disabled,
-  keptInAccount,
+  cloud,
 }: {
   readonly editor: IEditor;
   readonly item: WorldIndexEntry;
   readonly current: boolean;
   readonly disabled: boolean;
-  readonly keptInAccount: boolean;
+  readonly cloud: ICloudWorlds | null;
 }) {
-  const onDelete = (): void => {
+  const onDelete = async (): Promise<void> => {
+    const keptInAccount = cloud !== null && (await cloud.keepsSyncedCopy(item.id));
     const kept = keptInAccount ? "Your account keeps its synced copy." : "This can't be undone.";
     if (window.confirm(`Delete "${item.name}" from this browser? ${kept}`)) {
-      void editor.deleteWorld(item.id);
+      await editor.deleteWorld(item.id);
     }
   };
   return (
@@ -90,7 +91,7 @@ function WorldRow({
       >
         {current ? "Current" : "Open"}
       </button>
-      <button type="button" disabled={disabled} onClick={onDelete}>
+      <button type="button" disabled={disabled} onClick={() => void onDelete()}>
         Delete
       </button>
     </li>
@@ -276,7 +277,7 @@ export function WorldMenu({ editor, snapshot, starters, cloud }: WorldMenuProps)
               item={item}
               current={item.id === world.id}
               disabled={!ready}
-              keptInAccount={cloudView?.signIn === "signed-in"}
+              cloud={cloud}
             />
           ))}
         </ul>

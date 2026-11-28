@@ -81,6 +81,7 @@ export interface ICloudWorlds extends IWorldRepository {
   signOut(): Promise<void>;
   syncNow(): Promise<void>;
   versions(id: string): Promise<ReadonlyArray<WorldVersion>>;
+  keepsSyncedCopy(id: string): Promise<boolean>;
   deleteAccountWorld(id: string): Promise<void>;
 }
 
@@ -203,6 +204,12 @@ export class CloudWorldRepository extends IndexedDbWorldRepository implements IC
       savedAt: Date.parse(summary.savedAt),
       onThisDevice: summary.version === link.version,
     }));
+  }
+
+  async keepsSyncedCopy(id: string): Promise<boolean> {
+    if (this.waiting.has(id)) return false;
+    const link = await this.currentLink(id);
+    return link !== null && link.version !== null;
   }
 
   deleteAccountWorld(id: string): Promise<void> {
