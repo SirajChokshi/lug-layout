@@ -359,7 +359,16 @@ describe("EditHistory", () => {
     const named = { title: "Spring show" };
     const dated = { title: "Spring show", startDate: "2027-04-10", endDate: "2027-04-11" };
     history.editEvent({ before: null, after: named });
-    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0, layer: 0 });
+    history.place({
+      refId: 1,
+      colorId: 0,
+      x: 0,
+      z: 0,
+      yPlates: 0,
+      rot: 0,
+      layer: 0,
+      owner: NO_OWNER,
+    });
     const change = { before: named, after: dated };
 
     expect(history.editEvent(change)).toMatchObject({ kind: "event", changes: [], event: change });
@@ -372,7 +381,7 @@ describe("EditHistory", () => {
     expect(history.redo()?.event).toEqual({ before: null, after: named });
     expect(history.redo()?.kind).toBe("place");
     expect(history.redo()?.event).toBe(change);
-    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0"]);
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0,0,-1"]);
   });
 
   it("moves placements and track pieces to a layer as one step that changes only their layer, skipping members already there", () => {
