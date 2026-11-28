@@ -231,6 +231,7 @@ export function EditorApp({
       data-road-mismatch={snapshot.roads.mismatchedCells}
       data-world={snapshot.world?.id ?? ""}
       data-save={snapshot.world?.save ?? ""}
+      data-unsaved={snapshot.unsavedEdits ? "1" : "0"}
       data-road-pieces={snapshot.roads.placements}
       data-mode={snapshot.mode}
       data-latency-samples={snapshot.latencies.length}
