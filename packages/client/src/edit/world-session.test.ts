@@ -19,6 +19,7 @@ import {
   worldShards,
   type ImportedFile,
   type LayerRecordV2,
+  type NoteRecordV2,
   type NoteShardV2,
   type PlacementRecordV2,
   type PlanRegionRecordV2,
@@ -110,6 +111,7 @@ function baseplateTarget(ref: string, color: number): PlacementTarget | null {
 class BaseplateWorld implements IEditedWorld {
   private world = new World();
   private history = new EditHistory(this.world);
+  private notes: ReadonlyArray<NoteRecordV2> = [];
 
   get placements(): number {
     return this.world.size;
@@ -121,7 +123,7 @@ class BaseplateWorld implements IEditedWorld {
   }
 
   contents(): WorldContents {
-    return { world: this.world, refs: [BASEPLATE], track: [], consists: [], notes: [] };
+    return { world: this.world, refs: [BASEPLATE], track: [], consists: [], notes: this.notes };
   }
 
   placedCredits(): ReadonlyArray<ModelCredit> {
@@ -133,12 +135,13 @@ class BaseplateWorld implements IEditedWorld {
     return handles.ok ? [] : handles.issues;
   }
 
-  async load({ shards }: StoredContents): Promise<ReadonlyArray<Issue>> {
+  async load({ shards, notes }: StoredContents): Promise<ReadonlyArray<Issue>> {
     const world = new World();
     const handles = addShards(world, shards, baseplateTarget);
     if (!handles.ok) return handles.issues;
     this.world = world;
     this.history = new EditHistory(world);
+    this.notes = notes;
     return [];
   }
 

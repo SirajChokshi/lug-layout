@@ -355,10 +355,9 @@ export class WorldSession implements IWorldSession {
   private savedDocumentRefusal(layer: number): string | null {
     const current = this.current;
     if (!current) return null;
-    let notes = 0;
-    for (const shard of current.notes) {
-      for (const note of shard.notes) if (note.layer === layer) notes++;
-    }
+    const notes = this.editedWorld()
+      .contents()
+      .notes.filter((note) => note.layer === layer).length;
     const plans = (current.document.plans ?? []).filter((plan) => plan.layer === layer).length;
     const held = [
       notes > 0 ? `${notes} ${notes === 1 ? "note" : "notes"}` : null,
