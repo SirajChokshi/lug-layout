@@ -4,6 +4,7 @@ import v1Shard from "../../../test-fixtures/world-schema/v1/shards/0_0.json" wit
 import migratedManifest from "../../../test-fixtures/world-schema/v1-migrated/manifest.json" with { type: "json" };
 import migratedShardWest from "../../../test-fixtures/world-schema/v1-migrated/shards/-1_0.json" with { type: "json" };
 import migratedShard from "../../../test-fixtures/world-schema/v1-migrated/shards/0_0.json" with { type: "json" };
+import richInventory from "../../../test-fixtures/world-schema/v2/inventories/4.json" with { type: "json" };
 import richManifest from "../../../test-fixtures/world-schema/v2/manifest.json" with { type: "json" };
 import richNotesWest from "../../../test-fixtures/world-schema/v2/notes/-1_0.json" with { type: "json" };
 import richNotes from "../../../test-fixtures/world-schema/v2/notes/0_0.json" with { type: "json" };
@@ -19,6 +20,7 @@ import {
   WorldShardV2,
   canonicalJson,
   decodeWorldManifest,
+  inventoryEntry,
   noteShardEntry,
   noteShards,
   readWorldFiles,
@@ -55,6 +57,7 @@ const RICH = filesOf({
   "shards/0_0.json": richShard,
   "notes/-1_0.json": richNotesWest,
   "notes/0_0.json": richNotes,
+  "inventories/4.json": richInventory,
 });
 
 function readOk(files: ReadonlyMap<string, string>) {
@@ -101,6 +104,7 @@ function replaced(list: ReadonlyArray<Json>, index: number, patch: Json): Json[]
 const RICH_MANIFEST = jsonOf(RICH, MANIFEST_FILE);
 const RICH_SHARD = jsonOf(RICH, "shards/0_0.json");
 const RICH_NOTES = jsonOf(RICH, "notes/0_0.json");
+const RICH_INVENTORY = jsonOf(RICH, "inventories/4.json");
 const LAYERS = rows(RICH_MANIFEST, "layers");
 const PLANS = rows(RICH_MANIFEST, "plans");
 const NOTE_SHARD_ENTRIES = rows(RICH_MANIFEST, "noteShards");
@@ -267,6 +271,21 @@ describe("world schema v2", () => {
     ["a blank event title", eventWith({ title: "   " }), "$.event.title"],
     ["a note count that disagrees with its shards", manifestWith({ notes: 5 }), "$.notes"],
     [
+      "an inventory of a contributor the manifest doesn't list",
+      manifestWith({ inventories: [{ contributor: 9, parts: 32 }] }),
+      "$.inventories",
+    ],
+    [
+      "inventories out of contributor order",
+      manifestWith({
+        inventories: [
+          { contributor: 4, parts: 32 },
+          { contributor: 0, parts: 1 },
+        ],
+      }),
+      "$.inventories",
+    ],
+    [
       "note shards out of order",
       manifestWith({ noteShards: backwards(NOTE_SHARD_ENTRIES) }),
       "$.noteShards",
@@ -416,6 +435,42 @@ describe("world schema v2", () => {
       "notes/9_9.json",
       "is not part of a world",
     ],
+    [
+      "an inventory holding more parts than the manifest says",
+      withJson(RICH, "inventories/4.json", (inventory) => ({
+        ...inventory,
+        rebrickable: replaced(rows(inventory, "rebrickable"), 0, { quantity: 13 }),
+      })),
+      "inventories/4.json",
+      "holds 33 parts, the manifest says 32",
+    ],
+    [
+      "an inventory listing a part and colour twice",
+      withJson(RICH, "inventories/4.json", (inventory) => ({
+        ...inventory,
+        ldraw: [...rows(inventory, "ldraw"), ...rows(inventory, "ldraw").slice(1)],
+      })),
+      "inventories/4.json.ldraw",
+      "must list each part and colour once, by part then colour",
+    ],
+    [
+      "a counted part named without its namespace",
+      withJson(RICH, "inventories/4.json", (inventory) => ({
+        ...inventory,
+        ldraw: replaced(rows(inventory, "ldraw"), 0, { part: "3811" }),
+      })),
+      "inventories/4.json.ldraw.0.part",
+      "is not a namespaced catalog id",
+    ],
+    [
+      "an inventory the manifest doesn't list",
+      new Map([
+        ...RICH,
+        ["inventories/0.json", canonicalJson({ ...RICH_INVENTORY, contributor: 0 })],
+      ]),
+      "inventories/0.json",
+      "is not part of a world",
+    ],
   ])("refuses a world with %s", (_name, files, path, message) => {
     const read = readWorldFiles(files);
     expect(read.ok ? [] : read.issues).toContainEqual({ path, message });
@@ -438,8 +493,9 @@ describe("world schema v2", () => {
         worldHeader(world.manifest),
         shards.map(shardEntry),
         notesShards.map(noteShardEntry),
+        world.inventories.map(inventoryEntry),
       );
-      return written({ manifest, shards, notes: notesShards });
+      return written({ manifest, shards, notes: notesShards, inventories: world.inventories });
     }
 
     it("writes the same bytes whatever order the records arrive in", () => {
@@ -482,7 +538,14 @@ describe("world schema v2", () => {
       const header = worldHeader(world.manifest);
       expect(decode(WorldHeader, header).ok).toBe(true);
       expect(
-        canonicalJson(worldManifest(header, world.manifest.shards, world.manifest.noteShards)),
+        canonicalJson(
+          worldManifest(
+            header,
+            world.manifest.shards,
+            world.manifest.noteShards,
+            world.manifest.inventories,
+          ),
+        ),
       ).toBe(RICH.get(MANIFEST_FILE));
     });
   });

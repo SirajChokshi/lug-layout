@@ -212,6 +212,7 @@ export function App({ scene, params, importScene, bom }: AppProps) {
             selectionLabel={null}
             plans={null}
             layers={null}
+            contributors={null}
           />
         )}
         {result && !error && (

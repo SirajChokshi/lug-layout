@@ -4,6 +4,7 @@ import {
   DEFAULT_WORLD_DOCUMENT,
   canonicalJson,
   importRef,
+  inventoryFile,
   noteShards,
   shardEntry,
   worldManifest,
@@ -52,7 +53,12 @@ const HEADER: WorldHeader = {
   ...DEFAULT_WORLD_DOCUMENT,
 };
 
-const NO_NOTES = { putNotes: [], dropNotes: [] } as const;
+const NO_SIDE_FILES = {
+  putNotes: [],
+  dropNotes: [],
+  putInventories: [],
+  dropInventories: [],
+} as const;
 
 async function modelFile(name: string, text: string): Promise<ImportedFile> {
   const bytes = utf8.encode(text);
@@ -79,6 +85,7 @@ function archivePlacing(
     manifest: worldManifest(HEADER, shards.map(shardEntry)),
     shards,
     notes: [],
+    inventories: [],
     credits: "credits",
     imports: carried,
   };
@@ -196,15 +203,15 @@ it("asks for persistent storage once, on the first save that changes a world's c
   container.rebind(PERSISTENT_STORAGE).toConstantValue(storage);
   const worlds = container.get(WORLD_REPOSITORY);
   const shards = worldShards([{ ref: "ldraw:3811", color: 2, x: 0, z: 0, yPlates: 0, rot: 0 }], []);
-  const { id } = await worlds.create(HEADER, [], []);
-  await worlds.save(id, { header: HEADER, put: [], drop: [], ...NO_NOTES });
+  const { id } = await worlds.create(HEADER, [], [], []);
+  await worlds.save(id, { header: HEADER, put: [], drop: [], ...NO_SIDE_FILES });
   expect(storage.persistRequests).toBe(0);
-  await worlds.save(id, { header: HEADER, put: shards, drop: [], ...NO_NOTES });
+  await worlds.save(id, { header: HEADER, put: shards, drop: [], ...NO_SIDE_FILES });
   await worlds.save(id, {
     header: HEADER,
     put: [],
     drop: shards.map((shard) => shard.superChunk),
-    ...NO_NOTES,
+    ...NO_SIDE_FILES,
   });
   expect(storage.persistRequests).toBe(1);
 });
@@ -265,7 +272,7 @@ it("opens a world an earlier version saved as schema v1, and keeps saving it as 
     [],
   );
   const header: WorldHeader = { ...HEADER, name: "Club loop" };
-  await worlds.save("saved-by-v1", { header, put: east, drop: [], ...NO_NOTES });
+  await worlds.save("saved-by-v1", { header, put: east, drop: [], ...NO_SIDE_FILES });
 
   const reopened = await worlds.read("saved-by-v1");
   if (!reopened.ok) throw new Error("the upgraded world didn't reopen");
@@ -284,6 +291,8 @@ const NOTES_HEADER: WorldHeader = {
   ],
 };
 
+const ADA = { id: 3, name: "Ada", color: "#bf2626" } as const;
+
 const ZONE = {
   kind: "zone",
   index: 0,
@@ -297,29 +306,47 @@ const ZONE = {
   ],
 } as const;
 
-it("stores a world's note shards beside its parts and drops them on request", async () => {
+it("stores a world's note shards and inventories beside its parts and drops them on request", async () => {
   const worlds = repositoryOn(new IDBFactory());
   const notes = noteShards([{ ...ZONE, outline: ZONE.outline.map(([x, z]) => [x, z]) }]);
-  const { id } = await worlds.create(NOTES_HEADER, [], notes);
+  const header: WorldHeader = { ...NOTES_HEADER, contributors: [ADA] };
+  const inventories = [
+    inventoryFile(ADA.id, {
+      rebrickable: [{ part: "3001", color: 4, quantity: 3 }],
+      ldraw: [{ part: "ldraw:3811", color: 2, quantity: 2 }],
+    }),
+  ];
+  const { id } = await worlds.create(header, [], notes, inventories);
 
   const read = await worlds.read(id);
-  expect(read.ok && read.value.notes).toEqual(notes);
-  expect(read.ok && read.value.manifest.notes).toBe(1);
+  expect(read.ok && [read.value.notes, read.value.inventories]).toEqual([notes, inventories]);
+  expect(read.ok && [read.value.manifest.notes, read.value.manifest.inventories]).toEqual([
+    1,
+    [{ contributor: ADA.id, parts: 5 }],
+  ]);
 
   await worlds.save(id, {
-    header: NOTES_HEADER,
+    header,
     put: [],
     drop: [],
-    putNotes: [],
+    ...NO_SIDE_FILES,
     dropNotes: notes.map((shard) => shard.superChunk),
+    dropInventories: [ADA.id],
   });
   const dropped = await worlds.read(id);
-  expect(dropped.ok && [dropped.value.notes, dropped.value.manifest.noteShards]).toEqual([[], []]);
+  expect(
+    dropped.ok && [
+      dropped.value.notes,
+      dropped.value.manifest.noteShards,
+      dropped.value.inventories,
+      dropped.value.manifest.inventories,
+    ],
+  ).toEqual([[], [], [], undefined]);
 });
 
-it("refuses to save a placement on a layer the header doesn't list, or a note on a parts layer", async () => {
+it("refuses to save a placement on a layer the header doesn't list, a note on a parts layer, or an inventory of a contributor it doesn't list", async () => {
   const worlds = repositoryOn(new IDBFactory());
-  const { id } = await worlds.create(NOTES_HEADER, [], []);
+  const { id } = await worlds.create(NOTES_HEADER, [], [], []);
   const onLayerSeven = worldShards(
     [{ ref: "ldraw:3811", color: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 7 }],
     [],
@@ -329,17 +356,33 @@ it("refuses to save a placement on a layer the header doesn't list, or a note on
   ]);
 
   await expect(
-    worlds.save(id, { header: NOTES_HEADER, put: onLayerSeven, drop: [], ...NO_NOTES }),
+    worlds.save(id, { header: NOTES_HEADER, put: onLayerSeven, drop: [], ...NO_SIDE_FILES }),
   ).rejects.toThrow("shard 0_0.placements.0.layer: names layer 7, which the manifest doesn't list");
   await expect(
     worlds.save(id, {
       header: NOTES_HEADER,
       put: [],
       drop: [],
+      ...NO_SIDE_FILES,
       putNotes: noteOnParts,
-      dropNotes: [],
     }),
   ).rejects.toThrow("note shard 0_0.notes.0.layer: names layer 0, a parts layer, not a notes one");
+  await expect(
+    worlds.save(id, {
+      header: NOTES_HEADER,
+      put: [],
+      drop: [],
+      ...NO_SIDE_FILES,
+      putInventories: [
+        inventoryFile(ADA.id, {
+          rebrickable: [],
+          ldraw: [{ part: "ldraw:3811", color: 2, quantity: 1 }],
+        }),
+      ],
+    }),
+  ).rejects.toThrow("inventories/3.json: names contributor 3, whom the manifest doesn't list");
   const unchanged = await worlds.read(id);
-  expect(unchanged.ok && [unchanged.value.shards, unchanged.value.notes]).toEqual([[], []]);
+  expect(
+    unchanged.ok && [unchanged.value.shards, unchanged.value.notes, unchanged.value.inventories],
+  ).toEqual([[], [], []]);
 });

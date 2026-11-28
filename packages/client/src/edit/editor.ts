@@ -1316,6 +1316,8 @@ function rosterEditLabel(action: RosterAction, name: string): string {
       return `recolour contributor "${name}"`;
     case "remove":
       return `remove contributor "${name}"`;
+    case "inventory":
+      return `edit the inventory of "${name}"`;
     default: {
       const unhandled: never = action;
       throw new Error(`unhandled roster action ${String(unhandled)}`);

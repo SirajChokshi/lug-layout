@@ -310,6 +310,7 @@ describe("world schema", () => {
       ),
       shards,
       notes: [],
+      inventories: [],
       credits: "credits",
     });
     return new Map(files.map((file) => [file.name, file.text]));
@@ -354,6 +355,7 @@ describe("world schema", () => {
       manifest: worldManifest({ ...header, consists }, shards.map(shardEntry)),
       shards,
       notes: [],
+      inventories: [],
       credits: "credits",
     });
     const loaded = reread(new Map(files.map((file) => [file.name, file.text])));
@@ -372,11 +374,11 @@ describe("world schema", () => {
   it("reads a world from its files alone, while an archive must also carry its credits", () => {
     const archive = archiveFiles(placements, track);
     const world = new Map([...archive].filter(([name]) => name !== CREDITS_FILE));
-    const { manifest: archived, shards, notes } = reread(archive);
+    const { manifest: archived, shards, notes, inventories } = reread(archive);
 
     expect(readWorldFiles(world)).toEqual({
       ok: true,
-      value: { manifest: archived, shards, notes },
+      value: { manifest: archived, shards, notes, inventories },
     });
     expect(readWorldArchive(world)).toEqual({
       ok: false,

@@ -1,7 +1,27 @@
-import type { Roster, RosterAction, RosterChange } from "@brr/domain";
-import { decode, type Decoded, type Issue } from "@brr/schema/decode";
-import { CONTRIBUTOR_ID_MAX, ContributorRecordV2 } from "@brr/schema/world";
+import {
+  NO_INVENTORY,
+  canonicalLines,
+  readOwnedPartsCsv,
+  sumInventories,
+  type BomLine,
+  type Contributor,
+  type Inventory,
+  type OwnedPartsRead,
+  type Roster,
+  type RosterAction,
+  type RosterChange,
+} from "@brr/domain";
+import { isCustomPartId } from "@brr/schema/bundle";
+import { decode, issueText, type Decoded, type Issue } from "@brr/schema/decode";
+import {
+  CONTRIBUTOR_ID_MAX,
+  ContributorRecordV2,
+  InventoryV2,
+  canonicalJson,
+  inventoryFile,
+} from "@brr/schema/world";
 import { injectable } from "inversify";
+import type { TextFile } from "../bom/owned-parts-service.ts";
 
 export type ContributorRemovalGuard = (contributor: number) => string | null;
 
@@ -14,6 +34,11 @@ export interface IContributorService {
   rename(id: number, name: string): ReadonlyArray<Issue>;
   recolour(id: number, color: string): ReadonlyArray<Issue>;
   remove(id: number): ReadonlyArray<Issue>;
+  importCollection(id: number, file: TextFile): Promise<OwnedPartsRead>;
+  countParts(id: number, lines: ReadonlyArray<BomLine>): ReadonlyArray<Issue>;
+  setCount(id: number, part: string, color: number, quantity: number): ReadonlyArray<Issue>;
+  clearInventory(id: number): ReadonlyArray<Issue>;
+  eventBudget(): Inventory;
   guardRemoval(guard: ContributorRemovalGuard): () => void;
   onEdit(listener: (change: RosterChange) => void): () => void;
   restore(roster: Roster): void;
@@ -60,6 +85,12 @@ function freeId(roster: Roster): number | null {
   return null;
 }
 
+function holding(record: ContributorRecordV2, inventory: Inventory | undefined): Contributor {
+  return inventory && inventory.rebrickable.length + inventory.ldraw.length > 0
+    ? { ...record, inventory }
+    : record;
+}
+
 @injectable()
 export class ContributorService implements IContributorService {
   private readonly listeners = new Set<() => void>();
@@ -67,6 +98,7 @@ export class ContributorService implements IContributorService {
   private readonly removalGuards = new Set<ContributorRemovalGuard>();
   private current: Roster = [];
   private colouring = false;
+  private budget: { readonly roster: Roster; readonly inventory: Inventory } | null = null;
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -133,6 +165,47 @@ export class ContributorService implements IContributorService {
     return [];
   }
 
+  async importCollection(id: number, file: TextFile): Promise<OwnedPartsRead> {
+    const read = readOwnedPartsCsv(file.name, await file.text());
+    if (!read.ok) return read;
+    const issues = this.stock(id, (inventory) => ({
+      rebrickable: canonicalLines(read.owned.parts),
+      ldraw: inventory.ldraw,
+    }));
+    return issues.length === 0 ? read : { ok: false, problem: issueText(issues) };
+  }
+
+  countParts(id: number, lines: ReadonlyArray<BomLine>): ReadonlyArray<Issue> {
+    const ldraw = lines.flatMap((line) =>
+      isCustomPartId(line.part)
+        ? []
+        : [{ part: line.part, color: line.ldrawColor, quantity: line.quantity }],
+    );
+    return this.stock(id, (inventory) => sumInventories([inventory, { rebrickable: [], ldraw }]));
+  }
+
+  setCount(id: number, part: string, color: number, quantity: number): ReadonlyArray<Issue> {
+    return this.stock(id, (inventory) => ({
+      rebrickable: inventory.rebrickable,
+      ldraw: canonicalLines([
+        ...inventory.ldraw.filter((line) => line.part !== part || line.color !== color),
+        { part, color, quantity },
+      ]),
+    }));
+  }
+
+  clearInventory(id: number): ReadonlyArray<Issue> {
+    return this.stock(id, () => NO_INVENTORY);
+  }
+
+  eventBudget(): Inventory {
+    if (this.budget?.roster !== this.current) {
+      const inventories = this.current.flatMap((row) => (row.inventory ? [row.inventory] : []));
+      this.budget = { roster: this.current, inventory: sumInventories(inventories) };
+    }
+    return this.budget.inventory;
+  }
+
   guardRemoval(guard: ContributorRemovalGuard): () => void {
     this.removalGuards.add(guard);
     return () => this.removalGuards.delete(guard);
@@ -151,14 +224,39 @@ export class ContributorService implements IContributorService {
   ): ReadonlyArray<Issue> {
     const row = this.current.find((candidate) => candidate.id === id);
     if (!row) return [unlisted(id)];
-    const record = decode(ContributorRecordV2, { ...row, ...patch }, contributorPath(id));
-    if (!record.ok) return record.issues;
-    const changed = record.value;
+    const { inventory, ...record } = row;
+    const decoded = decode(ContributorRecordV2, { ...record, ...patch }, contributorPath(id));
+    if (!decoded.ok) return decoded.issues;
+    const changed = decoded.value;
     if (changed.name === row.name && changed.color === row.color) return [];
     this.edit(
       action,
       id,
-      this.current.map((candidate) => (candidate === row ? changed : candidate)),
+      this.current.map((candidate) =>
+        candidate === row ? holding(changed, inventory) : candidate,
+      ),
+    );
+    return [];
+  }
+
+  private stock(id: number, change: (inventory: Inventory) => Inventory): ReadonlyArray<Issue> {
+    const row = this.current.find((candidate) => candidate.id === id);
+    if (!row) return [unlisted(id)];
+    const { inventory: before = NO_INVENTORY, ...record } = row;
+    const after = change(before);
+    if (canonicalJson(after) === canonicalJson(before)) return [];
+    if (after.rebrickable.length + after.ldraw.length > 0) {
+      const checked = decode(
+        InventoryV2,
+        inventoryFile(id, after),
+        `inventory of ${contributorPath(id)}`,
+      );
+      if (!checked.ok) return checked.issues;
+    }
+    this.edit(
+      "inventory",
+      id,
+      this.current.map((candidate) => (candidate === row ? holding(record, after) : candidate)),
     );
     return [];
   }

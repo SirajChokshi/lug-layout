@@ -5,6 +5,7 @@ import type {
   HiddenLayerParts,
   IBomService,
   IBomSource,
+  IContributorService,
   ILayerService,
   IPlanService,
   IOwnedParts,
@@ -27,6 +28,7 @@ interface BomPanelProps {
   readonly selectionLabel: string | null;
   readonly plans: IPlanService | null;
   readonly layers: ILayerService | null;
+  readonly contributors: IContributorService | null;
 }
 
 function HiddenLayersOption({
@@ -173,6 +175,7 @@ export function BomPanel({
   selectionLabel,
   plans,
   layers,
+  contributors,
 }: BomPanelProps) {
   usePlanVersion(plans);
   const plan = activePlanOf(plans);
@@ -332,6 +335,7 @@ export function BomPanel({
       <OwnVsBuy
         service={service}
         ownedParts={ownedParts}
+        contributors={contributors}
         bom={bom}
         stem={bom ? fileStem(bom) : ""}
       />

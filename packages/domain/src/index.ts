@@ -56,6 +56,7 @@ export {
   type AppliedConsistChange,
   type AppliedEdit,
   type ConsistRef,
+  type Contributor,
   type EditKind,
   type EditSummary,
   type EventChange,
@@ -403,8 +404,12 @@ export {
   type UncountedItem,
 } from "./bom/export-formats.ts";
 export {
+  NO_INVENTORY,
+  canonicalLines,
   ownVsBuy,
   readOwnedPartsCsv,
+  sumInventories,
+  type Inventory,
   type OwnBuyLine,
   type OwnedPart,
   type OwnedParts,

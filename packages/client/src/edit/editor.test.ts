@@ -74,6 +74,7 @@ import type { Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
   BASE_LAYER_ID,
+  inventoryEntry,
   noteShardEntry,
   noteShards,
   shardEntry,
@@ -84,6 +85,7 @@ import {
   type LayerRecordV2,
   type NoteRecordV2,
   type ImportedFile,
+  type InventoryV2,
   type NoteShardV2,
   type WorldArchive,
   type WorldHeader,
@@ -1179,7 +1181,7 @@ async function editorWithNotesLayer(extraNotes: ReadonlyArray<NoteRecordV2> = []
   await placer(editor, backend)(cottage, 0, 0);
   const archive = await repository.readArchive((await editor.exportWorld()).bytes);
   if (!archive.ok) throw new Error(issueText(archive.issues));
-  const { manifest, shards, credits, imports } = archive.value;
+  const { manifest, shards, inventories, credits, imports } = archive.value;
   const notes = noteShards(extraNotes);
   const header = { ...worldHeader(manifest), layers: [...manifest.layers, NOTES_LAYER] };
   const reopened = await editor.importWorld(
@@ -1187,6 +1189,7 @@ async function editorWithNotesLayer(extraNotes: ReadonlyArray<NoteRecordV2> = []
       manifest: worldManifest(header, manifest.shards, notes.map(noteShardEntry)),
       shards,
       notes,
+      inventories,
       credits,
       imports,
     }),
@@ -1961,6 +1964,59 @@ describe("contributors", () => {
       removal: [],
     });
   }, 240_000);
+
+  it("counts a selected user's own model and laid track piece into a contributor's inventory, leaving out the file's own part, as one undo step", async () => {
+    const { editor, backend, container } = await startImportingEditor(() => new MemoryRepository());
+    const contributors = container.get(CONTRIBUTOR_SERVICE);
+    const cottage = await importUserFile(
+      editor,
+      "my-cottage.mpd",
+      userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+    );
+    await placer(editor, backend)(cottage, 0, 0);
+    const line: Ground = [0, 80 * STUD];
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, line[1]], [24 * STUD, line[1]]);
+    const added = contributors.create("Ada");
+    if (!added.ok) throw new Error("the contributor was refused");
+    const ada = added.value;
+    const inventory = () => contributors.roster().find((row) => row.id === ada)?.inventory;
+    selectAt(editor, backend, 0, 0);
+    toggleAt(editor, backend, line);
+    const selection = editor.bomInput({ kind: "selection" }).counter.lines();
+
+    const counted = contributors.countParts(ada, selection);
+    const afterCount = { inventory: inventory(), undoLabel: editor.snapshot().history.undoLabel };
+    editor.undo(0);
+    const undone = inventory();
+    editor.redo(0);
+
+    expect(
+      selection.map(({ part, ldrawColor }) => [
+        part.startsWith("custom:") ? "custom" : part,
+        ldrawColor,
+      ]),
+    ).toEqual([
+      ["custom", 1],
+      ["ldraw:3001", 4],
+      ["ldraw:74746", 72],
+    ]);
+    expect({ counted, afterCount, undone, redone: inventory() }).toEqual({
+      counted: [],
+      afterCount: {
+        inventory: {
+          rebrickable: [],
+          ldraw: [
+            { part: "ldraw:3001", color: 4, quantity: 1 },
+            { part: "ldraw:74746", color: 72, quantity: 1 },
+          ],
+        },
+        undoLabel: 'edit the inventory of "Ada"',
+      },
+      undone: undefined,
+      redone: afterCount.inventory,
+    });
+  }, 240_000);
 });
 
 it("lists a user's own file in the catalog by its name when a fresh editor reopens the world that places it", async () => {
@@ -2419,6 +2475,7 @@ interface MemoryWorld {
   header: WorldHeader;
   readonly shards: Map<string, WorldShardV2>;
   readonly notes: Map<string, NoteShardV2>;
+  readonly inventories: Map<number, InventoryV2>;
 }
 
 class MemoryRepository implements IWorldRepository {
@@ -2477,10 +2534,19 @@ class MemoryRepository implements IWorldRepository {
     header: WorldHeader,
     shards: ReadonlyArray<WorldShardV2>,
     notes: ReadonlyArray<NoteShardV2>,
+    inventories: ReadonlyArray<InventoryV2>,
   ): Promise<WorldIndexEntry> {
     const id = `world-${this.nextId++}`;
-    this.worlds.set(id, { header, shards: new Map(), notes: new Map() });
-    return this.save(id, { header, put: shards, drop: [], putNotes: notes, dropNotes: [] });
+    this.worlds.set(id, { header, shards: new Map(), notes: new Map(), inventories: new Map() });
+    return this.save(id, {
+      header,
+      put: shards,
+      drop: [],
+      putNotes: notes,
+      dropNotes: [],
+      putInventories: inventories,
+      dropInventories: [],
+    });
   }
 
   async read(id: string): Promise<Decoded<StoredWorld>> {
@@ -2488,8 +2554,14 @@ class MemoryRepository implements IWorldRepository {
     if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
     const shards = [...world.shards.values()];
     const notes = [...world.notes.values()];
-    const manifest = worldManifest(world.header, shards.map(shardEntry), notes.map(noteShardEntry));
-    return { ok: true, value: { id, manifest, shards, notes } };
+    const inventories = [...world.inventories.values()];
+    const manifest = worldManifest(
+      world.header,
+      shards.map(shardEntry),
+      notes.map(noteShardEntry),
+      inventories.map(inventoryEntry),
+    );
+    return { ok: true, value: { id, manifest, shards, notes, inventories } };
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
@@ -2497,12 +2569,17 @@ class MemoryRepository implements IWorldRepository {
       header: change.header,
       shards: new Map(),
       notes: new Map(),
+      inventories: new Map(),
     };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
     for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
     for (const superChunk of change.dropNotes) world.notes.delete(shardName(superChunk));
     for (const shard of change.putNotes) world.notes.set(shardName(shard.superChunk), shard);
+    for (const contributor of change.dropInventories) world.inventories.delete(contributor);
+    for (const inventory of change.putInventories) {
+      world.inventories.set(inventory.contributor, inventory);
+    }
     this.worlds.set(id, world);
     return this.entry(id, world);
   }
@@ -2522,7 +2599,14 @@ class MemoryRepository implements IWorldRepository {
       ...shard,
       placements: [...shard.placements, ...extra(shard.placements)],
     }));
-    return (await this.create({ ...world.header, name }, shards, [...world.notes.values()])).id;
+    return (
+      await this.create(
+        { ...world.header, name },
+        shards,
+        [...world.notes.values()],
+        [...world.inventories.values()],
+      )
+    ).id;
   }
 
   async shardFiles(): Promise<never[]> {

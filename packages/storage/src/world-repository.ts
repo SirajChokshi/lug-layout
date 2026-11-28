@@ -2,6 +2,7 @@ import { decode, decodedOrThrow, type Decoded, type Issue } from "@brr/schema/de
 import { planArchiveFiles, readPlanFiles, type PlanArchive } from "@brr/schema/plan";
 import {
   IMPORT_DIRECTORY,
+  InventoryV2,
   NoteShardV2,
   WorldDocumentIndex,
   WorldHeader,
@@ -12,6 +13,9 @@ import {
   decodeWorldManifest,
   decodeWorldShard,
   importPath,
+  inventoryEntry,
+  inventoryIssues,
+  inventoryPath,
   noteShardEntry,
   noteShardReferenceIssues,
   parseImportPath,
@@ -26,6 +30,7 @@ import {
   worldManifest,
   type ConsistRecordV1,
   type ImportedFile,
+  type InventoryEntryV2,
   type NoteShardEntryV2,
   type PlacedRefs,
   type ShardEntryV1,
@@ -62,6 +67,7 @@ export interface StoredWorld {
   readonly manifest: WorldManifestV2;
   readonly shards: ReadonlyArray<WorldShardV2>;
   readonly notes: ReadonlyArray<NoteShardV2>;
+  readonly inventories: ReadonlyArray<InventoryV2>;
 }
 
 export interface WorldChange {
@@ -70,6 +76,8 @@ export interface WorldChange {
   readonly drop: ReadonlyArray<SuperChunk>;
   readonly putNotes: ReadonlyArray<NoteShardV2>;
   readonly dropNotes: ReadonlyArray<SuperChunk>;
+  readonly putInventories: ReadonlyArray<InventoryV2>;
+  readonly dropInventories: ReadonlyArray<number>;
 }
 
 export interface IWorldRepository {
@@ -78,6 +86,7 @@ export interface IWorldRepository {
     header: WorldHeader,
     shards: ReadonlyArray<WorldShardV2>,
     notes: ReadonlyArray<NoteShardV2>,
+    inventories: ReadonlyArray<InventoryV2>,
   ): Promise<WorldIndexEntry>;
   read(id: string): Promise<Decoded<StoredWorld>>;
   save(id: string, change: WorldChange): Promise<WorldIndexEntry>;
@@ -128,6 +137,7 @@ const utf8 = new TextEncoder();
 interface StoredEntries {
   readonly shards: ReadonlyArray<ShardEntryV1>;
   readonly noteShards: ReadonlyArray<NoteShardEntryV2>;
+  readonly inventories?: ReadonlyArray<InventoryEntryV2>;
 }
 
 function storedEntries(text: unknown): StoredEntries {
@@ -135,6 +145,10 @@ function storedEntries(text: unknown): StoredEntries {
   const json = parseJsonText(text, "manifest");
   const manifest = json.ok ? decodeWorldManifest(json.value, "manifest") : json;
   return decodedOrThrow(manifest, "the stored manifest is invalid");
+}
+
+function decodeInventory(value: unknown, path: string): Decoded<InventoryV2> {
+  return decode(InventoryV2, value, path);
 }
 
 function entriesBySuperChunk<Entry extends { readonly superChunk: SuperChunk }>(
@@ -183,7 +197,9 @@ function changesContent(change: WorldChange): boolean {
     change.put.length > 0 ||
     change.drop.length > 0 ||
     change.putNotes.length > 0 ||
-    change.dropNotes.length > 0
+    change.dropNotes.length > 0 ||
+    change.putInventories.length > 0 ||
+    change.dropInventories.length > 0
   );
 }
 
@@ -268,6 +284,7 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     header: WorldHeader,
     shards: ReadonlyArray<WorldShardV2>,
     notes: ReadonlyArray<NoteShardV2>,
+    inventories: ReadonlyArray<InventoryV2>,
   ): Promise<WorldIndexEntry> {
     return this.write(crypto.randomUUID(), {
       header,
@@ -275,6 +292,8 @@ export class IndexedDbWorldRepository implements IWorldRepository {
       drop: [],
       putNotes: notes,
       dropNotes: [],
+      putInventories: inventories,
+      dropInventories: [],
     });
   }
 
@@ -299,6 +318,13 @@ export class IndexedDbWorldRepository implements IWorldRepository {
         noteShardReferenceIssues(index, value, path),
       );
     }
+    for (const inventory of change.putInventories) {
+      const path = inventoryPath(inventory.contributor);
+      checkedForSave(decodeInventory(inventory, path), (value) => {
+        const owner = index.ownerIssue(value.contributor);
+        return owner === null ? [] : [{ path, message: owner }];
+      });
+    }
     const manifest = await this.withWorld(id, async (db) => {
       const transaction = db.transaction([MANIFEST_STORE, SHARD_STORE], "readwrite");
       const done = transactionDone(transaction);
@@ -312,9 +338,21 @@ export class IndexedDbWorldRepository implements IWorldRepository {
       for (const shard of change.putNotes) {
         noteEntries.set(shardName(shard.superChunk), noteShardEntry(shard));
       }
+      const inventoryEntries = new Map(
+        (stored.inventories ?? []).map((entry) => [entry.contributor, entry]),
+      );
+      for (const contributor of change.dropInventories) inventoryEntries.delete(contributor);
+      for (const inventory of change.putInventories) {
+        inventoryEntries.set(inventory.contributor, inventoryEntry(inventory));
+      }
       const next = decodedOrThrow(
         decodeWorldManifest(
-          worldManifest(change.header, [...entries.values()], [...noteEntries.values()]),
+          worldManifest(
+            change.header,
+            [...entries.values()],
+            [...noteEntries.values()],
+            [...inventoryEntries.values()],
+          ),
           "manifest",
         ),
         NOT_SAVED,
@@ -325,6 +363,10 @@ export class IndexedDbWorldRepository implements IWorldRepository {
       for (const superChunk of change.dropNotes) shards.delete(noteShardKey(superChunk));
       for (const shard of change.putNotes) {
         shards.put(canonicalJson(shard), noteShardKey(shard.superChunk));
+      }
+      for (const contributor of change.dropInventories) shards.delete(inventoryPath(contributor));
+      for (const inventory of change.putInventories) {
+        shards.put(canonicalJson(inventory), inventoryPath(inventory.contributor));
       }
       manifests.put(canonicalJson(next), MANIFEST_KEY);
       await done;
@@ -397,8 +439,19 @@ export class IndexedDbWorldRepository implements IWorldRepository {
         issues.push(...shard.issues);
       }
     }
+    const inventories: InventoryV2[] = [];
+    for (const entry of manifest.value.inventories ?? []) {
+      const path = inventoryPath(entry.contributor);
+      const inventory = storedText(texts.shards, path, path, decodeInventory);
+      if (inventory.ok) {
+        inventories.push(inventory.value);
+        issues.push(...inventoryIssues(inventory.value, entry, path));
+      } else {
+        issues.push(...inventory.issues);
+      }
+    }
     if (issues.length > 0) return { ok: false, issues };
-    return { ok: true, value: { id, manifest: manifest.value, shards, notes } };
+    return { ok: true, value: { id, manifest: manifest.value, shards, notes, inventories } };
   }
 
   async remove(id: string): Promise<void> {

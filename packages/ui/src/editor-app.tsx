@@ -283,6 +283,7 @@ export function EditorApp({
           editor={editor}
           contributors={contributors}
           contents={editor.ownerContents()}
+          selection={selectionLabel(snapshot.selection)}
         />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
@@ -319,6 +320,7 @@ export function EditorApp({
             selectionLabel={selectionLabel(snapshot.selection)}
             plans={plans}
             layers={layers}
+            contributors={contributors}
           />
         )}
         <EditorHud editor={editor} snapshot={snapshot} panels={panels} />

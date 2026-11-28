@@ -29,7 +29,7 @@ export function tallyByTag<Model>(
   return tallies;
 }
 
-function counted(count: number, one: string, many: string): string {
+export function counted(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 

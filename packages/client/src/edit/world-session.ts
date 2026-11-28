@@ -4,7 +4,9 @@ import {
   LayerTable,
   worldPlacements,
   type AppliedEdit,
+  type Inventory,
   type PlanRegion,
+  type Roster,
   type TrackPieceAt,
   type World,
 } from "@brr/domain";
@@ -23,6 +25,9 @@ import {
   DEFAULT_WORLD_DOCUMENT,
   WORLD_NAME_MAX_LENGTH,
   WorldName,
+  inventoryEntry,
+  inventoryFile,
+  inventoryLines,
   migrateShardV1,
   noteShardEntry,
   noteShards,
@@ -36,8 +41,10 @@ import {
   worldShards,
   worldShardsV1,
   type ConsistRecordV1,
+  type ContributorRecordV2,
   type EventRecordV2,
   type ImportedFile,
+  type InventoryV2,
   type NoteRecordV2,
   type NoteShardV2,
   type PlacementRecordV1,
@@ -231,6 +238,17 @@ function tagged(record: TaggedRecord): boolean {
   return record.group !== undefined;
 }
 
+function rosterHolding(
+  records: ReadonlyArray<ContributorRecordV2>,
+  inventories: ReadonlyArray<InventoryV2>,
+): Roster {
+  const held = new Map(inventories.map((file) => [file.contributor, inventoryLines(file)]));
+  return records.map((record) => {
+    const inventory = held.get(record.id);
+    return inventory ? { ...record, inventory } : record;
+  });
+}
+
 function layerTable(document: WorldDocument): LayerTable {
   const table = LayerTable.of(document.layers, "layers");
   if (!table.ok)
@@ -329,6 +347,7 @@ export class WorldSession implements IWorldSession {
   private saveFailed = false;
   private lastSaveError: string | null = null;
   private readonly importedFiles = new Map<string, ImportedFile>();
+  private savedInventories: ReadonlyMap<number, Inventory> = new Map();
 
   constructor(
     @inject(WORLD_REPOSITORY) private readonly repository: IWorldRepository,
@@ -403,7 +422,7 @@ export class WorldSession implements IWorldSession {
     const { consists } = this.editedWorld().contents();
     const event = this.events.event();
     const { contributors: _opened, ...document } = worldDocument(current.document);
-    const roster = this.contributors.roster();
+    const roster = this.contributors.roster().map(({ inventory: _held, ...record }) => record);
     return {
       name: current.name,
       bundleVersion: this.bundleVersion,
@@ -413,8 +432,14 @@ export class WorldSession implements IWorldSession {
       ...document,
       ...(event === null ? {} : { event }),
       layers: [...this.layers.table().layers],
-      ...(roster.length > 0 ? { contributors: [...roster] } : {}),
+      ...(roster.length > 0 ? { contributors: roster } : {}),
     };
+  }
+
+  private inventories(): ReadonlyMap<number, Inventory> {
+    return new Map(
+      this.contributors.roster().flatMap((row) => (row.inventory ? [[row.id, row.inventory]] : [])),
+    );
   }
 
   private inFileQueue<T>(task: () => Promise<T>): Promise<T> {
@@ -509,6 +534,7 @@ export class WorldSession implements IWorldSession {
     const noteChange = notesWereDirty
       ? this.savedNotes.change(contents.notes)
       : { put: [], drop: [] };
+    const inventories = this.inventories();
     const cameraWasDirty = this.cameraDirty;
     const consistsWereDirty = this.consistsDirty;
     const documentWasDirty = this.documentDirty;
@@ -524,8 +550,13 @@ export class WorldSession implements IWorldSession {
         drop: change.drop,
         putNotes: noteChange.put,
         dropNotes: noteChange.drop,
+        putInventories: [...inventories]
+          .filter(([id, inventory]) => this.savedInventories.get(id) !== inventory)
+          .map(([id, inventory]) => inventoryFile(id, inventory)),
+        dropInventories: [...this.savedInventories.keys()].filter((id) => !inventories.has(id)),
       });
       this.savedNotes.accept(noteChange);
+      this.savedInventories = inventories;
       this.current = { ...current, pinnedBundleVersion: this.bundleVersion };
       const unsaved = this.unsavedContent() || this.cameraDirty;
       this.setWorldView(this.current, {
@@ -626,7 +657,7 @@ export class WorldSession implements IWorldSession {
       openMs: 0,
       document: DEFAULT_WORLD_DOCUMENT,
     };
-    await this.loadEditedWorld(current.name, NOTHING_STORED);
+    await this.loadEditedWorld(current.name, NOTHING_STORED, []);
     this.finishOpen(null, current, [], null);
     this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
     this.update({ storageError: reason, worlds: [] });
@@ -704,6 +735,7 @@ export class WorldSession implements IWorldSession {
       },
       [],
       [],
+      [],
     );
     await this.takeLease(summary.id);
     const current: OpenWorld = {
@@ -713,12 +745,16 @@ export class WorldSession implements IWorldSession {
       openMs: performance.now() - started,
       document: DEFAULT_WORLD_DOCUMENT,
     };
-    await this.loadEditedWorld(name, NOTHING_STORED);
+    await this.loadEditedWorld(name, NOTHING_STORED, []);
     this.finishOpen(null, current, [], null);
     this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
   }
 
-  private async loadEditedWorld(name: string, stored: StoredContents): Promise<void> {
+  private async loadEditedWorld(
+    name: string,
+    stored: StoredContents,
+    inventories: ReadonlyArray<InventoryV2>,
+  ): Promise<void> {
     const unkept = unkeptTagIssues(stored.shards);
     if (unkept.length > 0) throw new Error(`world "${name}" can't be opened: ${issueText(unkept)}`);
     const issues = await this.editedWorld().load(stored);
@@ -726,7 +762,8 @@ export class WorldSession implements IWorldSession {
       throw new Error(`world "${name}" can't be opened: ${issueText(issues)}`);
     }
     this.layers.reset(layerTable(stored.document));
-    this.contributors.restore(stored.document.contributors ?? []);
+    this.contributors.restore(rosterHolding(stored.document.contributors ?? [], inventories));
+    this.savedInventories = this.inventories();
   }
 
   private async loadShards(
@@ -734,8 +771,8 @@ export class WorldSession implements IWorldSession {
     stored: Omit<WorldFiles, "imports">,
     started: number,
   ): Promise<void> {
-    const { manifest, shards, notes } = stored;
-    await this.loadEditedWorld(manifest.name, storedContents(manifest, shards, notes));
+    const { manifest, shards, notes, inventories } = stored;
+    await this.loadEditedWorld(manifest.name, storedContents(manifest, shards, notes), inventories);
     const opened: OpenWorld = {
       id,
       name: manifest.name,
@@ -874,10 +911,14 @@ export class WorldSession implements IWorldSession {
       const contents = edited.contents();
       const shards = worldShards(worldPlacements(contents.world, contents.refs), contents.track);
       const notes = noteShards(contents.notes);
+      const inventories = [...this.inventories()].map(([id, inventory]) =>
+        inventoryFile(id, inventory),
+      );
       const manifest = worldManifest(
         this.header(current),
         shards.map(shardEntry),
         notes.map(noteShardEntry),
+        inventories.map(inventoryEntry),
       );
       const imports = [...referencedImports(shards, contents.consists)].map((sha256) => {
         const file = this.importedFiles.get(sha256);
@@ -886,7 +927,14 @@ export class WorldSession implements IWorldSession {
       });
       return {
         fileName: exportFileName(current.name),
-        bytes: this.repository.packArchive({ manifest, shards, notes, credits, imports }),
+        bytes: this.repository.packArchive({
+          manifest,
+          shards,
+          notes,
+          inventories,
+          credits,
+          imports,
+        }),
       };
     });
   }
@@ -1017,7 +1065,7 @@ export class WorldSession implements IWorldSession {
       const started = performance.now();
       const archive = await read();
       if (!archive.ok) throw new Error(issueText(archive.issues));
-      const { manifest, shards, notes, imports } = archive.value;
+      const { manifest, shards, notes, inventories, imports } = archive.value;
       const stored = storedContents(manifest, shards, notes);
       const unkept = unkeptTagIssues(shards);
       if (unkept.length > 0) throw new Error(issueText(unkept));
@@ -1032,7 +1080,12 @@ export class WorldSession implements IWorldSession {
         await this.loadShards(null, archive.value, started);
         return;
       }
-      const summary = await this.repository.create(worldHeader(manifest), shards, notes);
+      const summary = await this.repository.create(
+        worldHeader(manifest),
+        shards,
+        notes,
+        inventories,
+      );
       await this.openStored(summary.id);
       await this.refreshWorlds();
     });
