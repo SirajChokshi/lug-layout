@@ -1,16 +1,5 @@
 @import "@brr/ui/tokens.css";
-
-html,
-body,
-#root {
-  margin: 0;
-  height: 100%;
-  overflow: hidden;
-  font:
-    13px/1.4 system-ui,
-    sans-serif;
-  background: #d9e6f2;
-}
+@import "@brr/ui/base.css";
 
 .scene {
   position: fixed;
@@ -372,6 +361,7 @@ footer {
 
 .event-field input {
   height: var(--control-height-sm);
+  padding-block: 0;
 }
 
 .event-field textarea {
@@ -488,6 +478,7 @@ footer {
 .plan-panel button,
 .plan-panel select {
   font: inherit;
+  height: auto;
   padding: 4px 8px;
   border: 1px solid #c3ccd6;
   border-radius: 6px;
@@ -912,6 +903,7 @@ footer {
 .view-controls button,
 .view-controls select {
   font: inherit;
+  height: auto;
   padding: 4px 9px;
   border: 1px solid #c3ccd6;
   border-radius: 6px;
@@ -989,6 +981,7 @@ footer {
 }
 
 .view-scroll select {
+  height: auto;
   padding: 3px 4px;
 }
 
@@ -1295,7 +1288,7 @@ footer a {
   height: var(--control-height-sm);
   padding: 0 var(--space-5);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--surface-panel-solid);
   color: var(--accent-ink);
   font: inherit;
@@ -1632,6 +1625,7 @@ footer a {
 .world-new input,
 .go-to input {
   font: inherit;
+  height: auto;
   padding: 5px 8px;
   border: 1px solid #c3ccd6;
   border-radius: 6px;
@@ -1922,6 +1916,7 @@ footer a {
 
 .play-start select {
   font: inherit;
+  height: auto;
   padding: 4px;
 }
 
