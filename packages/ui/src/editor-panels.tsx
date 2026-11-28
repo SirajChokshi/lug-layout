@@ -209,16 +209,20 @@ function ToolButton({
   readonly labelled?: boolean;
 } & Omit<ComponentProps<"button">, "children" | "title" | "type">) {
   const keys = shortcutText(command);
+  const tipId = useId();
   return (
     <button
       type="button"
       className="tool-button"
-      title={`${label} (${keys})${hint === undefined ? "" : `. ${hint}`}`}
       aria-keyshortcuts={keys}
+      aria-describedby={tipId}
       {...button}
     >
       <Icon name={icon} />
       <span className={labelled ? "tool-label" : "visually-hidden"}>{label}</span>
+      <span id={tipId} className="tool-tip" role="tooltip" aria-hidden="true">
+        {`${label} (${keys})${hint === undefined ? "" : `. ${hint}`}`}
+      </span>
     </button>
   );
 }

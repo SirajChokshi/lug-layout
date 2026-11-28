@@ -185,6 +185,33 @@ footer {
   border-color: var(--border-control);
 }
 
+.tool-button {
+  anchor-name: --tool-button;
+  anchor-scope: --tool-button;
+}
+
+.tool-tip {
+  display: none;
+  position: fixed;
+  position-anchor: --tool-button;
+  top: anchor(bottom);
+  left: anchor(center);
+  z-index: var(--layer-overlay);
+  translate: -50% var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  color: var(--text-on-accent);
+  font-size: var(--text-caption);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.tool-button:hover .tool-tip,
+.tool-button:focus-visible .tool-tip {
+  display: block;
+}
+
 .editor[data-layout="compact"] .tool-label,
 .editor[data-layout="compact"] .placement-mode-state {
   display: none;

@@ -1565,6 +1565,34 @@ describe("note tools", () => {
     expect(annotations.notes()).toEqual([]);
   }, 240_000);
 
+  it("keep a zone's corner where it is on a click near it, and move it by the whole studs dragged", async () => {
+    const { editor, backend, annotations } = await noteToolEditor();
+    editor.setNoteTool("zone");
+    noteDrag(editor, backend, [1013, 1007], [1295, 1161]);
+    const depth = editor.snapshot().history.undoDepth;
+
+    noteClick(editor, backend, [1312, 1007]);
+    const clicked = zones(annotations)[0]?.outline;
+    const steps = editor.snapshot().history.undoDepth - depth;
+    noteDrag(editor, backend, [1312, 1007], [1355, 1048]);
+
+    expect({ clicked, steps, dragged: zones(annotations)[0]?.outline }).toEqual({
+      clicked: [
+        [1020, 1000],
+        [1300, 1000],
+        [1300, 1160],
+        [1020, 1160],
+      ],
+      steps: 0,
+      dragged: [
+        [1020, 1000],
+        [1340, 1040],
+        [1300, 1160],
+        [1020, 1160],
+      ],
+    });
+  }, 240_000);
+
   it("place labels on whole studs, edit, turn and move them, and pick one back by clicking its text", async () => {
     const { editor, backend, annotations, notes } = await noteToolEditor();
     const depth = editor.snapshot().history.undoDepth;

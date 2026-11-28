@@ -57,10 +57,11 @@ function studOutline(points: ReadonlyArray<NotePoint>): StudPoint[] {
 
 function changedOutline(gesture: Extract<ZoneGesture, { kind: "move" | "corner" }>): StudPoint[] {
   const { zone, corner, x, z } = gesture;
-  return zone.outline.map(([cornerX, cornerZ], i) => {
-    if (gesture.kind === "move") return [cornerX + x + 0, cornerZ + z + 0];
-    return i === corner ? [x, z] : [cornerX, cornerZ];
-  });
+  return zone.outline.map(([cornerX, cornerZ], i) =>
+    gesture.kind === "move" || i === corner
+      ? [cornerX + x + 0, cornerZ + z + 0]
+      : [cornerX, cornerZ],
+  );
 }
 
 export class ZoneTool implements NoteTool {
@@ -89,7 +90,7 @@ export class ZoneTool implements NoteTool {
       const corner = nearestCorner(selected.note.outline, pointer.x, pointer.z, pointer.reachLdu);
       if (corner !== NO_CORNER) {
         const zone = selected.note;
-        this.gesture = { kind: "corner", entry: selected, zone, corner, ...pressed, ...at };
+        this.gesture = { kind: "corner", entry: selected, zone, corner, ...pressed };
         return;
       }
     }
@@ -118,12 +119,9 @@ export class ZoneTool implements NoteTool {
         gesture.at = at;
         return;
       case "move":
+      case "corner":
         gesture.x = nearestStud(pointer.x - gesture.pressX);
         gesture.z = nearestStud(pointer.z - gesture.pressZ);
-        return;
-      case "corner":
-        gesture.x = at.x;
-        gesture.z = at.z;
         return;
       default: {
         const unhandled: never = gesture;
@@ -196,7 +194,10 @@ export class ZoneTool implements NoteTool {
         : FLAT_RECTANGLE;
     }
     if (gesture?.kind === "move") return `${gesture.zone.name}, by ${studsAt(gesture)}`;
-    if (gesture?.kind === "corner") return `corner to ${studsAt(gesture)}`;
+    if (gesture?.kind === "corner") {
+      const [x = 0, z = 0] = changedOutline(gesture)[gesture.corner] ?? [];
+      return `corner to ${studsAt({ x, z })}`;
+    }
     return this.cursor ? `at ${studsAt(this.cursor)}` : null;
   }
 

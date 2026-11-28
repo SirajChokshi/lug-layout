@@ -89,6 +89,14 @@ async function giveWorldANotesLayer(page: Page): Promise<void> {
   await menu.click();
 }
 
+async function chooseFromToolbar(page: Page, name: string, tip: string): Promise<void> {
+  const button = page.getByRole("toolbar").getByRole("button", { name, exact: true });
+  await button.hover();
+  await expect(button.getByRole("tooltip", { includeHidden: true })).toBeVisible();
+  await expect(button).toHaveAccessibleDescription(tip);
+  await button.click();
+}
+
 async function clickCorners(editor: EditorPage, corners: ReadonlyArray<LatticePoint>) {
   for (const corner of corners) await editor.clickAt(corner);
 }
@@ -107,7 +115,7 @@ test("zone, label and ruler tools draw notes through the UI in 3D and the 2D pla
   await editor.escape();
   await editor.zoom(400);
 
-  await editor.press("z");
+  await chooseFromToolbar(page, "Zone", "Zone (Z)");
   await expect(editor.root).toHaveAttribute("data-mode", "zone");
   await editor.dragFrom({ x: -400, z: -200 }, { x: -200, z: -80 });
   await editor.escape();
