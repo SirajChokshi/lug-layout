@@ -4397,7 +4397,7 @@ export class Editor implements IEditor, IEditedWorld {
     });
     this.repaintTrackPreview();
     if (edit.layers) this.layersChanged();
-    if (edit.groups && planOnly)
+    if (edit.groups && documentOnly)
       this.select(this.selection.members, this.selection.rememberedPivot);
     return view;
   }
