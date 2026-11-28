@@ -222,8 +222,8 @@ class Sequence {
       case 9: {
         const part = this.drawing.pieceParts().find((p) => p.piece.id === RIGHT_SWITCH);
         if (part) {
-          const change = this.drawing.pieceChange(
-            part.catalogIndex,
+          const change = this.drawing.arrangementChange(
+            this.drawing.arrangementOfPiece(part.catalogIndex),
             this.studPose(this.int(4) * 4),
             0,
           );

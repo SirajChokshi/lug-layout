@@ -156,11 +156,11 @@ import { chainedPoses, instancesAt } from "../connect/track-instances.test-suppo
 import { rampChunkKey } from "./crossing-ramps.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./track-edit-session.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, blueprintId } from "./track-edit-session.ts";
 import type { IAnnotationService } from "../notes/annotation-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
-import type { TrackRouteView } from "./track-drawing.ts";
+import { TRACK_SYSTEM, type TrackRouteView } from "./track-drawing.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
@@ -9728,6 +9728,76 @@ it("drops a held switch into the straights laid off a user's own track model in 
     reason: expect.stringContaining(`would run into ${LOCOMOTIVE_LABEL}.`),
     pieces: laid.length,
   });
+}, 120_000);
+
+const BLUEPRINT_RUN_STRAIGHTS = 10;
+const SIDING_BESIDE_FILE_LDU = 1440;
+const OPEN_GROUND: PlanPoint = [0, 4000];
+
+function heldDetail(editor: IEditor, backend: AimedBackend, at: PlanPoint): string | null {
+  backend.aim(...at);
+  editor.pointerMove(0, 0);
+  return toolHints(editor.snapshot()).detail;
+}
+
+function laidState(editor: IEditor) {
+  const { laidTrack, trackEnds } = editor.dump();
+  return {
+    laid: laidTrack.length,
+    ends: trackEnds.length,
+    undo: editor.snapshot().history.undoLabel,
+  };
+}
+
+it("drops track blueprints as one undo step each: a passing siding in place of the straights laid off a user's own track file, clear of its baseplate and one straight longer on '.', a reversing loop on the run's open end, and an oval on open ground", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const file = await importUserFile(
+    editor,
+    "my-9v-run.ldr",
+    userRoadFile("my-9v-run.ldr", [
+      "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+      "1 16 -160 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+      "1 16 160 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+    ]),
+  );
+  await placer(editor, backend)(file, 0, 0);
+  const runStart = -ONE_STRAIGHT_LDU;
+  const runEnd = runStart - BLUEPRINT_RUN_STRAIGHTS * ONE_STRAIGHT_LDU;
+  trackDrawer(editor, backend)([runStart, 0], [runEnd, 0]);
+  const run = laidState(editor);
+  const hold = (blueprint: Parameters<typeof blueprintId>[0], at: PlanPoint) => {
+    editor.chooseItem(blueprintId(blueprint, TRACK_SYSTEM));
+    return heldDetail(editor, backend, at);
+  };
+
+  const shorter = hold("passing-siding", [runStart - SIDING_BESIDE_FILE_LDU, 0]);
+  editor.cycleTrackChoice(1);
+  const longer = heldDetail(editor, backend, [runStart - SIDING_BESIDE_FILE_LDU, 0]);
+  editor.click(0, 0, 0);
+  const siding = laidState(editor);
+  const onEnd = hold("reversing-loop", [runEnd, 0]);
+  editor.click(0, 0, 0);
+  const loop = laidState(editor);
+  const onGround = hold("oval", OPEN_GROUND);
+  editor.click(0, 0, 0);
+  const oval = laidState(editor);
+  for (let step = 0; step < 3; step++) editor.undo(0);
+
+  expect({ shorter, longer, onEnd, onGround }).toEqual({
+    shorter: "goes in place of 8 pieces exactly",
+    longer: "goes in place of 9 pieces exactly",
+    onEnd: "attaches to the open end exactly",
+    onGround: "free on the stud grid",
+  });
+  expect(siding).toEqual({
+    laid: run.laid + 3,
+    ends: run.ends,
+    undo: "lay 12 pieces in place of 9",
+  });
+  expect(loop).toMatchObject({ ends: run.ends - 1 });
+  expect(loop.undo).toBe(`lay ${loop.laid - siding.laid} pieces`);
+  expect(oval).toEqual({ laid: loop.laid + 20, ends: loop.ends, undo: "lay 20 pieces" });
+  expect(laidState(editor)).toMatchObject({ laid: run.laid, ends: run.ends });
 }, 120_000);
 
 const PASSING_LOOP_SCENE = new URL(

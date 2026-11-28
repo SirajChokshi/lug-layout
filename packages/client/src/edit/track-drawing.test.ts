@@ -190,7 +190,9 @@ function commitDrag(layout: TrackDrawing) {
 }
 
 function layPiece(layout: TrackDrawing, catalogIndex: number, placement: Pose16): void {
-  layout.applyTrack(layout.pieceChange(catalogIndex, placement, 0));
+  layout.applyTrack(
+    layout.arrangementChange(layout.arrangementOfPiece(catalogIndex), placement, 0),
+  );
 }
 
 const container = new Container();
@@ -545,8 +547,8 @@ it(
           [1_000_003, -999_999],
         ] as const) {
           for (let heading = 0; heading < 16; heading += QUARTER_TURN_STEPS) {
-            const snap = yard.snapPiece(
-              part.catalogIndex,
+            const snap = yard.snapArrangement(
+              yard.arrangementOfPiece(part.catalogIndex),
               held,
               nowhere,
               nowhere,
@@ -602,7 +604,15 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   const curve = index("ldraw:74747");
   if (left === null) throw new Error("the right switch has no mirror");
   const snapAt = (piece: number, connector: number, end: { xLdu: number; zLdu: number }) => {
-    const snap = siding.snapPiece(piece, connector, end.xLdu, end.zLdu, 0, 0, 0);
+    const snap = siding.snapArrangement(
+      siding.arrangementOfPiece(piece),
+      connector,
+      end.xLdu,
+      end.zLdu,
+      0,
+      0,
+      0,
+    );
     expect(snap.end).not.toBeNull();
     layPiece(siding, piece, snap.placement);
   };
@@ -1269,7 +1279,15 @@ function placeableIndex(layout: TrackDrawing, id: string): number {
 
 function snapOnto(layout: TrackDrawing, id: string, connector: number, end: TrackEndView): void {
   const piece = placeableIndex(layout, id);
-  const snap = layout.snapPiece(piece, connector, end.xLdu, end.zLdu, 0, 0, 0);
+  const snap = layout.snapArrangement(
+    layout.arrangementOfPiece(piece),
+    connector,
+    end.xLdu,
+    end.zLdu,
+    0,
+    0,
+    0,
+  );
   if (snap.end === null) throw new Error(`${id} did not snap onto the open end`);
   layPiece(layout, piece, snap.placement);
 }
@@ -3098,7 +3116,8 @@ it("plays the rails on the graph of exactly the layout it hands them, after ever
         const at = ends[Math.floor(random() * ends.length)] ?? studPose(0, 0, 0);
         const piece = pieces[Math.floor(random() * pieces.length)] ?? straight;
         const count = 1 + Math.floor(random() * 3);
-        if (piece === switchPiece) layout.applyTrack(layout.pieceChange(piece, at, 0));
+        if (piece === switchPiece)
+          layout.applyTrack(layout.arrangementChange(layout.arrangementOfPiece(piece), at, 0));
         else if (piece === straight) layRun(layout, at, [{ kind: "straight", count }]);
         else layRun(layout, at, [{ kind: "turn", sign: random() < 0.5 ? 1 : -1, curves: count }]);
       } else if (roll < LIFT_CHANCE) {

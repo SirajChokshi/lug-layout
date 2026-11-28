@@ -4,6 +4,7 @@ import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { expect, it } from "vitest";
 import catalogJson from "../../../../docs/verified-facts/track-catalog.json" with { type: "json" };
 import { NO_END, TrackGraph } from "./track-graph.ts";
+import { pieceArrangement } from "./track-arrangement.ts";
 import { trackInsertions, type TrackInsertion } from "./track-insertion.ts";
 import { TrackLayout } from "./track-layout.ts";
 import { trackMove } from "./track-pose.ts";
@@ -42,6 +43,10 @@ function run(count: number, piece = STRAIGHT): TrackLayout {
   return layout;
 }
 
+function single(piece: number) {
+  return pieceArrangement(piece, specs[piece]?.connectors ?? []);
+}
+
 function inserted(layout: TrackLayout, piece: number, insertion: TrackInsertion): TrackGraph {
   const after = new TrackLayout(specs);
   for (let p = 0; p < layout.count; p++) {
@@ -66,7 +71,7 @@ it("drops a 9V switch into a run of straights, either way along it, in place of 
   const before = new TrackGraph(straights);
 
   for (let through = 0; through < RUN; through++) {
-    const found = trackInsertions(before, straights, straights.count, through, SWITCH);
+    const found = trackInsertions(before, straights, straights.count, through, single(SWITCH));
     const headings = new Set(found.map((insertion) => insertion.placement.heading));
 
     expect(headings.size).toBe(2);
@@ -87,7 +92,7 @@ it("drops a crossing in place of one straight, joining both neighbours, and offe
   const before = new TrackGraph(straights);
   const middle = (RUN - 1) / 2;
 
-  const crossings = trackInsertions(before, straights, straights.count, middle, CROSSING);
+  const crossings = trackInsertions(before, straights, straights.count, middle, single(CROSSING));
 
   expect(crossings.length).toBeGreaterThan(0);
   for (const insertion of crossings) {
@@ -97,7 +102,7 @@ it("drops a crossing in place of one straight, joining both neighbours, and offe
     expect(joinsOfLast(after)).toBe(2);
     expect(after.joinCount).toBe(before.joinCount);
   }
-  expect(trackInsertions(before, straights, straights.count, middle, STRAIGHT)).toEqual([]);
+  expect(trackInsertions(before, straights, straights.count, middle, single(STRAIGHT))).toEqual([]);
 });
 
 it("lifts nothing across a circle of curves, a model's own track, or a ramp in the run", () => {
@@ -120,9 +125,19 @@ it("lifts nothing across a circle of curves, a model's own track, or a ramp in t
   );
   ramped.attach(STRAIGHT, ENTRY, { placement: ramp, connector: EXIT });
 
-  expect(trackInsertions(new TrackGraph(circle), circle, circle.count, 0, SWITCH)).toEqual([]);
-  expect(trackInsertions(graph, straights, LAID_BEFORE_THE_MODEL, RUN - 1, SWITCH)).toEqual([]);
-  for (const insertion of trackInsertions(graph, straights, LAID_BEFORE_THE_MODEL, 1, SWITCH)) {
+  expect(trackInsertions(new TrackGraph(circle), circle, circle.count, 0, single(SWITCH))).toEqual(
+    [],
+  );
+  expect(trackInsertions(graph, straights, LAID_BEFORE_THE_MODEL, RUN - 1, single(SWITCH))).toEqual(
+    [],
+  );
+  for (const insertion of trackInsertions(
+    graph,
+    straights,
+    LAID_BEFORE_THE_MODEL,
+    1,
+    single(SWITCH),
+  )) {
     expect([...insertion.replaces].every((p) => p < LAID_BEFORE_THE_MODEL)).toBe(true);
   }
   for (const insertion of trackInsertions(
@@ -130,7 +145,7 @@ it("lifts nothing across a circle of curves, a model's own track, or a ramp in t
     ramped,
     ramped.count,
     LAID_BEFORE_THE_MODEL - 1,
-    SWITCH,
+    single(SWITCH),
   )) {
     expect(insertion.replaces.has(ramp)).toBe(false);
   }

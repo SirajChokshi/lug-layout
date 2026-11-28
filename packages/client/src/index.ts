@@ -282,7 +282,7 @@ export type {
   StarterWorldView,
   WelcomeView,
 } from "./starters/starter-worlds.ts";
-export { TRACK_ITEM_ID } from "./edit/track-edit-session.ts";
+export { TRACK_BLUEPRINT_GROUP, TRACK_ITEM_ID } from "./edit/track-edit-session.ts";
 export type {
   RollingDiagnosticsPanel,
   RollingDiagnosticsPartView,

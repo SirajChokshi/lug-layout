@@ -21,7 +21,12 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import type { IEditor } from "../edit/editor.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, trackToolId } from "../edit/track-edit-session.ts";
+import {
+  TRACK_BLUEPRINT_PREFIX,
+  TRACK_ITEM_ID,
+  TRACK_PIECE_PREFIX,
+  trackToolId,
+} from "../edit/track-edit-session.ts";
 import { heldItem } from "../edit/held-item.ts";
 import type { MeshCounts } from "../edit/mesh-progress.ts";
 import { loadCatalogItem } from "./catalog-item.test-support.ts";
@@ -630,7 +635,7 @@ describe("palette thumbnails", () => {
 });
 
 describe("palette item capabilities", () => {
-  it("marks parts draggable and not toggleable, and each track tool and the pieces listed under them toggleable and not draggable", async () => {
+  it("marks parts draggable and not toggleable, and each track tool and the pieces and blueprints listed under them toggleable and not draggable", async () => {
     const { editor } = await startEditor();
     const { catalog } = editor.snapshot();
     const item = (id: string): CatalogItemView => {
@@ -651,14 +656,19 @@ describe("palette item capabilities", () => {
     );
     expect(toolIds.has(TRACK_ITEM_ID)).toBe(true);
     const pieces = catalog.filter((candidate) => candidate.id.startsWith(TRACK_PIECE_PREFIX));
+    const blueprints = catalog.filter((candidate) =>
+      candidate.id.startsWith(TRACK_BLUEPRINT_PREFIX),
+    );
+    const listed = [...pieces, ...blueprints];
     expect(pieces.length).toBeGreaterThan(0);
+    expect(blueprints.length).toBeGreaterThan(0);
     expect(
-      pieces.map((candidate) => {
+      listed.map((candidate) => {
         const { listedUnder, ...rest } = capabilities(candidate);
         return { ...rest, underATool: listedUnder !== null && toolIds.has(listedUnder) };
       }),
-    ).toEqual(pieces.map(() => ({ draggable: false, toggleable: true, underATool: true })));
-    expect(catalog.filter((candidate) => candidate.listedUnder !== null)).toEqual(pieces);
+    ).toEqual(listed.map(() => ({ draggable: false, toggleable: true, underATool: true })));
+    expect(catalog.filter((candidate) => candidate.listedUnder !== null)).toEqual(listed);
   }, 120_000);
 });
 

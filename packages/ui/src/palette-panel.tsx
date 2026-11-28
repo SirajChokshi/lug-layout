@@ -13,6 +13,7 @@ import {
 import {
   CATEGORY_LABEL,
   PALETTE_TABS,
+  TRACK_BLUEPRINT_GROUP,
   colorDisplayName,
   type CatalogItemView,
   type EditorSnapshot,
@@ -268,6 +269,7 @@ function ColorPicker({
 }
 
 function itemMeta(item: CatalogItemView): string {
+  if (item.group === TRACK_BLUEPRINT_GROUP) return "blueprint";
   const counted = `${integer.format(item.parts)} ${item.parts === 1 ? "part" : "parts"}`;
   const parts =
     item.customParts > 0 ? `${counted} (${integer.format(item.customParts)} custom)` : counted;
@@ -353,7 +355,10 @@ function TrackSection({
 }: Pick<PaletteProps, "editor" | "snapshot"> & { readonly rows: ReadonlyArray<PaletteRow> }) {
   const items = rows.flatMap((row) => row.items);
   const tools = items.filter((item) => item.listedUnder === null);
-  const pieces = items.filter((item) => item.listedUnder !== null);
+  const blueprints = items.filter((item) => item.group === TRACK_BLUEPRINT_GROUP);
+  const pieces = items.filter(
+    (item) => item.listedUnder !== null && item.group !== TRACK_BLUEPRINT_GROUP,
+  );
   return (
     <Section id="track" title="Track" count={`${pieces.length} real pieces`}>
       {tools.map((tool) => {
@@ -406,6 +411,34 @@ function TrackSection({
           </li>
         ))}
       </ul>
+      {blueprints.length > 0 && (
+        <>
+          <ul className="palette-pieces" aria-label="Track blueprints">
+            {blueprints.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className="catalog-item"
+                  data-item={item.id}
+                  aria-pressed={snapshot.activeItem === item.id}
+                  disabled={snapshot.readOnly}
+                  onClick={() => choosePaletteItem(editor, snapshot, item)}
+                >
+                  <span className="catalog-name">{item.label}</span>
+                  <span className="catalog-meta">blueprint</span>
+                </button>
+                <FavoriteStar entryKey={item.id} title={item.label} />
+              </li>
+            ))}
+          </ul>
+          <p className="palette-hint">
+            A blueprint lays a whole piece of layout from real pieces as one step. Hold a passing
+            siding over a straight run and it drops in place of the straights it covers;{" "}
+            <FirstChord id="next-track-choice" /> and <FirstChord id="previous-track-choice" /> make
+            it longer or shorter.
+          </p>
+        </>
+      )}
       <p className="palette-hint">
         While you draw from an end, clicking a piece lays it there exactly and Enter lays another.
         Otherwise pick one piece and click to lay it: near an open end it attaches exactly. Click a

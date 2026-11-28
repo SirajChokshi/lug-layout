@@ -1,6 +1,6 @@
 import type { PartAsset, PartShapeAsset } from "@brr/catalog";
 import type { PoseStatus, TrackSystem } from "@brr/schema/bundle";
-import type { TrackChange } from "@brr/domain";
+import type { TrackArrangement, TrackChange } from "@brr/domain";
 import { PLATE_LDU, QUARTER_TURN_16, STUD_LDU, ZETA16_ORDER, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type TrackEndMarker } from "@brr/render";
 import { inject, injectable } from "inversify";
@@ -22,6 +22,7 @@ import {
   type TrackGapView,
   type TrackLoopsView,
   type KitPart,
+  type TrackBlueprint,
   type TrackSystemView,
 } from "./track-drawing.ts";
 import type { ExtensionRun, ExtensionTurn, TrackExtendView } from "./track-extension.ts";
@@ -57,6 +58,7 @@ export type TrackCommitResult =
 export interface TrackPieceView {
   readonly item: string;
   readonly label: string;
+  readonly resizable: boolean;
   readonly snapped: boolean;
   readonly replaces: number;
   readonly joins: number;
@@ -240,6 +242,7 @@ export interface ITrackEditSession {
   turnHeld(direction: TurnDirection): void;
   nextConnector(): void;
   mirror(): string | null;
+  resizeHeld(step: 1 | -1): boolean;
 }
 
 const TRACK_TOOL_PREFIX = "track:";
@@ -251,6 +254,20 @@ export function trackToolId(system: string): string {
 
 function trackToolSystem(id: string): string | null {
   return id.startsWith(TRACK_TOOL_PREFIX) ? id.slice(TRACK_TOOL_PREFIX.length) : null;
+}
+
+export function blueprintId(blueprint: TrackBlueprint, system: string): string {
+  return `${TRACK_BLUEPRINT_PREFIX}${blueprint}:${system}`;
+}
+
+function blueprintOf(
+  track: TrackDrawing,
+  id: string,
+): { readonly blueprint: TrackBlueprint; readonly system: string } | null {
+  if (!id.startsWith(TRACK_BLUEPRINT_PREFIX)) return null;
+  const [name = "", ...system] = id.slice(TRACK_BLUEPRINT_PREFIX.length).split(":");
+  const blueprint = track.blueprints(system.join(":")).find((known) => known === name);
+  return blueprint === undefined ? null : { blueprint, system: system.join(":") };
 }
 
 function sharedLeadingWords(titles: ReadonlyArray<string>): ReadonlyArray<string> {
@@ -268,6 +285,24 @@ function curveRadiusStuds(curve: KitPart | null): number | null {
   return arc?.kind === "arc" ? Math.round(arc.radiusLdu / STUD_LDU) : null;
 }
 export const TRACK_PIECE_PREFIX = "track-piece:";
+export const TRACK_BLUEPRINT_PREFIX = "track-blueprint:";
+export const TRACK_BLUEPRINT_GROUP = "track-blueprints";
+const TRACK_BLUEPRINT_GROUP_LABEL = "Track blueprints";
+const BLUEPRINT_LABELS: Readonly<Record<TrackBlueprint, string>> = {
+  oval: "Oval",
+  "passing-siding": "Passing siding",
+  "reversing-loop": "Reversing loop",
+};
+const BLUEPRINT_ALIASES: Readonly<Record<TrackBlueprint, ReadonlyArray<string>>> = {
+  oval: ["loop", "circuit"],
+  "passing-siding": ["passing loop", "loop"],
+  "reversing-loop": ["balloon loop", "return loop"],
+};
+const BLUEPRINT_SIZES: Readonly<Record<TrackBlueprint, number | null>> = {
+  oval: 2,
+  "passing-siding": 2,
+  "reversing-loop": null,
+};
 const TRACK_PIECE_GROUP = "track-pieces";
 const TRACK_PIECE_GROUP_LABEL = "Track pieces";
 const TRACK_TOOL_NAMES: Readonly<Record<TrackSystem, string>> = {
@@ -281,8 +316,18 @@ const NOTHING: { readonly kind: "none" } = { kind: "none" };
 const NO_ENDS: ReadonlyArray<number> = [];
 const NO_MARKERS: ReadonlyArray<TrackEndMarker> = [];
 
+type HeldSource =
+  | { readonly kind: "piece"; readonly catalogIndex: number }
+  | {
+      readonly kind: "blueprint";
+      readonly blueprint: TrackBlueprint;
+      readonly size: number;
+      readonly hand: number;
+    };
+
 interface HeldPiece {
-  readonly catalogIndex: number;
+  readonly source: HeldSource;
+  readonly arrangement: TrackArrangement;
   readonly connector: number;
   readonly heading: number;
   readonly snap: PieceSnap | null;
@@ -386,6 +431,9 @@ export class TrackEditSession implements ITrackEditSession {
     return [
       ...track.systems().map((system) => this.trackItem(system, parts)),
       ...this.trackPieceItems(track, parts),
+      ...track
+        .systems()
+        .flatMap((system) => this.blueprintItems(track, this.trackItem(system, parts))),
     ];
   }
 
@@ -423,17 +471,31 @@ export class TrackEditSession implements ITrackEditSession {
     const track = this.trackWorld.drawing();
     if (!track) return false;
     const pieceIndex = this.trackPieceIndex(track, id);
+    const blueprint = blueprintOf(track, id);
     const system =
       trackToolSystem(id) ??
+      blueprint?.system ??
       (pieceIndex === null ? null : track.pieceByIndex(pieceIndex).piece.system);
     if (system === null) return false;
     if (!track.useSystem(system) && pieceIndex === null) return false;
+    const source: HeldSource | null = blueprint
+      ? {
+          kind: "blueprint",
+          ...blueprint,
+          size: BLUEPRINT_SIZES[blueprint.blueprint] ?? 0,
+          hand: 0,
+        }
+      : pieceIndex === null
+        ? null
+        : { kind: "piece", catalogIndex: pieceIndex };
+    const arrangement = source === null ? null : this.arrangementOf(track, source);
+    if (source !== null && arrangement === null) return false;
     track.cancelDrag();
     track.extension.drop();
     this.held =
-      pieceIndex === null
+      source === null || arrangement === null
         ? null
-        : { catalogIndex: pieceIndex, connector: 0, heading: 0, snap: null, blocked: null };
+        : { source, arrangement, connector: 0, heading: 0, snap: null, blocked: null };
     this.backend.setGhost(null);
     this.trackWorld.requestPieceMeshes();
     this.lastCommit = null;
@@ -472,8 +534,9 @@ export class TrackEditSession implements ITrackEditSession {
       this.backend.setGhost(null);
       return null;
     }
-    const snap = track.snapPiece(
-      held.catalogIndex,
+    this.trackWorld.ensureObstacles();
+    const snap = track.snapArrangement(
+      held.arrangement,
       held.connector,
       hitX,
       hitZ,
@@ -483,8 +546,8 @@ export class TrackEditSession implements ITrackEditSession {
     );
     const blocked = this.heldBlock(track, held, snap);
     if (snap !== held.snap || blocked !== held.blocked) this.held = { ...held, snap, blocked };
-    const ghost = track.pieceGhost(
-      held.catalogIndex,
+    const ghost = track.arrangementGhost(
+      held.arrangement,
       snap.placement,
       snap.yPlates,
       blocked !== null,
@@ -704,7 +767,7 @@ export class TrackEditSession implements ITrackEditSession {
     this.lastUnsupported = null;
     this.lastLow = null;
     if (block) {
-      const label = track.pieceByIndex(held.catalogIndex).piece.title;
+      const label = this.heldLabel(track, held);
       this.lastCommit = null;
       this.lastBlock = block;
       const reason = blockRefusalText(label, block);
@@ -715,8 +778,8 @@ export class TrackEditSession implements ITrackEditSession {
     }
     const joinsBefore = track.joinedPairs();
     const firstLaid = track.pieceCount;
-    const change = track.pieceChange(
-      held.catalogIndex,
+    const change = track.arrangementChange(
+      held.arrangement,
       snap.placement,
       snap.yPlates,
       snap.replaces,
@@ -891,10 +954,63 @@ export class TrackEditSession implements ITrackEditSession {
     const track = this.trackWorld.drawing();
     const held = this.held;
     if (!track || !held) return null;
-    const mirror = track.pieceSet.mirrored(held.catalogIndex);
-    if (mirror === null) return null;
-    this.held = { ...held, catalogIndex: mirror };
-    return `${TRACK_PIECE_PREFIX}${track.pieceByIndex(mirror).piece.id}`;
+    const source = this.mirroredSource(track, held.source);
+    const arrangement = source && this.arrangementOf(track, source);
+    if (!source || !arrangement) return null;
+    this.held = { ...held, source, arrangement };
+    return this.heldItem(track, source);
+  }
+
+  resizeHeld(step: 1 | -1): boolean {
+    const track = this.trackWorld.drawing();
+    const held = this.held;
+    if (!track || held?.source.kind !== "blueprint") return false;
+    if (BLUEPRINT_SIZES[held.source.blueprint] === null) return false;
+    const source = { ...held.source, size: held.source.size + step };
+    const arrangement = source.size < 0 ? null : this.arrangementOf(track, source);
+    if (!arrangement) return false;
+    this.held = { ...held, source, arrangement, snap: null, blocked: null };
+    return true;
+  }
+
+  private arrangementOf(track: TrackDrawing, source: HeldSource): TrackArrangement | null {
+    switch (source.kind) {
+      case "piece":
+        return track.arrangementOfPiece(source.catalogIndex);
+      case "blueprint":
+        return track.blueprint(source.blueprint, source.size, source.hand);
+      default: {
+        const unhandled: never = source;
+        throw new Error(`unhandled held source ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private mirroredSource(track: TrackDrawing, source: HeldSource): HeldSource | null {
+    switch (source.kind) {
+      case "piece": {
+        const mirror = track.pieceSet.mirrored(source.catalogIndex);
+        return mirror === null ? null : { kind: "piece", catalogIndex: mirror };
+      }
+      case "blueprint":
+        return source.blueprint === "oval" ? null : { ...source, hand: source.hand + 1 };
+      default: {
+        const unhandled: never = source;
+        throw new Error(`unhandled held source ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private heldItem(track: TrackDrawing, source: HeldSource): string {
+    return source.kind === "piece"
+      ? `${TRACK_PIECE_PREFIX}${track.pieceByIndex(source.catalogIndex).piece.id}`
+      : blueprintId(source.blueprint, track.activeSystem);
+  }
+
+  private heldLabel(track: TrackDrawing, { source }: HeldPiece): string {
+    return source.kind === "piece"
+      ? track.pieceByIndex(source.catalogIndex).piece.title
+      : BLUEPRINT_LABELS[source.blueprint];
   }
 
   private paint(track: TrackDrawing): TrackEditView | null {
@@ -1026,6 +1142,34 @@ export class TrackEditSession implements ITrackEditSession {
     });
   }
 
+  private blueprintItems(
+    track: TrackDrawing,
+    tool: CatalogItemView,
+  ): ReadonlyArray<CatalogItemView> {
+    const system = trackToolSystem(tool.id) ?? TRACK_SYSTEM;
+    const of = system === TRACK_SYSTEM ? "" : ` (${tool.shortLabel})`;
+    return track.blueprints(system).map((blueprint) => ({
+      id: blueprintId(blueprint, system),
+      label: `${BLUEPRINT_LABELS[blueprint]}${of}`,
+      shortLabel: BLUEPRINT_LABELS[blueprint],
+      group: TRACK_BLUEPRINT_GROUP,
+      groupLabel: TRACK_BLUEPRINT_GROUP_LABEL,
+      color: null,
+      kind: "track",
+      parts: 0,
+      studsWide: 0,
+      studsDeep: 0,
+      thumbnail: null,
+      aliases: BLUEPRINT_ALIASES[blueprint],
+      elements: [],
+      displayColor: false,
+      draggable: false,
+      toggleable: true,
+      listedUnder: trackToolId(system),
+      customParts: 0,
+    }));
+  }
+
   private heldBlock(track: TrackDrawing, held: HeldPiece, snap: PieceSnap): TrackBlockView | null {
     this.trackWorld.ensureObstacles();
     if (snap === this.blockedSnap && track.bandsVersion === this.blockedBands) return held.blocked;
@@ -1036,7 +1180,7 @@ export class TrackEditSession implements ITrackEditSession {
 
   private snapBlock(track: TrackDrawing, held: HeldPiece, snap: PieceSnap): TrackBlockView | null {
     const { placement, yPlates, replaces } = snap;
-    const block = track.pieceBlock(held.catalogIndex, placement, yPlates, 0, replaces);
+    const block = track.arrangementBlock(held.arrangement, placement, yPlates, replaces);
     if (block) return block;
     for (const piece of replaces) {
       const train = this.trainOn(piece);
@@ -1048,19 +1192,31 @@ export class TrackEditSession implements ITrackEditSession {
   private heldView(track: TrackDrawing): TrackPieceView | null {
     const held = this.held;
     if (!held) return null;
-    const kit = track.pieceByIndex(held.catalogIndex);
-    const mirror = track.pieceSet.mirrored(held.catalogIndex);
-    const count = kit.def.connectors.length;
+    const { source } = held;
+    const mirror = this.mirroredSource(track, source);
+    const count = Math.max(held.arrangement.ends.length, 1);
     return {
-      item: kit.piece.id,
-      label: track.pieceSet.label(held.catalogIndex),
+      item:
+        source.kind === "piece"
+          ? track.pieceByIndex(source.catalogIndex).piece.id
+          : blueprintId(source.blueprint, track.activeSystem),
+      label:
+        source.kind === "piece"
+          ? track.pieceSet.label(source.catalogIndex)
+          : BLUEPRINT_LABELS[source.blueprint],
+      resizable: source.kind === "blueprint" && BLUEPRINT_SIZES[source.blueprint] !== null,
       snapped: held.snap?.end !== null && held.snap !== null,
       replaces: held.snap?.replaces.size ?? 0,
       joins: held.snap?.joins ?? 0,
       misses: held.snap?.misses.length ?? 0,
       connector: ((held.connector % count) + count) % count,
       connectors: count,
-      mirror: mirror === null ? null : track.pieceSet.element(mirror).title,
+      mirror:
+        mirror === null
+          ? null
+          : mirror.kind === "piece"
+            ? track.pieceSet.element(mirror.catalogIndex).title
+            : BLUEPRINT_LABELS[mirror.blueprint],
       blocked: held.blocked,
     };
   }

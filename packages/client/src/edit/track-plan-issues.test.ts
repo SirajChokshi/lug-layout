@@ -373,8 +373,22 @@ it("counts a point where laid track meets without joining only in a room one of 
   at.plans.removeTable(at.planId, at.tableId);
   const corner = { chunk: 1, sizeMm: 80 };
   const layL = () => {
-    commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(22n, 47n, 0), 0));
-    commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(22n, 47n, 12), 0));
+    commit(
+      at,
+      at.drawing.arrangementChange(
+        at.drawing.arrangementOfPiece(catalogIndex(STRAIGHT)),
+        studPose(22n, 47n, 0),
+        0,
+      ),
+    );
+    commit(
+      at,
+      at.drawing.arrangementChange(
+        at.drawing.arrangementOfPiece(catalogIndex(STRAIGHT)),
+        studPose(22n, 47n, 12),
+        0,
+      ),
+    );
   };
   layL();
   const wholeRoom = at.plans.issues(at.planId).map((issue) => issue.rule);
@@ -466,7 +480,11 @@ it("counts a track row only in a plan whose room holds its piece, keeps the plan
   const at = room();
   commit(
     at,
-    at.drawing.pieceChange(catalogIndex(RIGHT_SWITCH), studPose(FAR_EAST_STUDS, 0n, 0), 0),
+    at.drawing.arrangementChange(
+      at.drawing.arrangementOfPiece(catalogIndex(RIGHT_SWITCH)),
+      studPose(FAR_EAST_STUDS, 0n, 0),
+      0,
+    ),
   );
   const outside = { issues: at.plans.issueCount(at.planId), boxes: at.backend.boxes.length };
   const grownMm = 8000;
@@ -476,7 +494,14 @@ it("counts a track row only in a plan whose room holds its piece, keeps the plan
   });
   const grown = at.plans.issues(at.planId);
   const boxes = at.backend.boxes;
-  commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(-FAR_EAST_STUDS, 0n, 0), 0));
+  commit(
+    at,
+    at.drawing.arrangementChange(
+      at.drawing.arrangementOfPiece(catalogIndex(STRAIGHT)),
+      studPose(-FAR_EAST_STUDS, 0n, 0),
+      0,
+    ),
+  );
   const laidOutside = { issues: at.plans.issues(at.planId), boxes: at.backend.boxes };
   const lever = at.drawing.switchLevers()[0];
   const thrown = lever ? at.drawing.switchThrow(lever.placement) : null;

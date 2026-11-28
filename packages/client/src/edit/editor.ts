@@ -2552,6 +2552,10 @@ export class Editor implements IEditor, IEditedWorld {
 
   cycleTrackChoice(step: 1 | -1): void {
     if (this.state.mode !== "track") return;
+    if (this.tracks.resizeHeld(step)) {
+      this.showHeldPiece();
+      return;
+    }
     const view = this.tracks.cycleChoice(step);
     if (view) this.update(view);
   }
