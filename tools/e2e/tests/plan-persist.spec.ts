@@ -88,7 +88,7 @@ test("tables drawn in a world, the plan's reach limit and a user's own model on 
   ]) {
     await expect(control).toBeDisabled();
   }
-  await expect(panel.locator('[data-action="printable-plan"]')).toBeEnabled();
+  await expect(panel.locator('[data-action="download-sheets"]')).toBeEnabled();
   await other.press("b");
   await expect(other.root).toHaveAttribute("data-mode", "select");
   await otherTab.screenshot({ path: test.info().outputPath("tables-read-only.png") });
