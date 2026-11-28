@@ -178,8 +178,8 @@
 
 .palette-search-icon {
   position: absolute;
-  left: 10px;
-  color: var(--text-muted);
+  left: var(--space-2);
+  display: flex;
   pointer-events: none;
 }
 
@@ -187,7 +187,7 @@
   width: 100%;
   height: var(--control-height);
   box-sizing: border-box;
-  padding: 0 32px 0 30px;
+  padding: 0 28px 0 24px;
   font: inherit;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
@@ -272,8 +272,8 @@
 
 .palette-tab[aria-selected="true"] {
   border-color: var(--accent);
-  background: var(--accent);
-  color: var(--text-on-accent);
+  background: var(--accent-soft-strong);
+  color: var(--accent-ink);
 }
 
 .palette-tab-count {
@@ -777,20 +777,16 @@
 
 .palette-star {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  font: inherit;
-  font-size: 15px;
-  line-height: 1;
   border: 0;
   border-radius: var(--radius-xs);
   background: none;
-  color: var(--border-strong);
   cursor: pointer;
-  transition:
-    opacity var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 @media (hover: hover) {
@@ -808,11 +804,10 @@
 
 .palette-star:hover {
   background: var(--surface-hover);
-  color: var(--favorite);
 }
 
-.palette-star[aria-pressed="true"] {
-  color: var(--favorite);
+.palette-star:hover .icon-tone {
+  fill: var(--icon-gold);
 }
 
 .palette-result > .palette-star {

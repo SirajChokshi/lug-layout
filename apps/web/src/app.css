@@ -1,5 +1,6 @@
 @import "@brr/ui/tokens.css";
 @import "@brr/ui/base.css";
+@import "@brr/ui/icons.css";
 
 .scene {
   position: fixed;
