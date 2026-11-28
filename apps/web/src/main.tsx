@@ -7,6 +7,7 @@ import {
   EDITOR_CAMERA,
   EVENT_DETAILS,
   HOTBAR,
+  NOTICES,
   IMPORT_SCENE,
   LAYOUT_SIZE,
   mainThreadModules,
@@ -168,6 +169,7 @@ function root(): ReactNode {
         palette={container.get(PALETTE)}
         panels={container.get(PANEL_LAYOUT)}
         hotbar={container.get(HOTBAR)}
+        notices={container.get(NOTICES)}
         runningGear={container.get(RUNNING_GEAR)}
         starters={container.get(STARTER_WORLDS)}
         options={{

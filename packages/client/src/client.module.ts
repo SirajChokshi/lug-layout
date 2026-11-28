@@ -40,6 +40,7 @@ import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import { CommandPaletteSearch } from "./commands/command-palette-search.ts";
 import { HotbarService } from "./commands/hotbar.ts";
+import { NoticeService } from "./edit/notices.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
 import { ConnectorTables } from "./connect/connector-tables.ts";
@@ -122,6 +123,7 @@ import {
   PALETTE_CATALOG,
   PALETTE_DRAG,
   HOTBAR,
+  NOTICES,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
   LIBRARY_FILTER_STORE,
@@ -255,6 +257,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
   bind(LIBRARY_FILTER_STORE).to(LocalStorageLibraryFilterStore).inSingletonScope();
   bind(HOTBAR).to(HotbarService).inSingletonScope();
+  bind(NOTICES).to(NoticeService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
   bind(LIBRARY_PART_SEARCH).to(LibraryPartSearch).inSingletonScope();
   bind(LIBRARY_PART_PLACER).to(LibraryPartPlacer).inSingletonScope();

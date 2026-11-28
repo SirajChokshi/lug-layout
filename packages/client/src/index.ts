@@ -295,6 +295,7 @@ export {
   LAYOUT_SIZE,
   LAYER_SERVICE,
   HOTBAR,
+  NOTICES,
   SCALE_BAR,
   STARTER_WORLDS,
 } from "./tokens.ts";
@@ -392,6 +393,13 @@ export {
   type ShellMode,
 } from "./commands/shell-mode.ts";
 export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
+export {
+  modelImportText,
+  modelImportWarns,
+  type INotices,
+  type Notice,
+  type NoticeTone,
+} from "./edit/notices.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
 export { trackBlockText } from "./edit/track-drag.ts";
 export type { TallestTrain } from "./trains/tallest-train.ts";

@@ -80,6 +80,8 @@ async function studioArchive(): Promise<Uint8Array> {
 }
 
 async function openReport(page: Page, file: string) {
+  const menu = page.locator(".world-menu");
+  if ((await menu.getAttribute("open")) === null) await menu.locator("> summary").click();
   const status = page.locator(`.model-import[data-file="${file}"]`);
   await status.locator(".model-import-report summary").click();
   return status;

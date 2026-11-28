@@ -28,6 +28,7 @@ import type { IConnectorTables } from "./connect/connector-tables.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
+import type { INotices } from "./edit/notices.ts";
 import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IRoadEditSession } from "./edit/road-edit-session.ts";
 import type { ITrackEditSession } from "./edit/track-edit-session.ts";
@@ -204,6 +205,7 @@ export const LIBRARY_FILTER_STORE: ServiceIdentifier<ILibraryFilterStore> = Symb
   "brr.client.LibraryFilterStore",
 );
 export const HOTBAR: ServiceIdentifier<IHotbar> = Symbol.for("brr.client.Hotbar");
+export const NOTICES: ServiceIdentifier<INotices> = Symbol.for("brr.client.Notices");
 export const PALETTE_THUMBNAILS: ServiceIdentifier<IPaletteThumbnails> = Symbol.for(
   "brr.client.PaletteThumbnails",
 );

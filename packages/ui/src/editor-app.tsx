@@ -17,6 +17,7 @@ import {
   type IEditorCamera,
   type IEventDetails,
   type IHotbar,
+  type INotices,
   type ILayoutSize,
   type IOwnedParts,
   type IPalette,
@@ -53,6 +54,7 @@ import { SceneLabels } from "./scene-labels.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { ShellModeSwitch, ShellSection } from "./shell-mode.tsx";
+import { Toasts } from "./toasts.tsx";
 import { SwitchLevers } from "./switch-levers.tsx";
 import { TrackExtendPanel, TrackHeightPanel, TrackLoopsPanel } from "./track-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
@@ -97,6 +99,7 @@ interface EditorAppProps {
   readonly palette: IPalette;
   readonly panels: IPanelLayout;
   readonly hotbar: IHotbar;
+  readonly notices: INotices;
   readonly runningGear: IRunningGear;
   readonly starters: IStarterWorlds;
   readonly options: EditorOptions;
@@ -195,6 +198,7 @@ export function EditorApp({
   palette,
   panels,
   hotbar,
+  notices,
   runningGear,
   starters,
   options,
@@ -298,6 +302,7 @@ export function EditorApp({
         hotbarShown={mode !== "play"}
       />
       <PlacementChip snapshot={snapshot} />
+      <Toasts notices={notices} />
       <div className="chrome">
         <header className="menubar">
           <h1 className="brand">
