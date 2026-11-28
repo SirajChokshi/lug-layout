@@ -4555,9 +4555,11 @@ export class Editor implements IEditor, IEditedWorld {
 
   private rulerPointer(reachLdu: number): NotePointer {
     const { ray } = this;
+    const layers = this.layers.table();
     let front: PlacedModel | null = null;
     let frontT = Number.POSITIVE_INFINITY;
     for (const model of this.placed.models()) {
+      if (layers.isHidden(model.handle.layer)) continue;
       const t = model.rayHit(ray);
       if (t < frontT) {
         frontT = t;
@@ -4581,7 +4583,9 @@ export class Editor implements IEditor, IEditedWorld {
     const models: NoteModelView[] = front ? [this.noteModel(front, true)] : [];
     for (let m = 0; m < count; m++) {
       const model = near[m];
-      if (model && model !== front) models.push(this.noteModel(model, false));
+      if (model && model !== front && !layers.isHidden(model.handle.layer)) {
+        models.push(this.noteModel(model, false));
+      }
     }
     return { x, z, reachLdu, models };
   }

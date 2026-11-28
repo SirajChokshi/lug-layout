@@ -1757,6 +1757,21 @@ describe("layers", () => {
     });
   }, 120_000);
 
+  it("snaps a saved ruler only to models on shown layers: on a user's own model whose layer is hidden its end is free, and once shown it attaches", async () => {
+    const { editor, backend, annotations, placed, container } = await noteToolEditor();
+    const layers = container.get(LAYER_SERVICE);
+    selectAt(editor, backend, placed.x, placed.z);
+    const box = selectedBox(editor);
+    editor.setNoteTool("ruler");
+
+    layers.setVisible(BASE_LAYER_ID, false);
+    noteDrag(editor, backend, [placed.x - 20, placed.z - 10], [placed.x - 20, placed.z + 611]);
+    layers.setVisible(BASE_LAYER_ID, true);
+    noteDrag(editor, backend, [box.maxX + 3, box.minZ - 4], [box.maxX + 413, box.minZ + 7]);
+
+    expect(rulerSpans(annotations).map(({ from }) => from)).toEqual(["point", "model"]);
+  }, 240_000);
+
   it("puts a user's imported model on the layer active when it's placed, picks through a hidden layer, refuses to select or add to a locked one, undoes each layer change as one step, and reopens with every layer kept", async () => {
     const repository = new MemoryRepository();
     const { editor, backend, container } = await startImportingEditor(() => repository);
