@@ -1174,7 +1174,6 @@ fn run(args: &Args) -> Result<(), String> {
         models.push(manifest_entry);
     }
 
-    let indexes = connector_records(&mut extractor, &mut extractions, &parts, &args.out)?;
     let mut third_party_options = part_options.clone();
     third_party_options
         .unofficial_allowlist
@@ -1219,6 +1218,7 @@ fn run(args: &Args) -> Result<(), String> {
         )?;
         parts.push(summary);
     }
+    let indexes = connector_records(&mut extractor, &mut extractions, &parts, &args.out)?;
     let connectivity_source = &palette["connectivitySource"];
     let connectivity_index = json!({
         "package": "connectivity",
