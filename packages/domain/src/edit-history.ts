@@ -52,7 +52,7 @@ export type EditSummary =
   | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" | "note" | "event" }
   | { readonly kind: "throw-switch"; readonly switchAt: number }
   | { readonly kind: "road" | "fill"; readonly placements: number }
-  | { readonly kind: "lay-track"; readonly pieces: number }
+  | { readonly kind: "lay-track"; readonly pieces: number; readonly lifted: number }
   | { readonly kind: "open-plan"; readonly placements: number; readonly pieces: number };
 
 export interface PlacementPose {
@@ -207,7 +207,7 @@ function summary(edit: Edit): EditSummary {
     case "fill":
       return { kind: edit.kind, placements: edit.changes.length };
     case "lay-track":
-      return { kind: edit.kind, pieces: edit.track.lay.length };
+      return { kind: edit.kind, pieces: edit.track.lay.length, lifted: edit.track.lift.length };
     case "open-plan":
       return { kind: edit.kind, placements: edit.changes.length, pieces: edit.track.lay.length };
     default: {
