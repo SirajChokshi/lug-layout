@@ -1,8 +1,7 @@
 import { lduFromMm } from "@brr/math";
 import { tableFitsType } from "@brr/schema/world";
 import {
-  mmRectInWorld,
-  regionAround,
+  regionAroundEach,
   type LduRect,
   type PlanRegion,
   type PlanTable,
@@ -88,12 +87,7 @@ export function retypedRegion(
       : retypedTable(table, typeOf(table, before), typeOf(table, after)),
   );
   if (tables.every((table, i) => table === region.footprint.tables[i])) return region;
-  let grown: PlanRegion = { ...region, footprint: { ...region.footprint, tables } };
-  for (let i = 0; i < tables.length; i++) {
-    const table = grown.footprint.tables[i];
-    if (table) grown = regionAround(grown, mmRectInWorld(grown, table.rect));
-  }
-  return grown;
+  return regionAroundEach({ ...region, footprint: { ...region.footprint, tables } }, "tables");
 }
 
 export function placedTableCounts(region: PlanRegion): ReadonlyMap<number, number> {

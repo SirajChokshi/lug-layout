@@ -79,7 +79,14 @@ const region: PlanRegion = {
   name: "Plan 1",
   originChunkX: 0,
   originChunkZ: 0,
-  footprint: { roomWidthMm: ROOM_MM, roomDepthMm: ROOM_MM, tables: [table], obstacles: [] },
+  footprint: {
+    roomWidthMm: ROOM_MM,
+    roomDepthMm: ROOM_MM,
+    rooms: [],
+    tables: [table],
+    obstacles: [],
+    aisles: [],
+  },
   maxOverhangMm: 0,
   maxReachMm: COVERING_REACH_MM,
 };

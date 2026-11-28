@@ -16,6 +16,7 @@ const region: PlanRegion = {
   footprint: {
     roomWidthMm: 2000,
     roomDepthMm: 1500,
+    rooms: [{ id: "r", name: "Hall", rect: { x: 0, z: 0, width: 2000, depth: 1200 } }],
     tables: [
       {
         id: "t",
@@ -25,7 +26,12 @@ const region: PlanRegion = {
         heightMm: 750,
       },
     ],
-    obstacles: [{ id: "o", name: "O", rect: { x: 1500, z: 1000, width: 200, depth: 200 } }],
+    obstacles: [
+      { id: "o", name: "O", rect: { x: 1500, z: 1000, width: 200, depth: 200 }, kind: "pillar" },
+    ],
+    aisles: [
+      { id: "a", name: "Crew", rect: { x: 128, z: 576, width: 1024, depth: 600 }, side: "crew" },
+    ],
   },
   maxOverhangMm: 0,
   maxReachMm: 700,
@@ -52,7 +58,7 @@ it.each<[string, LduRect, LduRect]>([
   (_, rect, room) => {
     const grown = regionAround(region, rect);
     expect(roomRect(grown)).toEqual(room);
-    for (const kind of ["tables", "obstacles"] as const) {
+    for (const kind of ["rooms", "tables", "obstacles", "aisles"] as const) {
       expect(grown.footprint[kind].map((item) => mmRectInWorld(grown, item.rect))).toEqual(
         region.footprint[kind].map((item) => mmRectInWorld(region, item.rect)),
       );

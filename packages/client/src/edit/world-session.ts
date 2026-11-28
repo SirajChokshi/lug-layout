@@ -17,7 +17,7 @@ import {
   REBRICKABLE_CSV_FILE,
   planManifest,
   type PlanOutputs,
-  type PlanRecordV1,
+  type PlanRecordV2,
 } from "@brr/schema/plan";
 import {
   DEFAULT_WORLD_DOCUMENT,
@@ -142,7 +142,7 @@ export interface PlanContents {
 }
 
 export interface StoredPlan {
-  readonly plan: PlanRecordV1;
+  readonly plan: PlanRecordV2;
   readonly shards: ReadonlyArray<WorldShardV2>;
 }
 

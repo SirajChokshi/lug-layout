@@ -66,6 +66,7 @@ export {
   PlanTableV1,
 } from "./plan-region.ts";
 export {
+  AISLE_SIDES,
   BASE_LAYER,
   BASE_LAYER_ID,
   CONTRIBUTOR_ID_MAX,
@@ -87,9 +88,11 @@ export {
   LayerRecordV2,
   LayerTableV2,
   LongText,
+  OBSTACLE_KINDS,
   OPACITY_PERCENT_MAX,
   PlanFootprintV2,
   PlanListV2,
+  PlanRecordV2,
   PlanRegionRecordV2,
   PlanTableV2,
   Rgb,
@@ -98,12 +101,15 @@ export {
   TableTypeId,
   TableTypeRecordV2,
   TableTypeTableV2,
+  UNSTATED_OBSTACLE_KIND,
   WorldDocument,
   WorldDocumentEntries,
   WorldDocumentIndex,
   tableFitsType,
   worldDocument,
+  type AisleSide,
   type LayerKind,
+  type ObstacleKind,
 } from "./document.ts";
 export {
   LegendEntryV2,

@@ -1,5 +1,5 @@
 import { CHUNK_LDU, MM_PER_STUD, STUD_LDU, lduFromMm, mmFromLdu } from "@brr/math";
-import type { TableTypeRecordV2 } from "@brr/schema/world";
+import type { AisleSide, ObstacleKind, TableTypeRecordV2 } from "@brr/schema/world";
 
 export interface MmRect {
   readonly x: number;
@@ -19,17 +19,34 @@ export interface PlanTable {
 
 export type TableType = TableTypeRecordV2;
 
-export interface PlanObstacle {
+export interface PlanArea {
   readonly id: string;
   readonly name: string;
   readonly rect: MmRect;
 }
 
-export interface PlanFootprint {
+export interface PlanObstacle extends PlanArea {
+  readonly kind: ObstacleKind;
+}
+
+export interface PlanAisle extends PlanArea {
+  readonly side: AisleSide;
+}
+
+export interface VenueItems {
+  readonly rooms: PlanArea;
+  readonly obstacles: PlanObstacle;
+  readonly aisles: PlanAisle;
+}
+
+export type VenueList = keyof VenueItems;
+
+export type PlanVenue = { readonly [L in VenueList]: ReadonlyArray<VenueItems[L]> };
+
+export interface PlanFootprint extends PlanVenue {
   readonly roomWidthMm: number;
   readonly roomDepthMm: number;
   readonly tables: ReadonlyArray<PlanTable>;
-  readonly obstacles: ReadonlyArray<PlanObstacle>;
 }
 
 export interface PlanRegion {
@@ -89,6 +106,27 @@ export function roomRect(region: PlanRegion): LduRect {
   });
 }
 
+export function floorRects(region: PlanRegion): LduRect[] {
+  const { rooms } = region.footprint;
+  return rooms.length === 0
+    ? [roomRect(region)]
+    : rooms.map((room) => mmRectInWorld(region, room.rect));
+}
+
+export function isMarker(obstacle: Pick<PlanObstacle, "kind">): boolean {
+  return obstacle.kind === "power";
+}
+
+export function blockingObstacles(region: PlanRegion): PlanObstacle[] {
+  return region.footprint.obstacles.filter((obstacle) => !isMarker(obstacle));
+}
+
+export function crewAisleRects(region: PlanRegion): LduRect[] {
+  return region.footprint.aisles
+    .filter((aisle) => aisle.side === "crew")
+    .map((aisle) => mmRectInWorld(region, aisle.rect));
+}
+
 export function mmRectFromWorld(region: PlanRegion, rect: LduRect): MmRect {
   return {
     x: mmFromLdu(rect.minX - regionOriginX(region)),
@@ -132,10 +170,21 @@ export function regionAround(region: PlanRegion, rect: LduRect): PlanRegion {
         footprint.roomDepthMm + shiftMmZ,
         mmFromLdu(rect.maxZ - regionOriginZ(shifted)),
       ),
+      rooms: footprint.rooms.map(move),
       tables: footprint.tables.map(move),
       obstacles: footprint.obstacles.map(move),
+      aisles: footprint.aisles.map(move),
     },
   };
+}
+
+export function regionAroundEach(region: PlanRegion, list: "rooms" | "tables"): PlanRegion {
+  let grown = region;
+  for (let i = 0; i < region.footprint[list].length; i++) {
+    const item = grown.footprint[list][i];
+    if (item) grown = regionAround(grown, mmRectInWorld(grown, item.rect));
+  }
+  return grown;
 }
 
 export function studsInside(region: PlanRegion, rect: MmRect): StudRect {

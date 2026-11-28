@@ -10,6 +10,10 @@ import {
   exactUncovered,
 } from "./exact-rect.ts";
 import {
+  blockingObstacles,
+  crewAisleRects,
+  floorRects,
+  isMarker,
   mmRectInWorld,
   rectContains,
   rectsOverlap,
@@ -175,8 +179,10 @@ function rectProblem(rect: MmRect): string | null {
   return null;
 }
 
-function footprintIssues(region: PlanRegion, room: LduRect): PlanIssue[] {
+function footprintIssues(region: PlanRegion): PlanIssue[] {
   const { footprint } = region;
+  const floor = floorRects(region);
+  const blocking = blockingObstacles(region);
   const issues: PlanIssue[] = [];
   if (
     !isWholeMm(footprint.roomWidthMm) ||
@@ -192,6 +198,10 @@ function footprintIssues(region: PlanRegion, room: LduRect): PlanIssue[] {
   if (!reachLimitValid(region)) {
     issues.push(issue("footprint", [], "The reach limit must be zero or more whole mm."));
   }
+  footprint.rooms.forEach((room) => {
+    const problem = rectProblem(room.rect);
+    if (problem) issues.push(issue("footprint", [], `Room "${room.name}" ${problem}.`));
+  });
   const datum = footprint.tables[0];
   footprint.tables.forEach((table, i) => {
     const problem = rectProblem(table.rect);
@@ -200,7 +210,7 @@ function footprintIssues(region: PlanRegion, room: LduRect): PlanIssue[] {
       issues.push(issue("footprint", [], `Table "${table.name}" needs a height in whole mm.`));
     }
     const surface = mmRectInWorld(region, table.rect);
-    if (!rectContains(room, surface)) {
+    if (!fitsExactly(surface, floor, 0)) {
       issues.push(issue("footprint", [], `Table "${table.name}" is not inside the room.`));
     }
     if (datum && table.heightMm !== datum.heightMm) {
@@ -217,10 +227,17 @@ function footprintIssues(region: PlanRegion, room: LduRect): PlanIssue[] {
         issues.push(issue("footprint", [], `Tables "${table.name}" and "${other.name}" overlap.`));
       }
     });
-    footprint.obstacles.forEach((obstacle) => {
+    blocking.forEach((obstacle) => {
       if (rectsOverlap(surface, mmRectInWorld(region, obstacle.rect))) {
         issues.push(
           issue("footprint", [], `Table "${table.name}" overlaps obstacle "${obstacle.name}".`),
+        );
+      }
+    });
+    footprint.aisles.forEach((aisle) => {
+      if (rectsOverlap(surface, mmRectInWorld(region, aisle.rect))) {
+        issues.push(
+          issue("footprint", [], `Table "${table.name}" stands in aisle "${aisle.name}".`),
         );
       }
     });
@@ -228,6 +245,13 @@ function footprintIssues(region: PlanRegion, room: LduRect): PlanIssue[] {
   footprint.obstacles.forEach((obstacle) => {
     const problem = rectProblem(obstacle.rect);
     if (problem) issues.push(issue("footprint", [], `Obstacle "${obstacle.name}" ${problem}.`));
+  });
+  footprint.aisles.forEach((aisle) => {
+    const problem = rectProblem(aisle.rect);
+    if (problem) issues.push(issue("footprint", [], `Aisle "${aisle.name}" ${problem}.`));
+    else if (!fitsExactly(mmRectInWorld(region, aisle.rect), floor, 0)) {
+      issues.push(issue("footprint", [], `Aisle "${aisle.name}" is not inside the room.`));
+    }
   });
   return issues;
 }
@@ -378,21 +402,24 @@ export function regionContext(region: PlanRegion): PlanRegionContext {
   const room = roomRect(region);
   const tables = tableTops(region);
   const obstacles = region.footprint.obstacles.map((o) => mmRectInWorld(region, o.rect));
+  const blocking = blockingObstacles(region).map((o) => mmRectInWorld(region, o.rect));
+  const crewAisles = crewAisleRects(region);
   const surfaces = tables.map((table) => table.surface);
   const coverage = coverageContext(surfaces, lduFromMm(region.maxOverhangMm));
   const measurable = coverage.surfacesFinite && surfaces.length > 0;
+  const standing = crewAisles.length > 0 ? crewAisles : surfaces;
   return {
     region,
     room,
     tables,
     obstacles,
-    obstacleEdges: rectEdges(obstacles),
-    footprintIssues: footprintIssues(region, room),
+    obstacleEdges: rectEdges(blocking),
+    footprintIssues: footprintIssues(region),
     coverage,
     seams: coverage.surfacesFinite ? tableSeams(tables) : NO_SEAMS,
     reach:
       measurable && reachLimitValid(region)
-        ? reachContext(freeTableEdges(surfaces, obstacles), lduFromMm(region.maxReachMm))
+        ? reachContext(freeTableEdges(standing, blocking), lduFromMm(region.maxReachMm))
         : null,
   };
 }
@@ -827,6 +854,12 @@ function placedShapeRects(
   return placedRects(rects, Float64Array.of(anchor.x), Float64Array.of(anchor.z), 0, into);
 }
 
+function reachSource(region: PlanRegion): string {
+  return region.footprint.aisles.some((aisle) => aisle.side === "crew")
+    ? "every crew aisle"
+    : "every table edge you can stand at";
+}
+
 export function placementIssues(
   ctx: PlanRegionContext,
   placement: PlanPlacement,
@@ -869,7 +902,7 @@ export function placementIssues(
   }
   region.footprint.obstacles.forEach((obstacle, i) => {
     const rect = obstacles[i];
-    if (rect && rectsOverlap(rect, placement.box)) {
+    if (rect && !isMarker(obstacle) && rectsOverlap(rect, placement.box)) {
       out.push(issue("fit", [key], `${label} stands over obstacle "${obstacle.name}".`));
     }
   });
@@ -943,7 +976,7 @@ export function placementIssues(
         issue(
           "reach",
           [key],
-          `${label} is out of reach: part of it is more than ${region.maxReachMm} mm from every table edge you can stand at.`,
+          `${label} is out of reach: part of it is more than ${region.maxReachMm} mm from ${reachSource(region)}.`,
         ),
       );
     }

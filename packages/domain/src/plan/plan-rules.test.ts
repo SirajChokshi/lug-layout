@@ -15,7 +15,14 @@ function region(tables: PlanTable[], overrides: Partial<PlanRegion> = {}): PlanR
     name: "Test room",
     originChunkX: 3,
     originChunkZ: -2,
-    footprint: { roomWidthMm: 4000, roomDepthMm: 3000, tables, obstacles: [] },
+    footprint: {
+      roomWidthMm: 4000,
+      roomDepthMm: 3000,
+      rooms: [],
+      tables,
+      obstacles: [],
+      aisles: [],
+    },
     maxOverhangMm: 0,
     maxReachMm: 100_000,
     ...overrides,
@@ -118,7 +125,12 @@ describe("checkPlan footprint problems", () => {
       footprint: {
         ...plan.footprint,
         obstacles: [
-          { id: "pillar", name: "pillar", rect: { x: 100, z: 100, width: 200, depth: 200 } },
+          {
+            id: "pillar",
+            name: "pillar",
+            rect: { x: 100, z: 100, width: 200, depth: 200 },
+            kind: "pillar",
+          },
         ],
       },
     };
@@ -127,6 +139,51 @@ describe("checkPlan footprint problems", () => {
       'Table "a" overlaps obstacle "pillar".',
       'Table "c" is not inside the room.',
       'Table "c" is 900 mm high, but "a" sets the layout at 750 mm; layouts are flat.',
+    ]);
+  });
+
+  it("takes the room as the union of its room rectangles, keeps tables out of aisles and lets a power point stand under a table", () => {
+    const plan = region([
+      table("across", 1500, 200, 1000, 600),
+      table("notch", 2500, 2000, 1000, 600),
+      table("aisled", 200, 1200, 800, 600),
+    ]);
+    const venue: PlanRegion = {
+      ...plan,
+      footprint: {
+        ...plan.footprint,
+        rooms: [
+          { id: "hall", name: "Hall", rect: { x: 0, z: 0, width: 2000, depth: 3000 } },
+          { id: "annex", name: "Annex", rect: { x: 2000, z: 0, width: 2000, depth: 1500 } },
+        ],
+        obstacles: [
+          {
+            id: "socket",
+            name: "Socket",
+            rect: { x: 1600, z: 300, width: 100, depth: 100 },
+            kind: "power",
+          },
+        ],
+        aisles: [
+          {
+            id: "crew",
+            name: "Crew",
+            rect: { x: 0, z: 1000, width: 2000, depth: 400 },
+            side: "crew",
+          },
+          {
+            id: "lobby",
+            name: "Lobby",
+            rect: { x: 2200, z: 1600, width: 800, depth: 400 },
+            side: "public",
+          },
+        ],
+      },
+    };
+    expect(checkPlan(venue, []).issues.map((i) => i.message)).toEqual([
+      'Table "notch" is not inside the room.',
+      'Table "aisled" stands in aisle "Crew".',
+      'Aisle "Lobby" is not inside the room.',
     ]);
   });
 });
@@ -175,10 +232,10 @@ describe("checkPlan with float model boxes", () => {
               const plan: PlanRegion = {
                 ...region([table("t", 1000, 0, 2400, depth)], { originChunkX: 0, originChunkZ }),
                 footprint: {
+                  ...region([]).footprint,
                   roomWidthMm: 5000,
                   roomDepthMm: 3600,
                   tables: [table("t", 1000, 0, 2400, depth)],
-                  obstacles: [],
                 },
               };
               const fit = checkPlan(plan, [placed(box)]).issues.find((i) => i.rule === "fit");
@@ -211,10 +268,16 @@ describe("checkPlan with float model boxes", () => {
     const plan: PlanRegion = {
       ...region([table("t", 0, 0, 2400, 1200)], { originChunkX: 0, originChunkZ: 0 }),
       footprint: {
-        roomWidthMm: 4000,
-        roomDepthMm: 3000,
+        ...region([]).footprint,
         tables: [table("t", 0, 0, 2400, 1200)],
-        obstacles: [{ id: "o", name: "pillar", rect: { x: 0, z: 1200, width: 400, depth: 400 } }],
+        obstacles: [
+          {
+            id: "o",
+            name: "pillar",
+            rect: { x: 0, z: 1200, width: 400, depth: 400 },
+            kind: "pillar",
+          },
+        ],
       },
     };
     const flush = { minX: 0, maxX: 640, minZ: 2360, maxZ: 3000 };

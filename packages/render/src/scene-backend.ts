@@ -184,10 +184,17 @@ export interface PlanTableOverlay extends WorldBox {
   readonly srgb: number | null;
 }
 
+export interface PlanAisleOverlay extends WorldBox {
+  readonly crew: boolean;
+}
+
 export interface PlanOverlay {
   readonly room: WorldBox;
+  readonly floors: ReadonlyArray<WorldBox>;
   readonly tables: ReadonlyArray<PlanTableOverlay>;
   readonly obstacles: ReadonlyArray<WorldBox>;
+  readonly markers: ReadonlyArray<WorldBox>;
+  readonly aisles: ReadonlyArray<PlanAisleOverlay>;
   readonly active: boolean;
 }
 

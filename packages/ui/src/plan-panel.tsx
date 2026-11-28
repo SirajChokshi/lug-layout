@@ -1,8 +1,11 @@
 import {
+  AISLE_SIDES,
   DEFAULT_TABLE_HEIGHT_MM,
   MM_PER_CM,
   MM_PER_STUD,
+  OBSTACLE_KINDS,
   UNCHECKED_PLAN_RULES,
+  UNSTATED_OBSTACLE_KIND,
   buildableAsPlanned,
   cmText,
   lduFromMm,
@@ -24,6 +27,9 @@ import {
   type TableTop,
   type TableType,
   type TableTypeInput,
+  type VenueInput,
+  type VenueItems,
+  type VenueList,
 } from "@brr/client";
 import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { downloadBlob } from "./download.ts";
@@ -33,6 +39,7 @@ import { usePlanVersion } from "./use-plan-version.ts";
 const DEFAULT_ROOM_MM = { width: 4000, depth: 3000 } as const;
 const DEFAULT_TABLE: MmRect = { x: 800, z: 800, width: 2400, depth: 1200 };
 const DEFAULT_OBSTACLE: MmRect = { x: 0, z: 0, width: 400, depth: 400 };
+const DEFAULT_AISLE: MmRect = { x: 0, z: 0, width: 1200, depth: 1200 };
 
 function CommitInput({
   value,
@@ -661,59 +668,179 @@ function TableLibrary({
   );
 }
 
-function ObstaclesEditor({
+function Choice<T extends string>({
+  name,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  readonly name: string;
+  readonly label: string;
+  readonly value: T;
+  readonly options: ReadonlyArray<T>;
+  readonly onChange: (value: T) => void;
+}) {
+  return (
+    <label className="mm-field">
+      <span>{label}</span>
+      <select
+        name={name}
+        value={value}
+        onChange={(event) => {
+          const picked = options.find((option) => option === event.target.value);
+          if (picked !== undefined) onChange(picked);
+        }}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+interface VenueChoice<L extends VenueList, T extends string> {
+  readonly label: string;
+  readonly options: ReadonlyArray<T>;
+  readonly of: (item: VenueItems[L]) => T;
+  readonly patch: (value: T) => Partial<VenueInput<L>>;
+}
+
+function VenueSection<L extends VenueList, T extends string>({
   plan,
   plans,
+  list,
+  items,
+  title,
+  hint,
+  noun,
+  newItem,
+  choice,
 }: {
   readonly plan: PlanRegion;
   readonly plans: IPlanService;
+  readonly list: L;
+  readonly items: ReadonlyArray<VenueItems[L]>;
+  readonly title: string;
+  readonly hint: string;
+  readonly noun: string;
+  readonly newItem: (name: string) => VenueInput<L>;
+  readonly choice?: VenueChoice<L, T>;
 }) {
   return (
-    <section className="plan-section">
-      <h3>Obstacles</h3>
-      {plan.footprint.obstacles.map((obstacle) => (
-        <div className="plan-item" key={obstacle.id} data-obstacle={obstacle.id}>
+    <section className="plan-section" aria-label={title}>
+      <h3>{title}</h3>
+      <p className="plan-meta">{hint}</p>
+      {items.map((item) => (
+        <div className="plan-item" key={item.id} data-venue={list} data-venue-item={item.id}>
           <div className="plan-item-head">
-            <strong>{obstacle.name}</strong>
-            <button type="button" onClick={() => plans.removeObstacle(plan.id, obstacle.id)}>
+            <strong>{item.name}</strong>
+            <button type="button" onClick={() => plans.removeVenueItem(plan.id, list, item.id)}>
               Remove
             </button>
           </div>
           <div className="plan-grid">
+            {choice && (
+              <Choice
+                name={`${item.id}-${choice.label.toLowerCase()}`}
+                label={choice.label}
+                value={choice.of(item)}
+                options={choice.options}
+                onChange={(value) =>
+                  plans.updateVenueItem(plan.id, list, item.id, choice.patch(value))
+                }
+              />
+            )}
             <RectFields
-              prefix={obstacle.id}
-              rect={obstacle.rect}
-              onChange={(rect) => plans.updateObstacle(plan.id, obstacle.id, { rect })}
+              prefix={item.id}
+              rect={item.rect}
+              onChange={(rect) =>
+                plans.updateVenueItem<VenueList>(plan.id, list, item.id, { rect })
+              }
             />
           </div>
         </div>
       ))}
       <button
         type="button"
-        data-action="add-obstacle"
-        onClick={() =>
-          plans.addObstacle(plan.id, {
-            name: `Obstacle ${plan.footprint.obstacles.length + 1}`,
-            rect: DEFAULT_OBSTACLE,
-          })
-        }
+        data-action={`add-${list}`}
+        onClick={() => plans.addVenueItem(plan.id, list, newItem(`${noun} ${items.length + 1}`))}
       >
-        Add obstacle
+        Add {noun.toLowerCase()}
       </button>
     </section>
+  );
+}
+
+function VenueEditors({
+  plan,
+  plans,
+}: {
+  readonly plan: PlanRegion;
+  readonly plans: IPlanService;
+}) {
+  const { rooms, obstacles, aisles, roomWidthMm, roomDepthMm } = plan.footprint;
+  return (
+    <>
+      <VenueSection
+        plan={plan}
+        plans={plans}
+        list="rooms"
+        items={rooms}
+        title="Rooms"
+        noun="Room"
+        hint="The room is the floor these rectangles cover; with none, it's the whole plan. A room past the plan grows the plan."
+        newItem={(name) => ({ name, rect: { x: 0, z: 0, width: roomWidthMm, depth: roomDepthMm } })}
+      />
+      <VenueSection
+        plan={plan}
+        plans={plans}
+        list="obstacles"
+        items={obstacles}
+        title="Obstacles"
+        noun="Obstacle"
+        hint="Pillars and doors keep tables and placements off them, and nobody stands where they meet a table or aisle edge. Power points are markers: they block nothing."
+        newItem={(name) => ({ name, rect: DEFAULT_OBSTACLE, kind: UNSTATED_OBSTACLE_KIND })}
+        choice={{
+          label: "Kind",
+          options: OBSTACLE_KINDS,
+          of: (obstacle) => obstacle.kind,
+          patch: (kind) => ({ kind }),
+        }}
+      />
+      <VenueSection
+        plan={plan}
+        plans={plans}
+        list="aisles"
+        items={aisles}
+        title="Aisles"
+        noun="Aisle"
+        hint="Crew aisles are where you stand to reach in: once the plan has one, reach is measured from crew aisles alone. Public aisles mark where visitors watch."
+        newItem={(name) => ({ name, rect: DEFAULT_AISLE, side: "crew" as const })}
+        choice={{
+          label: "Side",
+          options: AISLE_SIDES,
+          of: (aisle) => aisle.side,
+          patch: (side) => ({ side }),
+        }}
+      />
+    </>
   );
 }
 
 type CheckedRule = Exclude<PlanRuleId, "unchecked">;
 
 const PLAN_CHECKS = {
-  footprint: "Room, tables and obstacles are well formed",
+  footprint: "Rooms, tables, obstacles and aisles are well formed, and tables stay out of aisles",
   crossesRegion: "Placements stay inside the plan",
   fit: "Placements stand on the tables, clear of obstacles",
   unsupported: "Placements are held: on studs or on the table",
   clearance: "Bridges leave room for the tallest train",
   seam: "No placement stands across a table seam",
-  reach: "Every part is within reach of a table edge",
+  reach: "Every part is within reach of a crew aisle, or of a table edge when there's none",
   overlap: "Placements don't overlap",
   roadJoin: "Roads continue into their neighbours",
   bomMapping: "Every part has a Rebrickable and BrickLink id",
@@ -952,7 +1079,7 @@ function ActivePlan({
           tops={plans.regionView(plan.id).tables}
           plans={plans}
         />
-        <ObstaclesEditor plan={plan} plans={plans} />
+        <VenueEditors plan={plan} plans={plans} />
       </PlanEdits>
       <PrintSheets editor={editor} sheets={sheets} sheetSets={sheetSets} plan={plan} />
       <PlanChecks camera={camera} editor={editor} plans={plans} planId={plan.id} />

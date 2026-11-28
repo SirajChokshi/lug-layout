@@ -108,13 +108,19 @@ const EVENT = { ...Object(RICH_MANIFEST["event"]) };
 const TABLE_TYPES = rows(RICH_MANIFEST, "tableTypes");
 const FOOTPRINT: Json = { ...Object(PLANS[0]?.["footprint"]) };
 const TABLES = rows(FOOTPRINT, "tables");
+const OBSTACLES = rows(FOOTPRINT, "obstacles");
+const AISLES = rows(FOOTPRINT, "aisles");
 
 function manifestWith(patch: Json): Json {
   return { ...RICH_MANIFEST, ...patch };
 }
 
+function footprintWith(patch: Json): Json {
+  return manifestWith({ plans: replaced(PLANS, 0, { footprint: { ...FOOTPRINT, ...patch } }) });
+}
+
 function tablesWith(tables: ReadonlyArray<Json>): Json {
-  return manifestWith({ plans: replaced(PLANS, 0, { footprint: { ...FOOTPRINT, tables } }) });
+  return footprintWith({ tables });
 }
 
 function tableWith(index: number, patch: Json): Json {
@@ -333,6 +339,23 @@ describe("world schema v2", () => {
     ],
     ["a table numbered 0", tableWith(0, { number: 0 }), "$.plans.0.footprint.tables.0.number"],
     ["a repeated table number", tableWith(1, { number: 1 }), "$.plans.0.footprint.tables"],
+    ["an empty room list", footprintWith({ rooms: [] }), "$.plans.0.footprint.rooms"],
+    ["an empty aisle list", footprintWith({ aisles: [] }), "$.plans.0.footprint.aisles"],
+    [
+      "a pillar's kind written out",
+      footprintWith({ obstacles: replaced(OBSTACLES, 0, { kind: "pillar" }) }),
+      "$.plans.0.footprint.obstacles.0.kind",
+    ],
+    [
+      "an obstacle of no known kind",
+      footprintWith({ obstacles: replaced(OBSTACLES, 1, { kind: "window" }) }),
+      "$.plans.0.footprint.obstacles.1.kind",
+    ],
+    [
+      "an aisle on no known side",
+      footprintWith({ aisles: replaced(AISLES, 1, { side: "staff" }) }),
+      "$.plans.0.footprint.aisles.1.side",
+    ],
   ])("rejects a manifest with %s at its path", (_name, value, path) => {
     const decoded = decode(WorldManifestV2, value);
     expect(decoded.ok ? [] : decoded.issues.map((issue) => issue.path)).toContain(path);

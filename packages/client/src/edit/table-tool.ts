@@ -1,7 +1,10 @@
 import {
+  mmRectInWorld,
   tableTypeRect,
   tableTypeSize,
   type LduRect,
+  type PlanArea,
+  type PlanRegion,
   type TableTop,
   type TableTurn,
 } from "@brr/domain";
@@ -196,6 +199,19 @@ function numberLabel(top: TableTop, rect: LduRect, y: number): LabelView {
   };
 }
 
+function venueLabels(plan: PlanRegion, y: number, out: LabelView[]): void {
+  const label = (item: PlanArea, text: string): void => {
+    const rect = mmRectInWorld(plan, item.rect);
+    const x = (rect.minX + rect.maxX) / 2;
+    const z = (rect.minZ + rect.maxZ) / 2;
+    out.push({ id: `${item.id}-name`, kind: "table", text, x, y, z });
+  };
+  const { rooms, obstacles, aisles } = plan.footprint;
+  for (const aisle of aisles) label(aisle, `${aisle.name} · ${aisle.side}`);
+  for (const obstacle of obstacles) label(obstacle, `${obstacle.name} · ${obstacle.kind}`);
+  for (const room of rooms) label(room, room.name);
+}
+
 export class TableTool {
   private hover: TableHandle | null = null;
   private drag: TableDrag | null = null;
@@ -358,6 +374,8 @@ export class TableTool {
       const dragged = drag?.rect && drag.handle?.tableId === top.id ? drag.rect : top.surface;
       out.push(numberLabel(top, dragged, this.y));
     }
+    const plan = this.plans.plans().find((p) => p.id === this.plans.activePlanId());
+    if (plan) venueLabels(plan, this.y, out);
     for (const { id, rect } of this.shown()) dimensionLabels(id, rect, this.y, out);
     return out;
   }

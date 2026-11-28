@@ -161,15 +161,16 @@ export {
   DEFAULT_TABLE_HEIGHT_MM,
   type IPlanService,
   type NewPlan,
-  type ObstacleInput,
   type PlanPatch,
   type PlanPlacementsView,
   type PlanRowSegment,
   type TableInput,
   type TableTypeInput,
+  type VenueInput,
 } from "./plan/plan-service.ts";
 export type { IAnnotationService, NoteContents, NoteDocument } from "./notes/annotation-service.ts";
 export type { NoteBody, NoteEntry, NoteSpan, NoteState } from "@brr/domain";
+export { AISLE_SIDES, OBSTACLE_KINDS, UNSTATED_OBSTACLE_KIND } from "@brr/schema/world";
 export {
   NOT_YET_ASSIGNED,
   UNCHECKED_PLAN_RULES,
@@ -230,6 +231,8 @@ export type {
   MmRect,
   PlacementKey,
   PlanCheck,
+  PlanAisle,
+  PlanArea,
   PlanIssue,
   PlanObstacle,
   PlanPlacement,
@@ -239,6 +242,8 @@ export type {
   TableTop,
   TableTurn,
   TableType,
+  VenueItems,
+  VenueList,
 } from "@brr/domain";
 export {
   ANNOTATION_SERVICE,

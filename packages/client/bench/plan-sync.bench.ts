@@ -1139,6 +1139,7 @@ function fallbackRegion(tables: number): PlanRegion {
     footprint: {
       roomWidthMm: ROOM_MM,
       roomDepthMm: ROOM_MM,
+      rooms: [],
       tables: Array.from({ length: tables }, (_, k) => ({
         id: `t${k}`,
         number: k + 1,
@@ -1147,6 +1148,7 @@ function fallbackRegion(tables: number): PlanRegion {
         heightMm: TABLE_HEIGHT_MM,
       })),
       obstacles: [],
+      aisles: [],
     },
     maxOverhangMm: 1,
     maxReachMm: FALLBACK_REACH_MM,

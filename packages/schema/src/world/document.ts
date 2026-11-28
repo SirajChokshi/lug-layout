@@ -1,6 +1,12 @@
 import * as v from "valibot";
 import { Count, SafeInteger, nonBlankText, strictMessage } from "./fields.ts";
-import { PlanFootprintV1, PlanRecordV1, PlanTableV1 } from "./plan-region.ts";
+import {
+  PlanFootprintV1,
+  PlanObstacleV1,
+  PlanRecordV1,
+  PlanRectV1,
+  PlanTableV1,
+} from "./plan-region.ts";
 
 export const BASE_LAYER_ID = 0;
 export const LAYER_ID_MAX = 0xffff;
@@ -13,6 +19,11 @@ export const LABEL_MAX_LENGTH = 200;
 export const LONG_TEXT_MAX_LENGTH = 4000;
 export const LAYER_KINDS = ["parts", "notes", "plan"] as const;
 export type LayerKind = (typeof LAYER_KINDS)[number];
+export const OBSTACLE_KINDS = ["pillar", "door", "power"] as const;
+export type ObstacleKind = (typeof OBSTACLE_KINDS)[number];
+export const UNSTATED_OBSTACLE_KIND: ObstacleKind = "pillar";
+export const AISLE_SIDES = ["public", "crew"] as const;
+export type AisleSide = (typeof AISLE_SIDES)[number];
 
 const MONTHS_IN_YEAR = 12;
 const FEBRUARY = 2;
@@ -262,6 +273,43 @@ function uniqueNumbers(tables: ReadonlyArray<PlanTableV2>): boolean {
   return new Set(tables.map((table) => table.number)).size === tables.length;
 }
 
+function quoted(values: ReadonlyArray<string>): string {
+  return values.map((value) => `"${value}"`).join(", ");
+}
+
+const ObstacleKindField = v.config(
+  v.pipe(
+    v.picklist(OBSTACLE_KINDS, `must be ${quoted(OBSTACLE_KINDS)}`),
+    v.check(
+      (kind) => kind !== UNSTATED_OBSTACLE_KIND,
+      `is left out for a ${UNSTATED_OBSTACLE_KIND}`,
+    ),
+  ),
+  { abortPipeEarly: true },
+);
+
+export const PlanObstacleV2 = v.strictObject(
+  { ...PlanObstacleV1.entries, kind: v.exactOptional(ObstacleKindField) },
+  strictMessage,
+);
+
+export const PlanRoomV2 = v.strictObject({ name: v.string(), rect: PlanRectV1 }, strictMessage);
+
+export const PlanAisleV2 = v.strictObject(
+  { ...PlanRoomV2.entries, side: v.picklist(AISLE_SIDES, `must be ${quoted(AISLE_SIDES)}`) },
+  strictMessage,
+);
+
+function listedOrLeftOut<T extends v.GenericSchema>(row: T) {
+  return v.exactOptional(v.pipe(v.array(row), v.minLength(1, "is empty: leave it out instead")));
+}
+
+const PlanVenueEntries = {
+  obstacles: v.array(PlanObstacleV2),
+  rooms: listedOrLeftOut(PlanRoomV2),
+  aisles: listedOrLeftOut(PlanAisleV2),
+};
+
 export const PlanFootprintV2 = v.strictObject(
   {
     ...PlanFootprintV1.entries,
@@ -269,9 +317,19 @@ export const PlanFootprintV2 = v.strictObject(
       v.array(PlanTableV2),
       v.check((tables) => uniqueNumbers(tables), "must not repeat a table number"),
     ),
+    ...PlanVenueEntries,
   },
   strictMessage,
 );
+
+export const PlanRecordV2 = v.strictObject(
+  {
+    ...PlanRecordV1.entries,
+    footprint: v.strictObject({ ...PlanFootprintV1.entries, ...PlanVenueEntries }, strictMessage),
+  },
+  strictMessage,
+);
+export type PlanRecordV2 = v.InferOutput<typeof PlanRecordV2>;
 
 export const PlanRegionRecordV2 = v.strictObject(
   { ...PlanRecordV1.entries, footprint: PlanFootprintV2, layer: LayerId },

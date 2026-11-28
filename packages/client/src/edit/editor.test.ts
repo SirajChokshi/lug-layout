@@ -1396,7 +1396,9 @@ function planWithoutIds(plans: IPlanService) {
   return plans.plans().map(({ id: _plan, footprint, ...region }) => ({
     ...region,
     tables: footprint.tables.map(({ id: _table, ...table }) => table),
+    rooms: footprint.rooms.map(({ id: _room, ...room }) => room),
     obstacles: footprint.obstacles.map(({ id: _obstacle, ...obstacle }) => obstacle),
+    aisles: footprint.aisles.map(({ id: _aisle, ...aisle }) => aisle),
     room: [footprint.roomWidthMm, footprint.roomDepthMm],
   }));
 }
@@ -1678,6 +1680,40 @@ it("saves a plan's tables, placements, laid track and every user file it places,
   );
   expect({ ...undone, plans: undonePlans }).toEqual({ poses: [], track: [], plans: 0 });
   expect({ poses: posesOf(fresh.editor), track: fresh.editor.dump().laidTrack }).toEqual(inPlan);
+}, 240_000);
+
+it("saves a venue's room, aisle, door and power point in its plan file, and a fresh editor reopens them exactly", async () => {
+  const saving = await startImportingEditor();
+  const savingPlans = saving.container.get(PLAN_SERVICE);
+  const { planId } = savingPlans.drawTable({ minX: 0, minZ: 1280, maxX: 2560, maxZ: 2560 });
+  savingPlans.addVenueItem(planId, "rooms", {
+    name: "Hall",
+    rect: { x: 0, z: 0, width: 1600, depth: 1600 },
+  });
+  savingPlans.addVenueItem(planId, "aisles", {
+    name: "Pit",
+    rect: { x: 0, z: 0, width: 1024, depth: 512 },
+    side: "crew",
+  });
+  savingPlans.addVenueItem(planId, "obstacles", {
+    name: "Fire door",
+    rect: { x: 1200, z: 1500, width: 400, depth: 100 },
+    kind: "door",
+  });
+  savingPlans.addVenueItem(planId, "obstacles", {
+    name: "Socket",
+    rect: { x: 600, z: 800, width: 100, depth: 100 },
+    kind: "power",
+  });
+  const venue = planWithoutIds(savingPlans);
+  const saved = await saving.editor.exportPlan(planId);
+  if (!saved) throw new Error(`the plan wasn't saved: ${saving.editor.snapshot().fileError}`);
+
+  const fresh = await startImportingEditor();
+  const opened = await fresh.editor.openPlan(saved.bytes);
+
+  expect(opened).toBe(true);
+  expect(planWithoutIds(fresh.container.get(PLAN_SERVICE))).toEqual(venue);
 }, 240_000);
 
 it.each([
@@ -5641,6 +5677,78 @@ it("checks a user's model in a two-table plan on plan sync: across the seam, out
     ],
     plan: ["plan-Two_tables", 5, 5],
     world: [6, 6],
+  });
+}, 120_000);
+
+it("measures a user's model's reach from the plan's crew aisles once it has one, each aisle edit one undo step, and grows the plan around a room past it", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const planId = plans.createPlan({
+    name: "Hall",
+    roomWidthMm: 3200,
+    roomDepthMm: 3200,
+    originChunkX: 0,
+    originChunkZ: 0,
+  });
+  plans.addTable(planId, {
+    name: "Bench",
+    rect: { x: 0, z: 1000, width: 2000, depth: 800 },
+    heightMm: 750,
+  });
+  const front = plans.addVenueItem(planId, "aisles", {
+    name: "Front",
+    rect: { x: 0, z: 1800, width: 2000, depth: 1200 },
+    side: "public",
+  });
+  await placer(editor, backend)(brick, 2500, 4400);
+  const venue = async () => {
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    const [plan] = plans.plans();
+    return {
+      issues: plans
+        .issues(planId)
+        .filter((issue) => issue.rule !== "bomMapping")
+        .map((issue) => issue.message),
+      planMm: [plan?.footprint.roomWidthMm, plan?.footprint.roomDepthMm],
+    };
+  };
+
+  const beside = await venue();
+  plans.addVenueItem(planId, "aisles", {
+    name: "Back",
+    rect: { x: 0, z: 0, width: 2000, depth: 1000 },
+    side: "crew",
+  });
+  const fromBack = await venue();
+  plans.updateVenueItem(planId, "aisles", front, { side: "crew" });
+  const fromBoth = await venue();
+  editor.undo(0);
+  const undone = await venue();
+  plans.addVenueItem(planId, "rooms", {
+    name: "Hall",
+    rect: { x: 0, z: 0, width: 3200, depth: 3200 },
+  });
+  plans.addVenueItem(planId, "rooms", {
+    name: "Annex",
+    rect: { x: 3200, z: 0, width: 1600, depth: 1200 },
+  });
+  const annexed = await venue();
+
+  const outOfReach =
+    "brick-2x4 at 2500, 4400 is out of reach: part of it is more than 700 mm from every crew aisle.";
+  expect({ beside, fromBack, fromBoth, undone, annexed }).toEqual({
+    beside: { issues: [], planMm: [3200, 3200] },
+    fromBack: { issues: [outOfReach], planMm: [3200, 3200] },
+    fromBoth: { issues: [], planMm: [3200, 3200] },
+    undone: { issues: [outOfReach], planMm: [3200, 3200] },
+    annexed: { issues: [outOfReach], planMm: [4800, 3200] },
   });
 }, 120_000);
 

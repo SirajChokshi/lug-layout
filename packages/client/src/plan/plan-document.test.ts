@@ -2,11 +2,18 @@ import {
   BASE_LAYER,
   decodeWorldManifest,
   worldDocument,
+  type PlanRecordV2,
   type WorldDocument,
 } from "@brr/schema/world";
 import { describe, expect, it } from "vitest";
 import goldenManifest from "../../../test-fixtures/world-schema/v2/manifest.json" with { type: "json" };
-import { NO_PLANS, PLAN_LAYER_NAME, planStateOf, withPlanState } from "./plan-document.ts";
+import {
+  NO_PLANS,
+  PLAN_LAYER_NAME,
+  planRecord,
+  planStateOf,
+  withPlanState,
+} from "./plan-document.ts";
 
 function goldenDocument(): WorldDocument {
   const manifest = decodeWorldManifest(goldenManifest, "manifest");
@@ -33,6 +40,7 @@ const SHOW_FLOOR = {
   footprint: {
     roomWidthMm: 4800,
     roomDepthMm: 3000,
+    rooms: [],
     tables: [
       {
         id: "table-2",
@@ -43,8 +51,13 @@ const SHOW_FLOOR = {
       },
     ],
     obstacles: [],
+    aisles: [],
   },
 };
+
+function venueLists({ rooms, obstacles, aisles }: PlanRecordV2["footprint"]) {
+  return { rooms, obstacles, aisles };
+}
 
 describe("plan document", () => {
   it("writes the golden v2 world's plans, plan layer and active plan back exactly as it read them", () => {
@@ -124,6 +137,21 @@ describe("plan document", () => {
     expect(kept).toEqual({ layers: [BASE_LAYER], tableTypes: [club] });
     expect(planStateOf(kept)).toEqual({ ok: true, value: { ...NO_PLANS, tableTypes: [club] } });
     expect(withPlanState(kept, NO_PLANS)).toEqual(document);
+  });
+
+  it("reads an obstacle with no kind as a pillar, and gives a plan file the same rooms, aisles and obstacle kinds the world holds", () => {
+    const document = goldenDocument();
+    const state = planStateOf(document);
+    const region = state.ok ? state.value.regions[0] : undefined;
+    const stored = document.plans?.[0]?.footprint;
+    if (!region || !stored) throw new Error("the golden world's plan doesn't read");
+
+    expect(region.footprint.obstacles.map((obstacle) => obstacle.kind)).toEqual([
+      "pillar",
+      "door",
+      "power",
+    ]);
+    expect(venueLists(planRecord(region).footprint)).toEqual(venueLists(stored));
   });
 
   it("refuses plans that lie on more than one plan layer, which the editor would merge on its next save", () => {
