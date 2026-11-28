@@ -1199,8 +1199,10 @@ function editLabel(edit: EditSummary | null): string | null {
       return `road stroke (${counted(edit.placements, "plate", "plates")})`;
     case "fill":
       return `fill (${counted(edit.placements, "placement", "placements")})`;
-    case "lay-track":
-      return `lay ${counted(edit.pieces, "piece", "pieces")}`;
+    case "lay-track": {
+      const laid = `lay ${counted(edit.pieces, "piece", "pieces")}`;
+      return edit.lifted === 0 ? laid : `${laid} in place of ${edit.lifted}`;
+    }
     case "throw-switch":
       return "throw switch";
     case "plan":

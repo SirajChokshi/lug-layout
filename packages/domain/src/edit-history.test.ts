@@ -189,7 +189,7 @@ describe("EditHistory", () => {
     expect(history.undo()).toMatchObject({ kind: "lay-track", track: { lift: run.lay, lay: [] } });
     expect(history.nextUndo()?.kind).toBe("place");
     expect(livePlacements(world)).toEqual(["1,0,0,0,0,0"]);
-    expect(history.nextRedo()).toEqual({ kind: "lay-track", pieces: 2 });
+    expect(history.nextRedo()).toEqual({ kind: "lay-track", pieces: 2, lifted: 0 });
     expect(history.redo()?.track).toBe(run);
     expect(history.redo()?.track).toBe(thrown);
     expect([history.undoDepth, history.redoDepth]).toEqual([3, 0]);

@@ -9275,7 +9275,9 @@ function alongQuarterTurn(
 }
 
 async function runsOffUsersSwitch() {
-  const started = await startEditor([], new BundleDirectoryFetcher(), [USER_TRACK]);
+  const started = await startEditor([LOCOMOTIVE.slice(4)], new BundleDirectoryFetcher(), [
+    USER_TRACK,
+  ]);
   const { editor, backend, catalog } = started;
   const carrier = `omr:${USER_TRACK}`;
   await loadCatalogItem(catalog, carrier);
@@ -9462,6 +9464,44 @@ it("lays a switch clicked in the library on the end drawn from a user's own trac
   expect(third).toMatchObject({
     ref: first?.ref,
     heading: ((first?.heading ?? 0) + ZETA16_ORDER / 2) % ZETA16_ORDER,
+  });
+}, 120_000);
+
+it("drops a held switch into the straights laid off a user's own track model in place of two of them, still joined to the model's track, as one undo step, and never lifts the model's own track or track a train stands on", async () => {
+  const { editor, backend, catalog, at } = await runsOffUsersSwitch();
+  const laid = editor.dump().laidTrack;
+  const ends = editor.dump().trackEnds;
+  const refusedBefore = editor.snapshot().refusedClicks;
+
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(...at.west);
+  editor.pointerMove(0, 0);
+  const hud = toolHints(editor.snapshot());
+  editor.click(0, 0, 0);
+  const dropped = {
+    pieces: editor.dump().laidTrack.length,
+    ends: editor.dump().trackEnds.length,
+    undo: editor.snapshot().history.undoLabel,
+  };
+  editor.undo(0);
+  const undone = { laid: editor.dump().laidTrack, ends: editor.dump().trackEnds };
+  const onModel = holdAndClick(editor, backend, RIGHT_SWITCH, at.carrier);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(LOCOMOTIVE, 0, at.apart[1]);
+  const underTrain = holdAndClick(editor, backend, RIGHT_SWITCH, at.apart);
+
+  expect(hud.detail).toBe("goes in place of 2 pieces exactly");
+  expect(dropped).toEqual({
+    pieces: laid.length - 1,
+    ends: ends.length + 1,
+    undo: "lay 1 piece in place of 2",
+  });
+  expect(undone).toEqual({ laid, ends });
+  expect(onModel).toMatchObject({ refusedClicks: refusedBefore + 1, pieces: laid.length });
+  expect(underTrain).toEqual({
+    refusedClicks: refusedBefore + 2,
+    reason: expect.stringContaining(`would run into ${LOCOMOTIVE_LABEL}.`),
+    pieces: laid.length,
   });
 }, 120_000);
 

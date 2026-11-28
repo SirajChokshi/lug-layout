@@ -161,6 +161,7 @@ export {
   type TrackGraphIssue,
 } from "./track/track-graph.ts";
 export { TrackPaths } from "./track/track-paths.ts";
+export { trackInsertions, type TrackInsertion } from "./track/track-insertion.ts";
 export {
   NO_REVERSING_SECTIONS,
   ReversingSectionFinder,
