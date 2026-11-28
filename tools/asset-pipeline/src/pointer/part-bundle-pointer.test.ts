@@ -75,12 +75,21 @@ function publish(objects: MemoryStore, version: string, parts: ReadonlyArray<str
         JSON.stringify({ id: part, topSurface: TOP_SURFACE_44343P02 }),
       ),
     );
-    const table = store(objects, lod, "parts.json", JSON.stringify({ parts: glbs, shapes }));
+    const glyphs = parts.map((part) =>
+      store(objects, lod, `${part}.glyph`, `${lod} glyph ${part}`),
+    );
+    const table = store(
+      objects,
+      lod,
+      "parts.json",
+      JSON.stringify({ parts: glbs, shapes, glyphs }),
+    );
     const thumb = store(objects, lod, "thumb/ground.png", `${lod} thumb ${parts.length}`);
     const manifest = JSON.stringify({ bundleVersion: version, partTable: table, thumbs: [thumb] });
     objects.objects.set(`${lod}/${file}`, encoder.encode(manifest));
     keys.push(`${lod}/${file}`, `${lod}/${table}`, `${lod}/${thumb}`);
     keys.push(...glbs.map((glb) => `${lod}/${glb}`), ...shapes.map((shape) => `${lod}/${shape}`));
+    keys.push(...glyphs.map((glyph) => `${lod}/${glyph}`));
   }
   return keys;
 }

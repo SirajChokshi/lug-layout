@@ -102,6 +102,7 @@ export type {
   TrackView,
 } from "./edit/track-edit-session.ts";
 export type { TrackBomLine } from "./edit/track-drawing.ts";
+export type { TrackPathScope } from "./edit/track-path-selection.ts";
 export type { TrackSolveStats } from "./edit/solve-samples.ts";
 export type {
   CrossingRampView,

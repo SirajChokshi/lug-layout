@@ -248,7 +248,7 @@ jobs:
           path: .cache/catalog
           key: library-bake-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
           restore-keys: library-bake-inputs-
-      - name: Recompute every pinned part's bake record and standard GLB and check them against the pin
+      - name: Recompute every pinned part's bake record, standard GLB and plan glyph and check them against the pin
         run: pnpm --filter @brr/asset-pipeline library-bake --check
       - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
@@ -283,9 +283,27 @@ jobs:
             tools/e2e/test-results
           retention-days: 7
 
+  glyph-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - uses: ./.github/actions/pnpm-install
+      - uses: ./.github/actions/ldraw-inputs
+      - name: Bake twenty models' plan glyphs natively, then again in the shipped WASM compiler, and compare bytes
+        run: pnpm glyph-parity
+
   check:
     if: ${{ always() }}
-    needs: [bundle, verify, e2e, library-connectors, import-bundle-models, library-bake]
+    needs:
+      [bundle, verify, e2e, library-connectors, import-bundle-models, library-bake, glyph-parity]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -296,6 +314,7 @@ jobs:
           LIBRARY_CONNECTORS: ${{ needs.library-connectors.result }}
           IMPORT_BUNDLE_MODELS: ${{ needs.import-bundle-models.result }}
           LIBRARY_BAKE: ${{ needs.library-bake.result }}
+          GLYPH_PARITY: ${{ needs.glyph-parity.result }}
         run: |
-          echo "bundle: $BUNDLE, verify: $VERIFY, e2e: $E2E, library connectors: $LIBRARY_CONNECTORS, import-bundle-models: $IMPORT_BUNDLE_MODELS, library-bake: $LIBRARY_BAKE"
-          test "$BUNDLE" = success && test "$VERIFY" = success && test "$E2E" = success && test "$LIBRARY_CONNECTORS" = success && test "$IMPORT_BUNDLE_MODELS" = success && test "$LIBRARY_BAKE" = success
+          echo "bundle: $BUNDLE, verify: $VERIFY, e2e: $E2E, library connectors: $LIBRARY_CONNECTORS, import-bundle-models: $IMPORT_BUNDLE_MODELS, library-bake: $LIBRARY_BAKE, glyph-parity: $GLYPH_PARITY"
+          test "$BUNDLE" = success && test "$VERIFY" = success && test "$E2E" = success && test "$LIBRARY_CONNECTORS" = success && test "$IMPORT_BUNDLE_MODELS" = success && test "$LIBRARY_BAKE" = success && test "$GLYPH_PARITY" = success

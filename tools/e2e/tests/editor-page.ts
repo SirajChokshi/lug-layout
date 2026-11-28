@@ -670,6 +670,21 @@ export class EditorPage {
     await this.settle();
   }
 
+  async doubleClickAt(target: LatticePoint, modifier: "Shift" | null = null): Promise<void> {
+    const point = await this.screenOf(target);
+    const view = await this.cameraView();
+    if (modifier) await this.page.keyboard.down(modifier);
+    await this.page.mouse.dblclick(point.sx, point.sy);
+    if (modifier) await this.page.keyboard.up(modifier);
+    await this.settle();
+    await this.viewAtRest();
+    if ((await this.cameraView()) !== view) this.forgetView();
+  }
+
+  async cameraView(): Promise<string> {
+    return (await this.page.locator("#camera-state").textContent()) ?? "";
+  }
+
   async selectionCount(): Promise<number> {
     return Number(await this.root.getAttribute("data-selection-count"));
   }

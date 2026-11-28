@@ -10,8 +10,8 @@ import {
   worldShards,
   type PlacementRecordV1,
   type SuperChunk,
-  type TrackRecordV1,
-  type WorldShardV1,
+  type TrackRecordV2,
+  type WorldShardV2,
 } from "@brr/schema/world";
 import type { PlacementPose, TrackPieceAt } from "./edit-history.ts";
 import { SLOT_LIVE, type PlacementHandle, type World } from "./world.ts";
@@ -50,7 +50,7 @@ export function worldPlacements(
 }
 
 export interface ShardChange {
-  readonly put: ReadonlyArray<WorldShardV1>;
+  readonly put: ReadonlyArray<WorldShardV2>;
   readonly drop: ReadonlyArray<SuperChunk>;
 }
 
@@ -75,7 +75,7 @@ export class DirtyShards {
     this.dirty.set(shardName(superChunk), superChunk);
   }
 
-  touchTrack(track: ReadonlyArray<TrackRecordV1>): void {
+  touchTrack(track: ReadonlyArray<TrackRecordV2>): void {
     for (const piece of track) {
       const superChunk = superChunkOfTrack(piece.position);
       this.dirty.set(shardName(superChunk), superChunk);
@@ -92,7 +92,7 @@ export class DirtyShards {
   take(
     world: World,
     refs: ReadonlyArray<string>,
-    track: ReadonlyArray<TrackRecordV1>,
+    track: ReadonlyArray<TrackRecordV2>,
   ): ShardChange {
     const names = new Set(this.dirty.keys());
     const put = worldShards(
@@ -110,7 +110,7 @@ export class DirtyShards {
 }
 
 export function shardPoses(
-  shards: ReadonlyArray<WorldShardV1>,
+  shards: ReadonlyArray<WorldShardV2>,
   resolve: (ref: string, color: number) => PlacementTarget | null,
 ): Decoded<PlacementPose[]> {
   const issues: Issue[] = [];
@@ -150,7 +150,7 @@ export function shardPoses(
 
 export function addShards(
   world: World,
-  shards: ReadonlyArray<WorldShardV1>,
+  shards: ReadonlyArray<WorldShardV2>,
   resolve: (ref: string, color: number) => PlacementTarget | null,
 ): Decoded<PlacementHandle[]> {
   const poses = shardPoses(shards, resolve);

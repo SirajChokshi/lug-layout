@@ -397,6 +397,8 @@ export const BundleFarMesh = v.object({
 });
 export type BundleFarMesh = v.InferOutput<typeof BundleFarMesh>;
 
+const FileRef = v.object({ file: v.string() });
+
 export const BundleModelEntry = v.object({
   name: v.string(),
   file: v.string(),
@@ -416,6 +418,7 @@ export const BundleModelEntry = v.object({
   notDrawn: v.optional(v.array(NotDrawnSection)),
   errata: v.optional(v.array(ModelErratum)),
   farMesh: v.optional(v.nullable(BundleFarMesh)),
+  glyph: v.optional(FileRef),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
 
@@ -441,6 +444,7 @@ export const ManifestPart = v.object({
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
+  glyph: v.optional(FileRef),
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 
@@ -703,8 +707,6 @@ export const PartShape = v.object({
   outline: v.optional(PlanOutline),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
-
-const FileRef = v.object({ file: v.string() });
 
 export const CatalogPart = v.object({ ...ManifestPart.entries, shape: FileRef });
 export type CatalogPart = v.InferOutput<typeof CatalogPart>;
@@ -1271,6 +1273,11 @@ export function authoredLinesFit(
   );
 }
 
+export const CompilerGlyphInputs = v.strictObject({
+  translucentColors: v.pipe(v.array(Count), v.readonly()),
+});
+export type CompilerGlyphInputs = v.InferOutput<typeof CompilerGlyphInputs>;
+
 export const CompilerRequest = v.variant("op", [
   v.strictObject({
     op: v.literal("readModel"),
@@ -1289,6 +1296,7 @@ export const CompilerRequest = v.variant("op", [
       v.readonly(),
     ),
     records: v.exactOptional(v.boolean()),
+    glyphs: v.exactOptional(CompilerGlyphInputs),
   }),
   v.strictObject({
     op: v.literal("bakeNeeds"),
@@ -1305,6 +1313,7 @@ export const CompilerRequest = v.variant("op", [
     shard: v.exactOptional(BakeShard),
     keepParts: v.exactOptional(v.boolean()),
     omrAuthoringIdentification: v.exactOptional(v.boolean()),
+    glyph: v.exactOptional(v.boolean()),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -1385,6 +1394,8 @@ export const CompilerCompile = v.object({
         ...Reference,
         glb: ByteRange,
         record: v.nullable(ByteRange),
+        glyph: v.nullable(ByteRange),
+        glyphIssue: v.exactOptional(v.string()),
         file: v.string(),
         header: ModelSection,
         files: Count,
@@ -1457,6 +1468,8 @@ export const CompilerBaked = v.object({
   }),
   vehicles: v.exactOptional(v.array(CompilerVehicle)),
   vehicleIssue: v.exactOptional(v.string()),
+  glyph: v.exactOptional(ByteRange),
+  glyphIssue: v.exactOptional(v.string()),
   phases: CompilerBakePhases,
   blobs: CompilerBlobs,
 });
@@ -1806,10 +1819,16 @@ export const LibraryBakeOptions = v.strictObject({
   studPrimitives: StringList,
   unofficialAllowlist: StringList,
   primitives: PrimitiveConnectorTable,
+  translucentColors: v.optional(v.array(Count)),
 });
 export type LibraryBakeOptions = v.InferOutput<typeof LibraryBakeOptions>;
 
-export const LibraryBakePart = v.strictObject({ record: v.string(), glb: v.string() });
+export const LibraryBakePart = v.strictObject({
+  record: v.string(),
+  glb: v.string(),
+  glyph: v.optional(v.string()),
+  glyphIssue: v.optional(v.string()),
+});
 export type LibraryBakePart = v.InferOutput<typeof LibraryBakePart>;
 
 export const LIBRARY_BAKE_BUCKETS = 256;
@@ -1943,3 +1962,5 @@ export {
   MilsSurfaceFeature,
   MilsTemplate,
 } from "./mils-profile.ts";
+
+export { decodePlanGlyph, type PlanGlyph } from "./glyph.ts";

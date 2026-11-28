@@ -25,7 +25,9 @@ import {
   MANIFEST_FILE,
   WorldManifestV1,
   WorldShardV1,
+  WorldShardV2,
   canonicalJson,
+  noteShardEntry,
   shardEntry,
   shardName,
   shardPath,
@@ -35,6 +37,7 @@ import {
   type WorldArchive,
   type WorldFiles,
   type WorldHeader,
+  type NoteShardV2,
   type WorldIndexEntry,
 } from "@brr/schema/world";
 import {
@@ -186,7 +189,8 @@ class HeadlessBackend implements ISceneBackend {
 
 interface MemoryWorld {
   header: WorldHeader;
-  readonly shards: Map<string, WorldShardV1>;
+  readonly shards: Map<string, WorldShardV2>;
+  readonly notes: Map<string, NoteShardV2>;
 }
 
 class MemoryRepository implements IWorldRepository {
@@ -211,27 +215,36 @@ class MemoryRepository implements IWorldRepository {
     return [...this.worlds].map(([id, world]) => this.entry(id, world));
   }
 
-  async create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
+  async create(
+    header: WorldHeader,
+    shards: ReadonlyArray<WorldShardV2>,
+    notes: ReadonlyArray<NoteShardV2>,
+  ): Promise<WorldIndexEntry> {
     const id = `world-${this.nextId++}`;
-    this.worlds.set(id, { header, shards: new Map() });
-    return this.save(id, { header, put: shards, drop: [] });
+    this.worlds.set(id, { header, shards: new Map(), notes: new Map() });
+    return this.save(id, { header, put: shards, drop: [], putNotes: notes, dropNotes: [] });
   }
 
   async read(id: string): Promise<Decoded<StoredWorld>> {
     const world = this.worlds.get(id);
     if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
     const shards = [...world.shards.values()];
-    return {
-      ok: true,
-      value: { id, manifest: worldManifest(world.header, shards.map(shardEntry)), shards },
-    };
+    const notes = [...world.notes.values()];
+    const manifest = worldManifest(world.header, shards.map(shardEntry), notes.map(noteShardEntry));
+    return { ok: true, value: { id, manifest, shards, notes } };
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
-    const world = this.worlds.get(id) ?? { header: change.header, shards: new Map() };
+    const world = this.worlds.get(id) ?? {
+      header: change.header,
+      shards: new Map(),
+      notes: new Map(),
+    };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
     for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
+    for (const superChunk of change.dropNotes) world.notes.delete(shardName(superChunk));
+    for (const shard of change.putNotes) world.notes.set(shardName(shard.superChunk), shard);
     this.worlds.set(id, world);
     return this.entry(id, world);
   }
@@ -375,7 +388,7 @@ function withMissingPart(files: ReadonlyMap<string, Uint8Array>): ReadonlyMap<st
     [...files].map(([name, bytes]) => {
       if (!name.startsWith("shards/")) return [name, bytes];
       const shard = decodedOrThrow(
-        decode(WorldShardV1, JSON.parse(decoder.decode(bytes)), name),
+        decode(WorldShardV2, JSON.parse(decoder.decode(bytes)), name),
         "the exported shard is invalid",
       );
       const placements = shard.placements.map((p) =>

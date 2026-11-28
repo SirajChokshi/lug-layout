@@ -47,6 +47,7 @@ import { Editor } from "./edit/editor.ts";
 import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import { RoadEditSession } from "./edit/road-edit-session.ts";
 import { TrackEditSession } from "./edit/track-edit-session.ts";
+import { TrackPathSelection } from "./edit/track-path-selection.ts";
 import { TrackWorld } from "./edit/track-world.ts";
 import { WorldSession } from "./edit/world-session.ts";
 import { TableGround } from "./ground/table-ground.ts";
@@ -143,6 +144,7 @@ import {
   EDITOR_FRAME_LOOP,
   ROAD_EDIT_SESSION,
   TRACK_EDIT_SESSION,
+  TRACK_PATH_SELECTION,
   TRACK_WORLD,
   STARTER_FILE_URLS,
   STARTER_FILES,
@@ -169,6 +171,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(EDITOR_FRAME_LOOP).to(EditorFrameLoop).inSingletonScope();
   bind(TRACK_WORLD).to(TrackWorld).inSingletonScope();
   bind(TRACK_EDIT_SESSION).to(TrackEditSession).inSingletonScope();
+  bind(TRACK_PATH_SELECTION).to(TrackPathSelection).inSingletonScope();
   bind(ROAD_EDIT_SESSION).to(RoadEditSession).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(SCALE_BAR).to(ScaleBar).inSingletonScope();

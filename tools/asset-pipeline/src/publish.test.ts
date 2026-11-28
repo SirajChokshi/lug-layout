@@ -363,6 +363,26 @@ function withRollingWheel() {
 }
 
 const LIBRARY_PARTS = "library-parts.json";
+const MODEL_GLYPH = "model-scene.glyph";
+const GLYPH_MAGIC = "BRRGLYF1";
+const EMPTY_GLYPH_BYTES = 38;
+const GLYPH_PIXELS_PER_STUD = 8;
+const GLYPH_SAMPLES_PER_PIXEL_SIDE = 4;
+
+function emptyGlyph(): Buffer {
+  const bytes = Buffer.alloc(EMPTY_GLYPH_BYTES);
+  bytes.write(GLYPH_MAGIC, 0, "latin1");
+  bytes.writeUInt8(GLYPH_PIXELS_PER_STUD, GLYPH_MAGIC.length);
+  bytes.writeUInt8(GLYPH_SAMPLES_PER_PIXEL_SIDE, GLYPH_MAGIC.length + 1);
+  return bytes;
+}
+
+function withModelGlyph(bytes: Buffer) {
+  return ({ manifest, files }: CompiledBundle) => {
+    for (const model of manifest.models) Object.assign(model, { glyph: { file: MODEL_GLYPH } });
+    files.set(MODEL_GLYPH, bytes);
+  };
+}
 
 function withLibraryParts(colors: ReadonlyArray<number>) {
   return ({ manifest, files }: CompiledBundle) => {
@@ -708,6 +728,15 @@ describe("publishBundle", () => {
     expect(await readFile(join(directory, thumbnail.file))).toEqual(png(THUMBNAIL_PX));
   });
 
+  it("publishes each model's plan glyph under its content address, which the manifest names", async () => {
+    const { directory, published } = await publish(withModelGlyph(emptyGlyph()));
+    expect(published.files).toBe(13);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    const [model] = manifest.models;
+    expect(model.glyph.file).toMatch(/^model-scene\.[0-9a-f]{16}\.glyph$/u);
+    expect(await readFile(join(directory, model.glyph.file))).toEqual(emptyGlyph());
+  });
+
   it("publishes the library part index under its content address", async () => {
     const { directory, published } = await publish(withLibraryParts([4, 1]));
     expect(published.files).toBe(13);
@@ -732,6 +761,11 @@ describe("publishBundle", () => {
       file: "a thumbnail that is not a PNG",
       edit: withThumbnail(Buffer.from("not an image, just some text bytes")),
       refusal: "thumb/ldraw-3811-2.png is not a PNG file",
+    },
+    {
+      file: "a plan glyph cut short",
+      edit: withModelGlyph(emptyGlyph().subarray(0, EMPTY_GLYPH_BYTES - 1)),
+      refusal: `${MODEL_GLYPH}: $: the plan glyph ends early`,
     },
     {
       file: "an unreferenced file in a subdirectory",

@@ -512,7 +512,12 @@ export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
     action:
       "Switch between magnetic and precise placement while held (with a two-finger scroll it still orbits)",
   },
-  { gesture: "Double-click", action: "Frame the selection" },
+  {
+    gesture: "Double-click a track piece",
+    action: "Select its run, up to the next switch or open end",
+  },
+  { gesture: "Shift-double-click a track piece", action: "Select all the track joined to it" },
+  { gesture: "Double-click a model or train", action: "Frame it" },
   { gesture: "Click a switch", action: "Throw it while a train runs" },
 ];
 

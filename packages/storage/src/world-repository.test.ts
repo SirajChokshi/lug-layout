@@ -1,19 +1,35 @@
 import { planManifest, type PlanArchive } from "@brr/schema/plan";
 import {
+  BASE_LAYER,
+  DEFAULT_WORLD_DOCUMENT,
+  canonicalJson,
   importRef,
+  noteShards,
   shardEntry,
   worldManifest,
   worldShards,
+  worldShardsV1,
   type ImportedFile,
+  type PlacementRecordV1,
   type WorldArchive,
+  type WorldHeader,
 } from "@brr/schema/world";
+import v1Manifest from "../../test-fixtures/world-schema/v1/manifest.json" with { type: "json" };
+import v1ShardWest from "../../test-fixtures/world-schema/v1/shards/-1_0.json" with { type: "json" };
+import v1Shard from "../../test-fixtures/world-schema/v1/shards/0_0.json" with { type: "json" };
 import { IDBFactory } from "fake-indexeddb";
 import { Container } from "inversify";
 import { expect, it } from "vitest";
 import type { PersistentStorage } from "./persistent-storage.ts";
 import { storageModule } from "./storage.module.ts";
 import { INDEXED_DB, PERSISTENT_STORAGE, WORLD_REPOSITORY } from "./tokens.ts";
-import { contentSha256, IndexedDbWorldRepository } from "./world-repository.ts";
+import {
+  WORLD_INDEX_DATABASE,
+  contentSha256,
+  IndexedDbWorldRepository,
+  worldDatabaseName,
+} from "./world-repository.ts";
+import { openDatabase, requestResult, transactionDone } from "./indexed-db.ts";
 
 const utf8 = new TextEncoder();
 
@@ -28,36 +44,41 @@ const NO_DATABASE: IDBFactory = {
   databases: async () => [],
 };
 
-const HEADER = {
+const HEADER: WorldHeader = {
   name: "Imported models",
   bundleVersion: "test",
   view: { targetX: 0, targetY: 0, targetZ: 0, distance: 1, yaw: 0, pitch: 0 },
   disclaimer: "disclaimer",
+  ...DEFAULT_WORLD_DOCUMENT,
 };
+
+const NO_NOTES = { putNotes: [], dropNotes: [] } as const;
 
 async function modelFile(name: string, text: string): Promise<ImportedFile> {
   const bytes = utf8.encode(text);
   return { sha256: await contentSha256(bytes), name, bytes };
 }
 
+function placing(placed: ReadonlyArray<ImportedFile>): PlacementRecordV1[] {
+  return placed.map((file, i) => ({
+    ref: importRef(file.sha256),
+    color: 0,
+    x: i * 640,
+    z: 0,
+    yPlates: 0,
+    rot: 0,
+  }));
+}
+
 function archivePlacing(
   placed: ReadonlyArray<ImportedFile>,
   carried: ReadonlyArray<ImportedFile>,
 ): WorldArchive {
-  const shards = worldShards(
-    placed.map((file, i) => ({
-      ref: importRef(file.sha256),
-      color: 0,
-      x: i * 640,
-      z: 0,
-      yPlates: 0,
-      rot: 0,
-    })),
-    [],
-  );
+  const shards = worldShards(placing(placed), []);
   return {
     manifest: worldManifest(HEADER, shards.map(shardEntry)),
     shards,
+    notes: [],
     credits: "credits",
     imports: carried,
   };
@@ -104,7 +125,7 @@ function planPlacing(
   placed: ReadonlyArray<ImportedFile>,
   carried: ReadonlyArray<ImportedFile>,
 ): PlanArchive {
-  const { shards } = archivePlacing(placed, []);
+  const shards = worldShardsV1(placing(placed), []);
   const plan = {
     name: "Table",
     originChunkX: 0,
@@ -175,10 +196,150 @@ it("asks for persistent storage once, on the first save that changes a world's c
   container.rebind(PERSISTENT_STORAGE).toConstantValue(storage);
   const worlds = container.get(WORLD_REPOSITORY);
   const shards = worldShards([{ ref: "ldraw:3811", color: 2, x: 0, z: 0, yPlates: 0, rot: 0 }], []);
-  const { id } = await worlds.create(HEADER, []);
-  await worlds.save(id, { header: HEADER, put: [], drop: [] });
+  const { id } = await worlds.create(HEADER, [], []);
+  await worlds.save(id, { header: HEADER, put: [], drop: [], ...NO_NOTES });
   expect(storage.persistRequests).toBe(0);
-  await worlds.save(id, { header: HEADER, put: shards, drop: [] });
-  await worlds.save(id, { header: HEADER, put: [], drop: shards.map((shard) => shard.superChunk) });
+  await worlds.save(id, { header: HEADER, put: shards, drop: [], ...NO_NOTES });
+  await worlds.save(id, {
+    header: HEADER,
+    put: [],
+    drop: shards.map((shard) => shard.superChunk),
+    ...NO_NOTES,
+  });
   expect(storage.persistRequests).toBe(1);
+});
+
+function repositoryOn(factory: IDBFactory) {
+  const container = new Container();
+  container.load(storageModule);
+  container.rebind(INDEXED_DB).toConstantValue(factory);
+  container.rebind(PERSISTENT_STORAGE).toConstantValue(null);
+  return container.get(WORLD_REPOSITORY);
+}
+
+async function seedV1World(factory: IDBFactory, id: string): Promise<void> {
+  const index = await openDatabase(factory, WORLD_INDEX_DATABASE, [
+    { name: "worlds", keyPath: "id" },
+  ]);
+  const listed = index.transaction("worlds", "readwrite");
+  listed
+    .objectStore("worlds")
+    .put({ id, name: v1Manifest.name, placements: 3, track: 2, shards: 2, savedAt: 1 });
+  await transactionDone(listed);
+  index.close();
+  const world = await openDatabase(factory, worldDatabaseName(id), [
+    { name: "manifest" },
+    { name: "shards" },
+  ]);
+  const stored = world.transaction(["manifest", "shards"], "readwrite");
+  stored.objectStore("manifest").put(canonicalJson(v1Manifest), "manifest");
+  stored.objectStore("shards").put(canonicalJson(v1Shard), "0_0");
+  stored.objectStore("shards").put(canonicalJson(v1ShardWest), "-1_0");
+  await transactionDone(stored);
+  world.close();
+}
+
+async function storedShardTexts(factory: IDBFactory, id: string): Promise<string[]> {
+  const world = await openDatabase(factory, worldDatabaseName(id), [
+    { name: "manifest" },
+    { name: "shards" },
+  ]);
+  const texts = await requestResult(world.transaction("shards").objectStore("shards").getAll());
+  world.close();
+  return texts.map(String);
+}
+
+it("opens a world an earlier version saved as schema v1, and keeps saving it as v2 beside the shards it hasn't rewritten", async () => {
+  const factory = new IDBFactory();
+  await seedV1World(factory, "saved-by-v1");
+  const worlds = repositoryOn(factory);
+
+  const opened = await worlds.read("saved-by-v1");
+  if (!opened.ok) throw new Error("the v1 world didn't open");
+  expect(opened.value.manifest.schemaVersion).toBe(2);
+  expect(opened.value.manifest.layers).toEqual([BASE_LAYER]);
+  expect(opened.value.shards.map((shard) => shard.placements.length)).toEqual([1, 2]);
+
+  const east = worldShards(
+    [{ ref: "ldraw:3811", color: 2, x: 5120, z: 0, yPlates: 0, rot: 0 }],
+    [],
+  );
+  const header: WorldHeader = { ...HEADER, name: "Club loop" };
+  await worlds.save("saved-by-v1", { header, put: east, drop: [], ...NO_NOTES });
+
+  const reopened = await worlds.read("saved-by-v1");
+  if (!reopened.ok) throw new Error("the upgraded world didn't reopen");
+  expect(reopened.value.manifest.placements).toBe(4);
+  expect(reopened.value.shards.map((shard) => shard.schemaVersion)).toEqual([2, 2, 2]);
+  expect(
+    (await storedShardTexts(factory, "saved-by-v1")).map((text) => JSON.parse(text).schemaVersion),
+  ).toEqual([1, 1, 2]);
+});
+
+const NOTES_HEADER: WorldHeader = {
+  ...HEADER,
+  layers: [
+    BASE_LAYER,
+    { id: 1, name: "Notes", kind: "notes", visible: true, locked: false, opacity: 100 },
+  ],
+};
+
+const ZONE = {
+  kind: "zone",
+  index: 0,
+  layer: 1,
+  name: "Town",
+  color: "#2ca02c",
+  outline: [
+    [0, 0],
+    [200, 0],
+    [200, 200],
+  ],
+} as const;
+
+it("stores a world's note shards beside its parts and drops them on request", async () => {
+  const worlds = repositoryOn(new IDBFactory());
+  const notes = noteShards([{ ...ZONE, outline: ZONE.outline.map(([x, z]) => [x, z]) }]);
+  const { id } = await worlds.create(NOTES_HEADER, [], notes);
+
+  const read = await worlds.read(id);
+  expect(read.ok && read.value.notes).toEqual(notes);
+  expect(read.ok && read.value.manifest.notes).toBe(1);
+
+  await worlds.save(id, {
+    header: NOTES_HEADER,
+    put: [],
+    drop: [],
+    putNotes: [],
+    dropNotes: notes.map((shard) => shard.superChunk),
+  });
+  const dropped = await worlds.read(id);
+  expect(dropped.ok && [dropped.value.notes, dropped.value.manifest.noteShards]).toEqual([[], []]);
+});
+
+it("refuses to save a placement on a layer the header doesn't list, or a note on a parts layer", async () => {
+  const worlds = repositoryOn(new IDBFactory());
+  const { id } = await worlds.create(NOTES_HEADER, [], []);
+  const onLayerSeven = worldShards(
+    [{ ref: "ldraw:3811", color: 2, x: 0, z: 0, yPlates: 0, rot: 0, layer: 7 }],
+    [],
+  );
+  const noteOnParts = noteShards([
+    { ...ZONE, layer: 0, outline: ZONE.outline.map(([x, z]) => [x, z]) },
+  ]);
+
+  await expect(
+    worlds.save(id, { header: NOTES_HEADER, put: onLayerSeven, drop: [], ...NO_NOTES }),
+  ).rejects.toThrow("shard 0_0.placements.0.layer: names layer 7, which the manifest doesn't list");
+  await expect(
+    worlds.save(id, {
+      header: NOTES_HEADER,
+      put: [],
+      drop: [],
+      putNotes: noteOnParts,
+      dropNotes: [],
+    }),
+  ).rejects.toThrow("note shard 0_0.notes.0.layer: names layer 0, a parts layer, not a notes one");
+  const unchanged = await worlds.read(id);
+  expect(unchanged.ok && [unchanged.value.shards, unchanged.value.notes]).toEqual([[], []]);
 });

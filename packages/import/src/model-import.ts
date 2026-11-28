@@ -213,7 +213,10 @@ export interface CompiledGlb {
   readonly source: CompiledSource;
 }
 
-export type ModelBake = Omit<BakedModel, "status" | "recordedParts" | "resumedParts" | "phases">;
+export type ModelBake = Omit<
+  BakedModel,
+  "status" | "recordedParts" | "resumedParts" | "phases" | "glyph" | "glyphIssue"
+>;
 
 export type PlacementBake = Omit<ModelBake, "studCover">;
 
@@ -315,6 +318,8 @@ function joinedShards(primary: BakedModel, others: ReadonlyArray<BakedModel>): M
     recordedParts: _recorded,
     resumedParts: _resumed,
     phases: _phases,
+    glyph: _glyph,
+    glyphIssue: _glyphIssue,
     ...bake
   } = primary;
   const { studs } = primary.studCover;
@@ -1123,6 +1128,7 @@ function compiledFromGlb(
       reference,
       glb,
       record: null,
+      glyph: null,
       file: ldraw.file,
       header: {
         name: ldraw.name,

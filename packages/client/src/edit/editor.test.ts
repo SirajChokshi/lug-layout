@@ -69,15 +69,17 @@ import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
 import {
+  noteShardEntry,
   shardEntry,
   shardName,
   worldManifest,
   type ConsistRecordV1,
   type ImportedFile,
+  type NoteShardV2,
   type WorldArchive,
   type WorldHeader,
   type WorldIndexEntry,
-  type WorldShardV1,
+  type WorldShardV2,
 } from "@brr/schema/world";
 import {
   WORLD_LOCKS,
@@ -1531,7 +1533,8 @@ it("offers every baseplate and road plate in exactly the produced colours the bu
 
 interface MemoryWorld {
   header: WorldHeader;
-  readonly shards: Map<string, WorldShardV1>;
+  readonly shards: Map<string, WorldShardV2>;
+  readonly notes: Map<string, NoteShardV2>;
 }
 
 class MemoryRepository implements IWorldRepository {
@@ -1586,27 +1589,36 @@ class MemoryRepository implements IWorldRepository {
     return [...this.worlds].map(([id, world]) => this.entry(id, world));
   }
 
-  async create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
+  async create(
+    header: WorldHeader,
+    shards: ReadonlyArray<WorldShardV2>,
+    notes: ReadonlyArray<NoteShardV2>,
+  ): Promise<WorldIndexEntry> {
     const id = `world-${this.nextId++}`;
-    this.worlds.set(id, { header, shards: new Map() });
-    return this.save(id, { header, put: shards, drop: [] });
+    this.worlds.set(id, { header, shards: new Map(), notes: new Map() });
+    return this.save(id, { header, put: shards, drop: [], putNotes: notes, dropNotes: [] });
   }
 
   async read(id: string): Promise<Decoded<StoredWorld>> {
     const world = this.worlds.get(id);
     if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
     const shards = [...world.shards.values()];
-    return {
-      ok: true,
-      value: { id, manifest: worldManifest(world.header, shards.map(shardEntry)), shards },
-    };
+    const notes = [...world.notes.values()];
+    const manifest = worldManifest(world.header, shards.map(shardEntry), notes.map(noteShardEntry));
+    return { ok: true, value: { id, manifest, shards, notes } };
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
-    const world = this.worlds.get(id) ?? { header: change.header, shards: new Map() };
+    const world = this.worlds.get(id) ?? {
+      header: change.header,
+      shards: new Map(),
+      notes: new Map(),
+    };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
     for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
+    for (const superChunk of change.dropNotes) world.notes.delete(shardName(superChunk));
+    for (const shard of change.putNotes) world.notes.set(shardName(shard.superChunk), shard);
     this.worlds.set(id, world);
     return this.entry(id, world);
   }
@@ -1618,7 +1630,7 @@ class MemoryRepository implements IWorldRepository {
   async copyWith(
     id: string,
     name: string,
-    extra: (placements: WorldShardV1["placements"]) => WorldShardV1["placements"],
+    extra: (placements: WorldShardV2["placements"]) => WorldShardV2["placements"],
   ): Promise<string> {
     const world = this.worlds.get(id);
     if (!world) throw new Error(`world ${id} is not stored`);
@@ -1626,7 +1638,7 @@ class MemoryRepository implements IWorldRepository {
       ...shard,
       placements: [...shard.placements, ...extra(shard.placements)],
     }));
-    return (await this.create({ ...world.header, name }, shards)).id;
+    return (await this.create({ ...world.header, name }, shards, [...world.notes.values()])).id;
   }
 
   async shardFiles(): Promise<never[]> {
@@ -8678,6 +8690,129 @@ it("lets a run start from or close onto the open end of a user's track model and
   );
   expect(crossing.lastBlock).toEqual({ kind: "track" });
 }, 120_000);
+
+const WEST_HEADING = 8;
+const EAST_HEADING = 0;
+const RUN_STRAIGHTS = 3;
+
+function alongQuarterTurn(
+  end: { readonly xLdu: number; readonly zLdu: number; readonly heading: number },
+  reach: number,
+) {
+  const [x, z] = outwardFrom(end, reach);
+  return [end.xLdu + Math.round(x - end.xLdu), end.zLdu + Math.round(z - end.zLdu)] as const;
+}
+
+async function runsOffUsersSwitch() {
+  const started = await startEditor([], new BundleDirectoryFetcher(), [USER_TRACK]);
+  const { editor, backend, catalog } = started;
+  const carrier = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, carrier);
+  await placer(editor, backend)(carrier, 0, 0);
+  const ends = editor.dump().trackEnds;
+  const points = ends.find((open) => open.heading === WEST_HEADING);
+  const [branch, main] = ends
+    .filter((open) => open.heading === EAST_HEADING)
+    .toSorted((a, b) => a.zLdu - b.zLdu);
+  if (!points || !main || !branch || ends.length !== 3) {
+    throw new Error(`${USER_TRACK} has no points end and two exits: ${JSON.stringify(ends)}`);
+  }
+  const draw = trackDrawer(editor, backend);
+  const runLdu = RUN_STRAIGHTS * ONE_STRAIGHT_LDU;
+  const west = draw([points.xLdu, points.zLdu], alongQuarterTurn(points, runLdu)).pieces;
+  const east = draw([main.xLdu, main.zLdu], alongQuarterTurn(main, runLdu)).pieces - west;
+  const apart = draw([-runLdu, 2 * runLdu], [runLdu, 2 * runLdu]).pieces - west - east;
+  editor.chooseItem(null);
+  return {
+    ...started,
+    carrier,
+    counts: { west, east, apart },
+    at: {
+      west: alongQuarterTurn(points, ONE_STRAIGHT_LDU / 2),
+      east: alongQuarterTurn(main, ONE_STRAIGHT_LDU / 2),
+      apart: [ONE_STRAIGHT_LDU / 2, 2 * runLdu] as const,
+      carrier: [main.xLdu - ONE_STRAIGHT_LDU / 2, main.zLdu] as const,
+    },
+  };
+}
+
+function pathSelected(
+  editor: IEditor,
+  backend: AimedBackend,
+  at: readonly [number, number],
+  scope: "run" | "network",
+) {
+  backend.aim(...at);
+  const took = editor.selectTrackPath(0, 0, scope);
+  const selection = editor.snapshot().selection;
+  const primary = selection?.primary;
+  return {
+    took,
+    tally: selection?.tally ?? null,
+    items: selectedItems(editor),
+    primary: primary?.kind === "track" ? [primary.centreX, primary.centreZ] : primary?.item,
+  };
+}
+
+function laidStraights(count: number): ReadonlyArray<string> {
+  return Array.from({ length: count }, () => STRAIGHT_PIECE);
+}
+
+describe("track path select", () => {
+  it("selects a laid run up to the switch in a user's track model, takes in the model when the run reaches that switch through the model's own track, and Shift selects all the track joined to it", async () => {
+    const { editor, backend, carrier, counts, at } = await runsOffUsersSwitch();
+
+    expect(counts).toEqual({ west: RUN_STRAIGHTS, east: RUN_STRAIGHTS, apart: expect.any(Number) });
+    expect({
+      west: pathSelected(editor, backend, at.west, "run"),
+      east: pathSelected(editor, backend, at.east, "run"),
+      network: pathSelected(editor, backend, at.west, "network"),
+      apart: pathSelected(editor, backend, at.apart, "network"),
+    }).toEqual({
+      west: {
+        took: true,
+        tally: { models: 0, pieces: counts.west, trains: 0 },
+        items: laidStraights(counts.west),
+        primary: at.west,
+      },
+      east: {
+        took: true,
+        tally: { models: 1, pieces: counts.east, trains: 0 },
+        items: [carrier, ...laidStraights(counts.east)],
+        primary: at.east,
+      },
+      network: {
+        took: true,
+        tally: { models: 1, pieces: counts.west + counts.east, trains: 0 },
+        items: [carrier, ...laidStraights(counts.west + counts.east)],
+        primary: at.west,
+      },
+      apart: {
+        took: true,
+        tally: { models: 0, pieces: counts.apart, trains: 0 },
+        items: laidStraights(counts.apart),
+        primary: at.apart,
+      },
+    });
+  }, 120_000);
+
+  it("leaves a double-click on a user's model, or on track while the track tool is held, to frame what's selected", async () => {
+    const { editor, backend, carrier, at } = await runsOffUsersSwitch();
+    selectAt(editor, backend, ...at.carrier);
+
+    const onModel = pathSelected(editor, backend, at.carrier, "run");
+    editor.chooseItem(TRACK_ITEM_ID);
+    const whileDrawing = pathSelected(editor, backend, at.west, "network");
+
+    expect(onModel).toEqual({
+      took: false,
+      tally: { models: 1, pieces: 0, trains: 0 },
+      items: [carrier],
+      primary: carrier,
+    });
+    expect(whileDrawing).toEqual({ took: false, tally: null, items: [], primary: undefined });
+  }, 120_000);
+});
 
 function overlapIssues(issues: ReadonlyArray<string>): number {
   return issues.filter((issue) => issue.startsWith("overlap: ")).length;

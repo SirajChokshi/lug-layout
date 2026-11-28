@@ -1,6 +1,6 @@
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { STARTER_SHELF_FILE, StarterShelfV1, starterFilePath } from "@brr/schema/starters";
-import { MANIFEST_FILE, WorldManifestV1 } from "@brr/schema/world";
+import { MANIFEST_FILE, decodeWorldManifest } from "@brr/schema/world";
 import { expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
@@ -39,7 +39,7 @@ async function shippedStarters(): Promise<ReadonlyArray<ShippedStarter>> {
     shelf.starters.map(async ({ world }) => {
       const path = starterFilePath(world, MANIFEST_FILE);
       const manifest = decodedOrThrow(
-        decode(WorldManifestV1, await starterJson(path), path),
+        decodeWorldManifest(await starterJson(path), path),
         "a starter manifest is invalid",
       );
       return {

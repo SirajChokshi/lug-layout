@@ -70,6 +70,8 @@ pub enum Operation {
         inline_checks: Vec<InlineCheck>,
         #[serde(default)]
         records: bool,
+        #[serde(default)]
+        glyphs: Option<GlyphInputs>,
     },
     BakeNeeds {
         stud_primitives: Vec<String>,
@@ -87,7 +89,15 @@ pub enum Operation {
         keep_parts: bool,
         #[serde(default)]
         omr_authoring_identification: bool,
+        #[serde(default)]
+        glyph: bool,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct GlyphInputs {
+    pub translucent_colors: Vec<u32>,
 }
 
 #[derive(Deserialize)]

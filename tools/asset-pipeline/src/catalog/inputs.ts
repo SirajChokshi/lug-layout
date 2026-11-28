@@ -4,7 +4,7 @@ import { catalogSourceDirectory, type CatalogLock } from "../fetch-ldraw.ts";
 import { normalizeReference } from "../ldraw/parse.ts";
 import { readGzipCsv } from "./csv.ts";
 import { readTarGz } from "./tar.ts";
-import type { CatalogSourceUse, CrosswalkSourcePin } from "@brr/schema/bundle";
+import { ALPHA_OPAQUE, type CatalogSourceUse, type CrosswalkSourcePin } from "@brr/schema/bundle";
 import type {
   ApiColor,
   ApiPart,
@@ -129,13 +129,17 @@ async function ldrawPartFacts(
   );
 }
 
-function ldconfigColors(source: string): Array<{ code: number; name: string }> {
+export function ldconfigColors(
+  source: string,
+): Array<{ code: number; name: string; alpha: number }> {
   return source.split(/\r?\n/u).flatMap((line) => {
     const tokens = line.trim().split(/\s+/u);
     if (tokens[0] !== "0" || tokens[1] !== "!COLOUR") return [];
     const name = tokens[2];
     const code = Number(tokens[tokens.indexOf("CODE") + 1]);
-    return name !== undefined && Number.isInteger(code) ? [{ code, name }] : [];
+    const alphaAt = tokens.indexOf("ALPHA");
+    const alpha = alphaAt < 0 ? ALPHA_OPAQUE : Number(tokens[alphaAt + 1]);
+    return name !== undefined && Number.isInteger(code) ? [{ code, name, alpha }] : [];
   });
 }
 
