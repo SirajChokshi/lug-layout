@@ -126,7 +126,7 @@ export class SheetBlocks {
     const label = this.typeface.fitted(
       pixelsPerMm === undefined
         ? `this bar measures ${CHECK_BAR_MM} mm at 100%: ${length}${scale}`
-        : `this bar is ${CHECK_BAR_MM * pixelsPerMm} px: ${length}`,
+        : `this bar is ${CHECK_BAR_MM * pixelsPerMm} px at ${pixelsPerMm} px per mm: ${length}`,
       SMALL_MM,
       widthMm - CHECK_BAR_MM - CHECK_LABEL_GAP_MM,
     );

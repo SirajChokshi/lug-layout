@@ -1,7 +1,7 @@
 import { inject, injectable } from "inversify";
-import { SHEET_TYPEFACE, SVG_SHEET_WRITER } from "../tokens.ts";
+import { SHEET_TYPEFACE, SVG_SHEET_WRITER, TRADEMARK_DISCLAIMER } from "../tokens.ts";
 import { DrawBounds } from "./draw-bounds.ts";
-import { group, IDENTITY, translation, type Box } from "./draw-list.ts";
+import { group, IDENTITY, translation, type Box, type DrawItem } from "./draw-list.ts";
 import type { PageSize } from "./paper.ts";
 import {
   IMAGE_PIXELS_PER_MM,
@@ -12,27 +12,34 @@ import {
   type SheetFile,
   type SheetPage,
 } from "./sheet-document.ts";
-import { plural } from "./sheet-blocks.ts";
-import { PAINTS } from "./sheet-paints.ts";
+import { plural, text } from "./sheet-blocks.ts";
+import { PAINTS, SMALL_MM, textStyle } from "./sheet-paints.ts";
 import type { ISheetTypeface } from "./sheet-typeface.ts";
 import type { ISvgSheetWriter } from "./svg-sheet-writer.ts";
 import { TileGrid } from "./tile-grid.ts";
 
 const MAX_TILE_PX = 4096;
+const TILE_FOOTER_MM = 2 * SMALL_MM;
+const TILE_FOOTER_INSET_MM = SMALL_MM / 2;
 
 function pixels(mm: number): number {
   return mm * IMAGE_PIXELS_PER_MM;
 }
 
-function tilesAlong(mm: number): { readonly count: number; readonly px: number } {
+function tilesAlong(
+  mm: number,
+  reservedPx: number,
+): { readonly count: number; readonly px: number } {
   const total = Math.ceil(pixels(mm));
-  const count = Math.ceil(total / MAX_TILE_PX);
+  const count = Math.ceil(total / (MAX_TILE_PX - reservedPx));
   return { count, px: Math.ceil(total / count) };
 }
 
 function pixelGrid(size: PageSize): TileGrid {
-  const across = tilesAlong(size.widthMm);
-  const down = tilesAlong(size.heightMm);
+  const across = tilesAlong(size.widthMm, 0);
+  const whole = tilesAlong(size.heightMm, 0);
+  const down =
+    across.count * whole.count === 1 ? whole : tilesAlong(size.heightMm, pixels(TILE_FOOTER_MM));
   return new TileGrid(
     across.count,
     down.count,
@@ -44,7 +51,7 @@ function pixelGrid(size: PageSize): TileGrid {
 
 function tilingNote(name: string, grid: TileGrid): string {
   const { widthMm, heightMm } = grid.windowSize;
-  return `Page ${name} is split into ${plural(grid.columns, "column", "columns")} and ${plural(grid.rows, "row", "rows")} of ${pixels(widthMm)} × ${pixels(heightMm)} px tiles, ${name}-A1 to ${name}-${grid.name(grid.columns - 1, grid.rows - 1)}, so no tile is over ${MAX_TILE_PX} px a side.`;
+  return `Page ${name} is split into ${plural(grid.columns, "column", "columns")} and ${plural(grid.rows, "row", "rows")} of ${pixels(widthMm)} × ${pixels(heightMm + TILE_FOOTER_MM)} px tiles, ${name}-A1 to ${name}-${grid.name(grid.columns - 1, grid.rows - 1)}, each with ${pixels(heightMm)} px of the page above a ${pixels(TILE_FOOTER_MM)} px footer, so no tile is over ${MAX_TILE_PX} px a side.`;
 }
 
 async function rasterized(svg: string): Promise<Uint8Array> {
@@ -71,6 +78,7 @@ export class PngSheetWriter implements ISheetWriter {
   constructor(
     @inject(SHEET_TYPEFACE) typeface: ISheetTypeface,
     @inject(SVG_SHEET_WRITER) private readonly svg: ISvgSheetWriter,
+    @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
   ) {
     this.bounds = new DrawBounds(typeface);
   }
@@ -83,7 +91,7 @@ export class PngSheetWriter implements ISheetWriter {
       if (grid.count > 1) notes.push(tilingNote(page.name, grid));
       for (let row = 0; row < grid.rows; row++) {
         for (let column = 0; column < grid.columns; column++) {
-          const tile = this.tile(page, grid.window(column, row));
+          const tile = this.tile(page, grid.window(column, row), grid.count > 1);
           const svg = this.svg.pageSvg(tile, document.title, IMAGE_PIXELS_PER_MM);
           entries.push({
             name: grid.count === 1 ? page.name : `${page.name}-${grid.name(column, row)}`,
@@ -95,23 +103,43 @@ export class PngSheetWriter implements ISheetWriter {
     return packedSheetFile(baseName, "png", "image/png", entries, document.pages.length, notes);
   }
 
-  private tile(page: SheetPage, window: Box): SheetPage {
+  private tile(page: SheetPage, window: Box, footed: boolean): SheetPage {
+    const height = window.height + (footed ? TILE_FOOTER_MM : 0);
     return {
       name: page.name,
-      size: { widthMm: window.width, heightMm: window.height },
+      size: { widthMm: window.width, heightMm: height },
       items: [
         {
           kind: "rect",
           role: "page",
           paint: PAINTS.page,
-          box: { x: 0, y: 0, width: window.width, height: window.height },
+          box: { x: 0, y: 0, width: window.width, height },
         },
         group(
           "tile",
           this.bounds.culled(page.items, IDENTITY, window),
           translation(-window.x, -window.y),
         ),
+        ...(footed ? this.footer(window) : []),
       ],
     };
+  }
+
+  private footer(window: Box): DrawItem[] {
+    return [
+      {
+        kind: "line",
+        role: "rule",
+        paint: PAINTS.rule,
+        from: [0, window.height],
+        to: [window.width, window.height],
+      },
+      text(
+        [SMALL_MM, window.height + TILE_FOOTER_MM - TILE_FOOTER_INSET_MM],
+        this.disclaimer,
+        textStyle(SMALL_MM),
+        "footer",
+      ),
+    ];
   }
 }

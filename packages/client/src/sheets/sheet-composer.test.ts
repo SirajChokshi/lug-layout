@@ -367,7 +367,9 @@ describe("an image", () => {
         printAdvice: false,
       })),
     );
-    expect(eight && titleLines(eight)).toContain("this bar is 256 px: 32 studs · 25.6 cm");
+    expect(eight && titleLines(eight)).toContain(
+      "this bar is 256 px at 4 px per mm: 32 studs · 25.6 cm",
+    );
   });
 
   it("refuses a pixel count that isn't whole, or is past the one that draws at 1:1", () => {

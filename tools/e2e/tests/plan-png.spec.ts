@@ -15,6 +15,7 @@ const TABLE_TWO: readonly [LatticePoint, LatticePoint] = [
 const ON_TABLE_ONE: LatticePoint = { x: -800, z: 0 };
 const PNG_PIXELS_PER_MM = 4;
 const MAX_TILE_PX = 4096;
+const TILE_FOOTER_PX = 24;
 const TABLE_TOP = [234, 217, 189] as const;
 const PLACEMENT_INK = [27, 79, 114] as const;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -144,6 +145,7 @@ test("a plan of two tables holding a user's own model downloads as a PNG at the 
   const columns = new Set(tiles.map((tile) => tile.column)).size;
   const rows = new Set(tiles.map((tile) => tile.row)).size;
   const [tileWidth = 0, tileHeight = 0] = tiles[0]?.size ?? [];
+  const pageRowHeight = tileHeight - TILE_FOOTER_PX;
   const [pageWidth, pageHeight] = pagePixels(fullSizeSvg);
   const contents = await Promise.all(tiles.map((tile) => decoded(page, tile.bytes)));
   expect(tiles.length).toBeGreaterThan(1);
@@ -154,7 +156,7 @@ test("a plan of two tables holding a user's own model downloads as a PNG at the 
   expect(Math.max(tileWidth, tileHeight)).toBeLessThanOrEqual(MAX_TILE_PX);
   expect({
     coversWidth: columns * tileWidth >= pageWidth && columns * tileWidth - pageWidth < columns,
-    coversHeight: rows * tileHeight >= pageHeight && rows * tileHeight - pageHeight < rows,
+    coversHeight: rows * pageRowHeight >= pageHeight && rows * pageRowHeight - pageHeight < rows,
   }).toEqual({ coversWidth: true, coversHeight: true });
   expect(contents.map((tile) => tile.size.join("×"))).toEqual(
     tiles.map((tile) => tile.size.join("×")),
