@@ -2806,6 +2806,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.update({ thirdPartyRefusal: thirdPartyRefusal(refusedPiece, refusedPiece.thirdParty) });
       return;
     }
+    if (this.state.thirdPartyRefusal !== null) this.update({ thirdPartyRefusal: null });
     this.queueClick(null);
     this.cancelGesture();
     if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();

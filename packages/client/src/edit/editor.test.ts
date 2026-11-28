@@ -10976,7 +10976,17 @@ const WIDE_CURVE = "fxbricks:FxTrackR56";
 const WIDE_CURVE_ITEM = `${TRACK_PIECE_PREFIX}${WIDE_CURVE}`;
 
 it("lays a third-party wide curve only while the world allows third-party parts: refused while off, joined exactly to the open end of a user's own 9V track file once on, kept on while one is laid, and saved with the world, which won't reopen without it", async () => {
-  const { editor, backend, container } = await startImportingEditor();
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+    },
+  );
   const repository = container.get(WORLD_REPOSITORY);
   const run = await importUserFile(
     editor,
@@ -10991,6 +11001,7 @@ it("lays a third-party wide curve only while the world allows third-party parts:
   const offered = (): boolean =>
     editor.snapshot().catalog.some((item) => item.id === WIDE_CURVE_ITEM);
   const off = { offered: offered(), vendors: editor.snapshot().thirdPartyVendors };
+  const heldBefore = editor.snapshot().activeItem;
   editor.chooseItem(WIDE_CURVE_ITEM);
   const refusedPick = {
     active: editor.snapshot().activeItem,
@@ -11026,7 +11037,7 @@ it("lays a third-party wide curve only while the world allows third-party parts:
 
   expect(off).toEqual({ offered: false, vendors: ["Fx Bricks"] });
   expect(refusedPick).toEqual({
-    active: null,
+    active: heldBefore,
     refusal:
       "Fx Bricks Curve R56 is a third-party part from Fx Bricks: turn on third-party parts in this world to lay it.",
   });
