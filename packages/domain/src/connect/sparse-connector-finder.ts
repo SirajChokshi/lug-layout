@@ -68,6 +68,24 @@ function axisStep(axis: number, dimension: number): number {
   return axisDimension(axis) === dimension ? axisSign(axis) : 0;
 }
 
+function shiftFitsWindow(
+  shiftX: number,
+  shiftY: number,
+  shiftZ: number,
+  planStep: number,
+  spanXZ: number,
+  plates: number,
+): boolean {
+  return (
+    shiftX % planStep === 0 &&
+    shiftZ % planStep === 0 &&
+    shiftY % PLATE_SIXTEENTHS === 0 &&
+    Math.abs(shiftX) <= spanXZ &&
+    Math.abs(shiftZ) <= spanXZ &&
+    Math.abs(shiftY / PLATE_SIXTEENTHS) <= plates
+  );
+}
+
 function phaseKey(x16: number, z16: number): number {
   return phaseOf(x16) * STUD_SIXTEENTHS + phaseOf(z16);
 }
@@ -831,9 +849,22 @@ export class SparseConnectorFinder implements MateFinder {
       : this.inBlock(rot, wanted, block);
     for (let j = 0; j < found; j++) {
       const m = this.candidates[j] ?? 0;
+      const at = m * VECTOR_FLOATS;
+      if (
+        !shiftFitsWindow(
+          wantedDimension === X ? 0 : sx - (turned.position[at + X] ?? 0),
+          wantedDimension === Y ? 0 : sy - (turned.position[at + Y] ?? 0),
+          wantedDimension === Z ? 0 : sz - (turned.position[at + Z] ?? 0),
+          planStep,
+          spanXZ,
+          window.plates,
+        )
+      ) {
+        continue;
+      }
       const i = m - rot * connectors;
       const own = turned.connectorClass[i] ?? UNCLASSED;
-      const along = sAlong - (turned.position[m * VECTOR_FLOATS + wantedDimension] ?? 0);
+      const along = sAlong - (turned.position[at + wantedDimension] ?? 0);
       const lowest = Math.imul(wantedSign, along) - spanAlong;
       const highest = Math.imul(wantedSign, along) + spanAlong;
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
@@ -851,26 +882,14 @@ export class SparseConnectorFinder implements MateFinder {
             d <= top;
             d += latticeStep
           ) {
-            const shiftX =
-              sx - axisStep(wanted, X) * d - (turned.position[m * VECTOR_FLOATS + X] ?? 0);
-            const shiftY =
-              sy - axisStep(wanted, Y) * d - (turned.position[m * VECTOR_FLOATS + Y] ?? 0);
-            const shiftZ =
-              sz - axisStep(wanted, Z) * d - (turned.position[m * VECTOR_FLOATS + Z] ?? 0);
-            if (shiftX % planStep !== 0 || shiftZ % planStep !== 0) continue;
-            if (shiftY % PLATE_SIXTEENTHS !== 0) continue;
-            const plates = shiftY / PLATE_SIXTEENTHS;
-            if (
-              Math.abs(shiftX) > spanXZ ||
-              Math.abs(shiftZ) > spanXZ ||
-              Math.abs(plates) > window.plates
-            ) {
-              continue;
-            }
+            const shiftX = sx - axisStep(wanted, X) * d - (turned.position[at + X] ?? 0);
+            const shiftY = sy - axisStep(wanted, Y) * d - (turned.position[at + Y] ?? 0);
+            const shiftZ = sz - axisStep(wanted, Z) * d - (turned.position[at + Z] ?? 0);
+            if (!shiftFitsWindow(shiftX, shiftY, shiftZ, planStep, spanXZ, window.plates)) continue;
             out.add(
               window.x + shiftX / SIXTEENTHS_PER_LDU,
               window.z + shiftZ / SIXTEENTHS_PER_LDU,
-              window.yPlates + plates,
+              window.yPlates + shiftY / PLATE_SIXTEENTHS,
               rot,
             );
           }

@@ -882,6 +882,59 @@ function edgePins(): ConnectorTable {
   );
 }
 
+function sparseOnly(): ConnectionSolver {
+  return new ConnectionSolver([new SparseConnectorFinder(mating)]);
+}
+
+function proposedOnLattice(
+  solver: ConnectionSolver,
+  piece: ModelConnectors,
+  snapWindow: SnapWindow,
+): number[][] {
+  const out = new CandidatePoses();
+  solver.proposeMates(piece, snapWindow, out);
+  const rows: number[][] = [];
+  for (let k = 0; k < out.count; k++) {
+    rows.push([out.x[k] ?? 0, out.z[k] ?? 0, out.yPlates[k] ?? 0, out.rot[k] ?? 0]);
+  }
+  return rows;
+}
+
+function upStuds(origins: ReadonlyArray<readonly [number, number, number]>): ModelConnectors {
+  return single(
+    table(
+      origins.map((origin) => ({ shape: STUD, gender: GENDER_MALE, origin, axis: AXIS_POS_Y })),
+    ),
+  );
+}
+
+function downReceptors(origins: ReadonlyArray<readonly [number, number, number]>): ModelConnectors {
+  return single(
+    table(
+      origins.map((origin) => ({
+        shape: PLATE_RECEPTOR,
+        gender: GENDER_FEMALE,
+        origin,
+        axis: AXIS_NEG_Y,
+      })),
+    ),
+  );
+}
+
+function sideReceptor(): ModelConnectors {
+  return single(
+    table([
+      { shape: PLATE_RECEPTOR, gender: GENDER_FEMALE, origin: [0, 0, HALF], axis: AXIS_NEG_X },
+    ]),
+  );
+}
+
+function holeFacingNegX(shapeId: number, y: number, z: number): Spec {
+  return { shape: shapeId, gender: GENDER_FEMALE, origin: [0, y, z], axis: AXIS_NEG_X };
+}
+
+const QUARTER_STUD = STUD_LDU / 4;
+
 describe("ConnectionSolver with sparse connectors", () => {
   it("snaps a model to the pose where its edge pins enter a neighbour's holes, not a stud away", () => {
     const solver = allFamilies();
@@ -1018,6 +1071,145 @@ describe("ConnectionSolver with sparse connectors", () => {
     expect(() => solver.remove(holes, pose(0, 0, 0), 1)).toThrow(RangeError);
     solver.remove(holes, pose(0, 0, 0), 2);
     expect(matesAt(solver, pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0))).toBe(0);
+  });
+
+  it("proposes the half-stud pose of a stud off the stud centres, as on a jumper, only at windows that line a receptor up with it, on either turn", () => {
+    const offCentre = sparseOnly();
+    offCentre.insert(upStuds([[STUD_LDU, PLATE_LDU, HALF]]), pose(0, 0, 0), 1);
+    const receptor = downReceptors([[HALF, 0, 0]]);
+    expect([
+      proposedOnLattice(offCentre, receptor, window(pose(0, 0, 1), 1, 0, 2)),
+      proposedOnLattice(offCentre, receptor, window(pose(HALF, HALF, 1), 1, 0, 2)),
+      proposedOnLattice(offCentre, receptor, window(pose(HALF, 0, 1), 1, 0, 2)),
+    ]).toEqual([[[STUD_LDU, STUD_LDU, 1, 1]], [[HALF, HALF, 1, 0]], []]);
+  });
+
+  it("proposes a pin into a hole one plate above it, and not into a hole half a plate above it", () => {
+    const holes = sparseOnly();
+    holes.insert(
+      single(
+        table([
+          holeFacingNegX(PIN_HOLE, HOLE_HEIGHT + PLATE_LDU, HALF),
+          holeFacingNegX(PIN_HOLE, HOLE_HEIGHT + PLATE_LDU / 2, HALF + STUD_LDU),
+        ]),
+      ),
+      pose(0, 0, 0),
+      2,
+    );
+    const pinAndHole = single(
+      table([
+        onAxis(AXIS_POS_X, 0, HALF, PIN, GENDER_MALE),
+        onAxis(AXIS_NEG_X, 0, HALF + STUD_LDU, PIN_HOLE, GENDER_FEMALE),
+      ]),
+    );
+    expect(proposedOnLattice(holes, pinAndHole, window(pose(0, 0, 0), 1, 1))).toEqual([
+      [0, 0, 1, 0],
+    ]);
+  });
+
+  it("proposes a bar slid partway through a short open hole, at a window half a stud along the bar", () => {
+    const sleeve = sparseOnly();
+    sleeve.insert(
+      single(
+        table([
+          holeFacingNegX(
+            shape(0, false, [[SECTION_ROUND, 6, PLATE_LDU]]),
+            HOLE_HEIGHT + PLATE_LDU,
+            HALF,
+          ),
+        ]),
+      ),
+      pose(0, 0, 0),
+      5,
+    );
+    const bar = single(
+      table([
+        onAxis(
+          AXIS_POS_X,
+          0,
+          HALF,
+          shape(CAP_ROOT, true, [[SECTION_ROUND, 6, STUD_LDU]]),
+          GENDER_MALE,
+        ),
+      ]),
+    );
+    expect(proposedOnLattice(sleeve, bar, window(pose(HALF, 0, 0), 1, 1))).toEqual([
+      [-HALF, 0, 1, 0],
+    ]);
+  });
+
+  it("proposes each of a pair of receptors on two stud phases at the window that lines it up, at negative coordinates too", () => {
+    const offCentreAndQuarter: ReadonlyArray<readonly [number, number, number]> = [
+      [STUD_LDU, PLATE_LDU, HALF],
+      [STUD_LDU + QUARTER_STUD, PLATE_LDU, HALF],
+    ];
+    const receptors = downReceptors([
+      [HALF, 0, HALF],
+      [STUD_LDU, 0, HALF],
+    ]);
+    const twoPhases = sparseOnly();
+    twoPhases.insert(upStuds(offCentreAndQuarter), pose(0, 0, 0), 3);
+    const farSide = sparseOnly();
+    farSide.insert(upStuds(offCentreAndQuarter), pose(-4 * STUD_LDU, -4 * STUD_LDU, 0), 4);
+    expect([
+      proposedOnLattice(twoPhases, receptors, window(pose(HALF, 0, 1), 1, 0)),
+      proposedOnLattice(twoPhases, receptors, window(pose(0, 0, 1), 1, 0)),
+      proposedOnLattice(
+        farSide,
+        receptors,
+        window(pose(-2 * STUD_LDU - HALF, -3 * STUD_LDU, 1), 1, 0),
+      ),
+    ]).toEqual([[[HALF, 0, 1, 0]], [[0, 0, 1, 0]], [[-3 * STUD_LDU - HALF, -4 * STUD_LDU, 1, 0]]]);
+  });
+
+  it("rejects a candidate whose off-axis shift fails the window bound, and accepts one exactly on it", () => {
+    const tops = sparseOnly();
+    tops.insert(
+      upStuds([
+        [HALF + STUD_LDU, PLATE_LDU, 0],
+        [HALF + 2 * STUD_LDU, PLATE_LDU, 0],
+      ]),
+      pose(0, 0, 0),
+      1,
+    );
+    const sides = sparseOnly();
+    sides.insert(
+      single(
+        table([
+          { shape: STUD, gender: GENDER_MALE, origin: [0, 2 * PLATE_LDU, HALF], axis: AXIS_POS_X },
+          {
+            shape: STUD,
+            gender: GENDER_MALE,
+            origin: [0, 3 * PLATE_LDU, HALF + STUD_LDU],
+            axis: AXIS_POS_X,
+          },
+        ]),
+      ),
+      pose(0, 0, 0),
+      2,
+    );
+    const fronts = sparseOnly();
+    fronts.insert(
+      upStuds([
+        [HALF, PLATE_LDU, STUD_LDU],
+        [HALF, PLATE_LDU, 2 * STUD_LDU],
+      ]),
+      pose(0, 0, 0),
+      3,
+    );
+    expect([
+      proposedOnLattice(tops, downReceptors([[HALF, 0, 0]]), window(pose(0, 0, 1), 1, 0)),
+      proposedOnLattice(fronts, downReceptors([[HALF, 0, 0]]), window(pose(0, 0, 1), 1, 0)),
+      proposedOnLattice(sides, sideReceptor(), window(pose(0, 0, 0), 1, 2)),
+    ]).toEqual([[[STUD_LDU, 0, 1, 0]], [[0, STUD_LDU, 1, 0]], [[0, 0, 2, 0]]]);
+  });
+
+  it("rejects an x shift that is plate-aligned but not stud-aligned", () => {
+    const tops = sparseOnly();
+    tops.insert(upStuds([[HALF + PLATE_LDU, PLATE_LDU, 0]]), pose(0, 0, 0), 1);
+    expect(
+      proposedOnLattice(tops, downReceptors([[HALF, 0, 0]]), window(pose(0, 0, 1), 1, 0)),
+    ).toEqual([]);
   });
 });
 
@@ -2652,7 +2844,7 @@ const TRACK_FAMILY = 2;
 const DROPPED = "dropped mid-carry";
 
 type CarryEnding = "cancel" | "drop" | "drop, undo and redo" | "throw";
-type QueryKind = "votes" | "evaluate" | "partnered" | "propose" | "rank";
+type QueryKind = "votes" | "dense" | "proposal" | "evaluate" | "partnered" | "propose" | "rank";
 
 interface CarryKind {
   readonly name: string;
@@ -2894,6 +3086,10 @@ function answer(
   switch (query.type) {
     case "votes":
       return `votes ${solver.votes(piece, query.pose)}`;
+    case "dense":
+      return `dense ${solver.denseVotes(piece, query.pose)}`;
+    case "proposal":
+      return `proposal ${solver.proposalVotes(piece, query.pose)}`;
     case "evaluate":
       solver.evaluate(piece, query.pose, report);
       return reportRows(report);
@@ -3381,6 +3577,92 @@ describe("ConnectionSolver withdrawals", () => {
       reportRows(evaluated(oracle, plate, above)),
     );
   });
+});
+
+const HOVER_SEED = 20261127;
+const HOVER_STEPS = 16;
+const HOVER_HEIGHTS = [0, 3, 1, 6, 2, 4];
+const HOVER_TURN_EVERY = 3;
+const HOVER_EDIT_EVERY = 6;
+const HOVER_EDITS = 2;
+const HOVER_QUERIES: ReadonlyArray<QueryKind> = [
+  "dense",
+  "proposal",
+  "votes",
+  "evaluate",
+  "propose",
+];
+const HOVER_STACK_X_LDU = -20_000;
+const HOVER_STACK_PLATES = 513;
+const HOVER_STACK_REPEATS = 24;
+const PLATE_KIND = 0;
+
+describe("ConnectionSolver hovers", () => {
+  it(
+    "answers every query of generated hovers, of studs, jumpers, side studs, pins in hole rows and multi-part models, held at alternating heights and turns, with placements added and removed between queries, exactly as a solver replayed from the same edits that has answered no earlier query",
+    () => {
+      const run = new CarryRun(carryKinds(), seededPick(HOVER_SEED));
+      run.populate(CARRY_WORLD);
+      const subjectLog: string[] = [];
+      const oracleLog: string[] = [];
+      const ask = (query: Query): string => {
+        const asked = run.line(run.subject, query);
+        subjectLog.push(asked);
+        oracleLog.push(run.line(replayed(run.ops, run.ops.length, []), query));
+        return asked;
+      };
+      let denseAnswered = 0;
+      let proposed = 0;
+      for (let kind = 0; kind < run.kinds.length; kind++) {
+        const anchors = [...run.world.values()];
+        const anchor = anchors[run.pick(anchors.length)]?.pose ?? pose(0, 0, 0);
+        let at = anchor;
+        for (let step = 0; step < HOVER_STEPS; step++) {
+          const stride = run.pick(2) === 0 ? HALF : STUD_LDU;
+          at = {
+            x: at.x + (step % 2 === 0 ? stride : 0),
+            z: at.z + (step % 2 === 0 ? 0 : stride),
+            yPlates: anchor.yPlates + (HOVER_HEIGHTS[step % HOVER_HEIGHTS.length] ?? 0),
+            rot: step % HOVER_TURN_EVERY === 0 ? (at.rot + 1) % 4 : at.rot,
+          };
+          if (step % HOVER_EDIT_EVERY === HOVER_EDIT_EVERY - 1) run.otherEdits(HOVER_EDITS);
+          for (const type of HOVER_QUERIES) {
+            const asked = ask({ type, kind, pose: at });
+            if (type === "dense" && !asked.endsWith(": dense 0")) denseAnswered++;
+            if (type === "propose" && !asked.endsWith(": []")) proposed++;
+          }
+        }
+      }
+      for (let level = 0; level < HOVER_STACK_PLATES; level++) {
+        run.placeNew(PLATE_KIND, pose(HOVER_STACK_X_LDU, 0, level));
+      }
+      let stackCounted = 0;
+      const stackHeights = [
+        ...Array.from({ length: HOVER_STACK_PLATES }, (_, level) => level + 1),
+        ...Array.from({ length: HOVER_STACK_REPEATS }, (_, level) => level + 1),
+      ];
+      for (const yPlates of stackHeights) {
+        const asked = ask({
+          type: "dense",
+          kind: PLATE_KIND,
+          pose: pose(HOVER_STACK_X_LDU, 0, yPlates),
+        });
+        if (!asked.endsWith(": dense 0")) stackCounted++;
+      }
+      expect({
+        difference: firstDifference(subjectLog, oracleLog),
+        denseVotesAnswered: denseAnswered > 0,
+        latticeProposalsMade: proposed > 0,
+        stackHeightsCounted: stackCounted,
+      }).toEqual({
+        difference: null,
+        denseVotesAnswered: true,
+        latticeProposalsMade: true,
+        stackHeightsCounted: stackHeights.length,
+      });
+    },
+    CARRY_TIMEOUT_MS,
+  );
 });
 
 function makeHole(): ModelConnectors {
